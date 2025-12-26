@@ -67,7 +67,6 @@ pub fn decode_to_pcm16(bytes: &[u8], mime: &str) -> Result<DecodedPcm16, String>
         .map_err(|e| format!("decode: make decoder: {e}"))?;
 
     let mut pcm: Vec<i16> = Vec::new();
-    let mut sample_buf: Option<SampleBuffer<i16>> = None;
 
     loop {
         let packet = match format.next_packet() {
@@ -87,15 +86,15 @@ pub fn decode_to_pcm16(bytes: &[u8], mime: &str) -> Result<DecodedPcm16, String>
             Err(e) => return Err(format!("decode: decode: {e}")),
         };
 
+        // IMPORTANT:
+        // Symphonia packet sizes can vary during decode. If we allocate a single
+        // SampleBuffer based on the first packet and reuse it, later packets can
+        // exceed that capacity and trigger an internal panic while copying.
+        //
+        // For now (Phase 1.5), prefer correctness + stability over micro-allocs.
         let spec = *decoded.spec();
         let duration = decoded.capacity() as u64;
-
-        // Lazily allocate conversion buffer.
-        if sample_buf.is_none() {
-            sample_buf = Some(SampleBuffer::<i16>::new(duration, spec));
-        }
-
-        let sbuf = sample_buf.as_mut().unwrap();
+        let mut sbuf = SampleBuffer::<i16>::new(duration, spec);
         sbuf.copy_interleaved_ref(decoded);
         pcm.extend_from_slice(sbuf.samples());
     }
