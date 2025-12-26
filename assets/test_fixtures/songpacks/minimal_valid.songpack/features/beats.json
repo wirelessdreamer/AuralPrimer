@@ -1,0 +1,7 @@
+{
+  "beats_version": "1.0.0",
+  "beats": [
+    { "t": 0.0, "bar": 0, "beat": 0, "strength": 1.0 },
+    { "t": 0.5, "bar": 0, "beat": 1, "strength": 0.5 }
+  ]
+}

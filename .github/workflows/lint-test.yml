@@ -1,0 +1,67 @@
+name: lint-test
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  lint_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node/TS (host + viz plugins + shared packages)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node deps (if lockfile exists)
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "No package-lock.json yet; skipping npm ci"
+          fi
+
+      - name: TS lint
+        run: npm run lint --if-present
+
+      - name: TS tests
+        run: npm test --if-present
+
+      # Python (ingest pipeline)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f python/ingest/requirements-dev.txt ]; then pip install -r python/ingest/requirements-dev.txt; fi
+
+      - name: Python lint/tests
+        run: |
+          if [ -d python/ingest ]; then
+            cd python/ingest
+            if [ -f pyproject.toml ]; then
+              python -m ruff check . || exit 1
+              python -m pytest -q || exit 1
+            fi
+          fi
+
+      # Rust (tauri backend)
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust fmt/clippy/tests
+        run: |
+          if [ -f apps/desktop/src-tauri/Cargo.toml ]; then
+            cd apps/desktop/src-tauri
+            cargo fmt --all -- --check
+            cargo clippy --all-targets --all-features -- -D warnings
+            cargo test --all
+          else
+            echo "No Rust crate yet; skipping"
+          fi

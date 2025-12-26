@@ -1,0 +1,48 @@
+# Node
+node_modules/
+
+# Node (common caches / build)
+**/.npm/
+**/.pnpm-store/
+**/.yarn/
+**/.turbo/
+**/.parcel-cache/
+**/.vite/
+**/.vitest/
+**/coverage/
+**/.eslintcache
+**/*.log
+
+# Rust
+target/
+**/target/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+**/.ruff_cache/
+**/.pytest_cache/
+**/.mypy_cache/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Build artifacts
+/dist/
+**/dist/
+
+# Test scratch output
+.tmp-tests/
+
+# App/user data folders (keep out of repo)
+%SONGS%/
+RawSongData/
+
+# Reference-only sibling project (do not vendor)
+external/PsalmsKaraoke/
+
+# Tauri
+apps/desktop/src-tauri/.tauri/

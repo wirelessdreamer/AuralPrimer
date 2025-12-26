@@ -1,0 +1,31 @@
+{
+  "name": "auralprimer",
+  "private": true,
+  "packageManager": "npm@10",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "visualizers/*"
+  ],
+  "scripts": {
+    "lint": "echo 'lint not configured yet'",
+    "test": "vitest run",
+
+    "desktop:dev": "npm -w @auralprimer/desktop run tauri:dev",
+    "desktop:build": "npm -w @auralprimer/desktop run tauri:build",
+    "desktop:build:frontend": "npm -w @auralprimer/desktop run build"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "jsdom": "^27.3.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.16"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/cli": "^2.9.6",
+    "ajv": "^8.17.1",
+    "fflate": "^0.8.2"
+  }
+}

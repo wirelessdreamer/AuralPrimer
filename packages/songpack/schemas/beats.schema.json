@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://auralprimer.dev/schemas/songpack/features/beats.schema.json",
+  "title": "features/beats.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["beats_version", "beats"],
+  "properties": {
+    "beats_version": { "type": "string" },
+    "beats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["t", "bar", "beat"],
+        "properties": {
+          "t": { "type": "number", "minimum": 0 },
+          "bar": { "type": "integer", "minimum": 0 },
+          "beat": { "type": "integer", "minimum": 0 },
+          "strength": { "type": "number", "minimum": 0 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "song_id": "fixture-minimal-valid",
+  "title": "Fixture Song",
+  "artist": "Fixture Artist",
+  "duration_sec": 12.34,
+  "source": {
+    "original_filename": "fixture.wav",
+    "original_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "ingest_timestamp": "2025-12-21T12:00:00Z"
+  },
+  "timing": {
+    "audio_sample_rate_hz": 48000,
+    "audio_start_offset_sec": 0,
+    "timebase": "audio"
+  },
+  "pipeline": {
+    "pipeline_id": "aural_ingest",
+    "pipeline_version": "0.1.0",
+    "profile": "fixture",
+    "stage_fingerprints": {
+      "decode": "fixture",
+      "beats": "fixture"
+    }
+  },
+  "assets": {
+    "audio": {
+      "mix_path": "audio/mix.wav"
+    }
+  }
+}
