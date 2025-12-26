@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://auralprimer.dev/schemas/songpack/features/events.schema.json",
+  "title": "features/events.json (v1 minimal)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["events_version"],
+  "properties": {
+    "events_version": { "type": "string" },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["track_id", "role", "name"],
+        "properties": {
+          "track_id": { "type": "string" },
+          "role": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "beats": { "type": "array" },
+    "sections": { "type": "array" },
+    "notes": { "type": "array" },
+    "onsets": { "type": "array" },
+    "pitch_contours": { "type": "array" },
+    "chords": { "type": "array" }
+  }
+}

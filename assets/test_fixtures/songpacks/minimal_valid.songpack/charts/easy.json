@@ -1,0 +1,9 @@
+{
+  "chart_version": "1.0.0",
+  "mode": "drums_groove",
+  "difficulty": "easy",
+  "targets": [
+    { "t": 0.5, "lane": "kick" },
+    { "t": 1.0, "lane": "snare" }
+  ]
+}

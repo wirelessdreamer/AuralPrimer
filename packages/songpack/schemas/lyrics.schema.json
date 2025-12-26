@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://auralprimer.dev/schemas/songpack/features/lyrics.schema.json",
+  "title": "features/lyrics.json (karaoke timings)",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["format", "lines"],
+  "properties": {
+    "format": { "type": "string" },
+    "granularity": { "type": "string", "enum": ["syllable", "word"] },
+    "job_id": { "type": "string" },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["start", "end", "text"],
+        "properties": {
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "minimum": 0 },
+          "text": { "type": "string" },
+          "chunks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["start", "end", "text", "char_start", "char_end"],
+              "properties": {
+                "start": { "type": "number", "minimum": 0 },
+                "end": { "type": "number", "minimum": 0 },
+                "text": { "type": "string" },
+                "char_start": { "type": "integer", "minimum": 0 },
+                "char_end": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

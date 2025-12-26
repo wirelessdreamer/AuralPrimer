@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://auralprimer.dev/schemas/songpack/features/tempo_map.schema.json",
+  "title": "features/tempo_map.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tempo_version", "segments"],
+  "properties": {
+    "tempo_version": { "type": "string" },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["t0", "bpm", "time_signature"],
+        "properties": {
+          "t0": { "type": "number", "minimum": 0 },
+          "bpm": { "type": "number", "exclusiveMinimum": 0 },
+          "time_signature": { "type": "string" }
+        }
+      }
+    }
+  }
+}
