@@ -66,6 +66,11 @@ type SongPackScanEntry = {
   error?: string;
 };
 
+function isDemoSongPack(e: SongPackScanEntry): boolean {
+  // Deterministic id for our built-in first-run song.
+  return (e.manifest?.song_id ?? "") === "demo_sine_440hz";
+}
+
 type SongPackDetails = {
   container_path: string;
   kind: string;
@@ -1862,6 +1867,17 @@ async function refresh() {
   try {
     const songsFolder = await invoke<string>("get_songs_folder");
     const entries = await invoke<SongPackScanEntry[]>("scan_songpacks");
+
+    // Prefer the built-in demo song on first load so the app is immediately playable.
+    // Order: demo first, then the rest alphabetically by title.
+    entries.sort((a, b) => {
+      const ad = isDemoSongPack(a);
+      const bd = isDemoSongPack(b);
+      if (ad !== bd) return ad ? -1 : 1;
+      const at = (a.manifest?.title ?? "").toLowerCase();
+      const bt = (b.manifest?.title ?? "").toLowerCase();
+      return at.localeCompare(bt);
+    });
 
     songsFolderInput.value = songsFolder;
     statusEl.textContent = `songsFolder: ${songsFolder}\ncount: ${entries.length}`;
