@@ -725,12 +725,10 @@ fn scan_songpacks(app: AppHandle) -> Result<Vec<SongPackScanEntry>, String> {
         }]);
     }
 
-    // If the songs folder is empty, create a tiny built-in demo song so the app
-    // is playable on first run.
+    // Ensure a tiny built-in demo song exists so the app is playable even
+    // before the user imports anything.
     // Best-effort: failure should not prevent listing user songs.
-    if fs::read_dir(&root).map(|mut it| it.next().is_none()).unwrap_or(false) {
-        let _ = demo_songpack::ensure_demo_songpack(&root);
-    }
+    let _ = demo_songpack::ensure_demo_songpack(&root);
 
     let mut out: Vec<SongPackScanEntry> = vec![];
 
