@@ -18,6 +18,7 @@ mod native_audio;
 pub mod ghwt;
 pub mod stem_midi;
 pub mod raw_song;
+pub mod demo_songpack;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct Settings {
@@ -722,6 +723,13 @@ fn scan_songpacks(app: AppHandle) -> Result<Vec<SongPackScanEntry>, String> {
             manifest: None,
             error: Some(format!("cannot create songs folder: {e}")),
         }]);
+    }
+
+    // If the songs folder is empty, create a tiny built-in demo song so the app
+    // is playable on first run.
+    // Best-effort: failure should not prevent listing user songs.
+    if fs::read_dir(&root).map(|mut it| it.next().is_none()).unwrap_or(false) {
+        let _ = demo_songpack::ensure_demo_songpack(&root);
     }
 
     let mut out: Vec<SongPackScanEntry> = vec![];
