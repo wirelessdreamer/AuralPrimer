@@ -1,0 +1,46 @@
+# Normalize line endings in-repo.
+# - Store text files with LF.
+# - On checkout, Git will convert to your platform default unless you override core.autocrlf.
+* text=auto eol=lf
+
+# Explicitly treat common source/config as text
+*.md          text eol=lf
+*.txt         text eol=lf
+*.json        text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.toml        text eol=lf
+*.rs          text eol=lf
+*.ts          text eol=lf
+*.tsx         text eol=lf
+*.js          text eol=lf
+*.jsx         text eol=lf
+*.css         text eol=lf
+*.html        text eol=lf
+
+# Shell scripts
+*.sh          text eol=lf
+*.cmd         text eol=crlf
+*.bat         text eol=crlf
+
+# Python
+*.py          text eol=lf
+
+# Treat binaries as binary (no end-of-line conversion)
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.ico         binary
+*.zip         binary
+*.pdf         binary
+*.wav         binary
+*.mp3         binary
+*.ogg         binary
+*.mid         binary
+*.fsb         binary
+*.xen         binary
+*.exe         binary
+*.dll         binary
+*.pdb         binary
+*.d           binary
