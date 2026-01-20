@@ -5,6 +5,73 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn quantize(t: f64, q: f64) -> f64 {
+    (t / q).round() * q
+}
+
+fn generate_beats(duration_sec: f64, bpm: f64, beats_per_bar: i32) -> serde_json::Value {
+    let bpm = if bpm > 0.0 { bpm } else { 120.0 };
+    let period = 60.0 / bpm;
+    let mut beats: Vec<serde_json::Value> = vec![];
+    let mut bar = 0;
+    let mut beat_in_bar = 0;
+    let mut t = 0.0;
+    while t <= duration_sec + 1e-9 {
+        let strength = if beat_in_bar == 0 { 1.0 } else { 0.5 };
+        beats.push(serde_json::json!({
+            "t": quantize(t, 1e-6),
+            "bar": bar,
+            "beat": beat_in_bar,
+            "strength": strength,
+        }));
+        beat_in_bar += 1;
+        if beat_in_bar >= beats_per_bar {
+            beat_in_bar = 0;
+            bar += 1;
+        }
+        t += period;
+    }
+
+    serde_json::json!({"beats_version": "1.0.0", "beats": beats})
+}
+
+fn generate_tempo_map(bpm: f64) -> serde_json::Value {
+    let bpm = if bpm > 0.0 { bpm } else { 120.0 };
+    serde_json::json!({
+        "tempo_version": "1.0.0",
+        "segments": [{"t0": 0.0, "bpm": (bpm * 1000.0).round() / 1000.0, "time_signature": "4/4"}]
+    })
+}
+
+fn generate_sections(duration_sec: f64, bpm: f64, bars_per_section: i32) -> serde_json::Value {
+    let bpm = if bpm > 0.0 { bpm } else { 120.0 };
+    let sec_per_bar = (60.0 / bpm) * 4.0;
+    let sec_per_section = (sec_per_bar * (bars_per_section as f64)).max(1.0);
+    let mut sections: Vec<serde_json::Value> = vec![];
+    let mut t0 = 0.0;
+    let mut idx = 0;
+    while t0 < duration_sec - 1e-9 {
+        let t1 = (t0 + sec_per_section).min(duration_sec);
+        sections.push(serde_json::json!({
+            "t0": quantize(t0, 1e-6),
+            "t1": quantize(t1, 1e-6),
+            "label": format!("section_{idx}"),
+        }));
+        t0 = t1;
+        idx += 1;
+    }
+
+    if sections.is_empty() {
+        sections.push(serde_json::json!({
+            "t0": 0.0,
+            "t1": quantize(duration_sec, 1e-6),
+            "label": "section_0"
+        }));
+    }
+
+    serde_json::json!({"sections_version": "1.0.0", "sections": sections})
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StemMidiCreateRequest {
     pub title: String,
@@ -221,6 +288,53 @@ pub fn create_songpack(req: StemMidiCreateRequest, songs_folder: &Path) -> Resul
     let song_id = stable_song_id(&audio_sha256, &midi_sha256);
 
     let duration_sec = wav_duration_sec_from_pcm(&mixed);
+
+    // Minimal required rhythm scaffolding + a trivial MVP chart.
+    // Note: in v1, charts are what the UI uses to infer instrument/gameplay availability.
+    // Even if we only have MIDI, a beat-only chart is still a useful sanity check.
+    let bpm = 120.0;
+    let beats = generate_beats(duration_sec, bpm, 4);
+    let tempo = generate_tempo_map(bpm);
+    let sections = generate_sections(duration_sec, bpm, 8);
+
+    fs::write(
+        out_dir.join("features").join("beats.json"),
+        serde_json::to_string_pretty(&beats).map_err(|e| format!("beats json: {e}"))?,
+    )
+    .map_err(|e| format!("write beats.json: {e}"))?;
+
+    fs::write(
+        out_dir.join("features").join("tempo_map.json"),
+        serde_json::to_string_pretty(&tempo).map_err(|e| format!("tempo json: {e}"))?,
+    )
+    .map_err(|e| format!("write tempo_map.json: {e}"))?;
+
+    fs::write(
+        out_dir.join("features").join("sections.json"),
+        serde_json::to_string_pretty(&sections).map_err(|e| format!("sections json: {e}"))?,
+    )
+    .map_err(|e| format!("write sections.json: {e}"))?;
+
+    let beat_items = beats
+        .get("beats")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let targets: Vec<serde_json::Value> = beat_items
+        .iter()
+        .map(|b| serde_json::json!({"t": b.get("t").and_then(|x| x.as_f64()).unwrap_or(0.0), "lane": "beat"}))
+        .collect();
+    let chart = serde_json::json!({
+        "chart_version": "1.0.0",
+        "mode": "beats_only",
+        "difficulty": "easy",
+        "targets": targets,
+    });
+    fs::write(
+        out_dir.join("charts").join("easy.json"),
+        serde_json::to_string_pretty(&chart).map_err(|e| format!("chart json: {e}"))?,
+    )
+    .map_err(|e| format!("write chart easy.json: {e}"))?;
 
     // Minimal events.json from MIDI.
     let events_json = midi_to_events_json(&midi_bytes)?;
