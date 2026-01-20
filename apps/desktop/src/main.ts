@@ -14,9 +14,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { generateLyricsJsonFromPlainText } from "./lyricsGenerator";
 
 function haveTauri(): boolean {
-  // In browser-only Vite dev mode, Tauri globals are not injected.
-  // (Tauri WebView provides window.__TAURI__.)
-  return typeof (window as unknown as { __TAURI__?: unknown }).__TAURI__ !== "undefined";
+  // Tauri v2 does **not** necessarily expose `window.__TAURI__` unless
+  // `app.withGlobalTauri` is enabled in tauri.conf.json.
+  // The JS APIs rely on `window.__TAURI_INTERNALS__`.
+  const w = window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown };
+  return typeof w.__TAURI_INTERNALS__ !== "undefined" || typeof w.__TAURI__ !== "undefined";
 }
 
 async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -184,6 +186,7 @@ if (!root) throw new Error("missing #app");
 
 root.innerHTML = `
   <div class="appShell">
+    <div id="runtimeBanner" class="runtimeBanner" aria-live="polite"></div>
     <header class="appHeader">
       <button id="navHome" class="brandBtn" aria-label="AuralPrimer Home">
         <span class="logoMark" aria-hidden="true"></span>
@@ -487,6 +490,20 @@ root.innerHTML = `
   </div>
 `;
 
+// In browser-only mode, make it explicit and disable desktop-only actions.
+{
+  const banner = document.getElementById("runtimeBanner") as HTMLDivElement | null;
+  if (banner && !haveTauri()) {
+    banner.innerHTML = `
+      <div class="runtimeBannerInner">
+        <strong>Browser mode</strong> — you opened the web build (no Tauri runtime detected).<br />
+        Desktop-only features (file picker, SongPack scanning, native audio, etc.) are disabled here.
+        <div class="meta">Run <code>npm run desktop:dev</code> or launch the installed app to use these features.</div>
+      </div>
+    `;
+  }
+}
+
 type Route = "home" | "play" | "learn" | "make" | "config";
 
 function setRoute(route: Route) {
@@ -619,6 +636,21 @@ const refreshBtn = document.getElementById("refresh") as HTMLButtonElement;
 const songsFolderInput = document.getElementById("songsFolder") as HTMLInputElement;
 const setOverrideBtn = document.getElementById("setOverride") as HTMLButtonElement;
 const clearOverrideBtn = document.getElementById("clearOverride") as HTMLButtonElement;
+
+// Disable desktop-only actions when running without the Tauri runtime.
+if (!haveTauri()) {
+  ghwtBrowseBtn.disabled = true;
+  ghwtSaveBtn.disabled = true;
+  ghwtScanBtn.disabled = true;
+  ghwtImportAllBtn.disabled = true;
+
+  setOverrideBtn.disabled = true;
+  clearOverrideBtn.disabled = true;
+
+  stemMidiPickStemsBtn.disabled = true;
+  stemMidiPickMidiBtn.disabled = true;
+  stemMidiCreateBtn.disabled = true;
+}
 
 function renderPlugins() {
   // Base render; actual availability gating happens once we know selected song details.

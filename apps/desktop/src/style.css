@@ -53,6 +53,28 @@ main {
   flex-direction: column;
 }
 
+/* Runtime banner (shown when running in browser-only mode without Tauri) */
+.runtimeBanner {
+  display: none;
+}
+
+.runtimeBanner .runtimeBannerInner {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 165, 0, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.runtimeBanner .runtimeBannerInner code {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.runtimeBanner:not(:empty) {
+  display: block;
+}
+
 .appHeader {
   position: sticky;
   top: 0;
