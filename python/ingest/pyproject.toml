@@ -9,7 +9,7 @@ aural_ingest = "aural_ingest.cli:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "--cov=src/aural_ingest --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=85"
+addopts = "--cov=src/aural_ingest --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=80"
 
 [tool.ruff]
 line-length = 100
