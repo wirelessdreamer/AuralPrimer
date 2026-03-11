@@ -1,0 +1,459 @@
+{
+  "format": "auralprimer_drum_benchmark_manifest_v1",
+  "ticks_per_quarter": 480,
+  "cases": [
+    {
+      "id": "01_jrock_verse_chorus_160",
+      "title": "J-Rock Verse/Chorus",
+      "midi_path": "01_jrock_verse_chorus_160.mid",
+      "bpm": 160.0,
+      "sections": [
+        {
+          "label": "verse",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "chorus",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 24.0,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "open_hat",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "snare backbeats",
+        "open hats",
+        "crash downbeats",
+        "tom fills"
+      ],
+      "tags": [
+        "jrock",
+        "verse-chorus",
+        "straight"
+      ],
+      "summary": "Straight driving hats, backbeat snare, crash-heavy chorus, and tom fills.",
+      "event_count": 225
+    },
+    {
+      "id": "02_jrock_gallop_172",
+      "title": "J-Rock Gallop",
+      "midi_path": "02_jrock_gallop_172.mid",
+      "bpm": 172.0,
+      "sections": [
+        {
+          "label": "intro",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "verse",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "chorus",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 16.744,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "syncopated kick",
+        "snare placement",
+        "ride vs crash"
+      ],
+      "tags": [
+        "jrock",
+        "gallop",
+        "syncopated"
+      ],
+      "summary": "Syncopated gallop kicks against eighth-note hats with ride-led chorus accents.",
+      "event_count": 208
+    },
+    {
+      "id": "03_mathrock_7_8_138",
+      "title": "Math Rock 7/8",
+      "midi_path": "03_mathrock_7_8_138.mid",
+      "bpm": 138.0,
+      "sections": [
+        {
+          "label": "theme",
+          "bars": 10,
+          "numerator": 7,
+          "denominator": 4
+        },
+        {
+          "label": "fill",
+          "bars": 2,
+          "numerator": 7,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 36.522,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "odd meter",
+        "snare displacement",
+        "tom motion"
+      ],
+      "tags": [
+        "mathrock",
+        "7-8",
+        "odd-meter"
+      ],
+      "summary": "Odd-meter groove with displaced snare accents and rotating tom answers.",
+      "event_count": 282
+    },
+    {
+      "id": "04_mathrock_linear_5_4_122",
+      "title": "Math Rock Linear 5/4",
+      "midi_path": "04_mathrock_linear_5_4_122.mid",
+      "bpm": 122.0,
+      "sections": [
+        {
+          "label": "main",
+          "bars": 8,
+          "numerator": 5,
+          "denominator": 4
+        },
+        {
+          "label": "bridge",
+          "bars": 4,
+          "numerator": 5,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 29.508,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "linear groove",
+        "ghost snares",
+        "ride clarity",
+        "tom sequencing"
+      ],
+      "tags": [
+        "mathrock",
+        "5-4",
+        "linear"
+      ],
+      "summary": "Linear groove with ride ostinato, ghosted snare pickups, and low-to-high tom runs.",
+      "event_count": 165
+    },
+    {
+      "id": "05_metal_double_bass_190",
+      "title": "Metal Double Bass",
+      "midi_path": "05_metal_double_bass_190.mid",
+      "bpm": 190.0,
+      "sections": [
+        {
+          "label": "riff_a",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "riff_b",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 20.211,
+      "lane_set": [
+        "kick",
+        "snare",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "double bass",
+        "snare under density",
+        "crash/ride splits"
+      ],
+      "tags": [
+        "metal",
+        "double-bass",
+        "dense"
+      ],
+      "summary": "Continuous double-bass sixteenths with backbeat snare and cymbal changes.",
+      "event_count": 360
+    },
+    {
+      "id": "06_metal_blast_220",
+      "title": "Metal Blast Beat",
+      "midi_path": "06_metal_blast_220.mid",
+      "bpm": 220.0,
+      "sections": [
+        {
+          "label": "blast",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "ride_break",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 13.091,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "blast beat",
+        "snare density",
+        "ride vs crash"
+      ],
+      "tags": [
+        "metal",
+        "blast-beat",
+        "extreme"
+      ],
+      "summary": "Alternating blast patterns with aggressive snare density and cymbal swaps.",
+      "event_count": 368
+    },
+    {
+      "id": "07_funk_ghost_notes_102",
+      "title": "Funk Ghost Notes",
+      "midi_path": "07_funk_ghost_notes_102.mid",
+      "bpm": 102.0,
+      "sections": [
+        {
+          "label": "groove",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "turnaround",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 28.235,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "open_hat",
+        "crash",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "snare ghosts",
+        "hat openings",
+        "kick syncopation"
+      ],
+      "tags": [
+        "funk",
+        "ghost-notes",
+        "syncopated"
+      ],
+      "summary": "Ghost-note-heavy snare groove with hat openings and syncopated kick placements.",
+      "event_count": 316
+    },
+    {
+      "id": "08_blues_shuffle_92",
+      "title": "Blues Shuffle",
+      "midi_path": "08_blues_shuffle_92.mid",
+      "bpm": 92.0,
+      "sections": [
+        {
+          "label": "shuffle",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "turnaround",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 31.304,
+      "lane_set": [
+        "kick",
+        "snare",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "shuffle feel",
+        "swung hats",
+        "snare backbeat",
+        "turnaround toms"
+      ],
+      "tags": [
+        "blues",
+        "shuffle",
+        "triplet"
+      ],
+      "summary": "Swung blues groove with triplet shuffle hats, backbeat snare, and a turnaround fill.",
+      "event_count": 172
+    },
+    {
+      "id": "09_pop_anthem_124",
+      "title": "Pop Anthem",
+      "midi_path": "09_pop_anthem_124.mid",
+      "bpm": 124.0,
+      "sections": [
+        {
+          "label": "verse",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "prechorus",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "chorus",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 38.71,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "open_hat",
+        "crash",
+        "ride",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "tight snare",
+        "open-hat lift",
+        "chorus crashes",
+        "simple fills"
+      ],
+      "tags": [
+        "pop",
+        "anthem",
+        "straight"
+      ],
+      "summary": "Clean pop groove with tight backbeats, lift into open hats, and crash-heavy chorus downbeats.",
+      "event_count": 312
+    },
+    {
+      "id": "10_rnb_pocket_88",
+      "title": "R&B Pocket",
+      "midi_path": "10_rnb_pocket_88.mid",
+      "bpm": 88.0,
+      "sections": [
+        {
+          "label": "pocket",
+          "bars": 8,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "breakdown",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        },
+        {
+          "label": "hook",
+          "bars": 4,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "duration_sec": 43.636,
+      "lane_set": [
+        "kick",
+        "snare",
+        "hi_hat",
+        "open_hat",
+        "crash",
+        "tom1",
+        "tom2",
+        "tom3"
+      ],
+      "focus": [
+        "half-time snare",
+        "ghost notes",
+        "hat dynamics",
+        "kick syncopation"
+      ],
+      "tags": [
+        "rnb",
+        "pocket",
+        "half-time"
+      ],
+      "summary": "Laid-back half-time groove with ghosted snares, sparse kicks, and hat dynamics.",
+      "event_count": 380
+    }
+  ]
+}

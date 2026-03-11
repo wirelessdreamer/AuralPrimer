@@ -1,42 +1,43 @@
-# AuralPrimer — data-driven music learning game
+# AuralPrimer + AuralStudio - data-driven music learning suite
 
-This repository is the project blueprint (and eventual implementation) for a **data-driven music-learning game** with:
+This repository contains a two-app desktop music-learning suite:
 
-1. **Song import engine**: MP3/audio → extraction pipeline → **SongPack** (optionally includes MIDI transcription).
-2. **Python extraction**: all extraction/transcription tasks run in Python and are shipped as self-contained executables (no system Python required).
-3. **Pluggable visualization engine**: multiple instrument visualizations (bass/guitar/drums/vocals) and theory-centric views (e.g., Nashville numbers).
+1. **AuralStudio (authoring app)**: import, transcription, and SongPack creation flows.
+2. **AuralPrimer (game app)**: playback, practice, and gameplay from SongPacks.
+3. **Python sidecar pipeline**: extraction/transcription tooling packaged as executables (no system Python required).
+4. **Pluggable visualization engine**: instrument and theory visualizers powered by shared canonical events.
 
 ## Design principles
 
-- **Test-driven development (TDD)**: new behavior is introduced by writing tests first; PRs are expected to include tests and CI must stay green.
-- **Fully data-driven gameplay**: the runtime consumes **SongPacks** (canonical game content).
-  - Users can download/unzip SongPacks into a local songs folder; the app scans for new songs on startup.
-  - Importers convert from other sources into SongPacks.
-- **Deterministic + reproducible imports**: imports are cached and versioned.
-- **Plugin-first visualization**: visualizers are independent packages that render from the same canonical event timeline.
-- **Local-first + shippable**: the desktop app bundles Python tools and decoders as needed.
-  - **ML model weights are not bundled** into installers.
-  - When required, models are downloaded/imported post-install into the app’s `assets/models/` directory (see `spec.md` + `docs/packaging-ci.md`).
+- **Test-driven development (TDD)**: tests first, implementation second, CI stays green.
+- **SongPack-first runtime**: AuralPrimer consumes SongPacks as canonical game content.
+  - AuralPrimer scans the songs folder for new/removed SongPacks.
+  - AuralStudio importers convert external sources into SongPacks.
+- **Deterministic imports**: import outputs are cacheable, reproducible, and versioned.
+- **Plugin-first visualization**: visualizers remain decoupled from core runtime.
+- **Local-first shipping**: required tooling is bundled in desktop artifacts.
+  - ML model weights are not bundled in installers.
+  - Model packs can be downloaded/imported post-install into `assets/models/`.
 
-See `docs/testing-strategy.md`.
-See `docs/local-dev-prereqs.md`.
+See `docs/testing-strategy.md` and `docs/local-dev-prereqs.md`.
 
 ## Docs (start here)
 
-- [`docs/architecture.md`](docs/architecture.md) — system overview, module boundaries, runtime flows
-- [`docs/songpack-spec.md`](docs/songpack-spec.md) — SongPack format, event model, versioning/migrations
-- [`docs/ingest-pipeline.md`](docs/ingest-pipeline.md) — Python pipeline DAG, stage plugins, caching, CLI contract
-- [`docs/visualization-plugins.md`](docs/visualization-plugins.md) — visualization plugin API and loading model
-- [`docs/packaging-ci.md`](docs/packaging-ci.md) — bundling Python/FFmpeg/models; CI build matrix
-- [`docs/roadmap.md`](docs/roadmap.md) — milestones from MVP → v1
-- [`docs/risk-register.md`](docs/risk-register.md) — technical risks + mitigations
+- [`docs/architecture.md`](docs/architecture.md) - system overview, module boundaries, runtime flows
+- [`docs/songpack-spec.md`](docs/songpack-spec.md) - SongPack format, event model, versioning/migrations
+- [`docs/ingest-pipeline.md`](docs/ingest-pipeline.md) - Python pipeline DAG, stage plugins, caching, CLI contract
+- [`docs/visualization-plugins.md`](docs/visualization-plugins.md) - visualization plugin API and loading model
+- [`docs/packaging-ci.md`](docs/packaging-ci.md) - bundling sidecars/decoders/models; CI build matrix
+- [`docs/roadmap.md`](docs/roadmap.md) - milestones from MVP to v1
+- [`docs/risk-register.md`](docs/risk-register.md) - technical risks and mitigations
 
-## Proposed monorepo layout (initial)
+## Monorepo layout (current direction)
 
-```
+```text
 /aural-primer
   /apps
-    /desktop                # Tauri desktop app (Rust + TS)
+    /game                   # AuralPrimer gameplay app (Tauri)
+    /desktop                # AuralStudio authoring app (Tauri)
   /packages
     /core-music             # shared schema + utilities (TS + Rust)
     /viz-sdk                # visualization plugin SDK (TS)
@@ -54,13 +55,13 @@ See `docs/local-dev-prereqs.md`.
   /docs
 ```
 
-## Packaging stance (“no external dependencies”)
+## Packaging stance ("no external runtime dependencies")
 
-At runtime, the shipped application should require **no separate installs**.
+At runtime, users should not need separate Python/FFmpeg/runtime installs.
 
 We achieve this by:
-- bundling Python pipeline tools as **sidecar executables** (PyInstaller/Nuitka)
-- bundling any decoder binaries (e.g., **ffmpeg**) when needed
-- downloading/importing ML model weights post-install into `assets/models/` (never bundled in the installer)
+- bundling ingest tools as sidecar executables
+- bundling decoder binaries when needed
+- supporting post-install model pack download/import into `assets/models/` (never bundled in installer)
 
 See `docs/packaging-ci.md`.

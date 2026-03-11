@@ -186,6 +186,21 @@ main {
   display: block;
 }
 
+body.studioImportOnly .topNav {
+  display: none;
+}
+
+body.studioImportOnly [data-route="home"],
+body.studioImportOnly [data-route="play"],
+body.studioImportOnly [data-route="learn"],
+body.studioImportOnly [data-route="make"] {
+  display: none !important;
+}
+
+body.studioImportOnly [data-route="config"] {
+  display: block !important;
+}
+
 .hero {
   padding: 14px 0;
 }

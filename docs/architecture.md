@@ -1,13 +1,16 @@
 # Architecture
 
 ## Executive summary
-AuralPrimer is a **desktop-first** music-learning game. The runtime is a **small, shippable** desktop app that loads **SongPacks** (data packages) and renders one or more **visualization plugins** synced to audio.
+AuralPrimer/AuralStudio is a **two-app desktop suite**:
+- **AuralPrimer** is the gameplay runtime.
+- **AuralStudio** is the import/authoring runtime.
 
+Both apps exchange content through **SongPacks**.
 All heavy extraction/transcription work happens **offline** in a Python-based ingest pipeline shipped as **embedded sidecar executables**.
 
 ## High-level modules
 
-### A) Desktop game host (`apps/desktop`)
+### A) AuralPrimer game host (`apps/game`)
 **Responsibilities**
 - SongPack discovery/loading
   - scan a configured songs folder on startup for `*.songpack` (zip) and `*.songpack/` (directory) SongPacks
@@ -17,13 +20,27 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 - Latency compensation & sync
 - Visualization plugin loading + lifecycle management
 - Input routing (keyboard/controller; mic/MIDI later)
-- Running ingestion sidecars and tracking progress
 
 **Non-responsibilities**
-- No offline ingestion/extraction/transcription inside the host.
+- No offline ingestion/extraction/transcription inside AuralPrimer.
 - No heavy ML inference directly in the host process (prefer isolated sidecars/modules).
+- No import/song-creation UI flows.
 
-### B) SongPack format + schemas (`packages/songpack`, `packages/core-music`)
+### B) AuralStudio authoring host (`apps/desktop`)
+**Responsibilities**
+- Import/song-creation UX
+  - raw audio import
+  - ecosystem importers (e.g., GHWT DE)
+  - stem+MIDI SongPack creation
+- Running ingestion sidecars and tracking progress
+- Authoring-related preferences and tool configuration
+- Writing validated SongPack outputs to the shared songs library
+
+**Non-responsibilities**
+- No gameplay/practice runtime modes as product features.
+- No player-focused visualizer/gameplay surfaces.
+
+### C) SongPack format + schemas (`packages/songpack`, `packages/core-music`)
 **Responsibilities**
 - Canonical, versioned schema for:
   - beat/tempo grid
@@ -34,7 +51,7 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 - Validation and migrations
 - Deterministic serialization
 
-### C) Python ingest pipeline (`python/ingest`)
+### D) Python ingest pipeline (`python/ingest`)
 **Responsibilities**
 - Importers and extraction pipeline that convert sources into SongPacks
   - audio-only import
@@ -49,9 +66,9 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 - chart generation
 
 **Deployment**
-- shipped as OS-specific sidecar executables, invoked by the desktop host.
+- shipped as OS-specific sidecar executables, invoked by AuralStudio.
 
-### D) Visualization plugins (`visualizers/*` + `packages/viz-sdk`)
+### E) Visualization plugins (`visualizers/*` + `packages/viz-sdk`)
 **Responsibilities**
 - Render visuals based on SongPack events + transport state
 - Provide instrument-specific or theory-centric representations
@@ -63,23 +80,23 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 ## Runtime data flow
 
 ### 1) Import flow
-1. User selects an import source (audio file, MIDI file, or external ecosystem folder) in the desktop host.
-2. Host selects a **pluggable importer** and spawns sidecar: `aural_ingest import <source> --importer <id> --out <songpack-dir> --profile <...>`
+1. User selects an import source (audio file, MIDI file, or external ecosystem folder) in AuralStudio.
+2. AuralStudio selects a **pluggable importer** and spawns sidecar: `aural_ingest import <source> --importer <id> --out <songpack-dir> --profile <...>`
 3. Sidecar writes a SongPack folder (or zip) incrementally:
    - `manifest.json`
    - `audio/mix.wav`
    - `features/*.json`
    - `charts/*.json`
-4. Host watches progress and surfaces logs.
-5. Host validates SongPack, then adds to library.
+4. AuralStudio watches progress and surfaces logs.
+5. AuralStudio validates SongPack, then writes output to the shared songs library.
 
 ### 2) Playback + render flow
-1. Host opens SongPack and chooses a visualization plugin.
-2. Host starts audio playback.
+1. AuralPrimer opens SongPack and chooses a visualization plugin.
+2. AuralPrimer starts audio playback.
 3. Each frame (~60fps):
-   - Host computes `TransportState` from audio timebase.
-   - Host calls `visualizer.update(dt, transportState)`
-   - Host calls `visualizer.render(frameContext)`
+   - AuralPrimer computes `TransportState` from audio timebase.
+   - AuralPrimer calls `visualizer.update(dt, transportState)`
+   - AuralPrimer calls `visualizer.render(frameContext)`
 
 ---
 ## Key architectural choice: canonical event timeline
@@ -137,9 +154,9 @@ Instead, ingestion produces a **canonical event timeline** (see `docs/songpack-s
 ## Plugin boundaries and stability
 
 ### Stable interfaces
-1. **SongPack schema** (versioned) — what the game and visualizers consume.
+1. **SongPack schema** (versioned) — what AuralPrimer and visualizers consume.
 2. **Viz SDK API** — lifecycle methods + rendering and event access.
-3. **Ingest CLI contract** — host ↔ pipeline communication.
+3. **Ingest CLI contract** — AuralStudio ↔ pipeline communication.
 
 Each stable interface must have **contract tests** (TDD-first) that:
 - lock in backwards-compatibility guarantees
@@ -152,7 +169,7 @@ Each stable interface must have **contract tests** (TDD-first) that:
 ---
 ## Technology choices (recommended)
 
-### Desktop host
+### Desktop hosts
 - **Tauri** (Rust backend + Web UI)
   - small distributables
   - good sidecar support

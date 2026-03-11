@@ -54,7 +54,10 @@ Year=2008
 
     // preview file must exist; for the test we can use a WAV file with a .fsb.xen extension
     write_minimal_wav(
-        &dlc_root.join("Content").join("MUSIC").join("DLC13_preview.fsb.xen"),
+        &dlc_root
+            .join("Content")
+            .join("MUSIC")
+            .join("DLC13_preview.fsb.xen"),
         48_000,
         1.0,
     );
@@ -87,7 +90,10 @@ Year=2008
     .unwrap();
 
     write_minimal_wav(
-        &dlc_dir.join("Content").join("MUSIC").join("DLC13_preview.fsb.xen"),
+        &dlc_dir
+            .join("Content")
+            .join("MUSIC")
+            .join("DLC13_preview.fsb.xen"),
         48_000,
         2.0,
     );
@@ -133,24 +139,36 @@ Year=2008
     // Provide 3 stems (as WAVs with .fsb.xen extension). Use different lengths to ensure we fail if mismatch.
     // For this test, they must match duration.
     write_minimal_wav(
-        &dlc_dir.join("Content").join("MUSIC").join("DLC13_1.fsb.xen"),
+        &dlc_dir
+            .join("Content")
+            .join("MUSIC")
+            .join("DLC13_1.fsb.xen"),
         48_000,
         1.0,
     );
     write_minimal_wav(
-        &dlc_dir.join("Content").join("MUSIC").join("DLC13_2.fsb.xen"),
+        &dlc_dir
+            .join("Content")
+            .join("MUSIC")
+            .join("DLC13_2.fsb.xen"),
         48_000,
         1.0,
     );
     write_minimal_wav(
-        &dlc_dir.join("Content").join("MUSIC").join("DLC13_3.fsb.xen"),
+        &dlc_dir
+            .join("Content")
+            .join("MUSIC")
+            .join("DLC13_3.fsb.xen"),
         48_000,
         1.0,
     );
 
     // Also include a preview, but importer should prefer stems.
     write_minimal_wav(
-        &dlc_dir.join("Content").join("MUSIC").join("DLC13_preview.fsb.xen"),
+        &dlc_dir
+            .join("Content")
+            .join("MUSIC")
+            .join("DLC13_preview.fsb.xen"),
         48_000,
         2.0,
     );
@@ -187,9 +205,7 @@ fn ghwt_bulk_import_imports_all_scanned_songs() {
         fs::create_dir_all(dlc_dir.join("Content").join("MUSIC")).unwrap();
         fs::write(
             dlc_dir.join("song.ini"),
-            format!(
-                "[SongInfo]\nChecksum={dlc}\nTitle={title}\nArtist=Test\nYear=2008\n"
-            ),
+            format!("[SongInfo]\nChecksum={dlc}\nTitle={title}\nArtist=Test\nYear=2008\n"),
         )
         .unwrap();
         write_minimal_wav(
@@ -205,7 +221,13 @@ fn ghwt_bulk_import_imports_all_scanned_songs() {
     let songs_folder = tmp.path().join("songs");
     fs::create_dir_all(&songs_folder).unwrap();
 
-    let res = auralprimer_desktop_tauri::ghwt::import_all_to_folder(None, &data_root, &songs_folder, None).unwrap();
+    let res = auralprimer_desktop_tauri::ghwt::import_all_to_folder(
+        None,
+        &data_root,
+        &songs_folder,
+        None,
+    )
+    .unwrap();
     assert_eq!(res.len(), 2);
     assert!(res.iter().all(|r| r.ok));
     assert!(songs_folder.join("ghwt_DLC13.songpack").is_dir());

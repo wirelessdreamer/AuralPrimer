@@ -9,6 +9,16 @@ aural_ingest = "aural_ingest.cli:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "--cov=src/aural_ingest --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=85"
 
 [tool.ruff]
 line-length = 100
+
+[tool.coverage.run]
+branch = true
+source = ["aural_ingest"]
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AuralPrimer",
+  "productName": "AuralStudio",
   "version": "0.0.0",
-  "identifier": "dev.auralprimer.app",
+  "identifier": "dev.auralprimer.studio",
   "bundle": {
     "active": true,
     "icon": ["icons/icon.ico"]
@@ -16,7 +16,8 @@
   "app": {
     "windows": [
       {
-        "title": "AuralPrimer",
+        "label": "main",
+        "title": "AuralStudio",
         "width": 1024,
         "height": 768
       }

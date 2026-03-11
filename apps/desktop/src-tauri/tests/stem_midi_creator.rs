@@ -61,7 +61,10 @@ fn stem_midi_creator_writes_songpack_artifacts() {
     let req = stem_midi::StemMidiCreateRequest {
         title: "Test Song".to_string(),
         artist: "Test Artist".to_string(),
-        stem_wav_paths: vec![stem1.to_string_lossy().to_string(), stem2.to_string_lossy().to_string()],
+        stem_wav_paths: vec![
+            stem1.to_string_lossy().to_string(),
+            stem2.to_string_lossy().to_string(),
+        ],
         midi_path: midi.to_string_lossy().to_string(),
     };
 
@@ -73,4 +76,3 @@ fn stem_midi_creator_writes_songpack_artifacts() {
     assert!(out.join("features").join("notes.mid").is_file());
     assert!(out.join("features").join("events.json").is_file());
 }
-

@@ -10,12 +10,26 @@
   "scripts": {
     "lint": "echo 'lint not configured yet'",
     "test": "vitest run",
-
-    "desktop:dev": "npm -w @auralprimer/desktop run tauri:dev",
-    "desktop:build": "npm -w @auralprimer/desktop run tauri:build",
-    "desktop:build:frontend": "npm -w @auralprimer/desktop run build"
+    "test:coverage:playback": "vitest run apps/game/tests/nativeAudioTimebase.test.ts apps/desktop/tests/nativeAudioTimebase.test.ts --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.include=apps/game/src/nativeAudioTimebase.ts --coverage.include=apps/desktop/src/nativeAudioTimebase.ts --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.statements=100 --coverage.thresholds.branches=100",
+    "test:coverage": "vitest run --coverage",
+    "game:dev": "npm -w @auralprimer/game run tauri:dev",
+    "game:build": "npm -w @auralprimer/game run tauri:build",
+    "game:build:frontend": "npm -w @auralprimer/game run build",
+    "studio:dev": "npm -w @auralprimer/studio run tauri:dev",
+    "studio:dev:asio": "npm -w @auralprimer/studio run tauri:dev:asio",
+    "studio:build": "npm -w @auralprimer/studio run tauri:build",
+    "studio:build:asio": "npm -w @auralprimer/studio run tauri:build:asio",
+    "studio:build:frontend": "npm -w @auralprimer/studio run build",
+    "desktop:dev": "npm run studio:dev",
+    "desktop:dev:asio": "npm run studio:dev:asio",
+    "desktop:build": "npm run studio:build",
+    "desktop:build:asio": "npm run studio:build:asio",
+    "desktop:build:frontend": "npm run studio:build:frontend",
+    "portable:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File ./build_sidecar.ps1",
+    "portable:build": "powershell -NoProfile -ExecutionPolicy Bypass -File ./create_portable.ps1"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.16",
     "@types/node": "^25.0.3",
     "jsdom": "^27.3.0",
     "typescript": "^5.9.3",

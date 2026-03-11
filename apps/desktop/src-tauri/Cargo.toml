@@ -7,6 +7,10 @@ edition = "2021"
 # (the app plus helper tools like `raw_import`), set an explicit default.
 default-run = "auralprimer_desktop_tauri"
 
+[features]
+default = []
+asio = ["cpal/asio"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -23,6 +27,7 @@ midly = "0.5"
 
 # Phase 1 native playback engine
 cpal = "0.15"
+rtrb = "0.3"
 
 # Phase 1.5 decode
 # NOTE: Many .ogg files in the wild are Opus, not Vorbis.

@@ -29,6 +29,7 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+*.asd
 
 # Build artifacts
 /dist/
@@ -46,3 +47,12 @@ external/PsalmsKaraoke/
 
 # Tauri
 apps/desktop/src-tauri/.tauri/
+
+# Local portable staging and scratch outputs
+AuralPrimerPortable/
+.coverage
+python/ingest/.coverage
+python/ingest/coverage.xml
+python/ingest/build/
+tmp_demucs_smoke.wav
+tmp_demucs_smoke_run2.songpack/

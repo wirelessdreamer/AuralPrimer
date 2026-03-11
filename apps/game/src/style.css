@@ -1,0 +1,881 @@
+:root {
+  /* High-tech dark theme */
+  --bg0: #05060a;
+  --bg1: #0b0f18;
+  --panel: rgba(18, 24, 40, 0.58);
+  --panel2: rgba(12, 16, 28, 0.72);
+  --border: rgba(140, 170, 255, 0.16);
+  --border2: rgba(140, 170, 255, 0.24);
+  --text: rgba(245, 247, 255, 0.92);
+  --muted: rgba(245, 247, 255, 0.70);
+  --muted2: rgba(245, 247, 255, 0.55);
+  --danger: #ff5c7a;
+
+  --accent: #7c3aed;   /* purple */
+  --accent2: #22d3ee;  /* cyan */
+  --accent3: #a3ff12;  /* lime */
+
+  --shadow: 0 18px 70px rgba(0, 0, 0, 0.55);
+  --shadow2: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --radius: 14px;
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: radial-gradient(1200px 700px at 30% 10%, rgba(124, 58, 237, 0.22), transparent 55%),
+    radial-gradient(900px 600px at 75% 30%, rgba(34, 211, 238, 0.18), transparent 55%),
+    radial-gradient(850px 600px at 60% 85%, rgba(163, 255, 18, 0.08), transparent 50%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
+  color: var(--text);
+}
+
+body.pauseMenuOpen {
+  overflow: hidden;
+}
+
+main {
+  /* legacy selector (main is now used as .appMain); keep for safety */
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 22px 18px 36px;
+}
+
+/* -----------------
+   App shell (Guitar-Hero-ish)
+   ----------------- */
+
+.appShell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Runtime banner (shown when running in browser-only mode without Tauri) */
+.runtimeBanner {
+  display: none;
+}
+
+.runtimeBanner .runtimeBannerInner {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 165, 0, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.runtimeBanner .runtimeBannerInner code {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.runtimeBanner:not(:empty) {
+  display: block;
+}
+
+.appHeader {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, rgba(5, 6, 10, 0.92), rgba(5, 6, 10, 0.72));
+  border-bottom: 1px solid rgba(140, 170, 255, 0.14);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.brandBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(140, 170, 255, 0.14);
+  background: rgba(12, 16, 28, 0.40);
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.brandBtn:hover {
+  border-color: rgba(34, 211, 238, 0.40);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(34, 211, 238, 0.10);
+}
+
+.brandBtn:active {
+  transform: translateY(1px);
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+}
+
+.brandName {
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  font-size: 16px;
+}
+
+.brandTag {
+  font-size: 11px;
+  color: var(--muted2);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.logoMark {
+  width: 22px;
+  height: 22px;
+  border-radius: 9px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 48%),
+    linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 16px rgba(124, 58, 237, 0.40), 0 0 18px rgba(34, 211, 238, 0.28);
+}
+
+.logoMark--xl {
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  box-shadow: 0 0 30px rgba(124, 58, 237, 0.48), 0 0 34px rgba(34, 211, 238, 0.32);
+}
+
+.topNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.navBtn {
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(140, 170, 255, 0.18);
+  background: rgba(12, 16, 28, 0.45);
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.navBtn.isActive {
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.14);
+}
+
+.appMain {
+  flex: 1;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px 18px 36px;
+}
+
+.route {
+  display: none;
+}
+
+.route.isActive {
+  display: block;
+}
+
+.hero {
+  padding: 14px 0;
+}
+
+.heroLogo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 16px;
+  border: 1px solid rgba(140, 170, 255, 0.14);
+  background: rgba(12, 16, 28, 0.45);
+  border-radius: 18px;
+  box-shadow: var(--shadow2);
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(34, 211, 238, 0.92));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.heroMeta {
+  margin-top: 6px;
+}
+
+.menuGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.menuCard {
+  text-align: left;
+  padding: 16px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(140, 170, 255, 0.16);
+  background: linear-gradient(180deg, rgba(18, 24, 40, 0.62), rgba(12, 16, 28, 0.66));
+  box-shadow: var(--shadow2);
+}
+
+.menuCard:hover {
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+.menuCard--danger {
+  border-color: rgba(255, 92, 122, 0.4);
+  background: linear-gradient(180deg, rgba(54, 17, 29, 0.7), rgba(35, 11, 19, 0.78));
+}
+
+.menuCard--danger:hover {
+  border-color: rgba(255, 136, 156, 0.7);
+}
+
+.menuTitle {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+@media (max-width: 860px) {
+  .appHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .topNav {
+    justify-content: stretch;
+  }
+  .navBtn {
+    flex: 1;
+  }
+  .menuGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+h1 {
+  margin: 0 0 6px;
+  letter-spacing: 0.4px;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+h3 {
+  margin: 18px 0 10px;
+  font-size: 15px;
+}
+
+h4 {
+  margin: 14px 0 10px;
+}
+
+p { margin: 0 0 14px; }
+
+hr {
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(140, 170, 255, 0.18), transparent);
+  margin: 20px 0;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95em;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.meta {
+  font-size: 12px;
+  color: var(--muted2);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.grow {
+  flex: 1;
+}
+
+/* Panels / cards */
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 14px 14px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brandLine {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brandDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 45%),
+    linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 18px rgba(124, 58, 237, 0.45), 0 0 20px rgba(34, 211, 238, 0.32);
+}
+
+.hud {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin: 10px 0 12px;
+  border: 1px solid rgba(140, 170, 255, 0.18);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(18, 24, 40, 0.62), rgba(12, 16, 28, 0.66));
+  box-shadow: var(--shadow2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.hudLabel {
+  font-size: 12px;
+  color: var(--muted2);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.hudValue {
+  font-size: 18px;
+  font-weight: 650;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(34, 211, 238, 0.92));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Controls */
+
+button,
+select,
+input[type="text"],
+input[type="number"],
+input[type="range"] {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 170, 255, 0.22);
+  background: linear-gradient(180deg, rgba(20, 26, 44, 0.75), rgba(12, 16, 28, 0.75));
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+button:hover {
+  border-color: rgba(34, 211, 238, 0.40);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(34, 211, 238, 0.14);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+select,
+input[type="text"],
+input[type="number"] {
+  flex: 1;
+  min-width: 190px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 170, 255, 0.18);
+  background: rgba(5, 8, 14, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+select:focus,
+input[type="text"]:focus,
+input[type="number"]:focus {
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.16);
+}
+
+input[type="range"] {
+  accent-color: var(--accent2);
+}
+
+label.meta {
+  text-transform: uppercase;
+  letter-spacing: 0.36px;
+}
+
+/* Visualizer */
+
+#viz {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 260px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow);
+}
+
+/* Play focus mode: make Now Playing the star (GH-ish) */
+.playLayout.isFocus {
+  grid-template-columns: 1fr;
+}
+
+.playLayout.isFocus > .panel:first-child {
+  display: none;
+}
+
+.playLayout.isFocus #viz {
+  height: min(70vh, 680px);
+}
+
+/* Song library step first, then setup step */
+.playLayout.isLibraryOnly {
+  grid-template-columns: 1fr;
+}
+
+.playLayout.isLibraryOnly > .panel:last-child {
+  display: none;
+}
+
+.songSetupMeta {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 170, 255, 0.2);
+  background: rgba(12, 16, 28, 0.5);
+  margin-bottom: 10px;
+}
+
+.setupSongLabel {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.setupSongPath {
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.startRow {
+  position: sticky;
+  bottom: 0;
+  padding-top: 12px;
+  margin-top: 10px;
+  background: linear-gradient(180deg, rgba(11, 15, 24, 0), rgba(11, 15, 24, 0.95) 35%);
+}
+
+.playStartBtn {
+  width: 100%;
+  min-height: 48px;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-color: rgba(34, 211, 238, 0.7);
+  background: linear-gradient(180deg, rgba(14, 90, 104, 0.95), rgba(7, 53, 62, 0.95));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(34, 211, 238, 0.15);
+}
+
+.playStartBtn:hover {
+  border-color: rgba(108, 235, 255, 0.9);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(34, 211, 238, 0.22);
+}
+
+.ghostBtn {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 170, 255, 0.20);
+  background: rgba(5, 8, 14, 0.35);
+  box-shadow: none;
+}
+
+.ghostBtn:hover {
+  border-color: rgba(34, 211, 238, 0.45);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+}
+
+.pauseMenuOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 520px at 50% 18%, rgba(34, 211, 238, 0.16), transparent 60%),
+    radial-gradient(840px 540px at 30% 82%, rgba(124, 58, 237, 0.2), transparent 62%),
+    rgba(3, 5, 10, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.pauseMenuOverlay.isVisible {
+  display: grid;
+}
+
+.pauseMenuDialog {
+  width: min(100%, 540px);
+  padding: 26px 24px 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(34, 211, 238, 0.34);
+  background:
+    linear-gradient(180deg, rgba(16, 22, 36, 0.96), rgba(8, 11, 20, 0.96)),
+    rgba(8, 11, 20, 0.96);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(34, 211, 238, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.pauseMenuKicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(34, 211, 238, 0.82);
+}
+
+.pauseMenuTitle {
+  margin: 10px 0 8px;
+  font-size: clamp(28px, 4vw, 36px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pauseMenuCopy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.pauseMenuActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.pauseMenuActions button {
+  min-height: 50px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pauseMenuResumeBtn {
+  border-color: rgba(34, 211, 238, 0.7);
+  background: linear-gradient(180deg, rgba(14, 90, 104, 0.95), rgba(7, 53, 62, 0.95));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(34, 211, 238, 0.15);
+}
+
+.pauseMenuResumeBtn:hover {
+  border-color: rgba(108, 235, 255, 0.9);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(34, 211, 238, 0.22);
+}
+
+.pauseMenuBackBtn {
+  border-color: rgba(255, 92, 122, 0.42);
+  background: linear-gradient(180deg, rgba(58, 18, 30, 0.94), rgba(34, 12, 20, 0.96));
+}
+
+.pauseMenuBackBtn:hover {
+  border-color: rgba(255, 136, 156, 0.72);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 92, 122, 0.14);
+}
+
+.pauseMenuHint {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted2);
+  text-align: center;
+}
+
+.playersGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.playerChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(140, 170, 255, 0.16);
+  background: rgba(12, 16, 28, 0.44);
+}
+
+.playerName {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.playerChip select {
+  min-width: 150px;
+  padding: 6px 8px;
+}
+
+.playerChip .removePlayer {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Song capability pills */
+.caps {
+  margin: 10px 0 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(140, 170, 255, 0.14);
+  background: rgba(12, 16, 28, 0.40);
+}
+
+.capsRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 6px 0;
+}
+
+.capsLabel {
+  width: 64px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: rgba(245, 247, 255, 0.60);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding-top: 4px;
+}
+
+.capsPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.capPill {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 170, 255, 0.18);
+  background: rgba(5, 8, 14, 0.45);
+  color: rgba(245, 247, 255, 0.80);
+}
+
+.capPill--ok {
+  border-color: rgba(34, 211, 238, 0.42);
+  color: rgba(240, 255, 255, 0.92);
+}
+
+.capPill--missing {
+  opacity: 0.45;
+}
+
+pre {
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(140, 170, 255, 0.14);
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(240, 245, 255, 0.82);
+  overflow: auto;
+}
+
+audio {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Two column library layout */
+
+.twoCol {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 14px;
+}
+
+@media (max-width: 960px) {
+  .twoCol {
+    grid-template-columns: 1fr;
+  }
+
+  .pauseMenuActions {
+    grid-template-columns: 1fr;
+  }
+}
+
+.details {
+  border-left: 1px solid rgba(140, 170, 255, 0.12);
+  padding-left: 14px;
+}
+
+@media (max-width: 960px) {
+  .details {
+    border-left: none;
+    padding-left: 0;
+  }
+}
+
+.details pre {
+  background: rgba(0, 0, 0, 0.26);
+}
+
+ul {
+  margin: 10px 0;
+  padding-left: 18px;
+}
+
+li {
+  margin: 8px 0;
+}
+
+.songLibraryList {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.songLibraryList > li {
+  margin: 10px 0;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 170, 255, 0.16);
+  background: rgba(12, 16, 28, 0.45);
+}
+
+.songSelectBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.songSelectBtn:hover {
+  border-color: transparent;
+  box-shadow: none;
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.songSelectBtn.isSelected {
+  background:
+    linear-gradient(180deg, rgba(18, 46, 64, 0.88), rgba(10, 24, 38, 0.92)),
+    rgba(10, 24, 38, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.34), 0 0 0 1px rgba(34, 211, 238, 0.16);
+}
+
+.songSelectCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.songSelectTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.songSelectTitle {
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.songSelectArtist {
+  color: var(--muted);
+}
+
+.songSelectMeta {
+  word-break: break-all;
+}
+
+.songSelectCta {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(34, 211, 238, 0.86);
+}
+
+.error {
+  background: rgba(255, 40, 94, 0.12);
+  border: 1px solid rgba(255, 92, 122, 0.32);
+  color: rgba(255, 220, 226, 0.95);
+}

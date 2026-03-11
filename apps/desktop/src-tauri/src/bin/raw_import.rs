@@ -3,18 +3,14 @@ use std::path::PathBuf;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let folder = args
-        .next()
-        .unwrap_or_else(|| {
-            eprintln!("Usage: raw_import <raw_song_folder> <songs_folder> [title] [artist]");
-            std::process::exit(2);
-        });
-    let songs_folder = args
-        .next()
-        .unwrap_or_else(|| {
-            eprintln!("Usage: raw_import <raw_song_folder> <songs_folder> [title] [artist]");
-            std::process::exit(2);
-        });
+    let folder = args.next().unwrap_or_else(|| {
+        eprintln!("Usage: raw_import <raw_song_folder> <songs_folder> [title] [artist]");
+        std::process::exit(2);
+    });
+    let songs_folder = args.next().unwrap_or_else(|| {
+        eprintln!("Usage: raw_import <raw_song_folder> <songs_folder> [title] [artist]");
+        std::process::exit(2);
+    });
     let title = args.next();
     let artist = args.next();
 
@@ -40,4 +36,3 @@ fn main() {
         }
     }
 }
-

@@ -19,4 +19,3 @@ fn demo_songpack_is_created_and_has_audio() {
     let created2 = demo_songpack::ensure_demo_songpack(&songs_dir).unwrap();
     assert!(created2.is_none());
 }
-

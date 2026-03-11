@@ -74,6 +74,17 @@ Output: `audio/stems/*.wav`
 
 This is optional due to size/compute.
 
+### Stage 4b (optional): `split_guitar_stems`
+Input: `audio/stems/guitar.wav` when available, else `audio/mix.wav` fallback
+Output:
+- `audio/stems/lead_guitar.wav`
+- `audio/stems/rhythm_guitar.wav`
+
+Implementation notes:
+- deterministic DSP mask split (no external ML/runtime dependency)
+- intended as a practical fallback when dedicated lead/rhythm sources are unavailable
+- metadata should record whether source was a true guitar stem or mix fallback
+
 ### Stage 5: transcription stages (profile-dependent)
 
 #### 5a) `transcribe_drums`

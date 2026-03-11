@@ -1,14 +1,38 @@
-# AuralPrimer — Project Specification (Requirements)
+# AuralPrimer + AuralStudio - Project Specification (Requirements)
 
-> This document is the **authoritative requirements spec** for AuralPrimer.
+> This document is the **authoritative requirements spec** for the AuralPrimer/AuralStudio product suite.
 > Architecture, file formats, and implementation details live in `/docs`, but any *must-have* behavior should be captured here.
 
 ## 1) Product vision
-AuralPrimer is a **desktop-first, data-driven music learning game**.
+The product is split into **two separate desktop apps** with strict ownership boundaries:
 
-- Users import songs (audio and/or existing charts) into a canonical **SongPack** format.
-- The app plays audio and renders one or more **visualization plugins** (guitar/bass/drums/vocals/theory).
-- The app supports practice workflows (looping, slowdown, metronome) and performance/gameplay modes.
+- **AuralPrimer**: gameplay app (play/learn/practice/performance) that consumes SongPacks.
+- **AuralStudio**: content app (import/transcription/song creation/preferences for authoring) that produces SongPacks.
+
+Both apps are offline-first and exchange content through the SongPack format.
+
+### 1.1 App-role boundaries (non-negotiable)
+**AuralPrimer (game) must include:**
+- SongPack library browsing/loading
+- playback + visualization
+- practice workflows (looping, slowdown, metronome)
+- gameplay/performance input systems (MIDI/audio input for gameplay)
+
+**AuralPrimer (game) must NOT include:**
+- raw audio/chart import flows
+- transcription/ingest execution UI
+- SongPack creation wizards (e.g., stem+MIDI creator)
+- ecosystem importers (e.g., GHWT importer)
+
+**AuralStudio (authoring) must include:**
+- import/transcription pipelines
+- SongPack creation and conversion flows
+- authoring-related preferences/settings
+- model and tool setup needed for import/authoring
+
+**AuralStudio (authoring) must NOT include:**
+- gameplay/practice runtime modes as product features
+- player-focused visualizer/gameplay surfaces
 
 ## 2) Hard constraints (non-negotiable)
 
@@ -27,14 +51,14 @@ AuralPrimer is a **desktop-first, data-driven music learning game**.
 - **Linux**: supported
 - macOS: **not a target**
 
-### 2.2 Offline gameplay
-- The application must be fully usable **offline for normal gameplay**:
+### 2.2 Offline operation
+- **AuralPrimer** must be fully usable offline for normal gameplay:
   - playback
   - visualization rendering
   - local library management
-  - importing songs from local files
   - practice tools
-- No always-on services and no gameplay features that *require* network connectivity.
+- **AuralStudio** import/song creation workflows must also work offline from local files (except optional one-time model download/setup steps).
+- No always-on services and no core product flow that requires constant network connectivity.
 
 ### 2.3 Model distribution
 - The shipped installer **must not bundle ML model weights**.
@@ -43,10 +67,10 @@ AuralPrimer is a **desktop-first, data-driven music learning game**.
   2) **Manual offline import** of model packs (zip/folder) for users who never connect the app to the internet.
 
 **Model storage location (consistent rule):**
-- Models are stored under the app’s `assets/models/<model-id>/<version>/...` directory.
+- Models are stored under the app's `assets/models/<model-id>/<version>/...` directory.
 - Model packs must be versioned and must not overwrite existing versions.
 
-> Implication: “offline gameplay” is compatible with model downloads as a *setup step*; once downloaded/imported, the feature must function offline.
+> Implication: "offline gameplay" is compatible with model downloads as a *setup step*; once downloaded/imported, the feature must function offline.
 
 ### 2.4 Local-only data and privacy
 - User content (audio, SongPacks, derived features) stays on the local machine.
@@ -55,11 +79,11 @@ AuralPrimer is a **desktop-first, data-driven music learning game**.
 ## 3) Core system requirements
 
 ### 3.1 SongPack-first runtime
-- The runtime consumes **SongPacks** as its canonical game content.
-- External formats (audio+charts from other ecosystems) are supported via **pluggable importers** that convert into SongPacks.
-- The runtime host must not perform ingestion/extraction/transcription on raw audio.
+- **AuralPrimer runtime** consumes **SongPacks** as its canonical game content.
+- External formats (audio+charts from other ecosystems) are supported via **pluggable importers** in **AuralStudio** that convert into SongPacks.
+- The AuralPrimer runtime host must not perform ingestion/extraction/transcription on raw audio.
 - Playback decoding (e.g., MP3/OGG) is provided by a **local codec layer** (bundled decoder/sidecar); this does not change the SongPack-first rule.
-- All runtime visuals are rendered from **SongPack artifacts** (canonical event timeline).
+- All AuralPrimer runtime visuals are rendered from **SongPack artifacts** (canonical event timeline).
 - Reference:
   - `docs/songpack-spec.md`
   - `docs/architecture.md`
@@ -67,6 +91,7 @@ AuralPrimer is a **desktop-first, data-driven music learning game**.
 ### 3.2 Deterministic imports
 - Given identical inputs + pipeline version + configuration, ingestion outputs must be reproducible.
 - Imports must be cacheable and versioned.
+- Deterministic import execution is owned by AuralStudio + ingest sidecar, not AuralPrimer runtime.
 - Reference: `docs/ingest-pipeline.md`.
 
 ### 3.3 Plugin-first visualization
@@ -75,14 +100,14 @@ AuralPrimer is a **desktop-first, data-driven music learning game**.
 - Reference: `docs/visualization-plugins.md`.
 
 ### 3.4 Local SongPack library discovery
-- Users must be able to download or copy **SongPacks** into a designated local “songs folder”.
-- On application start, the host must **scan for new/removed SongPacks** and update the local library view.
-- The host must support **both** SongPack container forms:
+- Users must be able to download or copy **SongPacks** into a designated local "songs folder".
+- On application start, AuralPrimer must **scan for new/removed SongPacks** and update the local library view.
+- AuralPrimer must support **both** SongPack container forms:
   - directory SongPacks (`*.songpack/` folders)
   - zip SongPacks (`*.songpack` files)
 
 ### 3.5 Native audio engine (real-time DSP) (new direction)
-The desktop host must evolve from “web-audio playback” into a **native real-time audio engine**.
+The AuralPrimer runtime host must evolve from "web-audio playback" into a **native real-time audio engine**.
 
 Motivation:
 - enable **low-latency** playback and monitoring suitable for gameplay + practice + performance
@@ -100,7 +125,7 @@ Requirements:
   - visualizer sync
   - metronome
   - MIDI clock output
-- UI → engine parameter updates must be designed for real-time constraints:
+- UI -> engine parameter updates must be designed for real-time constraints:
   - no blocking / no locks inside the audio callback
   - parameter updates via lock-free message passing or atomics
 
@@ -121,7 +146,7 @@ During playback (and ideally during scrubbing/paused states), the UI must always
 This is required even when a visualization plugin is showing an instrument-specific view.
 
 ### 4.2 Chord structure over notes
-In note-centric visualizations, chord structure must be visually represented **above** (or otherwise hierarchically “over”) individual notes.
+In note-centric visualizations, chord structure must be visually represented **above** (or otherwise hierarchically "over") individual notes.
 
 - Chords should be time-ranged blocks/labels aligned to the transport timeline.
 - Notes are rendered in relation to the chord context (e.g., scale degrees/Nashville/Roman optional overlays).
@@ -163,7 +188,7 @@ The runtime must support **bidirectional MIDI integration** for practice and per
   - Optional: SPP (best-effort, per-device limitations)
 
 **Tempo scaling / practice slowdown with sync**
-- When the user applies a practice slowdown (e.g. 0.5×), the app must be able to:
+- When the user applies a practice slowdown (e.g. 0.5x), the app must be able to:
   - keep internal transport, visualizers, and metronome aligned
   - emit a **scaled MIDI clock** so chained devices remain in time with the slowed song
 - When an external device is driving clock (input), the app must support:
@@ -176,7 +201,7 @@ The runtime must support **bidirectional MIDI integration** for practice and per
   - The app must avoid hard-coding vendor SysEx behavior in core runtime; prefer pluggable device profiles.
 
 **General MIDI scope**
-- Support “full MIDI spec” *where it makes sense* for our use-cases:
+- Support "full MIDI spec" *where it makes sense* for our use-cases:
   - prioritize clock/transport sync + note I/O
   - device-specific extensions (NRPN/RPN, SysEx) are supported as pass-through / profiles
   - do not block MVP on implementing every message type
@@ -187,14 +212,14 @@ The runtime must support **bidirectional MIDI integration** for practice and per
 ### 5.2 Audio signal input (runtime)
 - Support audio input (microphone / line-in) as a gameplay input.
 
-### 5.3 Realtime audio→MIDI conversion
+### 5.3 Realtime audio->MIDI conversion
 The system must include a roadmap and architecture path to:
 - take a **standard audio signal** (mic/line-in)
 - convert it to **MIDI (notes/onsets) in realtime**
 - feed that MIDI-like event stream into gameplay modes as input
 
 Notes:
-- This is distinct from offline ingestion (MP3→SongPack). It is **live**.
+- This is distinct from offline ingestion (MP3->SongPack). It is **live**.
 - The first implementation may target **monophonic** sources (voice/bass) before polyphonic guitar.
 
 ## 6) Content interoperability requirements
@@ -202,24 +227,24 @@ Notes:
 ### 6.1 Interoperability via pluggable importers (GHWT DE is one source)
 AuralPrimer uses **SongPack** as its native game content format.
 
-To accelerate adoption without constraining internal capabilities, AuralPrimer must support **pluggable importers** that convert external sources into SongPacks (e.g., audio-only, user MIDI, GHWT DE, and other ecosystems).
+To accelerate adoption without constraining internal capabilities, **AuralStudio** must support **pluggable importers** that convert external sources into SongPacks (e.g., audio-only, user MIDI, GHWT DE, and other ecosystems).
 
 Minimum requirements:
 - Define an ingestion/import path that can take **user-provided** GHWT DE assets and transform them into SongPacks.
 - The pipeline must support generating canonical events and charts from those assets.
 
 #### 6.1.2 Stem + MIDI song creator (MVP behavior)
-The desktop app must provide an importer/creator that can build a playable SongPack from:
+**AuralStudio** must provide an importer/creator that can build a playable SongPack from:
 - one or more **audio stem WAV files** (e.g. drums/bass/guitar/vocals), and
 - a **standard MIDI file** (`.mid`) containing note events.
 
 This enables users to:
 - bring their own multi-track stems (from a DAW export, or other sources)
 - pair them with a MIDI chart (hand-authored or exported)
-- immediately play the resulting SongPack inside AuralPrimer.
+- produce a SongPack that is then playable inside AuralPrimer.
 
 **UI requirements**
-- The desktop app must provide a **Configure → Create SongPack (stems + MIDI)** section.
+- AuralStudio must provide a **Configure -> Create SongPack (stems + MIDI)** section.
 - The user can:
   - select one or more stem WAV files (file picker)
   - optionally select a single already-mixed WAV file instead of multiple stems
@@ -228,7 +253,7 @@ This enables users to:
   - click **Create SongPack**
 
 **Output requirements**
-- Output is a **directory SongPack** created in the user’s configured songs folder.
+- Output is a **directory SongPack** created in the user's configured songs folder.
 - Audio output must be `audio/mix.wav`:
   - If multiple stems are provided, the app must mix them down deterministically.
   - If a single WAV is provided, it may be copied as `audio/mix.wav`.
@@ -244,15 +269,15 @@ This enables users to:
 - The app must not ship copyrighted music content in this repo.
 
 #### 6.1.1 GHWT-DE import (MVP behavior)
-- The desktop app must provide a **Configure → Import GHWT songs** section.
+- AuralStudio must provide a **Configure -> Import GHWT songs** section.
 - The user can configure:
   - the GHWT-DE `DATA` root folder path
   - an optional explicit path to `vgmstream-cli` (otherwise it is resolved via PATH)
-- The host must be able to:
+- AuralStudio must be able to:
   - scan GHWT-DE DLC content under:
     `DATA/MODS/Guitar Hero_ World Tour Downloadable Content/DLC*/song.ini`
   - display detected songs with basic metadata (title/artist/checksum)
-  - import a selected song into the user’s configured AuralPrimer songs folder as a directory SongPack:
+  - import a selected song into the user's configured AuralPrimer songs folder as a directory SongPack:
     `ghwt_<checksum>.songpack/`
 
 MVP importer scope / limitations:
@@ -266,12 +291,20 @@ Audio compatibility:
 Constraints / compliance:
 - Do not ship copyrighted GHWT content in this repo.
 - The feature must be designed around **user-owned** game files and a format translation layer.
-- The SongPack schema must remain free to evolve beyond any source format’s limitations.
+- The SongPack schema must remain free to evolve beyond any source format's limitations.
+
+### 6.2 Product boundary enforcement
+- AuralPrimer must not expose raw import/song-creation controls in its UI.
+- AuralStudio is the only app that may expose ingest/transcription/import/song-creation controls.
+- The app handoff is via SongPack artifacts in the configured songs library.
 
 ## 7) Packaging & deployment requirements
 
-### 7.1 Desktop host
-- Use a small, shippable desktop host (recommended: **Tauri**).
+### 7.1 Desktop hosts
+- Ship two separate desktop executables (recommended stack: **Tauri**):
+  - `AuralPrimer` (game runtime only)
+  - `AuralStudio` (import/song-creation runtime only)
+- Do not collapse these into a single mode-switched executable; separation is required for long-term maintainability.
 
 ### 7.2 Sidecar tooling
 - Python ingest pipeline ships as OS-specific **sidecar executables**.
@@ -295,3 +328,4 @@ Constraints / compliance:
 - `docs/ingest-pipeline.md`
 - `docs/packaging-ci.md`
 - `docs/roadmap.md`
+
