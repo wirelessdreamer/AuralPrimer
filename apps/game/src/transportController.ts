@@ -217,8 +217,10 @@ export class TransportController {
       const audioT = this.timebase.getCurrentTimeSec();
       const isPlaying = this.timebase.getIsPlaying();
       const playbackRate = this.timebase.getPlaybackRate();
+      const outputLatencySec = isPlaying ? Math.max(0, this.timebase.getOutputLatencySec?.() ?? 0) : 0;
+      const audibleT = Math.max(0, audioT - outputLatencySec * playbackRate);
 
-      let t = clampToLoop(audioT, this.state.loop);
+      let t = clampToLoop(audibleT, this.state.loop);
 
       // Enforce loop by seeking back to loop start.
       const loop = this.state.loop;

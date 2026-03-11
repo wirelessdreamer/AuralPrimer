@@ -8,6 +8,7 @@ class FakeTimebase implements TransportTimebase {
   private playing = false;
   private loop: { t0: number; t1: number } | undefined;
   private rate = 1;
+  private latencySec = 0;
 
   async load(_source: { blob: Blob; mime: string }): Promise<void> {
     this.t = 0;
@@ -56,6 +57,10 @@ class FakeTimebase implements TransportTimebase {
     return this.playing;
   }
 
+  getOutputLatencySec(): number | undefined {
+    return this.latencySec;
+  }
+
   dispose(): void {
     // nothing
   }
@@ -67,6 +72,10 @@ class FakeTimebase implements TransportTimebase {
     if (this.loop && this.t >= this.loop.t1) {
       this.t = this.loop.t0;
     }
+  }
+
+  setOutputLatencySec(latencySec: number) {
+    this.latencySec = Math.max(0, latencySec);
   }
 }
 
@@ -138,6 +147,21 @@ describe("TransportController", () => {
     expect(tb.getCurrentTimeSec()).toBe(1);
     expect(tc.getState().t).toBe(1);
 
+    tc.dispose();
+  });
+
+  it("compensates authoritative audio time by output latency scaled to media time", async () => {
+    const tb = new FakeTimebase();
+    const tc = new TransportController(tb);
+    await tc.loadAudio({ blob: new Blob([]), mime: "audio/ogg" });
+    tc.setPlaybackRate(1.5);
+    await tc.play();
+
+    tb.setOutputLatencySec(0.1);
+    tb.seek(5);
+    tc.tick(0.016);
+
+    expect(tc.getState().t).toBeCloseTo(4.85, 6);
     tc.dispose();
   });
 

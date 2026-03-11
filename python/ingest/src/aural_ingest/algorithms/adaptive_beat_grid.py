@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import statistics
 
 from aural_ingest.algorithms._common import (
+    CLASS_REFRACTORY_SEC,
     DrumCandidate,
     TranscriptionAlgorithm,
     adaptive_peak_pick,
@@ -26,9 +28,18 @@ class AdaptiveBeatGridAlgorithm(TranscriptionAlgorithm):
     name = "adaptive_beat_grid"
 
     def transcribe(self, stem_path: Path) -> list[DrumEvent]:
-        candidates = detect_candidates(stem_path)
+        candidates, kick_step = _detect_candidates_internal(stem_path)
         if candidates:
-            events = candidates_to_events(candidates, stem_path=stem_path)
+            refractory_overrides = None
+            if kick_step is not None:
+                refractory_overrides = {
+                    "kick": min(CLASS_REFRACTORY_SEC["kick"], max(0.055, kick_step * 0.82))
+                }
+            events = candidates_to_events(
+                candidates,
+                stem_path=stem_path,
+                refractory_overrides=refractory_overrides,
+            )
             if events:
                 return events
 
@@ -47,7 +58,6 @@ def _choose_grid_step(period_sec: float, onset_count: int, duration_sec: float, 
     beats = max(1.0, duration_sec / period_sec)
     density = onset_count / beats
 
-    # 1/16 grid when confident and onset density supports it, otherwise 1/8.
     if confidence >= 0.22 and density >= 1.7:
         return period_sec / 4.0
     return period_sec / 2.0
@@ -92,7 +102,52 @@ def _merge_supplemental_peaks(
     return sorted(merged.items())
 
 
-def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
+def _estimate_dense_kick_grid(
+    low_novelty: list[float],
+    *,
+    hop_sec: float,
+) -> tuple[float, float] | None:
+    low_peaks = adaptive_peak_pick(
+        low_novelty,
+        hop_sec=hop_sec,
+        k=1.65,
+        min_gap_sec=0.035,
+        window_sec=0.22,
+        percentile=0.72,
+    )
+    if len(low_peaks) < 12:
+        return None
+
+    times = [idx * hop_sec for idx, _strength in low_peaks]
+    intervals = [times[i + 1] - times[i] for i in range(len(times) - 1)]
+    filtered = [ival for ival in intervals if 0.05 <= ival <= 0.18]
+    if len(filtered) < 8:
+        return None
+
+    step = float(statistics.median(filtered))
+    close = [ival for ival in filtered if abs(ival - step) <= max(0.012, step * 0.18)]
+    if len(close) < max(10, int(len(filtered) * 0.88)):
+        return None
+
+    residues = sorted(t % step for t in times if t >= 0.0)
+    if not residues:
+        return None
+
+    best_anchor = residues[0]
+    best_cost = float("inf")
+    for candidate in residues:
+        cost = 0.0
+        for residue in residues:
+            delta = abs(residue - candidate)
+            cost += min(delta, step - delta)
+        if cost < best_cost:
+            best_cost = cost
+            best_anchor = candidate
+
+    return step, best_anchor
+
+
+def _detect_candidates_internal(stem_path: Path) -> tuple[list[DrumCandidate], float | None]:
     samples, sr = preprocess_audio(
         stem_path,
         target_sr=44_100,
@@ -100,7 +155,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         high_pass_hz=35.0,
     )
     if not samples or sr <= 0:
-        return []
+        return [], None
 
     hop = 384
     hop_sec = hop / float(sr)
@@ -115,7 +170,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         hop_size=hop,
     )
     if not env:
-        return []
+        return [], None
 
     low = normalize_series(env["low"])
     mid = normalize_series(env["mid"])
@@ -123,7 +178,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
 
     n = min(len(low), len(mid), len(high))
     if n < 3:
-        return []
+        return [], None
 
     low_n = normalize_series(onset_novelty(low))
     mid_n = normalize_series(onset_novelty(mid))
@@ -141,7 +196,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         percentile=0.85,
     )
     if not peaks:
-        return []
+        return [], None
 
     peaks = _merge_supplemental_peaks(
         peaks,
@@ -150,13 +205,13 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
             low_n,
             hop_sec=hop_sec,
             k=2.0,
-            min_gap_sec=0.06,
+            min_gap_sec=0.05,
             window_sec=0.34,
-            percentile=0.84,
+            percentile=0.82,
         ),
-        novelty_ratio=0.9,
-        min_strength=0.16,
-        min_gap_frames=max(2, int(round(0.05 / hop_sec))),
+        novelty_ratio=0.94,
+        min_strength=0.14,
+        min_gap_frames=max(1, int(round(0.04 / hop_sec))),
     )
     peaks = _merge_supplemental_peaks(
         peaks,
@@ -178,12 +233,14 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
     duration_sec = len(samples) / float(sr)
     step = _choose_grid_step(beat_period, len(peaks), duration_sec, beat_conf)
     tolerance = 0.045 if beat_conf < 0.22 else 0.03
+    dense_kick_grid = _estimate_dense_kick_grid(low_n, hop_sec=hop_sec)
+    kick_step = dense_kick_grid[0] if dense_kick_grid else None
+    kick_anchor = dense_kick_grid[1] if dense_kick_grid else 0.0
 
     candidates: list[DrumCandidate] = []
     for idx, strength in peaks:
         t_raw = frame_to_time(idx, hop, sr)
-        t = snap_time_to_grid(t_raw, anchor=0.0, step=step, tolerance=tolerance)
-        feat = timbral_features(samples, sr, t)
+        feat = timbral_features(samples, sr, t_raw)
         low_hit = _local_peak(low_n, idx, radius=1)
         mid_hit = _local_peak(mid_n, idx, radius=1)
         high_hit = _local_peak(high_n, idx, radius=1)
@@ -211,6 +268,11 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
             kick_score += 0.06
         if mid_hit > high_hit * 1.04 and snare_dom > 0.17:
             snare_score += 0.06
+        if kick_step is not None and low_hit >= 0.16 and low_dom >= 0.2:
+            nearest_grid = round((t_raw - kick_anchor) / kick_step)
+            grid_t = kick_anchor + (nearest_grid * kick_step)
+            if abs(t_raw - grid_t) <= max(0.018, kick_step * 0.28):
+                kick_score += 0.08
 
         drum_class, winner = max(
             (
@@ -227,13 +289,18 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                 hat_class = "hh_open"
             drum_class = hat_class
 
+        snapped_t = snap_time_to_grid(t_raw, anchor=0.0, step=step, tolerance=tolerance)
+        if drum_class == "kick" and kick_step is not None:
+            kick_tolerance = min(0.028, max(0.016, kick_step * 0.22))
+            snapped_t = snap_time_to_grid(t_raw, anchor=kick_anchor, step=kick_step, tolerance=kick_tolerance)
+
         confidence = clamp((strength * 0.6) + (winner * 0.4), 0.0, 1.0)
         if drum_class == "crash" and confidence < 0.74:
             drum_class = "hh_open"
 
         candidates.append(
             DrumCandidate(
-                time=t,
+                time=snapped_t,
                 drum_class=drum_class,
                 strength=float(strength),
                 confidence=confidence,
@@ -241,7 +308,11 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
             )
         )
 
-    return candidates
+    return candidates, kick_step
+
+
+def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
+    return _detect_candidates_internal(stem_path)[0]
 
 
 ALGORITHM = AdaptiveBeatGridAlgorithm()

@@ -670,7 +670,11 @@ def dedup_same_class(candidates: list[DrumCandidate], *, window_sec: float) -> l
     return sorted(out, key=lambda c: c.time)
 
 
-def enforce_refractory(candidates: list[DrumCandidate]) -> list[DrumCandidate]:
+def enforce_refractory(
+    candidates: list[DrumCandidate],
+    *,
+    refractory_overrides: Mapping[str, float] | None = None,
+) -> list[DrumCandidate]:
     if not candidates:
         return []
 
@@ -681,6 +685,8 @@ def enforce_refractory(candidates: list[DrumCandidate]) -> list[DrumCandidate]:
     out: list[DrumCandidate] = []
     for cls, group in by_class.items():
         refractory = CLASS_REFRACTORY_SEC.get(cls, 0.08)
+        if refractory_overrides and cls in refractory_overrides:
+            refractory = max(0.025, float(refractory_overrides[cls]))
         ordered = sorted(group, key=lambda c: c.time)
         kept: list[DrumCandidate] = []
         for cand in ordered:
@@ -769,7 +775,12 @@ def suppress_silent_candidates(candidates: list[DrumCandidate], stem_path: Path)
     return gated
 
 
-def candidates_to_events(candidates: list[DrumCandidate], *, stem_path: Path | None = None) -> list[DrumEvent]:
+def candidates_to_events(
+    candidates: list[DrumCandidate],
+    *,
+    stem_path: Path | None = None,
+    refractory_overrides: Mapping[str, float] | None = None,
+) -> list[DrumEvent]:
     if not candidates:
         return []
 
@@ -778,7 +789,7 @@ def candidates_to_events(candidates: list[DrumCandidate], *, stem_path: Path | N
         return []
 
     collapsed = dedup_same_class(gated, window_sec=0.03)
-    refractory = enforce_refractory(collapsed)
+    refractory = enforce_refractory(collapsed, refractory_overrides=refractory_overrides)
     if not refractory:
         return []
 

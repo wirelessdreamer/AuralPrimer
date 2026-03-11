@@ -906,6 +906,10 @@ const selectedSongPathEl = document.getElementById("selectedSongPath") as HTMLDi
 const refreshBtn = document.getElementById("refresh") as HTMLButtonElement;
 const playStartBtn = document.getElementById("playStart") as HTMLButtonElement;
 const pauseMenuOverlayEl = document.getElementById("pauseMenuOverlay") as HTMLDivElement;
+const pauseMenuKickerEl = pauseMenuOverlayEl.querySelector(".pauseMenuKicker") as HTMLDivElement;
+const pauseMenuTitleEl = document.getElementById("pauseMenuTitle") as HTMLHeadingElement;
+const pauseMenuCopyEl = document.getElementById("pauseMenuCopy") as HTMLParagraphElement;
+const pauseMenuHintEl = pauseMenuOverlayEl.querySelector(".pauseMenuHint") as HTMLDivElement;
 const pauseMenuResumeBtn = document.getElementById("pauseMenuResume") as HTMLButtonElement;
 const pauseMenuBackBtn = document.getElementById("pauseMenuBack") as HTMLButtonElement;
 const songsFolderInput = document.getElementById("songsFolder") as HTMLInputElement;
@@ -1083,6 +1087,7 @@ let selectedDrumChartSelection: DrumChartSelection | null = null;
 let selectedSongPackCharts: SongPackChartsByPath | null = null;
 let pauseMenuOpen = false;
 let pauseMenuRestoreFocusEl: HTMLElement | null = null;
+let pauseMenuMode: "paused" | "loaded" = "paused";
 let selectedSongPreloadPromise: Promise<void> | null = null;
 let selectedSongPreloadPath: string | null = null;
 
@@ -1194,9 +1199,28 @@ function isPauseMenuVisible(): boolean {
   return pauseMenuOpen || pauseMenuOverlayEl.classList.contains("isVisible") || !pauseMenuOverlayEl.hidden;
 }
 
+function setPauseMenuMode(mode: "paused" | "loaded") {
+  pauseMenuMode = mode;
+  if (mode === "paused") {
+    pauseMenuKickerEl.textContent = "Paused";
+    pauseMenuTitleEl.textContent = "Pause Menu";
+    pauseMenuCopyEl.textContent = "Keep your place and resume, or head back to song selection.";
+    pauseMenuResumeBtn.textContent = "Resume";
+    pauseMenuHintEl.textContent = "Press Esc again to resume instantly.";
+    return;
+  }
+
+  pauseMenuKickerEl.textContent = "Song Ready";
+  pauseMenuTitleEl.textContent = "Back Out?";
+  pauseMenuCopyEl.textContent = "This song is loaded. Stay here, or head back to song selection.";
+  pauseMenuResumeBtn.textContent = "Stay Here";
+  pauseMenuHintEl.textContent = "Press Esc again to close this prompt.";
+}
+
 function closePauseMenu(opts?: { restoreFocus?: boolean }) {
   const wasVisible = isPauseMenuVisible();
   pauseMenuOpen = false;
+  pauseMenuMode = "paused";
   pauseMenuOverlayEl.classList.remove("isVisible");
   pauseMenuOverlayEl.hidden = true;
   pauseMenuOverlayEl.setAttribute("aria-hidden", "true");
@@ -1215,8 +1239,9 @@ function closePauseMenu(opts?: { restoreFocus?: boolean }) {
   }
 }
 
-function showPauseMenu() {
+function showPauseMenu(mode: "paused" | "loaded" = "paused") {
   if (isPauseMenuVisible()) return;
+  setPauseMenuMode(mode);
   pauseMenuOpen = true;
   pauseMenuRestoreFocusEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   pauseMenuOverlayEl.hidden = false;
@@ -1232,11 +1257,16 @@ function pauseForPauseMenu() {
   transport = transportController.getState();
   void midiOutStop();
   setAudioStatus("paused");
-  showPauseMenu();
+  showPauseMenu("paused");
 }
 
 async function resumeFromPauseMenu() {
+  const mode = pauseMenuMode;
   closePauseMenu({ restoreFocus: false });
+  if (mode === "loaded") {
+    logConsole("gamestate", "pause menu -> close loaded-song prompt");
+    return;
+  }
   if (!selectedSongPackPath || lastLoadedSongPackPath !== selectedSongPackPath) {
     setAudioStatus("pause menu closed");
     logConsole("gamestate", "pause menu -> close without resume");
@@ -1277,6 +1307,10 @@ function showSongLibraryStep() {
   } catch {
     // ignore
   }
+}
+
+function canOpenLoadedSongBackOutPrompt(): boolean {
+  return currentRoute === "play" && Boolean(selectedSongPackPath) && lastLoadedSongPackPath === selectedSongPackPath;
 }
 
 function showBandSetupStep() {
@@ -3180,10 +3214,15 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (currentRoute !== "play") return;
-  if (!transportController.getState().isPlaying) return;
+  if (transportController.getState().isPlaying) {
+    ev.preventDefault();
+    pauseForPauseMenu();
+    return;
+  }
+  if (!canOpenLoadedSongBackOutPrompt()) return;
 
   ev.preventDefault();
-  pauseForPauseMenu();
+  showPauseMenu("loaded");
 });
 
 audioSeekGoBtn.addEventListener("click", () => {

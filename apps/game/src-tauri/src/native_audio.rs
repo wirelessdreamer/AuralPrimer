@@ -130,6 +130,15 @@ impl EngineSnapshot {
     }
 }
 
+fn sync_transport_to_source_cursor(runtime: &mut EngineRuntimeState) {
+    let frame = if runtime.source_frame_cursor.is_finite() && runtime.source_frame_cursor > 0.0 {
+        runtime.source_frame_cursor.floor() as u64
+    } else {
+        0
+    };
+    runtime.transport.seek_frames(frame);
+}
+
 fn trim_non_empty(s: &str) -> Option<&str> {
     let t = s.trim();
     if t.is_empty() {
@@ -966,8 +975,8 @@ fn process_audio_callback_f32(
     let callback_t0 = Instant::now();
 
     drain_engine_commands(runtime, commands, engine_channels);
-    let rendered_frames = render_output_block(runtime, out, engine_channels);
-    runtime.transport.advance_frames(rendered_frames);
+    render_output_block(runtime, out, engine_channels);
+    sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);
 
     update_callback_telemetry(snapshot, callback_t0, out.len() / engine_channels, sample_rate_hz);
@@ -1372,6 +1381,30 @@ mod tests {
         approx_eq(out[1], -1000.0 / i16::MAX as f32);
         approx_eq(out[2], 3000.0 / i16::MAX as f32);
         approx_eq(out[3], -3000.0 / i16::MAX as f32);
+    }
+
+    #[test]
+    fn process_audio_callback_tracks_source_position_at_playback_rate() {
+        let mut st = mk_runtime(48_000);
+        st.wav = Some(mono(&[
+            100, // frame 0
+            200, // frame 1
+            300, // frame 2
+            400, // frame 3
+            500, // frame 4
+        ]));
+        st.is_playing = true;
+        st.transport.set_playing(true);
+        st.playback_rate = 2.0;
+        let snapshot = EngineSnapshot::default();
+        let (_producer, mut consumer) = RingBuffer::<EngineCommand>::new(8);
+        let mut out = vec![0.0f32; 2];
+
+        process_audio_callback_f32(&mut st, &mut consumer, &snapshot, &mut out, 1, 48_000);
+
+        assert_eq!(st.source_frame_cursor, 4.0);
+        assert_eq!(st.transport.position_frames(), 4);
+        assert_eq!(snapshot.position_frames.load(Ordering::Relaxed), 4);
     }
 
     #[test]

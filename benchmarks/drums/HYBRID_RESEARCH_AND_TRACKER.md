@@ -59,6 +59,30 @@ Prototype `beat_conditioned_multiband_decoder` result:
 
 This clears the current `adaptive_beat_grid` baseline on `overall`, `kick`, `snare`, and `hi-hat` while staying within the timing budget. The largest visible win is that `hi_hat -> snare` collapses from `149` to `6`, though `hi_hat -> kick` is still too high and some extra `snare -> kick` / `snare -> hi_hat` confusion remains.
 
+Adaptive kick-grid refinement:
+
+- [runs/20260311_134907_adaptive-double-bass-fix-v2/report.md](runs/20260311_134907_adaptive-double-bass-fix-v2/report.md)
+- [runs/20260311_134907_adaptive-double-bass-fix-v2/report.html](runs/20260311_134907_adaptive-double-bass-fix-v2/report.html)
+- [runs/20260311_134907_adaptive-double-bass-fix-v2/kick_f1_heatmap.svg](runs/20260311_134907_adaptive-double-bass-fix-v2/kick_f1_heatmap.svg)
+
+Retained `adaptive_beat_grid` update:
+
+- Keep raw onset-time features instead of measuring timbre after an incorrect grid snap.
+- Detect an explicit dense kick sub-grid from consistent low-band pulse intervals.
+- Use that denser grid and a shorter kick-only refractory only when the low-band pulse is highly regular.
+
+Measured effect versus the older stored adaptive baseline:
+
+| Algorithm | Mean Overall F1 | Mean Kick F1 | Mean Snare F1 | Mean Hi-Hat F1 | Mean Timing MAE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| older `adaptive_beat_grid` baseline | 0.234 | 0.406 | 0.266 | 0.018 | 26.4 ms |
+| refined `adaptive_beat_grid` | 0.274 | 0.449 | 0.212 | 0.104 | 25.7 ms |
+
+Important tradeoff:
+
+- This is a real improvement for `kick`, especially the `05_metal_double_bass_190` case, where overall F1 moved from `0.350` to `0.516`.
+- The refinement gives back some mean `snare` compared with the older baseline, so it should be treated as a kick-focused improvement, not a universal adaptive win.
+
 ## Current Retry Status
 
 Latest retained retry:
