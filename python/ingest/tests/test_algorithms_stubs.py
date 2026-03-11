@@ -155,6 +155,7 @@ def test_algorithm_classes_expose_contract() -> None:
         dsp_bandpass_improved,
         dsp_spectral_flux,
         librosa_superflux,
+        spectral_flux_multiband,
     )
 
     modules = [
@@ -166,6 +167,7 @@ def test_algorithm_classes_expose_contract() -> None:
         dsp_bandpass_improved,
         dsp_spectral_flux,
         librosa_superflux,
+        spectral_flux_multiband,
     ]
     for mod in modules:
         assert hasattr(mod, "ALGORITHM")
@@ -332,3 +334,43 @@ def test_melodic_basic_pitch_uses_model_gate_and_generates_poly_notes(tmp_path: 
     assert notes
     pitches = {n.pitch for n in notes}
     assert any(p + 7 in pitches for p in pitches if p + 7 <= 108)
+
+
+def test_spectral_flux_multiband_emits_simultaneous_hits(tmp_path: Path) -> None:
+    """The key structural improvement: kick + hat events within 50ms of each other."""
+    from aural_ingest.algorithms import spectral_flux_multiband
+
+    stem = tmp_path / "drums.wav"
+    _write_drum_rebuild_fixture(stem)
+
+    events = spectral_flux_multiband.transcribe(stem)
+    assert events
+
+    kick_times = [e.time for e in events if e.note == 36]
+    hat_times = [e.time for e in events if e.note in (42, 46)]
+
+    # In the rebuild fixture, kicks and hats play simultaneously on every beat.
+    # There should be at least one pair within 50ms.
+    simultaneous = 0
+    for kt in kick_times:
+        for ht in hat_times:
+            if abs(kt - ht) <= 0.050:
+                simultaneous += 1
+                break
+
+    assert simultaneous >= 1, f"expected simultaneous kick+hat events, got {simultaneous}"
+
+
+def test_spectral_flux_multiband_detects_hihats_in_rebuild_fixture(tmp_path: Path) -> None:
+    """Hi-hat detection is the weakest lane in existing algorithms. Verify non-zero."""
+    from aural_ingest.algorithms import spectral_flux_multiband
+
+    stem = tmp_path / "drums.wav"
+    _write_drum_rebuild_fixture(stem)
+
+    events = spectral_flux_multiband.transcribe(stem)
+    assert events
+
+    hat_events = [e for e in events if e.note in (42, 46)]
+    assert len(hat_events) >= 2, f"expected hi-hat events, got {len(hat_events)}"
+
