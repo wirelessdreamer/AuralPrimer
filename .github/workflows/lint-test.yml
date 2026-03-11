@@ -29,8 +29,11 @@ jobs:
       - name: TS lint
         run: npm run lint --if-present
 
-      - name: TS tests
-        run: npm test --if-present
+      - name: Playback Coverage Gate (100%)
+        run: npm run test:coverage:playback --if-present
+
+      - name: TS tests + coverage
+        run: npm run test:coverage --if-present
 
       # Python (ingest pipeline)
       - uses: actions/setup-python@v5
@@ -62,6 +65,19 @@ jobs:
             cargo fmt --all -- --check
             cargo clippy --all-targets --all-features -- -D warnings
             cargo test --all
+          else
+            echo "No Rust crate yet; skipping"
+          fi
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Rust coverage
+        run: |
+          if [ -f apps/desktop/src-tauri/Cargo.toml ]; then
+            cd apps/desktop/src-tauri
+            cargo llvm-cov --workspace --all-features --lcov --output-path target/coverage/lcov.info --fail-under-lines 75
           else
             echo "No Rust crate yet; skipping"
           fi

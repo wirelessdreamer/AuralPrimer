@@ -90,4 +90,3 @@ fn raw_song_importer_writes_songpack_artifacts() {
     assert_eq!(res.midi_files_count, 2);
     assert!(res.lyrics_included);
 }
-

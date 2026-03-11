@@ -6,8 +6,8 @@ This repo targets **Windows + Linux**.
 - Node.js (current repo uses Node v24)
 - npm (repo uses npm workspaces)
 
-## Rust (Tauri host)
-Tauri uses Rust for the desktop host backend.
+## Rust (Tauri hosts)
+Tauri uses Rust for both desktop host backends (AuralPrimer + AuralStudio).
 
 Install via rustup:
 ```bash
@@ -40,7 +40,7 @@ If you cannot install system packages (no sudo), you can still:
 - develop/run the **TypeScript** packages (`npm test`)
 - develop/run the **Python** pipeline
 
-…but you won’t be able to compile/run the Tauri desktop host locally.
+…but you won’t be able to compile/run the Tauri desktop hosts locally.
 
 ## Python (ingest pipeline)
 - Python 3.11+

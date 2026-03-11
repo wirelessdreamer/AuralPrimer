@@ -1,0 +1,25 @@
+{
+  "name": "@auralprimer/game",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "tauri:dev": "tauri dev",
+    "tauri:dev:asio": "tauri dev --features asio",
+    "tauri:build": "tauri build",
+    "tauri:build:asio": "tauri build --features asio"
+  },
+  "dependencies": {
+    "@auralprimer/viz-beats": "*",
+    "@auralprimer/viz-drum-highway": "*",
+    "@auralprimer/viz-fretboard": "*",
+    "@auralprimer/viz-lyrics": "*",
+    "@auralprimer/viz-nashville": "*",
+    "@auralprimer/viz-sdk": "*",
+    "@tauri-apps/plugin-dialog": "^2.4.2"
+  }
+}

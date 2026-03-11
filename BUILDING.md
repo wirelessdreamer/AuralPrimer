@@ -1,4 +1,4 @@
-# Building AuralPrimer (Desktop)
+# Building AuralPrimer + AuralStudio
 
 This repo uses **npm workspaces** + **Tauri**.
 
@@ -26,16 +26,19 @@ You need MSVC + Windows SDK. Easiest path:
 Also ensure:
 - **WebView2 Runtime** is installed (typically already present on Windows 10/11)
 
-### Important: don’t copy `node_modules` across OS/filesystems
-If you moved the repo from WSL/Linux to Windows, **delete and reinstall** Node deps on Windows:
+### Optional: ASIO host support (Studio app)
+ASIO is opt-in because CPAL's ASIO backend requires the Steinberg ASIO SDK.
 
-```bat
-rmdir /s /q node_modules
-del /f /q package-lock.json
-npm install
+1. Download/extract the ASIO SDK locally.
+2. Set `CPAL_ASIO_DIR` to that SDK root in your shell.
+3. Run one of:
+
+```powershell
+npm run studio:dev:asio
+npm run studio:build:asio
 ```
 
-(This avoids common optional-dependency and `.bin` shim issues.)
+Without `--features asio`, the app still works with the default host stack (e.g. WASAPI).
 
 ### Linux system deps (if building on Linux)
 See `docs/local-dev-prereqs.md`.
@@ -67,58 +70,89 @@ npm ci
 npm test
 ```
 
-## 4) Run the desktop app (dev)
+## 4) Run apps (dev)
 
 From repo root:
 
 ```bash
-npm run desktop:dev
+npm run game:dev
+npm run studio:dev
 ```
 
-This runs `tauri dev`, which starts Vite and the Rust backend.
+Each command runs `tauri dev`, which starts Vite and the Rust backend.
 
-## 5) Build a release artifact (what you can “test”)
+## 5) Build release artifacts
 
-### Important (Windows users): don’t run `tauri build` from WSL
-If you run the build inside **WSL (Ubuntu)**, you are building a **Linux** binary and it will require Linux GTK/WebKit deps (via `pkg-config`).
-
-The error you pasted (`pkg-config ... gdk-sys ... pango`) indicates you are building inside Linux/WSL.
-
-**To build a Windows installer (`.msi`)**:
-- open **PowerShell** (or `cmd.exe`) on Windows (not WSL)
-- run the commands from the repo root on the Windows filesystem
-
-If you *do* want to build the Linux app in WSL, install the deps from `docs/local-dev-prereqs.md` (at minimum `pkg-config`, `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`).
+### Important (Windows users): do not run `tauri build` from WSL
+If you run the build inside WSL/Linux, you are building a Linux binary and it will require Linux GTK/WebKit deps.
 
 From repo root:
 
 ```bash
-npm run desktop:build
+npm run game:build
+npm run studio:build
 ```
 
-### Where the build output goes
-Tauri outputs platform-specific artifacts under:
+### Where output goes
+- Game bundle: `apps/game/src-tauri/target/release/bundle/`
+- Studio bundle: `apps/desktop/src-tauri/target/release/bundle/`
 
-- `apps/desktop/src-tauri/target/release/bundle/`
-
-Typical outputs:
-- Linux: `*.AppImage`, `*.deb` (depending on system tooling)
-- Windows: `*.msi` / installer bundle
-
-If you only want to confirm the web UI builds:
+If you only want frontend builds:
 
 ```bash
-npm run desktop:build:frontend
+npm run game:build:frontend
+npm run studio:build:frontend
 ```
 
-## 6) Smoke-testing the build
+## 6) Build portable folder (with sidecar freshness guard)
 
-1. Run `npm run desktop:build`
-2. Install/run the produced artifact from `apps/desktop/src-tauri/target/release/bundle/`
-3. Put a fixture SongPack into the app’s songs folder (the UI shows the default folder path):
-   - `assets/test_fixtures/songpacks/minimal_valid.songpack` (directory SongPack)
-4. Launch the app → Refresh → Details → Load audio → Play.
+From repo root (PowerShell):
+
+```powershell
+npm run portable:build
+```
+
+What this does:
+- builds game + studio releases (unless `-SkipDesktopBuild`, or individually via `-SkipGameBuild` / `-SkipStudioBuild`)
+- builds/copies `aural_ingest.exe` into `dist/sidecar/`
+- stages portable output under `D:\AuralPrimer\AuralPrimerPortable\`
+- writes two launchers:
+  - `AuralPrimer.exe` (game / play songs)
+  - `AuralStudio.exe` (content creation)
+- stages `demucs_6.zip` into `D:\AuralPrimer\AuralPrimerPortable\modelpacks\demucs_6.zip`
+  - default lookup order:
+    - `dist/modelpacks/demucs_6.zip`
+    - `assets/modelpacks/demucs_6.zip`
+    - `modelpacks/demucs_6.zip`
+    - `demucs_6.zip` (repo root)
+  - packaging fails if `modelpack.json` is missing/invalid, if `id != demucs_6`, or if required stems (`keys, drums, guitar, bass, vocals`) are not declared
+- fails if portable sidecar hash/timestamp do not match the fresh sidecar
+- writes:
+  - `dist/sidecar/build_manifest.json`
+  - `D:\AuralPrimer\AuralPrimerPortable\portable_manifest.json`
+
+Useful flags:
+
+```powershell
+# Reuse existing app binaries + existing sidecar
+powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -SkipDesktopBuild -SkipSidecarBuild -GameExePath C:\path\to\AuralPrimer.exe -StudioExePath C:\path\to\AuralStudio.exe -SidecarSourceExePath C:\path\to\aural_ingest.exe
+
+# Provide explicit demucs_6 modelpack location
+powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -Demucs6ModelPackZipPath C:\path\to\demucs_6.zip
+
+# Also create zip output
+powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -ZipOutput
+```
+
+## 7) Smoke test
+
+1. Build one app (`game:build` or `studio:build`).
+2. Launch the built app from its bundle folder.
+3. Put a fixture SongPack into the songs folder.
+4. In AuralPrimer (game), refresh library, load song, and play.
+5. In AuralStudio, verify import/creation tools and generated SongPacks.
 
 ## Notes
-- **Bundled visualizers** (resources) live under the Tauri resource dir at runtime. User visualizers are under the app data dir.
-- If you can’t install system packages (no sudo), you can still run `npm test` and build the frontend, but you won’t be able to compile/run Tauri locally.
+- Bundled visualizers live under Tauri resources at runtime.
+- User visualizers are under app data directory.
+- If you cannot install system packages (no sudo), you can still run `npm test` and frontend builds, but not Tauri compile/run.

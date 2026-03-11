@@ -60,10 +60,14 @@ PR expectations:
 - timestamps compared within tolerances (e.g., ±10ms for beats)
 - sections compared by overlap metrics
 - event lists compared for monotonic ordering and density constraints
+- drum transcription should also run a lane-normalized benchmark:
+  - compare against curated JSON or MIDI references
+  - use one-to-one event matching within tolerance (default `60 ms`)
+  - track per-lane precision / recall / F1 plus confusion pairs, especially for snare
 
 ---
 ### 4) Host + plugin contract tests (fast)
-**Where**: `apps/desktop` and `packages/viz-sdk`
+**Where**: `apps/game` and `packages/viz-sdk`
 
 **What to test**
 - plugin loader:
@@ -77,8 +81,8 @@ PR expectations:
 ---
 ### 5) End-to-end tests (slow, nightly)
 **Flow**
-1. Run ingest on fixture audio → produce SongPack.
-2. Launch desktop app in headless mode (or minimal UI harness).
+1. Run ingest on fixture audio in AuralStudio -> produce SongPack.
+2. Launch AuralPrimer in headless mode (or minimal UI harness).
 3. Load SongPack.
 4. Load a reference plugin.
 5. Run playback for N seconds and verify:

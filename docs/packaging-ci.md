@@ -15,10 +15,14 @@ Instead, everything else needed for local processing is **bundled** into the shi
 ---
 ## Packaging overview
 
-### Desktop host: Tauri
-Use Tauri packaging per OS:
+### Desktop hosts: Tauri
+Use Tauri packaging per OS for both apps:
 - Windows: MSI / NSIS
 - Linux: AppImage + (optional) deb/rpm
+
+Host roles:
+- `AuralPrimer`: gameplay runtime
+- `AuralStudio`: import/song-creation runtime
 
 ### Python tools: sidecar executables
 Build OS-specific executables from `python/ingest`.
@@ -42,12 +46,18 @@ Recommended: bundle ffmpeg and document license obligations.
 ---
 ## Sidecar invocation contract
 
-Host calls sidecars via absolute paths from app resources.
+AuralStudio calls sidecars via absolute paths from app resources.
 
 - `aural_ingest` is invoked with args and emits JSONL progress.
 - Sidecar reads/writes only within a provided `--out` directory.
 
 This containment helps security and makes sandboxing easier.
+
+### Portable build guard (Windows recovery)
+- `build_sidecar.ps1` writes `dist/sidecar/build_manifest.json` with sidecar hash/timestamp.
+- `create_portable.ps1` stages `D:\AuralPrimer\AuralPrimerPortable\` with both `AuralPrimer.exe` and `AuralStudio.exe`.
+- The script fails if copied sidecar hash/timestamp checks do not match the just-built sidecar.
+- This prevents shipping stale sidecar binaries in portable artifacts.
 
 ---
 ## Assets and model management
@@ -94,8 +104,8 @@ This containment helps security and makes sandboxing easier.
 - assert beats/sections stable within tolerance
 
 ### End-to-end
-- import fixture audio → produce SongPack
-- host loads SongPack and runs visualizer smoke test
+- AuralStudio imports fixture audio -> produce SongPack
+- AuralPrimer loads SongPack and runs visualizer smoke test
 
 ---
 ## License compliance
