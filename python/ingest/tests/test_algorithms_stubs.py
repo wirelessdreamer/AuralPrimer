@@ -107,6 +107,44 @@ def _write_sine_wav(path: Path, sr: int = 48_000, freq_hz: float = 440.0, durati
             w.writeframesraw(struct.pack("<h", v))
 
 
+def _write_double_bass_fixture(path: Path, sr: int = 48_000, duration_sec: float = 4.0) -> None:
+    n = int(sr * duration_sec)
+    y = [0.0 for _ in range(n)]
+    rng = random.Random(2222)
+
+    kick_step = int((60.0 / 190.0 / 4.0) * sr)
+    snare_step = int((60.0 / 190.0 * 2.0) * sr)
+
+    for t0 in range(0, n, kick_step):
+        for i in range(int(0.055 * sr)):
+            idx = t0 + i
+            if idx >= n:
+                break
+            env = math.exp(-7.0 * (i / max(1, int(0.055 * sr))))
+            y[idx] += 0.9 * math.sin(2.0 * math.pi * 62.0 * (i / sr)) * env
+
+    for beat_idx, t0 in enumerate(range(snare_step, n, snare_step)):
+        if beat_idx % 2 != 0:
+            continue
+        for i in range(int(0.04 * sr)):
+            idx = t0 + i
+            if idx >= n:
+                break
+            env = math.exp(-12.0 * (i / max(1, int(0.04 * sr))))
+            y[idx] += (rng.uniform(-1.0, 1.0) * 0.5 + math.sin(2.0 * math.pi * 2100.0 * (i / sr)) * 0.18) * env
+
+    peak = max((abs(v) for v in y), default=1.0)
+    if peak > 0.0:
+        y = [max(-1.0, min(1.0, (v / peak) * 0.95)) for v in y]
+
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        for s in y:
+            w.writeframesraw(struct.pack("<h", int(s * 32767.0)))
+
+
 def test_algorithm_classes_expose_contract() -> None:
     from aural_ingest.algorithms import (
         adaptive_beat_grid,
@@ -234,6 +272,21 @@ def test_hybrid_secondary_core_emission_stays_strict() -> None:
         sharp=0.31,
         zcr=0.14,
     )
+
+
+def test_adaptive_beat_grid_keeps_dense_double_bass_kicks(tmp_path: Path) -> None:
+    from aural_ingest.algorithms import adaptive_beat_grid
+
+    stem = tmp_path / "double_bass.wav"
+    _write_double_bass_fixture(stem)
+
+    events = adaptive_beat_grid.transcribe(stem)
+    kick_times = [e.time for e in events if e.note == 36]
+
+    assert len(kick_times) >= 32
+    intervals = [kick_times[i + 1] - kick_times[i] for i in range(len(kick_times) - 1)]
+    assert intervals
+    assert min(intervals) < 0.09
 
 
 def test_default_registry_contains_all_expected_algorithms() -> None:
