@@ -1404,7 +1404,6 @@ def cmd_import(args: argparse.Namespace) -> int:
         bpm = _estimate_bpm_from_wav(dst_wav)
 
     beats = {"beats_version": "1.0.0", "beats": _generate_beats(duration_sec, bpm)}
-    tempo = {"tempo_version": "1.0.0", "segments": [{"t0": 0.0, "bpm": bpm, "time_signature": "4/4"}]}
     emit(
         ProgressEvent(
             type="stage_done",
