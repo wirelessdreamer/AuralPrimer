@@ -944,3 +944,247 @@ def extract_melodic_notes_mono(
         flush(frames[-1][0] + (hop / float(sr)))
 
     return out
+
+
+# ---------------------------------------------------------------------------
+# Extended DSP utilities for spectral-flux multiband algorithm
+# ---------------------------------------------------------------------------
+
+
+def _hann_window(length: int) -> list[float]:
+    """Generate a Hann window of the given length."""
+    if length <= 0:
+        return []
+    if length == 1:
+        return [1.0]
+    return [0.5 * (1.0 - math.cos(2.0 * math.pi * i / (length - 1))) for i in range(length)]
+
+
+def stft_magnitude_frames(
+    samples: list[float],
+    sr: int,
+    *,
+    frame_size: int = 1024,
+    hop_size: int = 256,
+) -> tuple[list[list[float]], int]:
+    """Compute magnitude STFT frames using a pure-Python DFT.
+
+    Returns (frames, num_bins) where each frame is a list of magnitude values
+    for the positive-frequency bins (0 ... frame_size//2).
+    """
+    if not samples or sr <= 0 or frame_size <= 0 or hop_size <= 0:
+        return [], 0
+
+    n_bins = frame_size // 2 + 1
+    window = _hann_window(frame_size)
+    n_samples = len(samples)
+    frames: list[list[float]] = []
+
+    pos = 0
+    while pos + frame_size <= n_samples:
+        seg = samples[pos : pos + frame_size]
+        # Apply window
+        windowed = [seg[i] * window[i] for i in range(frame_size)]
+
+        # DFT for positive frequencies only
+        mag = [0.0] * n_bins
+        for k in range(n_bins):
+            re = 0.0
+            im = 0.0
+            freq = -2.0 * math.pi * k / frame_size
+            for i_sample, val in enumerate(windowed):
+                angle = freq * i_sample
+                re += val * math.cos(angle)
+                im += val * math.sin(angle)
+            mag[k] = math.sqrt(re * re + im * im)
+
+        frames.append(mag)
+        pos += hop_size
+
+    return frames, n_bins
+
+
+def spectral_flux_series(
+    stft_frames: list[list[float]],
+    sr: int,
+    hop_size: int,
+    band_hz: tuple[float, float],
+    frame_size: int = 1024,
+) -> list[float]:
+    """Compute half-wave-rectified spectral flux for a specific frequency band.
+
+    Only counts *increases* in magnitude (onset-sensitive).
+    """
+    if not stft_frames or sr <= 0 or hop_size <= 0 or frame_size <= 0:
+        return []
+
+    n_bins = frame_size // 2 + 1
+    bin_hz = sr / float(frame_size)
+    low_bin = max(0, int(math.floor(band_hz[0] / bin_hz)))
+    high_bin = min(n_bins, int(math.ceil(band_hz[1] / bin_hz)) + 1)
+    if high_bin <= low_bin:
+        return [0.0] * len(stft_frames)
+
+    out = [0.0]
+    for i in range(1, len(stft_frames)):
+        flux = 0.0
+        prev = stft_frames[i - 1]
+        cur = stft_frames[i]
+        for k in range(low_bin, high_bin):
+            diff = cur[k] - prev[k]
+            if diff > 0.0:
+                flux += diff * diff
+        out.append(math.sqrt(flux) if flux > 0.0 else 0.0)
+
+    return out
+
+
+def high_decay_fine(
+    samples: list[float],
+    sr: int,
+    time_sec: float,
+    *,
+    high_hz: tuple[float, float] = (5500.0, 12000.0),
+) -> tuple[float, float, float]:
+    """Measure high-frequency RMS in three micro-windows: 0-5ms, 5-15ms, 15-30ms.
+
+    Returns (rms_0_5, rms_5_15, rms_15_30) allowing fine-grained decay analysis.
+    Hi-hats decay much faster than snare high-frequency components.
+    """
+    start = max(0, int(time_sec * sr))
+    windows_ms = [(0, 5), (5, 15), (15, 30)]
+    result: list[float] = []
+
+    for ms_start, ms_end in windows_ms:
+        w_start = start + int(ms_start * sr / 1000.0)
+        w_end = start + int(ms_end * sr / 1000.0)
+        w_end = min(w_end, len(samples))
+        if w_end <= w_start:
+            result.append(0.0)
+            continue
+        seg = samples[w_start:w_end]
+        band = band_pass_one_pole(seg, sr, high_hz[0], high_hz[1])
+        if not band:
+            result.append(0.0)
+            continue
+        result.append(math.sqrt(sum(x * x for x in band) / float(len(band))))
+
+    return result[0], result[1], result[2]
+
+
+def centroid_trajectory(
+    samples: list[float],
+    sr: int,
+    time_sec: float,
+    *,
+    offsets_ms: tuple[float, ...] = (0.0, 10.0, 25.0),
+    window_ms: float = 8.0,
+) -> list[float]:
+    """Measure spectral centroid at multiple time offsets from an onset.
+
+    Returns a list of centroid values (in Hz). Hi-hats show rapidly falling
+    centroid; snares maintain or increase centroid.
+    """
+    centroids: list[float] = []
+    win_samples = max(32, int(window_ms * sr / 1000.0))
+
+    for offset in offsets_ms:
+        start = max(0, int((time_sec + offset / 1000.0) * sr))
+        end = min(len(samples), start + win_samples)
+        if end <= start:
+            centroids.append(0.0)
+            continue
+
+        seg = samples[start:end]
+        # Simple band-energy centroid using 5 bands
+        bands_list = [
+            (90.0, _band_rms(seg, sr, 35.0, 160.0)),
+            (900.0, _band_rms(seg, sr, 160.0, 2400.0)),
+            (3000.0, _band_rms(seg, sr, 2000.0, 4000.0)),
+            (8000.0, _band_rms(seg, sr, 5500.0, 12000.0)),
+            (11000.0, _band_rms(seg, sr, 6000.0, 15000.0)),
+        ]
+        total = sum(rms for _, rms in bands_list)
+        if total < 1e-9:
+            centroids.append(0.0)
+            continue
+        centroids.append(sum(freq * rms for freq, rms in bands_list) / total)
+
+    return centroids
+
+
+def micro_nmf(
+    magnitude_window: list[list[float]],
+    templates: list[list[float]],
+    *,
+    n_iter: int = 20,
+    eps: float = 1e-9,
+) -> list[float]:
+    """Solve a small NMF: V ~ W*H with W fixed (templates), H free.
+
+    magnitude_window: list of frames, each a list of magnitude bins (F x T).
+    templates: list of spectral templates, each a list of magnitude bins (K x F).
+
+    Returns activations: total activation per template (length K), suitable for
+    thresholding to decide which drum classes are present.
+
+    Uses multiplicative update rules with W fixed. Pure Python, no numpy.
+    """
+    if not magnitude_window or not templates:
+        return [0.0] * len(templates)
+
+    n_freq = len(templates[0])
+    n_time = len(magnitude_window)
+    n_templates = len(templates)
+
+    # Build V matrix (freq x time)
+    v: list[list[float]] = []
+    for f in range(n_freq):
+        row = []
+        for t in range(n_time):
+            val = magnitude_window[t][f] if f < len(magnitude_window[t]) else 0.0
+            row.append(max(val, eps))
+        v.append(row)
+
+    # W matrix (freq x templates) -- fixed
+    w: list[list[float]] = []
+    for f in range(n_freq):
+        row = []
+        for k in range(n_templates):
+            val = templates[k][f] if f < len(templates[k]) else eps
+            row.append(max(val, eps))
+        w.append(row)
+
+    # H matrix (templates x time) -- initialized uniform
+    h: list[list[float]] = []
+    for k in range(n_templates):
+        h.append([1.0 / n_templates] * n_time)
+
+    # Multiplicative updates for H with W fixed
+    for _ in range(n_iter):
+        # Compute W*H (freq x time)
+        wh: list[list[float]] = []
+        for f in range(n_freq):
+            row = []
+            for t in range(n_time):
+                val = eps
+                for k in range(n_templates):
+                    val += w[f][k] * h[k][t]
+                row.append(val)
+            wh.append(row)
+
+        # Update H: H *= (W^T * (V / WH)) / (sum_f W)
+        for k in range(n_templates):
+            w_col_sum = sum(w[f][k] for f in range(n_freq))
+            if w_col_sum < eps:
+                continue
+            for t in range(n_time):
+                numerator = 0.0
+                for f in range(n_freq):
+                    numerator += w[f][k] * (v[f][t] / max(wh[f][t], eps))
+                h[k][t] = max(eps, h[k][t] * numerator / w_col_sum)
+
+    # Total activation per template
+    activations = [sum(h[k]) for k in range(n_templates)]
+    return activations
+

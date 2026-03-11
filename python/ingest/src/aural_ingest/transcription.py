@@ -12,6 +12,7 @@ KNOWN_DRUM_FILTERS: tuple[str, ...] = (
     "aural_onset",
     "adaptive_beat_grid",
     "beat_conditioned_multiband_decoder",
+    "spectral_flux_multiband",
     "dsp_bandpass",
     "librosa_superflux",
 )
@@ -71,6 +72,7 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         dsp_bandpass_improved,
         dsp_spectral_flux,
         librosa_superflux,
+        spectral_flux_multiband,
     )
 
     return {
@@ -80,6 +82,7 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         "aural_onset": aural_onset.transcribe,
         "adaptive_beat_grid": adaptive_beat_grid.transcribe,
         "beat_conditioned_multiband_decoder": beat_conditioned_multiband_decoder.transcribe,
+        "spectral_flux_multiband": spectral_flux_multiband.transcribe,
         "dsp_bandpass": dsp_bandpass.transcribe,
         "librosa_superflux": librosa_superflux.transcribe,
     }
@@ -196,6 +199,18 @@ def drum_fallback_chain(requested_filter: str | None) -> list[str]:
         ]
     elif normalized == "beat_conditioned_multiband_decoder":
         chain = [
+            "beat_conditioned_multiband_decoder",
+            "spectral_flux_multiband",
+            "adaptive_beat_grid",
+            "combined_filter",
+            "dsp_bandpass_improved",
+            "dsp_spectral_flux",
+            "dsp_bandpass",
+            "aural_onset",
+        ]
+    elif normalized == "spectral_flux_multiband":
+        chain = [
+            "spectral_flux_multiband",
             "beat_conditioned_multiband_decoder",
             "adaptive_beat_grid",
             "combined_filter",
