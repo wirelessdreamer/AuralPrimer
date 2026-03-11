@@ -286,3 +286,90 @@ That combination directly targets the failure pattern we measured, especially `h
 - Reduce `hi_hat -> snare` and `hi_hat -> kick` confusions materially on the full suite.
 - Keep `mean_timing_mae_ms` within `2 ms` of the current `adaptive_beat_grid` baseline.
 - Keep full-lane reporting in place even while optimizing around `kick`, `snare`, and `hi-hat`.
+
+## `spectral_flux_multiband` — Novel Algorithm (2026-03-11)
+
+### Motivation
+
+Deep SOTA research (2024-2026) identified three structural weaknesses in the existing algorithms:
+
+1. **Winner-take-all onset assignment**: prevents detecting simultaneous `kick + hi-hat` / `snare + hi-hat` events.
+2. **No per-band onset detection**: one blended novelty curve underweights hi-hat evidence.
+3. **No hi-hat vs snare disambiguation**: the `snare_crack` band (1800-4500 Hz) is triggered by both.
+
+### Architecture
+
+```
+                   ┌─ kick_low (35-120 Hz) ──┐    ┌─ kick_novelty ──┐
+samples ─► bands ──┤  kick_high (120-200)    ├──►│  snare_novelty  ├──► peak_pick ──► clusters ──► decode
+                   │  snare_mid (200-2200)   │    │  hat_novelty    │      ▲               │
+                   │  snare_crack (1800-4500)│    │  full_novelty   │      │               ▼
+                   │  hat_main (5000-12000)  │    └─────────────────┘  tempo/grid    multi-label
+                   │  hat_air (7000-16000)   │                                      emit events
+                   └─ cym (3500-10000) ──────┘
+```
+
+Three novel features bundled as one algorithm:
+
+1. **Per-band independent peak picking**: separate `k`, `percentile`, and `min_gap` per band.
+2. **Multi-label onset assembly**: 25ms clustering window allows emitting kick+hat or snare+hat simultaneously.
+3. **Decay-gated hi-hat classification**: uses `high_decay_fine()` (0-5ms/5-15ms/15-30ms micro-windows) and `centroid_trajectory()` to distinguish hi-hat from snare crack and crash.
+
+### Rendered Benchmark Results
+
+Run: `20260311_152042_novel-spectral-flux-shootout`
+
+| Algorithm | Mean Overall F1 | Mean Kick F1 | Mean Snare F1 | Mean Hi-Hat F1 | Mean Timing MAE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `spectral_flux_multiband` | **0.334** | 0.404 | **0.280** | **0.373** | 27.2 ms |
+| `beat_conditioned_multiband_decoder` | 0.329 | 0.431 | 0.256 | 0.299 | 27.2 ms |
+| `adaptive_beat_grid` | 0.274 | **0.449** | 0.212 | 0.104 | **25.7 ms** |
+
+Key win: hi-hat F1 improved from 0.299 → 0.373 (+25%).
+
+### Real-World Regression Suite (Psalms)
+
+Created a 3-song regression suite using human-authored MIDI references:
+
+| Song | Reference Events | Sync Offset |
+| --- | ---: | --- |
+| Psalm 1 | 559 | -0.540s |
+| Psalm 2 (King in Zion) | 1020 | -0.480s |
+| Psalm 4 (Trouble Again) | 1175 | -0.540s |
+
+All songs had a consistent ~0.5s offset (approximately one beat at 120 BPM) between MIDI and audio, determined by cross-correlating MIDI onset times against audio onset envelopes with 90+% match rates at best offset.
+
+Runner script: `benchmarks/drums/run_realworld_regression.py`
+
+### Tuning Iterations on Real-World Audio
+
+**v1 (initial)**: Raw thresholds tuned on rendered suite.
+- Psalm 1: F1=0.305, P=0.200, FP=1444 — massive false positive explosion
+- Top confusions: hi-hat→snare x162, kick→snare x58
+
+**v2 (tightened peaks)**: Raised peak-picking `k` from 1.38→1.85 (hat), 1.68→2.10 (kick), 1.72→2.15 (snare). Raised emission gates. Added crash detection.
+- Psalm 1: F1=0.335, P=0.261, FP=743 — 49% FP reduction
+- Top confusions: kick→snare x80, kick→crash x26
+
+**v3 (snare guard)**: Raised snare `k=2.40`, `percentile=0.84`. Added `low_dom > snare_dom * 1.3` guard.
+- Psalm 1: F1=0.341, P=0.264, FP=747 — marginal improvement
+
+### Remaining Failure Patterns
+
+1. **kick→snare confusion (x78 on Psalm 1, x235 on King in Zion)**: Kick transients have mid-frequency harmonics that trigger the `snare_crack` band. The snare peak picker correctly detects energy here, but classification is wrong.
+2. **FP explosion on real audio**: The multi-label assembly emits too many events. Real drum stems have spectral bleed that rendered audio lacks. Need stronger joint evidence requirements.
+3. **Crash vs hi-hat**: The `sustained_high` detection helps but doesn't catch all cymbals.
+
+### Key Learnings
+
+1. Pure-Python DFT (STFT) is prohibitively slow: O(N²) per frame made benchmark runs take 30+ minutes per song. Replaced with the proven-fast `compute_band_envelopes()` + `onset_novelty()` infrastructure. Performance went from 197s → 36s for unit tests.
+2. Thresholds tuned on rendered audio transfer poorly to real-world audio. The rendered benchmark fixtures have clean separation; real drum stems have significant cross-band spectral bleed.
+3. The `snare_crack` band overlaps heavily with kick harmonics. This is a fundamental issue — the 1800-4500 Hz range contains both snare wire resonance and kick attack harmonics.
+4. The multi-label approach works structurally (confirmed by unit tests) but needs much tighter joint evidence gates for real audio.
+
+### Next Steps
+
+1. Continue tuning on the 3-song regression suite to prevent single-song overfitting.
+2. Investigate a tighter kick-vs-snare spectral separator — possibly using the ratio of energy below vs above 1000 Hz within the snare band.
+3. Consider a higher minimum onset strength threshold to reduce spurious detections.
+4. Re-run the rendered benchmark suite after each real-world tuning iteration to prevent regression.

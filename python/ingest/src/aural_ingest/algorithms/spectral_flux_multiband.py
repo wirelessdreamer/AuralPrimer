@@ -118,36 +118,37 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
 
     # -----------------------------------------------------------------------
     # Step 2: Independent peak-picking per band
+    # Tightened thresholds to reduce false positives on real-world audio.
     # -----------------------------------------------------------------------
     kick_peaks = adaptive_peak_pick(
         kick_novelty,
         hop_sec=hop_sec,
-        k=1.68,
-        min_gap_sec=0.080,
-        window_sec=0.30,
-        percentile=0.74,
-        density_boost=0.10,
+        k=2.10,
+        min_gap_sec=0.085,
+        window_sec=0.32,
+        percentile=0.82,
+        density_boost=0.08,
     )
     snare_peaks = adaptive_peak_pick(
         snare_novelty,
         hop_sec=hop_sec,
-        k=1.72,
-        min_gap_sec=0.070,
-        window_sec=0.28,
-        percentile=0.72,
-        density_boost=0.10,
+        k=2.40,
+        min_gap_sec=0.080,
+        window_sec=0.32,
+        percentile=0.84,
+        density_boost=0.06,
     )
     hat_peaks = adaptive_peak_pick(
         hat_novelty,
         hop_sec=hop_sec,
-        k=1.38,
-        min_gap_sec=0.030,
-        window_sec=0.22,
-        percentile=0.62,
-        density_boost=0.06,
+        k=1.85,
+        min_gap_sec=0.038,
+        window_sec=0.24,
+        percentile=0.74,
+        density_boost=0.05,
     )
 
-    # Full-band composite for fills and rare events
+    # Full-band composite for fills and rare events — very strict
     full_novelty = normalize_series([
         0.35 * kick_novelty[i] + 0.30 * snare_novelty[i]
         + 0.20 * hat_novelty[i] + 0.15 * normalize_series(onset_novelty(cym_env[:n]))[i]
@@ -156,11 +157,11 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
     full_peaks = adaptive_peak_pick(
         full_novelty,
         hop_sec=hop_sec,
-        k=1.82,
-        min_gap_sec=0.055,
-        window_sec=0.30,
-        percentile=0.78,
-        density_boost=0.12,
+        k=2.30,
+        min_gap_sec=0.065,
+        window_sec=0.32,
+        percentile=0.85,
+        density_boost=0.10,
     )
 
     # -----------------------------------------------------------------------
@@ -252,9 +253,12 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         sharp = clamp((feat["sharpness"] - 1.25) / 1.75, 0.0, 1.0)
         zcr = clamp((feat["zcr"] - 0.05) / 0.18, 0.0, 1.0)
 
-        # Fine-grained decay for hat-vs-snare disambiguation
-        hd_0_5, hd_5_15, _hd_15_30 = high_decay_fine(samples, sr, cluster_time)
-        fast_decay = (hd_5_15 / max(1e-6, hd_0_5)) < 0.55 if hd_0_5 > 1e-6 else False
+        # Fine-grained decay for hat-vs-snare-vs-crash disambiguation
+        hd_0_5, hd_5_15, hd_15_30 = high_decay_fine(samples, sr, cluster_time)
+        decay_ratio_fast = (hd_5_15 / max(1e-6, hd_0_5)) if hd_0_5 > 1e-6 else 1.0
+        fast_decay = decay_ratio_fast < 0.55
+        # Crash detection: sustained high-frequency energy (slow decay)
+        sustained_high = decay_ratio_fast > 0.72 and hd_15_30 > hd_0_5 * 0.35
 
         # Centroid trajectory for hat-vs-snare
         centroids = centroid_trajectory(samples, sr, cluster_time)
@@ -287,6 +291,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
             sharp=sharp,
             zcr=zcr,
             fast_decay=fast_decay,
+            sustained_high=sustained_high,
             centroid_falling=centroid_falling,
             kick_ev=kick_ev,
             snare_ev=snare_ev,
@@ -317,6 +322,7 @@ def _decode_cluster(
     sharp: float,
     zcr: float,
     fast_decay: bool,
+    sustained_high: bool,
     centroid_falling: bool,
     kick_ev: float,
     snare_ev: float,
@@ -330,23 +336,27 @@ def _decode_cluster(
 
     # --- Simultaneous core + hat events ---
     if has_hat and (has_kick or has_snare):
-        # Multi-hit: emit core instrument AND hat independently
-        if has_kick and low_dom >= 0.12:
+        # Emit the core instrument(s)
+        if has_kick and low_dom >= 0.18:
             _emit(decoded, cluster_time, "kick",
                   score=clamp(0.4 + 0.28 * low_dom + 0.18 * sharp + 0.14 * kick_ev, 0.0, 1.0),
                   strength=band_classes.get("kick", 0.5))
-        if has_snare and snare_dom >= 0.10:
+        if has_snare and snare_dom >= 0.18:
             # Guard: is this actually a hat leaking into snare band?
             if fast_decay and centroid_falling and high_dom >= snare_dom * 0.8:
                 pass  # suppress -- this is a hat, not a snare
+            # Guard: is this actually a kick leaking into snare band?
+            elif low_dom > snare_dom * 1.3:
+                pass  # suppress -- low-freq dominant, this is a kick not a snare
             else:
                 _emit(decoded, cluster_time, "snare",
                       score=clamp(0.4 + 0.28 * snare_dom + 0.16 * zcr + 0.16 * snare_ev, 0.0, 1.0),
                       strength=band_classes.get("snare", 0.5))
 
-        # Always try to emit the hat when hat band fired
-        if high_dom >= 0.08 or (fast_decay and hat_ev >= 0.25):
-            hat_class = _classify_hat(feat, high_decay_val, fast_decay, centroid_falling)
+        # Emit hat only when high-freq evidence is strong AND it's actually
+        # a transient hit, not sustained cymbal/crash bleed
+        if not sustained_high and high_dom >= 0.15 and hat_ev >= 0.20:
+            hat_class = _classify_hat(feat, high_decay_val, fast_decay, sustained_high, centroid_falling)
             _emit(decoded, cluster_time, hat_class,
                   score=clamp(0.4 + 0.25 * high_dom + 0.15 * hat_ev, 0.0, 1.0),
                   strength=band_classes.get("hh_closed", 0.4))
@@ -354,8 +364,8 @@ def _decode_cluster(
 
     # --- Pure hat detection ---
     if has_hat and not has_kick and not has_snare:
-        if high_dom >= 0.08 or (fast_decay and band_classes.get("hh_closed", 0.0) >= 0.3):
-            hat_class = _classify_hat(feat, high_decay_val, fast_decay, centroid_falling)
+        if high_dom >= 0.12 or (fast_decay and band_classes.get("hh_closed", 0.0) >= 0.40):
+            hat_class = _classify_hat(feat, high_decay_val, fast_decay, sustained_high, centroid_falling)
             _emit(decoded, cluster_time, hat_class,
                   score=clamp(0.5 + 0.3 * high_dom + 0.2 * hat_ev, 0.0, 1.0),
                   strength=band_classes.get("hh_closed", 0.5))
@@ -363,7 +373,7 @@ def _decode_cluster(
 
     # --- Kick only ---
     if has_kick and not has_snare:
-        if low_dom >= 0.12 or band_classes.get("kick", 0.0) >= 0.35:
+        if low_dom >= 0.18 or (band_classes.get("kick", 0.0) >= 0.45 and low_dom >= 0.12):
             _emit(decoded, cluster_time, "kick",
                   score=clamp(0.4 + 0.3 * low_dom + 0.15 * sharp + 0.15 * kick_ev, 0.0, 1.0),
                   strength=band_classes.get("kick", 0.5))
@@ -373,11 +383,20 @@ def _decode_cluster(
     if has_snare and not has_kick:
         # Check if this is a hat that leaked into snare band
         if fast_decay and centroid_falling and high_dom >= snare_dom * 0.8:
-            hat_class = _classify_hat(feat, high_decay_val, fast_decay, centroid_falling)
+            hat_class = _classify_hat(feat, high_decay_val, fast_decay, sustained_high, centroid_falling)
             _emit(decoded, cluster_time, hat_class,
                   score=clamp(0.5 + 0.3 * high_dom, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
-        elif snare_dom >= 0.10 or band_classes.get("snare", 0.0) >= 0.35:
+        # Reclassify as kick when low-freq energy dominates
+        elif low_dom > snare_dom * 1.4 and low_dom >= 0.22:
+            _emit(decoded, cluster_time, "kick",
+                  score=clamp(0.4 + 0.3 * low_dom + 0.15 * sharp, 0.0, 1.0),
+                  strength=band_classes.get("snare", 0.5))
+        elif snare_dom >= 0.20 and low_dom < snare_dom * 1.2 and (zcr >= 0.12 or snare_ev >= 0.25):
+            _emit(decoded, cluster_time, "snare",
+                  score=clamp(0.4 + 0.3 * snare_dom + 0.15 * zcr + 0.15 * snare_ev, 0.0, 1.0),
+                  strength=band_classes.get("snare", 0.5))
+        elif band_classes.get("snare", 0.0) >= 0.55 and snare_dom >= 0.16 and low_dom < snare_dom * 1.1:
             _emit(decoded, cluster_time, "snare",
                   score=clamp(0.4 + 0.3 * snare_dom + 0.15 * zcr + 0.15 * snare_ev, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
@@ -385,20 +404,20 @@ def _decode_cluster(
 
     # --- Both kick and snare fired (no hat) ---
     if has_kick and has_snare:
-        if low_dom > snare_dom * 1.1 and sharp >= 0.1:
+        if low_dom > snare_dom * 1.2 and sharp >= 0.12:
             _emit(decoded, cluster_time, "kick",
                   score=clamp(0.45 + 0.3 * low_dom, 0.0, 1.0),
                   strength=band_classes.get("kick", 0.5))
-        elif snare_dom > low_dom * 0.9 and zcr >= 0.15:
+        elif snare_dom > low_dom * 1.0 and zcr >= 0.18:
             _emit(decoded, cluster_time, "snare",
                   score=clamp(0.45 + 0.3 * snare_dom, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
         else:
-            if low_dom >= 0.16:
+            if low_dom >= 0.20:
                 _emit(decoded, cluster_time, "kick",
                       score=clamp(0.4 + 0.25 * low_dom, 0.0, 1.0),
                       strength=band_classes.get("kick", 0.5))
-            if snare_dom >= 0.14:
+            if snare_dom >= 0.18:
                 _emit(decoded, cluster_time, "snare",
                       score=clamp(0.4 + 0.25 * snare_dom, 0.0, 1.0),
                       strength=band_classes.get("snare", 0.5))
@@ -407,16 +426,16 @@ def _decode_cluster(
     # --- Full-band peak only (fill/rare class) ---
     if has_full:
         full_str = band_classes.get("_full", 0.5)
-        if low_dom >= max(snare_dom, high_dom) * 1.05:
+        if low_dom >= max(snare_dom, high_dom) * 1.15:
             _emit(decoded, cluster_time, "kick",
                   score=clamp(0.35 + 0.3 * low_dom, 0.0, 1.0),
                   strength=full_str)
-        elif snare_dom >= max(low_dom, high_dom) * 0.95:
+        elif snare_dom >= max(low_dom, high_dom) * 1.05:
             _emit(decoded, cluster_time, "snare",
                   score=clamp(0.35 + 0.3 * snare_dom, 0.0, 1.0),
                   strength=full_str)
-        elif high_dom >= max(low_dom, snare_dom) * 0.9:
-            hat_class = _classify_hat(feat, high_decay_val, fast_decay, centroid_falling)
+        elif high_dom >= max(low_dom, snare_dom) * 1.0 and not sustained_high:
+            hat_class = _classify_hat(feat, high_decay_val, fast_decay, sustained_high, centroid_falling)
             _emit(decoded, cluster_time, hat_class,
                   score=clamp(0.35 + 0.3 * high_dom, 0.0, 1.0),
                   strength=full_str)
@@ -453,9 +472,13 @@ def _classify_hat(
     feat: dict[str, float],
     high_decay_val: float,
     fast_decay: bool,
+    sustained_high: bool,
     centroid_falling: bool,
 ) -> str:
     """Classify hi-hat type: closed, open, crash, or ride."""
+    # Crash: sustained high energy means this is a cymbal hit, not a hat
+    if sustained_high:
+        return "crash"
     if high_decay_val >= 0.58 and feat.get("high", 0.0) > feat.get("snare_crack", 0.0) * 1.1:
         return classify_hat_or_cymbal(feat, prefer_ride_when_on_grid=False, on_grid=False)
     if high_decay_val >= 0.28 and not fast_decay:
