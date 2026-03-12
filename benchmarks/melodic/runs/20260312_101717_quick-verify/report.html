@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html><head><title>Melodic Benchmark Report</title>
+<style>
+body { background: #1e1e2e; color: #cdd6f4; font-family: 'Fira Code', monospace; padding: 2em; }
+table { border-collapse: collapse; margin: 1em 0; }
+th, td { border: 1px solid #313244; padding: 6px 12px; text-align: right; }
+th { background: #313244; }
+pre { white-space: pre-wrap; font-size: 13px; }
+h1, h2 { color: #89b4fa; }
+</style>
+</head><body><pre># Melodic Transcription Benchmark Report
+
+Generated: 2026-03-12T10:17:17.350890
+Tolerance: 60.0ms
+Algorithms: melodic_basic_pitch, melodic_pyin
+
+## Aggregate Summary
+
+| Algorithm | Mean F1 | Pitch Acc | Octave Err | Timing MAE |
+|---|---:|---:|---:|---:|
+| melodic_basic_pitch | 0.097 | 16.3% | 6.7% | 34.8ms |
+| melodic_pyin | 0.098 | 14.5% | 6.4% | 32.7ms |
+
+## Psalm 1 — Bass
+Instrument: bass | Reference notes: 370
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.097  0.465  0.054    15.0%  10.0%   33.0ms     43
+  melodic_pyin                    0.078  0.262  0.046     0.0%   0.0%   30.4ms     65
+
+## Psalm 2 — Bass
+Instrument: bass | Reference notes: 555
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.264  0.354  0.211    51.3%  12.0%   30.6ms    330
+  melodic_pyin                    0.315  0.436  0.247    43.1%   4.4%   27.8ms    314
+
+## Psalm 3 — Bass
+Instrument: bass | Reference notes: 1078
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.034  0.328  0.018     0.0%   0.0%   35.9ms     58
+  melodic_pyin                    0.019  0.207  0.010     0.0%   9.1%   37.7ms     53
+
+## Psalm 4 — Bass
+Instrument: bass | Reference notes: 308
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.017  0.071  0.010     0.0%   0.0%   48.6ms     42
+  melodic_pyin                    0.024  0.121  0.013     0.0%   0.0%   36.0ms     33
+
+## Psalm 5 — Bass
+Instrument: bass | Reference notes: 445
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.066  0.124  0.045    10.0%   0.0%   23.4ms    161
+  melodic_pyin                    0.045  0.094  0.029    15.4%   7.7%   34.1ms    138
+
+## Psalm 6 — Bass
+Instrument: bass | Reference notes: 485
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.155  0.317  0.103    32.0%  16.0%   32.0ms    158
+  melodic_pyin                    0.161  0.370  0.103    24.0%   8.0%   28.5ms    135
+
+## Psalm 7 — Bass
+Instrument: bass | Reference notes: 1349
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.045  0.206  0.025     5.9%   8.8%   40.3ms    165
+  melodic_pyin                    0.043  0.218  0.024    18.8%  15.6%   34.3ms    147
+</pre></body></html>

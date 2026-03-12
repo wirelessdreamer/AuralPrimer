@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import sys
 from typing import Callable, Iterable
@@ -18,6 +18,23 @@ KNOWN_DRUM_FILTERS: tuple[str, ...] = (
 )
 
 KNOWN_MELODIC_METHODS: tuple[str, ...] = ("auto", "pyin", "basic_pitch")
+
+INSTRUMENT_ROLES: tuple[str, ...] = (
+    "bass",
+    "rhythm_guitar",
+    "lead_guitar",
+    "keys",
+)
+
+# Instrument-specific frequency ranges for melodic transcription.
+# (min_freq_hz, max_freq_hz) — tuned to practical pitch range of each instrument.
+INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
+    "bass": (30.0, 400.0),           # ~B0 (31 Hz) to ~G4 (392 Hz)
+    "rhythm_guitar": (75.0, 1400.0), # ~D2 (73 Hz) to ~F6 (1397 Hz)
+    "lead_guitar": (75.0, 1400.0),   # same range, different stem
+    "keys": (27.0, 4200.0),          # ~A0 (27.5 Hz) to ~C8 (4186 Hz)
+    "melodic": (45.0, 1700.0),       # legacy default
+}
 
 DEFAULT_DRUM_FILTER = "combined_filter"
 DEFAULT_MELODIC_METHOD = "auto"
@@ -48,6 +65,7 @@ class MelodicNote:
     t_off: float
     pitch: int
     velocity: int
+    instrument: str = "melodic"
 
 
 @dataclass(frozen=True)
@@ -59,6 +77,17 @@ class MelodicTranscriptionResult:
 
 
 MelodicTranscriber = Callable[[Path], list[MelodicNote]]
+
+
+@dataclass(frozen=True)
+class InstrumentTranscriptionResult:
+    """Transcription result for a single instrument stem."""
+    instrument: str
+    notes: list[MelodicNote]
+    used_method: str | None
+    attempted_methods: list[str]
+    warnings: list[str]
+    stem_path: str | None = None
 
 
 def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
@@ -134,6 +163,7 @@ def resolve_basic_pitch_model_path(search_roots: Iterable[Path | str]) -> Path |
 
 def build_default_melodic_algorithm_registry(
     model_search_roots: Iterable[Path | str] | None = None,
+    instrument: str = "melodic",
 ) -> dict[str, MelodicTranscriber]:
     # Import lazily to keep module import lightweight and avoid unnecessary startup costs.
     from aural_ingest.algorithms import melodic_basic_pitch, melodic_pyin
@@ -141,12 +171,17 @@ def build_default_melodic_algorithm_registry(
     roots = list(model_search_roots) if model_search_roots is not None else _default_basic_pitch_model_roots()
     basic_pitch_model_path = resolve_basic_pitch_model_path(roots)
 
+    _inst = instrument  # capture for closures
+
     def _basic_pitch(stem_path: Path) -> list[MelodicNote]:
-        return melodic_basic_pitch.transcribe(stem_path, model_path=basic_pitch_model_path)
+        return melodic_basic_pitch.transcribe(stem_path, model_path=basic_pitch_model_path, instrument=_inst)
+
+    def _pyin(stem_path: Path) -> list[MelodicNote]:
+        return melodic_pyin.transcribe(stem_path, instrument=_inst)
 
     return {
         "basic_pitch": _basic_pitch,
-        "pyin": melodic_pyin.transcribe,
+        "pyin": _pyin,
     }
 
 
@@ -364,3 +399,70 @@ def transcribe_melodic(
         attempted_methods=attempted,
         warnings=warnings,
     )
+
+
+def transcribe_all_melodic_stems(
+    stems: dict[str, Path],
+    requested_method: str | None,
+    logger: Callable[[str], None] | None = None,
+) -> list[InstrumentTranscriptionResult]:
+    """Transcribe each available instrument stem.
+
+    Builds a per-instrument algorithm registry so that each stem is transcribed
+    with appropriate frequency ranges for that instrument.
+
+    Args:
+        stems: map of instrument role (e.g. "bass", "lead_guitar") to stem wav path.
+        requested_method: user-requested transcription method.
+        logger: optional log callback.
+
+    Returns:
+        A list of InstrumentTranscriptionResult, one per stem that was transcribed.
+    """
+    results: list[InstrumentTranscriptionResult] = []
+
+    for instrument, stem_path in sorted(stems.items()):
+        if not stem_path.is_file():
+            if logger:
+                logger(f"melodic stem for '{instrument}' not found: {stem_path}")
+            continue
+
+        if logger:
+            logger(f"transcribing {instrument} from {stem_path.name}")
+
+        # Build a per-instrument registry so frequency ranges are correct.
+        inst_registry = build_default_melodic_algorithm_registry(instrument=instrument)
+
+        result = transcribe_melodic(
+            stem_path,
+            requested_method=requested_method,
+            algorithm_registry=inst_registry,
+            logger=logger,
+        )
+
+        # Tag each note with the instrument role.
+        tagged_notes = [
+            MelodicNote(
+                t_on=n.t_on,
+                t_off=n.t_off,
+                pitch=n.pitch,
+                velocity=n.velocity,
+                instrument=instrument,
+            )
+            for n in result.notes
+        ]
+
+        results.append(
+            InstrumentTranscriptionResult(
+                instrument=instrument,
+                notes=tagged_notes,
+                used_method=result.used_method,
+                attempted_methods=result.attempted_methods,
+                warnings=result.warnings,
+                stem_path=str(stem_path),
+            )
+        )
+
+    return results
+
+

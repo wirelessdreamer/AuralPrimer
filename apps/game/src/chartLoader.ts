@@ -402,3 +402,117 @@ export function selectDrumChart(tracks: MidiTrackLike[]): DrumChartSelection {
     relaxedUniqueLanes: relaxedLanes
   };
 }
+
+// ─── Melodic track extraction ─────────────────────────────────────────────────
+
+export type InstrumentRole = "bass" | "rhythm_guitar" | "lead_guitar" | "keys" | "melodic";
+
+export type MelodicNote = {
+  t_on: number;
+  t_off: number;
+  pitch: number;
+  velocity: number;
+};
+
+export type MelodicTrackSelection = {
+  role: InstrumentRole;
+  trackName: string;
+  channel: number;
+  notes: MelodicNote[];
+};
+
+/** Channel → instrument role mapping matching the ingest pipeline. */
+const CHANNEL_TO_ROLE: Record<number, InstrumentRole> = {
+  0: "bass",
+  1: "rhythm_guitar",
+  2: "lead_guitar",
+  3: "keys",
+  4: "melodic",
+};
+
+const MELODIC_TRACK_NAME_RE: Record<InstrumentRole, RegExp> = {
+  bass: /\bbass\b/i,
+  rhythm_guitar: /\brhythm\s*guitar\b/i,
+  lead_guitar: /\blead\s*guitar\b/i,
+  keys: /\bkeys?\b|\bsynth\b|\bpiano\b/i,
+  melodic: /\bmelodic\b/i,
+};
+
+function inferRoleFromTrackName(name: string): InstrumentRole | null {
+  for (const [role, re] of Object.entries(MELODIC_TRACK_NAME_RE) as Array<[InstrumentRole, RegExp]>) {
+    if (re.test(name)) return role;
+  }
+  return null;
+}
+
+/**
+ * Extract per-instrument melodic tracks from parsed MIDI data.
+ *
+ * The function uses two strategies:
+ * 1) **Track name matching** — if a track is named "Bass", "Lead Guitar", etc.
+ * 2) **MIDI channel mapping** — channels 0–4 map to specific instruments.
+ *
+ * Drum tracks (channel 9, or named "Drums") and the structure/conductor tracks are excluded.
+ */
+export function selectMelodicTracks(tracks: MidiTrackLike[]): MelodicTrackSelection[] {
+  const out: MelodicTrackSelection[] = [];
+  const seenRoles = new Set<InstrumentRole>();
+
+  for (const track of tracks) {
+    // Skip explicitly drum-identified tracks.
+    if (isDrumNamedTrack(track.name)) continue;
+    if (track.name === "Conductor" || track.name === "Structure") continue;
+
+    // Determine the role.
+    let role: InstrumentRole | null = null;
+    let channel = -1;
+
+    // Try track name first.
+    if (track.name) {
+      role = inferRoleFromTrackName(track.name);
+    }
+
+    // Fall back to channel-based inference from first note.
+    if (!role && track.notes.length > 0) {
+      const ch = track.notes[0].channel;
+      if (ch !== undefined && ch !== 9 && ch !== 15) {
+        role = CHANNEL_TO_ROLE[ch] ?? null;
+        channel = ch;
+      }
+    }
+
+    if (!role) continue;
+    if (seenRoles.has(role)) continue;
+    seenRoles.add(role);
+
+    // Collect note-on pairs.  For now, we just use note-on times + a minimum duration.
+    const melodicNotes: MelodicNote[] = track.notes
+      .filter((n) => n.channel !== 9 && n.channel !== 15)
+      .map((n) => ({
+        t_on: n.t,
+        t_off: n.t + 0.15, // minimum visible duration
+        pitch: n.midi,
+        velocity: 100,
+      }));
+
+    if (melodicNotes.length === 0) continue;
+
+    out.push({
+      role,
+      trackName: track.name ?? role,
+      channel: channel >= 0 ? channel : (track.notes[0]?.channel ?? -1),
+      notes: melodicNotes,
+    });
+  }
+
+  // Sort: bass, rhythm_guitar, lead_guitar, keys, melodic.
+  const order: InstrumentRole[] = ["bass", "rhythm_guitar", "lead_guitar", "keys", "melodic"];
+  out.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
+  return out;
+}
+
+/** Convenience: parse MIDI bytes and extract melodic tracks in one call. */
+export function selectMelodicTracksFromMidiBytes(bytes: Uint8Array): MelodicTrackSelection[] {
+  const tracks = parseMidiTracksFromBytes(bytes);
+  return selectMelodicTracks(tracks);
+}

@@ -1,4 +1,4 @@
-﻿import "./style.css";
+import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
 import { TransportController } from "./transportController";
@@ -21,7 +21,8 @@ import { BUILTIN_PLUGINS, type PluginDescriptor, loadPlugin, scanBundledPlugins,
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { generateLyricsJsonFromPlainText } from "./lyricsGenerator";
-import { selectDrumChartFromMidiBytes, type DrumChartSelection } from "./chartLoader";
+import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
+import { TabRenderer } from "./tabRenderer";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
@@ -308,6 +309,11 @@ root.innerHTML = `
 
             <canvas id="viz" width="800" height="240"></canvas>
             <pre id="vizStatus">(not running)</pre>
+
+            <div id="instrumentSelector" class="instrumentSelector" style="display:none">
+              <span class="meta">Instrument:</span>
+            </div>
+            <div id="tabContainer" class="tabContainer" style="display:none"></div>
 
             <h3>Transport</h3>
             <div class="row">
@@ -1084,6 +1090,9 @@ let lastFrameMs: number | null = null;
 let selectedSongPackPath: string | null = null;
 let selectedSongPackDetails: SongPackDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
+let selectedMelodicTracks: MelodicTrackSelection[] = [];
+let tabRenderer: TabRenderer | null = null;
+let activeTabInstrument: InstrumentRole | null = null;
 let selectedSongPackCharts: SongPackChartsByPath | null = null;
 let pauseMenuOpen = false;
 let pauseMenuRestoreFocusEl: HTMLElement | null = null;
@@ -1348,7 +1357,15 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
     if (!midi.bytes.length) {
       return null;
     }
-    return selectDrumChartFromMidiBytes(new Uint8Array(midi.bytes));
+    const midiBytes = new Uint8Array(midi.bytes);
+
+    // Extract melodic instrument tracks alongside drums.
+    selectedMelodicTracks = selectMelodicTracksFromMidiBytes(midiBytes);
+    if (selectedMelodicTracks.length > 0) {
+      logConsole("play", `found ${selectedMelodicTracks.length} melodic track(s): ${selectedMelodicTracks.map(t => t.role).join(", ")}`);
+    }
+
+    return selectDrumChartFromMidiBytes(midiBytes);
   } catch (e) {
     warnConsole("debugging", `failed to load/parse features/notes.mid from ${containerPath}`, e);
     return null;
@@ -1591,10 +1608,25 @@ function buildVizSongContext(): {
       trackName: ev.trackName
     })) ?? [];
 
+  // Include melodic instrument notes for visualizer plugins.
+  const melodicNotes = selectedMelodicTracks.flatMap((track) =>
+    track.notes.map((n) => ({
+      t_on: n.t_on,
+      t_off: n.t_off,
+      pitch: n.pitch,
+      velocity: n.velocity,
+      channel: track.channel,
+      trackName: track.trackName,
+    }))
+  );
+
+  const allNotes = [...drumNotes, ...melodicNotes];
+  allNotes.sort((a, b) => a.t_on - b.t_on);
+
   return {
     lyrics: currentLyrics ?? undefined,
     charts: selectedSongPackCharts ?? undefined,
-    notes: drumNotes.length > 0 ? drumNotes : undefined
+    notes: allNotes.length > 0 ? allNotes : undefined
   };
 }
 
@@ -2698,6 +2730,82 @@ function stopVisualizer(opts?: { keepStatus?: boolean; preserveTransport?: boole
   vizStopBtn.disabled = true;
 }
 
+const INSTRUMENT_ROLE_LABELS: Record<string, string> = {
+  bass: "Bass",
+  rhythm_guitar: "Rhythm Guitar",
+  lead_guitar: "Lead Guitar",
+  keys: "Keys / Synth",
+  melodic: "Melodic",
+};
+
+function updateInstrumentSelector(): void {
+  const selectorEl = document.getElementById("instrumentSelector") as HTMLDivElement | null;
+  const containerEl = document.getElementById("tabContainer") as HTMLDivElement | null;
+  if (!selectorEl || !containerEl) return;
+
+  // Clean up old tab renderer.
+  if (tabRenderer) {
+    tabRenderer.dispose();
+    tabRenderer = null;
+  }
+  activeTabInstrument = null;
+
+  // Clear old buttons (keep the label span).
+  const buttons = selectorEl.querySelectorAll("button");
+  buttons.forEach((b) => b.remove());
+
+  if (selectedMelodicTracks.length === 0) {
+    selectorEl.style.display = "none";
+    containerEl.style.display = "none";
+    return;
+  }
+
+  selectorEl.style.display = "flex";
+  containerEl.style.display = "block";
+
+  for (const track of selectedMelodicTracks) {
+    const btn = document.createElement("button");
+    btn.className = "instrumentBtn";
+    btn.textContent = INSTRUMENT_ROLE_LABELS[track.role] ?? track.trackName;
+    btn.dataset.role = track.role;
+    btn.addEventListener("click", () => {
+      selectInstrumentTrack(track.role);
+    });
+    selectorEl.appendChild(btn);
+  }
+
+  // Auto-select the first instrument.
+  if (selectedMelodicTracks.length > 0) {
+    selectInstrumentTrack(selectedMelodicTracks[0].role);
+  }
+}
+
+function selectInstrumentTrack(role: InstrumentRole): void {
+  const containerEl = document.getElementById("tabContainer") as HTMLDivElement | null;
+  const selectorEl = document.getElementById("instrumentSelector") as HTMLDivElement | null;
+  if (!containerEl) return;
+
+  const track = selectedMelodicTracks.find((t) => t.role === role);
+  if (!track) return;
+
+  // Update button states.
+  if (selectorEl) {
+    for (const btn of Array.from(selectorEl.querySelectorAll<HTMLButtonElement>("button.instrumentBtn"))) {
+      btn.classList.toggle("isActive", btn.dataset.role === role);
+    }
+  }
+
+  // Create or update tab renderer.
+  if (!tabRenderer) {
+    containerEl.innerHTML = "";
+    tabRenderer = new TabRenderer(containerEl);
+  }
+  tabRenderer.setTrack(track);
+  activeTabInstrument = role;
+
+  logConsole("play", `selected instrument: ${role} (${track.notes.length} notes)`);
+}
+
 async function selectSongPack(containerPath: string) {
   const songChanged = selectedSongPackPath !== containerPath;
   selectedDrumChartSelection = null;
@@ -2721,7 +2829,10 @@ async function selectSongPack(containerPath: string) {
     }
     selectedDrumChartSelection = await readDrumChartSelection(containerPath, details);
 
-    // Show per-song data availability so users know whatâ€™s actually present.
+    // Populate instrument selector with available melodic tracks.
+    updateInstrumentSelector();
+
+    // Show per-song data availability so users know what’s actually present.
     renderCaps(details, selectedDrumChartSelection, selectedSongPackCharts);
     applyInstrumentAvailability(details, selectedDrumChartSelection, selectedSongPackCharts);
     renderPluginsWithAvailability(details);
@@ -2941,6 +3052,11 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
       dpr: window.devicePixelRatio || 1,
       state: transport,
     });
+
+    // Render the melodic instrument tab/piano-roll below the main visualizer.
+    if (tabRenderer && transport.t !== undefined) {
+      tabRenderer.render(transport.t);
+    }
 
     vizRaf = requestAnimationFrame(tick);
   };

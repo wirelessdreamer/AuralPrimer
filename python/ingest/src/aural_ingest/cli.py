@@ -29,6 +29,7 @@ from aural_ingest.transcription import (
     KNOWN_DRUM_FILTERS,
     build_default_drum_algorithm_registry,
     build_default_melodic_algorithm_registry,
+    transcribe_all_melodic_stems,
     transcribe_melodic,
     transcribe_drums_dsp,
     resolve_drum_filter,
@@ -763,9 +764,31 @@ def _separate_stems_with_demucs(
 
 
 MIDI_TICKS_PER_QUARTER = 480
-MIDI_CHANNEL_MELODIC = 0
+MIDI_CHANNEL_BASS = 0
+MIDI_CHANNEL_RHYTHM_GUITAR = 1
+MIDI_CHANNEL_LEAD_GUITAR = 2
+MIDI_CHANNEL_KEYS = 3
+MIDI_CHANNEL_MELODIC = 4  # legacy fallback
 MIDI_CHANNEL_DRUMS = 9
 MIDI_CHANNEL_STRUCTURE = 15
+
+# Map instrument roles to MIDI channels.
+_INSTRUMENT_MIDI_CHANNELS: dict[str, int] = {
+    "bass": MIDI_CHANNEL_BASS,
+    "rhythm_guitar": MIDI_CHANNEL_RHYTHM_GUITAR,
+    "lead_guitar": MIDI_CHANNEL_LEAD_GUITAR,
+    "keys": MIDI_CHANNEL_KEYS,
+    "melodic": MIDI_CHANNEL_MELODIC,
+}
+
+# Pretty track names for MIDI output.
+_INSTRUMENT_TRACK_NAMES: dict[str, str] = {
+    "bass": "Bass",
+    "rhythm_guitar": "Rhythm Guitar",
+    "lead_guitar": "Lead Guitar",
+    "keys": "Keys",
+    "melodic": "Melodic",
+}
 
 
 def _clamp_int(v: int, lo: int, hi: int) -> int:
@@ -832,8 +855,15 @@ def _build_notes_mid_bytes(
     beats: list[dict[str, Any]],
     sections: list[dict[str, Any]],
     drum_events: list[Any],
-    melodic_notes: list[Any],
+    melodic_notes: list[Any] | None = None,
+    instrument_tracks: dict[str, list[Any]] | None = None,
 ) -> bytes:
+    """Build a multi-track MIDI file.
+
+    If ``instrument_tracks`` is provided, each instrument gets its own MIDI track
+    with a dedicated channel.  Otherwise, falls back to a single 'Melodic' track
+    from ``melodic_notes`` for backward compatibility.
+    """
     bpm_safe = 120.0 if bpm <= 0 else float(bpm)
     tempo_us_per_quarter = _clamp_int(int(round(60_000_000.0 / bpm_safe)), 1, 0xFFFFFF)
 
@@ -883,24 +913,46 @@ def _build_notes_mid_bytes(
         drum_track_events.append((t_on, _note_on(MIDI_CHANNEL_DRUMS, note, vel)))
         drum_track_events.append((t_on + dur, _note_off(MIDI_CHANNEL_DRUMS, note)))
 
-    melodic_track_events: list[tuple[int, bytes]] = [(0, _meta_text_event(0x03, "Melodic"))]
-    default_note_dur = max(1, MIDI_TICKS_PER_QUARTER // 8)
-    for n in melodic_notes:
-        t_on = _sec_to_ticks(float(getattr(n, "t_on", 0.0)), bpm=bpm_safe)
-        t_off = _sec_to_ticks(float(getattr(n, "t_off", 0.0)), bpm=bpm_safe)
-        if t_off <= t_on:
-            t_off = t_on + default_note_dur
-        pitch = _clamp_int(int(getattr(n, "pitch", 60)), 0, 127)
-        vel = _clamp_int(int(getattr(n, "velocity", 90)), 1, 127)
-        melodic_track_events.append((t_on, _note_on(MIDI_CHANNEL_MELODIC, pitch, vel)))
-        melodic_track_events.append((t_off, _note_off(MIDI_CHANNEL_MELODIC, pitch)))
-
-    tracks = [
+    tracks: list[list[tuple[int, bytes]]] = [
         conductor_events,
         structure_events,
         drum_track_events,
-        melodic_track_events,
     ]
+
+    default_note_dur = max(1, MIDI_TICKS_PER_QUARTER // 8)
+
+    if instrument_tracks:
+        # Write each instrument as a separate MIDI track with dedicated channel.
+        for role in ("bass", "rhythm_guitar", "lead_guitar", "keys"):
+            notes = instrument_tracks.get(role)
+            if not notes:
+                continue
+            channel = _INSTRUMENT_MIDI_CHANNELS.get(role, MIDI_CHANNEL_MELODIC)
+            track_name = _INSTRUMENT_TRACK_NAMES.get(role, role.replace("_", " ").title())
+            track_events: list[tuple[int, bytes]] = [(0, _meta_text_event(0x03, track_name))]
+            for n in notes:
+                t_on = _sec_to_ticks(float(getattr(n, "t_on", 0.0)), bpm=bpm_safe)
+                t_off = _sec_to_ticks(float(getattr(n, "t_off", 0.0)), bpm=bpm_safe)
+                if t_off <= t_on:
+                    t_off = t_on + default_note_dur
+                pitch = _clamp_int(int(getattr(n, "pitch", 60)), 0, 127)
+                vel = _clamp_int(int(getattr(n, "velocity", 90)), 1, 127)
+                track_events.append((t_on, _note_on(channel, pitch, vel)))
+                track_events.append((t_off, _note_off(channel, pitch)))
+            tracks.append(track_events)
+    elif melodic_notes:
+        # Legacy single-melodic-track path.
+        melodic_track_events: list[tuple[int, bytes]] = [(0, _meta_text_event(0x03, "Melodic"))]
+        for n in melodic_notes:
+            t_on = _sec_to_ticks(float(getattr(n, "t_on", 0.0)), bpm=bpm_safe)
+            t_off = _sec_to_ticks(float(getattr(n, "t_off", 0.0)), bpm=bpm_safe)
+            if t_off <= t_on:
+                t_off = t_on + default_note_dur
+            pitch = _clamp_int(int(getattr(n, "pitch", 60)), 0, 127)
+            vel = _clamp_int(int(getattr(n, "velocity", 90)), 1, 127)
+            melodic_track_events.append((t_on, _note_on(MIDI_CHANNEL_MELODIC, pitch, vel)))
+            melodic_track_events.append((t_off, _note_off(MIDI_CHANNEL_MELODIC, pitch)))
+        tracks.append(melodic_track_events)
 
     header = (
         b"MThd"
@@ -1139,6 +1191,7 @@ def _events_json_from_drum_result(
     *,
     requested_filter: str,
     melodic_method: str,
+    instrument_results: list[Any] | None = None,
 ) -> dict[str, Any]:
     onsets = [
         {
@@ -1151,29 +1204,50 @@ def _events_json_from_drum_result(
         for e in drum_result.events
     ]
 
-    notes = [
+    tracks_list: list[dict[str, Any]] = [
         {
-            "t_on": round(float(n.t_on), 6),
-            "t_off": round(float(n.t_off), 6),
-            "pitch": int(n.pitch),
-            "velocity": int(n.velocity),
-            "instrument": "melodic",
-        }
-        for n in melodic_result.notes
+            "track_id": "drums_main",
+            "role": "drums",
+            "name": "Drums",
+            "algorithm_requested": requested_filter,
+            "algorithm_used": drum_result.used_algorithm,
+            "attempted_algorithms": drum_result.attempted_algorithms,
+            "meta": {"warnings": drum_result.warnings},
+        },
     ]
 
-    payload: dict[str, Any] = {
-        "events_version": "1.0.0",
-        "tracks": [
-            {
-                "track_id": "drums_main",
-                "role": "drums",
-                "name": "Drums",
-                "algorithm_requested": requested_filter,
-                "algorithm_used": drum_result.used_algorithm,
-                "attempted_algorithms": drum_result.attempted_algorithms,
-                "meta": {"warnings": drum_result.warnings},
-            },
+    notes: list[dict[str, Any]] = []
+
+    if instrument_results:
+        for inst_result in instrument_results:
+            role = inst_result.instrument
+            track_id = f"{role}_main"
+            pretty_name = _INSTRUMENT_TRACK_NAMES.get(role, role.replace("_", " ").title())
+            tracks_list.append(
+                {
+                    "track_id": track_id,
+                    "role": role,
+                    "name": pretty_name,
+                    "algorithm_requested": melodic_method,
+                    "algorithm_used": inst_result.used_method,
+                    "attempted_methods": inst_result.attempted_methods,
+                    "meta": {"warnings": inst_result.warnings},
+                }
+            )
+            for n in inst_result.notes:
+                notes.append(
+                    {
+                        "track_id": track_id,
+                        "t_on": round(float(n.t_on), 6),
+                        "t_off": round(float(n.t_off), 6),
+                        "pitch": int(n.pitch),
+                        "velocity": int(n.velocity),
+                        "instrument": role,
+                    }
+                )
+    else:
+        # Legacy single melodic track path.
+        tracks_list.append(
             {
                 "track_id": "melodic_main",
                 "role": "melodic",
@@ -1183,7 +1257,22 @@ def _events_json_from_drum_result(
                 "attempted_methods": melodic_result.attempted_methods,
                 "meta": {"warnings": melodic_result.warnings},
             }
-        ],
+        )
+        for n in melodic_result.notes:
+            notes.append(
+                {
+                    "track_id": "melodic_main",
+                    "t_on": round(float(n.t_on), 6),
+                    "t_off": round(float(n.t_off), 6),
+                    "pitch": int(n.pitch),
+                    "velocity": int(n.velocity),
+                    "instrument": "melodic",
+                }
+            )
+
+    payload: dict[str, Any] = {
+        "events_version": "1.0.0",
+        "tracks": tracks_list,
         "onsets": onsets,
         "notes": notes,
         "chords": [],
@@ -1574,6 +1663,38 @@ def cmd_import(args: argparse.Namespace) -> int:
         algorithm_registry=drum_registry,
         logger=log,
     )
+
+    # Collect available instrument stems for per-instrument melodic transcription.
+    instrument_stems: dict[str, Path] = {}
+    bass_stem = stems_dir / "bass.wav"
+    if bass_stem.is_file():
+        instrument_stems["bass"] = bass_stem
+    rhythm_guitar_stem = stems_dir / "rhythm_guitar.wav"
+    if rhythm_guitar_stem.is_file():
+        instrument_stems["rhythm_guitar"] = rhythm_guitar_stem
+    if lead_stem.is_file():
+        instrument_stems["lead_guitar"] = lead_stem
+    keys_stem = stems_dir / "keys.wav"
+    if keys_stem.is_file():
+        instrument_stems["keys"] = keys_stem
+
+    instrument_results = None
+    if instrument_stems:
+        emit(
+            ProgressEvent(
+                type="stage_progress",
+                id="transcribe_drums",
+                progress=0.92,
+                message=f"transcribing {len(instrument_stems)} melodic instrument(s)",
+            )
+        )
+        instrument_results = transcribe_all_melodic_stems(
+            instrument_stems,
+            requested_method=tr_opts["melodic_method"],
+            logger=log,
+        )
+
+    # Legacy fallback: transcribe a single melodic track if no instrument stems.
     melodic_source = lead_stem if lead_stem.is_file() else dst_wav
     emit(
         ProgressEvent(type="stage_progress", id="transcribe_drums", progress=0.94, message="analyzing melodic notes")
@@ -1586,15 +1707,36 @@ def cmd_import(args: argparse.Namespace) -> int:
         logger=log,
     )
 
-    notes_mid = _build_notes_mid_bytes(
-        bpm=bpm,
-        beats=beats["beats"],
-        sections=sections["sections"],
-        drum_events=drum_result.events,
-        melodic_notes=melodic_result.notes,
-    )
+    # Build MIDI output.
+    if instrument_results:
+        inst_tracks = {r.instrument: r.notes for r in instrument_results}
+        notes_mid = _build_notes_mid_bytes(
+            bpm=bpm,
+            beats=beats["beats"],
+            sections=sections["sections"],
+            drum_events=drum_result.events,
+            instrument_tracks=inst_tracks,
+        )
+    else:
+        notes_mid = _build_notes_mid_bytes(
+            bpm=bpm,
+            beats=beats["beats"],
+            sections=sections["sections"],
+            drum_events=drum_result.events,
+            melodic_notes=melodic_result.notes,
+        )
     (out / "features" / "notes.mid").write_bytes(notes_mid)
     emit(ProgressEvent(type="stage_done", id="transcribe_drums", progress=0.97, artifact="features/notes.mid"))
+
+    # Write events.json with per-instrument tracks.
+    events_json = _events_json_from_drum_result(
+        drum_result,
+        melodic_result,
+        requested_filter=tr_opts["drum_filter_requested"],
+        melodic_method=tr_opts["melodic_method"],
+        instrument_results=instrument_results,
+    )
+    _write_json(out / "features" / "events.json", events_json)
 
     # Persist effective transcription metadata.
     tr_opts["drum_source_kind"] = drum_source_kind
@@ -1605,15 +1747,14 @@ def cmd_import(args: argparse.Namespace) -> int:
     tr_opts["drum_attempted_algorithms"] = drum_result.attempted_algorithms
     tr_opts["melodic_method_used"] = melodic_result.used_method or tr_opts["melodic_method"]
     tr_opts["melodic_attempted_methods"] = melodic_result.attempted_methods
-    tr_opts["warnings"] = list(
-        dict.fromkeys(
-            [
-                *tr_opts.get("warnings", []),
-                *drum_result.warnings,
-                *melodic_result.warnings,
-            ]
-        )
-    )
+
+    all_warnings = [*tr_opts.get("warnings", []), *drum_result.warnings, *melodic_result.warnings]
+    if instrument_results:
+        for ir in instrument_results:
+            all_warnings.extend(ir.warnings)
+        tr_opts["instrument_stems_transcribed"] = [ir.instrument for ir in instrument_results]
+    tr_opts["warnings"] = list(dict.fromkeys(all_warnings))
+
     manifest["pipeline"]["transcription"] = tr_opts
     manifest["recognition"] = {
         "summary": {
@@ -1640,6 +1781,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "used_engine": tr_opts.get("melodic_method_used"),
             "attempted_engines": tr_opts.get("melodic_attempted_methods", []),
             "warnings": [*melodic_result.warnings],
+            "instrument_stems": tr_opts.get("instrument_stems_transcribed", []),
         },
     }
     _write_json(out / "manifest.json", manifest)
