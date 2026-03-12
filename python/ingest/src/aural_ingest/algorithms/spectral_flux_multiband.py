@@ -253,6 +253,13 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         sharp = clamp((feat["sharpness"] - 1.25) / 1.75, 0.0, 1.0)
         zcr = clamp((feat["zcr"] - 0.05) / 0.18, 0.0, 1.0)
 
+        # Snare-crack-to-low ratio: the key kick-vs-snare disambiguator.
+        # Real snares have significant crack energy relative to low energy.
+        # Kicks triggering the snare band have low >> snare_crack.
+        crack_to_low = feat["snare_crack"] / max(1e-9, feat["low"] + 0.5 * feat["sub"])
+        is_likely_snare = crack_to_low > 0.55 and snare_dom >= 0.14
+        is_likely_kick_in_snare = crack_to_low < 0.35 and low_dom >= 0.18
+
         # Fine-grained decay for hat-vs-snare-vs-crash disambiguation
         hd_0_5, hd_5_15, hd_15_30 = high_decay_fine(samples, sr, cluster_time)
         decay_ratio_fast = (hd_5_15 / max(1e-6, hd_0_5)) if hd_0_5 > 1e-6 else 1.0
@@ -288,6 +295,8 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
             snare_dom=snare_dom,
             high_dom=high_dom,
             high_decay_val=high_decay_val,
+            is_likely_snare=is_likely_snare,
+            is_likely_kick_in_snare=is_likely_kick_in_snare,
             sharp=sharp,
             zcr=zcr,
             fast_decay=fast_decay,
@@ -319,6 +328,8 @@ def _decode_cluster(
     snare_dom: float,
     high_dom: float,
     high_decay_val: float,
+    is_likely_snare: bool,
+    is_likely_kick_in_snare: bool,
     sharp: float,
     zcr: float,
     fast_decay: bool,
@@ -345,9 +356,11 @@ def _decode_cluster(
             # Guard: is this actually a hat leaking into snare band?
             if fast_decay and centroid_falling and high_dom >= snare_dom * 0.8:
                 pass  # suppress -- this is a hat, not a snare
-            # Guard: is this actually a kick leaking into snare band?
-            elif low_dom > snare_dom * 1.3:
-                pass  # suppress -- low-freq dominant, this is a kick not a snare
+            # Guard: kick harmonics triggering snare band
+            elif is_likely_kick_in_snare:
+                pass  # suppress -- crack energy too low relative to low-band
+            elif not is_likely_snare and low_dom > snare_dom * 1.2:
+                pass  # suppress -- ambiguous but low-freq dominant
             else:
                 _emit(decoded, cluster_time, "snare",
                       score=clamp(0.4 + 0.28 * snare_dom + 0.16 * zcr + 0.16 * snare_ev, 0.0, 1.0),
@@ -387,16 +400,18 @@ def _decode_cluster(
             _emit(decoded, cluster_time, hat_class,
                   score=clamp(0.5 + 0.3 * high_dom, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
-        # Reclassify as kick when low-freq energy dominates
-        elif low_dom > snare_dom * 1.4 and low_dom >= 0.22:
+        # Reclassify as kick when crack energy is too low relative to bass
+        elif is_likely_kick_in_snare:
             _emit(decoded, cluster_time, "kick",
                   score=clamp(0.4 + 0.3 * low_dom + 0.15 * sharp, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
-        elif snare_dom >= 0.20 and low_dom < snare_dom * 1.2 and (zcr >= 0.12 or snare_ev >= 0.25):
+        # Genuine snare confirmed by crack energy
+        elif is_likely_snare and (zcr >= 0.10 or snare_ev >= 0.20):
             _emit(decoded, cluster_time, "snare",
                   score=clamp(0.4 + 0.3 * snare_dom + 0.15 * zcr + 0.15 * snare_ev, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
-        elif band_classes.get("snare", 0.0) >= 0.55 and snare_dom >= 0.16 and low_dom < snare_dom * 1.1:
+        # Ambiguous — require very strong snare evidence
+        elif snare_dom >= 0.24 and low_dom < snare_dom * 1.1 and (zcr >= 0.15 or band_classes.get("snare", 0.0) >= 0.55):
             _emit(decoded, cluster_time, "snare",
                   score=clamp(0.4 + 0.3 * snare_dom + 0.15 * zcr + 0.15 * snare_ev, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
@@ -404,23 +419,16 @@ def _decode_cluster(
 
     # --- Both kick and snare fired (no hat) ---
     if has_kick and has_snare:
-        if low_dom > snare_dom * 1.2 and sharp >= 0.12:
+        # Always emit kick when kick band fires and low energy is present
+        if low_dom >= 0.18:
             _emit(decoded, cluster_time, "kick",
                   score=clamp(0.45 + 0.3 * low_dom, 0.0, 1.0),
                   strength=band_classes.get("kick", 0.5))
-        elif snare_dom > low_dom * 1.0 and zcr >= 0.18:
+        # Only emit snare when crack energy confirms it's a real snare
+        if is_likely_snare and not is_likely_kick_in_snare and zcr >= 0.12:
             _emit(decoded, cluster_time, "snare",
                   score=clamp(0.45 + 0.3 * snare_dom, 0.0, 1.0),
                   strength=band_classes.get("snare", 0.5))
-        else:
-            if low_dom >= 0.20:
-                _emit(decoded, cluster_time, "kick",
-                      score=clamp(0.4 + 0.25 * low_dom, 0.0, 1.0),
-                      strength=band_classes.get("kick", 0.5))
-            if snare_dom >= 0.18:
-                _emit(decoded, cluster_time, "snare",
-                      score=clamp(0.4 + 0.25 * snare_dom, 0.0, 1.0),
-                      strength=band_classes.get("snare", 0.5))
         return
 
     # --- Full-band peak only (fill/rare class) ---

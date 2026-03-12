@@ -52,6 +52,27 @@ SONGS = [
         "wav":  Path(r"D:\Psalms\Psalm 4\Book of Psalms - Psalm 4 - Trouble Again Stems\Book of Psalms - Psalm 4 - Trouble Again (Drums).wav"),
         "offset_sec": -0.540,
     },
+    {
+        "id": "psalm_5_every_morning",
+        "name": "Psalm 5 (Every Morning)",
+        "midi": Path(r"D:\Psalms\Psalm 5\Book of Psalms - Psalm 5 - Every Morning Stems\Book of Psalms - Psalm 5 - Every Morning (Drums).mid"),
+        "wav":  Path(r"D:\Psalms\Psalm 5\Book of Psalms - Psalm 5 - Every Morning Stems\Book of Psalms - Psalm 5 - Every Morning (Drums).wav"),
+        "offset_sec": -0.550,
+    },
+    {
+        "id": "psalm_6_break_in",
+        "name": "Psalm 6 (Break In)",
+        "midi": Path(r"D:\Psalms\Psalm 6\Book of Psalms - Psalm 6 - Break In Stems\Book of Psalms - Psalm 6 - Break In (Drums).mid"),
+        "wav":  Path(r"D:\Psalms\Psalm 6\Book of Psalms - Psalm 6 - Break In Stems\Book of Psalms - Psalm 6 - Break In (Drums).wav"),
+        "offset_sec": -0.490,
+    },
+    {
+        "id": "psalm_7_the_chase",
+        "name": "Psalm 7 (The Chase)",
+        "midi": Path(r"D:\Psalms\Psalm 7\Psalm 7 - The Chase (Edit) Stems\Psalm 7 - The Chase (Edit) (Drums).mid"),
+        "wav":  Path(r"D:\Psalms\Psalm 7\Psalm 7 - The Chase (Edit) Stems\Psalm 7 - The Chase (Edit) (Drums).wav"),
+        "offset_sec": -0.540,
+    },
 ]
 
 DEFAULT_ALGORITHMS = [

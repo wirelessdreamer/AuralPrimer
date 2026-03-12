@@ -25,6 +25,21 @@ SONGS = [
         "midi": Path(r"D:\Psalms\Psalm 4\Book of Psalms - Psalm 4 - Trouble Again Stems\Book of Psalms - Psalm 4 - Trouble Again (Drums).mid"),
         "wav":  Path(r"D:\Psalms\Psalm 4\Book of Psalms - Psalm 4 - Trouble Again Stems\Book of Psalms - Psalm 4 - Trouble Again (Drums).wav"),
     },
+    {
+        "name": "Psalm 5 (Every Morning)",
+        "midi": Path(r"D:\Psalms\Psalm 5\Book of Psalms - Psalm 5 - Every Morning Stems\Book of Psalms - Psalm 5 - Every Morning (Drums).mid"),
+        "wav":  Path(r"D:\Psalms\Psalm 5\Book of Psalms - Psalm 5 - Every Morning Stems\Book of Psalms - Psalm 5 - Every Morning (Drums).wav"),
+    },
+    {
+        "name": "Psalm 6 (Break In)",
+        "midi": Path(r"D:\Psalms\Psalm 6\Book of Psalms - Psalm 6 - Break In Stems\Book of Psalms - Psalm 6 - Break In (Drums).mid"),
+        "wav":  Path(r"D:\Psalms\Psalm 6\Book of Psalms - Psalm 6 - Break In Stems\Book of Psalms - Psalm 6 - Break In (Drums).wav"),
+    },
+    {
+        "name": "Psalm 7 (The Chase)",
+        "midi": Path(r"D:\Psalms\Psalm 7\Psalm 7 - The Chase (Edit) Stems\Psalm 7 - The Chase (Edit) (Drums).mid"),
+        "wav":  Path(r"D:\Psalms\Psalm 7\Psalm 7 - The Chase (Edit) Stems\Psalm 7 - The Chase (Edit) (Drums).wav"),
+    },
 ]
 
 
