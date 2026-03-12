@@ -329,47 +329,72 @@ Key win: hi-hat F1 improved from 0.299 → 0.373 (+25%).
 
 ### Real-World Regression Suite (Psalms)
 
-Created a 3-song regression suite using human-authored MIDI references:
+Created a 6-song regression suite using human-authored MIDI references:
 
-| Song | Reference Events | Sync Offset |
-| --- | ---: | --- |
-| Psalm 1 | 559 | -0.540s |
-| Psalm 2 (King in Zion) | 1020 | -0.480s |
-| Psalm 4 (Trouble Again) | 1175 | -0.540s |
+| Song | Reference Events | Sync Offset | Best Match % |
+| --- | ---: | --- | ---: |
+| Psalm 1 | 559 | -0.540s | 90.8% |
+| Psalm 2 (King in Zion) | 1020 | -0.480s | 92.9% |
+| Psalm 4 (Trouble Again) | 1175 | -0.540s | 91.2% |
+| Psalm 5 (Every Morning) | 888 | -0.550s | 81.1% |
+| Psalm 6 (Break In) | 661 | -0.490s | 91.0% |
+| Psalm 7 (The Chase) | 656 | -0.540s | 95.4% |
 
-All songs had a consistent ~0.5s offset (approximately one beat at 120 BPM) between MIDI and audio, determined by cross-correlating MIDI onset times against audio onset envelopes with 90+% match rates at best offset.
+Total: **4959 reference events** across 6 songs. All songs had a consistent ~0.5s offset (one beat at 120 BPM) between MIDI and audio.
 
 Runner script: `benchmarks/drums/run_realworld_regression.py`
+Sync checker: `benchmarks/drums/check_midi_sync.py`
 
-### Tuning Iterations on Real-World Audio
+### 6-Song Baseline (v6, label: `v6-crack-ratio`)
 
-**v1 (initial)**: Raw thresholds tuned on rendered suite.
-- Psalm 1: F1=0.305, P=0.200, FP=1444 — massive false positive explosion
-- Top confusions: hi-hat→snare x162, kick→snare x58
+| Algorithm | Mean F1 | Precision | Recall | Total TP | Total FP | Total FN | MAE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `adaptive_beat_grid` | **0.397** | **0.378** | 0.421 | 2010 | **3623** | 2949 | 31.6 ms |
+| `spectral_flux_multiband` | 0.286 | 0.221 | 0.409 | 1923 | 6913 | 3036 | 30.6 ms |
+| `beat_conditioned_multiband_decoder` | 0.257 | 0.177 | **0.472** | 2305 | 10835 | 2654 | **29.4 ms** |
 
-**v2 (tightened peaks)**: Raised peak-picking `k` from 1.38→1.85 (hat), 1.68→2.10 (kick), 1.72→2.15 (snare). Raised emission gates. Added crash detection.
-- Psalm 1: F1=0.335, P=0.261, FP=743 — 49% FP reduction
-- Top confusions: kick→snare x80, kick→crash x26
+Per-song `spectral_flux_multiband` v6:
 
-**v3 (snare guard)**: Raised snare `k=2.40`, `percentile=0.84`. Added `low_dom > snare_dom * 1.3` guard.
-- Psalm 1: F1=0.341, P=0.264, FP=747 — marginal improvement
+| Song | F1 | Precision | FP | Top Confusion |
+| --- | ---: | ---: | ---: | --- |
+| Psalm 1 | 0.342 | 0.265 | 747 | kick→snare x78 |
+| Psalm 2 | 0.222 | 0.179 | 1360 | kick→snare x235 |
+| Psalm 4 | 0.203 | 0.171 | 1426 | kick→snare x340 |
+| Psalm 5 | 0.322 | 0.232 | 1543 | kick→snare x93 |
+| Psalm 6 | 0.253 | 0.206 | 837 | kick→snare x96 |
+| Psalm 7 | 0.373 | 0.275 | 1000 | kick→snare x47 |
+
+### Tuning Iterations
+
+**v1 (initial)**: Raw thresholds from rendered suite. Psalm 1 F1=0.305, FP=1444.
+
+**v2 (tightened peaks)**: Raised peak-picking `k` and `percentile`. Added crash detection. Psalm 1 F1=0.335, FP=743 (49% FP reduction).
+
+**v3/v4 (snare guard)**: Raised snare thresholds. Added `low_dom > snare_dom * 1.3` guard. Psalm 1 F1=0.341.
+
+**v5 (spectral ratio — REJECTED)**: `kick_snare_ratio` as primary arbiter. 3-song mean F1=0.237 — regressed. Reverted.
+
+**v6 (crack-to-low ratio)**: `snare_crack / (low + 0.5*sub)` ratio. 6-song mean F1=0.286 — marginal improvement.
 
 ### Remaining Failure Patterns
 
-1. **kick→snare confusion (x78 on Psalm 1, x235 on King in Zion)**: Kick transients have mid-frequency harmonics that trigger the `snare_crack` band. The snare peak picker correctly detects energy here, but classification is wrong.
-2. **FP explosion on real audio**: The multi-label assembly emits too many events. Real drum stems have spectral bleed that rendered audio lacks. Need stronger joint evidence requirements.
-3. **Crash vs hi-hat**: The `sustained_high` detection helps but doesn't catch all cymbals.
+1. **kick→snare confusion (~889 total across 6 songs)**: #1 problem. Kick harmonics trigger `snare_crack` band.
+2. **FP explosion**: 6913 FP for `spectral_flux_multiband` vs 3623 for `adaptive_beat_grid`.
+3. **Domain gap**: Rendered F1 (0.334) >> real-world F1 (0.286).
 
 ### Key Learnings
 
-1. Pure-Python DFT (STFT) is prohibitively slow: O(N²) per frame made benchmark runs take 30+ minutes per song. Replaced with the proven-fast `compute_band_envelopes()` + `onset_novelty()` infrastructure. Performance went from 197s → 36s for unit tests.
-2. Thresholds tuned on rendered audio transfer poorly to real-world audio. The rendered benchmark fixtures have clean separation; real drum stems have significant cross-band spectral bleed.
-3. The `snare_crack` band overlaps heavily with kick harmonics. This is a fundamental issue — the 1800-4500 Hz range contains both snare wire resonance and kick attack harmonics.
-4. The multi-label approach works structurally (confirmed by unit tests) but needs much tighter joint evidence gates for real audio.
+1. Pure-Python DFT too slow. Replaced with band-envelope approach (197s → 36s).
+2. Rendered-audio thresholds transfer poorly to real-world audio.
+3. `snare_crack` band (1800-4500 Hz) overlaps with kick harmonics — physical limitation.
+4. Simple energy ratios at onset time are insufficient for kick-vs-snare.
+5. `adaptive_beat_grid` benefits from rhythmic prior rejecting ambiguous events.
+6. Results consistent across 6-song corpus — kick→snare universally top confusion.
 
 ### Next Steps
 
-1. Continue tuning on the 3-song regression suite to prevent single-song overfitting.
-2. Investigate a tighter kick-vs-snare spectral separator — possibly using the ratio of energy below vs above 1000 Hz within the snare band.
-3. Consider a higher minimum onset strength threshold to reduce spurious detections.
-4. Re-run the rendered benchmark suite after each real-world tuning iteration to prevent regression.
+1. Temporal envelope shape analysis for kick-vs-snare (energy curve over 5-20ms after onset).
+2. Two-pass approach: detect onsets first, refine classification with pattern context.
+3. Use kick band novelty as a veto for snare emissions.
+4. Monitor rendered benchmark suite for regression after changes.
+
