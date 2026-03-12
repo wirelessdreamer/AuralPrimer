@@ -1,0 +1,425 @@
+{
+  "algorithms": [
+    "melodic_basic_pitch",
+    "melodic_pyin"
+  ],
+  "tolerance_ms": 60.0,
+  "songs": [
+    {
+      "song_id": "psalm_1_bass",
+      "song_name": "Psalm 1 \u2014 Bass",
+      "instrument": "bass",
+      "reference_path": "D:\\Psalms\\Psalm 1\\Psalm1_Stems\\Psalm 1 (Bass).mid",
+      "reference_count": 370,
+      "tolerance_ms": 60.0,
+      "midi_offset_sec": -0.54,
+      "results": [
+        {
+          "algorithm": "melodic_basic_pitch",
+          "note_count": 43,
+          "elapsed_sec": 1.5,
+          "overall": {
+            "tp": 20,
+            "fp": 23,
+            "fn": 350,
+            "f1": 0.0969,
+            "precision": 0.4651,
+            "recall": 0.0541,
+            "pitch_correct": 3,
+            "pitch_accuracy": 0.15,
+            "octave_errors": 2,
+            "octave_error_rate": 0.1,
+            "timing_mae_ms": 32.97
+          }
+        },
+        {
+          "algorithm": "melodic_pyin",
+          "note_count": 65,
+          "elapsed_sec": 1.56,
+          "overall": {
+            "tp": 17,
+            "fp": 48,
+            "fn": 353,
+            "f1": 0.0782,
+            "precision": 0.2615,
+            "recall": 0.0459,
+            "pitch_correct": 0,
+            "pitch_accuracy": 0.0,
+            "octave_errors": 0,
+            "octave_error_rate": 0.0,
+            "timing_mae_ms": 30.41
+          }
+        }
+      ]
+    },
+    {
+      "song_id": "psalm_2_bass",
+      "song_name": "Psalm 2 \u2014 Bass",
+      "instrument": "bass",
+      "reference_path": "D:\\Psalms\\Psalm 2\\Book of Psalms - Psalm 2 - King in Zion Stems\\Book of Psalms - Psalm 2 - King in Zion (Bass).mid",
+      "reference_count": 555,
+      "tolerance_ms": 60.0,
+      "midi_offset_sec": -0.48,
+      "results": [
+        {
+          "algorithm": "melodic_basic_pitch",
+          "note_count": 330,
+          "elapsed_sec": 3.89,
+          "overall": {
+            "tp": 117,
+            "fp": 213,
+            "fn": 438,
+            "f1": 0.2644,
+            "precision": 0.3545,
+            "recall": 0.2108,
+            "pitch_correct": 60,
+            "pitch_accuracy": 0.5128,
+            "octave_errors": 14,
+            "octave_error_rate": 0.1197,
+            "timing_mae_ms": 30.55
+          }
+        },
+        {
+          "algorithm": "melodic_pyin",
+          "note_count": 314,
+          "elapsed_sec": 3.14,
+          "overall": {
+            "tp": 137,
+            "fp": 177,
+            "fn": 418,
+            "f1": 0.3153,
+            "precision": 0.4363,
+            "recall": 0.2468,
+            "pitch_correct": 59,
+            "pitch_accuracy": 0.4307,
+            "octave_errors": 6,
+            "octave_error_rate": 0.0438,
+            "timing_mae_ms": 27.81
+          }
+        }
+      ]
+    },
+    {
+      "song_id": "psalm_3_bass",
+      "song_name": "Psalm 3 \u2014 Bass",
+      "instrument": "bass",
+      "reference_path": "D:\\Psalms\\Psalm 3\\Book of Psalms - Psalms 3 - Shield Me On All Sides (Bass).mid",
+      "reference_count": 1078,
+      "tolerance_ms": 60.0,
+      "midi_offset_sec": -0.54,
+      "results": [
+        {
+          "algorithm": "melodic_basic_pitch",
+          "note_count": 58,
+          "elapsed_sec": 2.56,
+          "overall": {
+            "tp": 19,
+            "fp": 39,
+            "fn": 1059,
+            "f1": 0.0335,
+            "precision": 0.3276,
+            "recall": 0.0176,
+            "pitch_correct": 0,
+            "pitch_accuracy": 0.0,
+            "octave_errors": 0,
+            "octave_error_rate": 0.0,
+            "timing_mae_ms": 35.94
+          }
+        },
+        {
+          "algorithm": "melodic_pyin",
+          "note_count": 53,
+          "elapsed_sec": 2.61,
+          "overall": {
+            "tp": 11,
+            "fp": 42,
+            "fn": 1067,
+            "f1": 0.0195,
+            "precision": 0.2075,
+            "recall": 0.0102,
+            "pitch_correct": 0,
+            "pitch_accuracy": 0.0,
+            "octave_errors": 1,
+            "octave_error_rate": 0.0909,
+            "timing_mae_ms": 37.7
+          }
+        }
+      ]
+    },
+    {
+      "song_id": "psalm_4_bass",
+      "song_name": "Psalm 4 \u2014 Bass",
+      "instrument": "bass",
+      "reference_path": "D:\\Psalms\\Psalm 4\\Book of Psalms - Psalm 4 - Trouble Again Stems\\Book of Psalms - Psalm 4 - Trouble Again (Bass).mid",
+      "reference_count": 308,
+      "tolerance_ms": 60.0,
+      "midi_offset_sec": -0.54,
+      "results": [
+        {
+          "algorithm": "melodic_basic_pitch",
+          "note_count": 42,
+          "elapsed_sec": 3.17,
+          "overall": {
+            "tp": 3,
+            "fp": 39,
+            "fn": 305,
+            "f1": 0.0171,
+            "precision": 0.0714,
+            "recall": 0.0097,
+            "pitch_correct": 0,
+            "pitch_accuracy": 0.0,
+            "octave_errors": 0,
+            "octave_error_rate": 0.0,
+            "timing_mae_ms": 48.59
+          }
+        },
+        {
+          "algorithm": "melodic_pyin",
+          "note_count": 33,
+          "elapsed_sec": 2.95,
+          "overall": {
+            "tp": 4,
+            "fp": 29,
+            "fn": 304,
+            "f1": 0.0235,
+            "precision": 0.1212,
+            "recall": 0.013,
+            "pitch_correct": 0,
+            "pitch_accuracy": 0.0,
+            "octave_errors": 0,
+            "octave_error_rate": 0.0,
+            "timing_mae_ms": 36.03
+          }
+        }
+      ]
+    },
+    {
+      "song_id": "psalm_5_bass",
+      "song_name": "Psalm 5 \u2014 Bass",
+      "instrument": "bass",
+      "reference_path": "D:\\Psalms\\Psalm 5\\Book of Psalms - Psalm 5 - Every Morning Stems\\Book of Psalms - Psalm 5 - Every Morning (Bass).mid",
+      "reference_count": 445,
+      "tolerance_ms": 60.0,
+      "midi_offset_sec": -0.55,
+      "results": [
+        {
+          "algorithm": "melodic_basic_pitch",
+          "note_count": 161,
+          "elapsed_sec": 3.93,
+          "overall": {
+            "tp": 20,
+            "fp": 141,
+            "fn": 425,
+            "f1": 0.066,
+            "precision": 0.1242,
+            "recall": 0.0449,
+            "pitch_correct": 2,
+            "pitch_accuracy": 0.1,
+            "octave_errors": 0,
+            "octave_error_rate": 0.0,
+            "timing_mae_ms": 23.43
+          }
+        },
+        {
+          "algorithm": "melodic_pyin",
+          "note_count": 138,
+          "elapsed_sec": 3.41,
+          "overall": {
+            "tp": 13,
+            "fp": 125,
+            "fn": 432,
+            "f1": 0.0446,
+            "precision": 0.0942,
+            "recall": 0.0292,
+            "pitch_correct": 2,
+            "pitch_accuracy": 0.1538,
+            "octave_errors": 1,
+            "octave_error_rate": 0.0769,
+            "timing_mae_ms": 34.09
+          }
+        }
+      ]
+    },
+    {
+      "song_id": "psalm_6_bass",
+      "song_name": "Psalm 6 \u2014 Bass",
+      "instrument": "bass",
+      "reference_path": "D:\\Psalms\\Psalm 6\\Book of Psalms - Psalm 6 - Break In Stems\\Book of Psalms - Psalm 6 - Break In (Bass).mid",
+      "reference_count": 485,
+      "tolerance_ms": 60.0,
+      "midi_offset_sec": -0.49,
+      "results": [
+        {
+          "algorithm": "melodic_basic_pitch",
+          "note_count": 158,
+          "elapsed_sec": 3.12,
+          "overall": {
+            "tp": 50,
+            "fp": 108,
+            "fn": 435,
+            "f1": 0.1555,
+            "precision": 0.3165,
+            "recall": 0.1031,
+            "pitch_correct": 16,
+            "pitch_accuracy": 0.32,
+            "octave_errors": 8,
+            "octave_error_rate": 0.16,
+            "timing_mae_ms": 31.99
+          }
+        },
+        {
+          "algorithm": "melodic_pyin",
+          "note_count": 135,
+          "elapsed_sec": 2.63,
+          "overall": {
+            "tp": 50,
+            "fp": 85,
+            "fn": 435,
+            "f1": 0.1613,
+            "precision": 0.3704,
+            "recall": 0.1031,
+            "pitch_correct": 12,
+            "pitch_accuracy": 0.24,
+            "octave_errors": 4,
+            "octave_error_rate": 0.08,
+            "timing_mae_ms": 28.48
+          }
+        }
+      ]
+    },
+    {
+      "song_id": "psalm_7_bass",
+      "song_name": "Psalm 7 \u2014 Bass",
+      "instrument": "bass",
+      "reference_path": "D:\\Psalms\\Psalm 7\\Psalm 7 - The Chase (Edit) Stems\\Psalm 7 - The Chase (Edit) (Bass).mid",
+      "reference_count": 1349,
+      "tolerance_ms": 60.0,
+      "midi_offset_sec": -0.54,
+      "results": [
+        {
+          "algorithm": "melodic_basic_pitch",
+          "note_count": 165,
+          "elapsed_sec": 3.49,
+          "overall": {
+            "tp": 34,
+            "fp": 131,
+            "fn": 1315,
+            "f1": 0.0449,
+            "precision": 0.2061,
+            "recall": 0.0252,
+            "pitch_correct": 2,
+            "pitch_accuracy": 0.0588,
+            "octave_errors": 3,
+            "octave_error_rate": 0.0882,
+            "timing_mae_ms": 40.3
+          }
+        },
+        {
+          "algorithm": "melodic_pyin",
+          "note_count": 147,
+          "elapsed_sec": 2.7,
+          "overall": {
+            "tp": 32,
+            "fp": 115,
+            "fn": 1317,
+            "f1": 0.0428,
+            "precision": 0.2177,
+            "recall": 0.0237,
+            "pitch_correct": 6,
+            "pitch_accuracy": 0.1875,
+            "octave_errors": 5,
+            "octave_error_rate": 0.1562,
+            "timing_mae_ms": 34.29
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "case_order": [
+      "psalm_1_bass",
+      "psalm_2_bass",
+      "psalm_3_bass",
+      "psalm_4_bass",
+      "psalm_5_bass",
+      "psalm_6_bass",
+      "psalm_7_bass"
+    ],
+    "overall_f1_matrix": [
+      [
+        0.0969,
+        0.2644,
+        0.0335,
+        0.0171,
+        0.066,
+        0.1555,
+        0.0449
+      ],
+      [
+        0.0782,
+        0.3153,
+        0.0195,
+        0.0235,
+        0.0446,
+        0.1613,
+        0.0428
+      ]
+    ],
+    "pitch_accuracy_matrix": [
+      [
+        0.15,
+        0.5128,
+        0.0,
+        0.0,
+        0.1,
+        0.32,
+        0.0588
+      ],
+      [
+        0.0,
+        0.4307,
+        0.0,
+        0.0,
+        0.1538,
+        0.24,
+        0.1875
+      ]
+    ],
+    "octave_error_matrix": [
+      [
+        0.1,
+        0.1197,
+        0.0,
+        0.0,
+        0.0,
+        0.16,
+        0.0882
+      ],
+      [
+        0.0,
+        0.0438,
+        0.0909,
+        0.0,
+        0.0769,
+        0.08,
+        0.1562
+      ]
+    ],
+    "algorithm_summaries": [
+      {
+        "algorithm": "melodic_basic_pitch",
+        "mean_f1": 0.0969,
+        "mean_pitch_accuracy": 0.16308571428571428,
+        "mean_octave_error_rate": 0.06684285714285713,
+        "mean_timing_mae_ms": 34.824285714285715
+      },
+      {
+        "algorithm": "melodic_pyin",
+        "mean_f1": 0.09788571428571428,
+        "mean_pitch_accuracy": 0.14457142857142857,
+        "mean_octave_error_rate": 0.06397142857142857,
+        "mean_timing_mae_ms": 32.68714285714286
+      }
+    ]
+  }
+}
