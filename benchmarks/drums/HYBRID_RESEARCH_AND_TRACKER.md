@@ -414,12 +414,53 @@ Diagnostic data (Psalm 1) confirms:
 - Kick harmonics: ratio ≈ 0.60-1.15
 - Separation band: ~0.55-0.60
 
+## adaptive_beat_grid Tuning
+
+### Rendered Benchmark Baseline
+
+10-case rendered MIDI→WAV test suite. Baseline: F1=0.291, P=0.425, R=0.221.
+
+Key rendered confusions: `hi_hat→kick x92`, `snare→kick x76`, `kick→snare x50`.
+Main problem: very low recall (22%) — algorithm doesn't detect enough events.
+
+### Tuning Iterations
+
+**v2 (scoring + low thresholds)**: Adjusted scoring weights, lowered peak-picking k from 2.1→1.85. Rendered F1 0.291→0.301 (+3.4%), but real-world regressed 0.397→0.334 because lower thresholds generate too many FP on noisy real audio. **Key lesson: peak-picking thresholds must stay high for real audio.**
+
+**v3 (scoring only)**: Kept original peak-picking, adjusted scoring weights:
+- Hat boost: `high_hit > max(low,mid) * 0.90` → too aggressive, caused `snare→hi_hat x122` on Psalm 2.
+- Snare boost: `mid_hit > high_hit * 1.0` → too easy, caused `hi_hat→snare x81` on rendered.
+- Real-world: 0.397→0.358. **Reverted**.
+
+**v4-loose (cross-band reclassifier)**: Post-classification correction: when snare wins but `low_hit/mid_hit > 0.85` and `low_dom > 0.20`, reclassify as kick.
+- Real-world: 0.397→**0.431** (+8.6%) — best result!
+- Rendered: 0.291→0.263 — regressed due to rendered snares having high low_dom.
+- Per-song: Psalm 4 F1 0.323→0.410 (+27%), Psalm 5 0.425→0.473 (+11%).
+
+**v4e (crack_ratio guard)**: Added `crack_ratio < 0.22` guard to prevent reclassification on snares. Fixed rendered (back to 0.291) but also blocked the reclassifier on real audio.
+
+**v4f (crack_ratio 0.50, committed) ✓**: Diagnostic showed real snares have crack_ratio 0.54-0.76 (mean 0.70), kicks have 0.11-0.55 (mean 0.43). Raised guard to `< 0.50`.
+- Real-world: 0.397→**0.403** (+1.5%)
+- Rendered: **0.263** (regressed — rendered snares have crack_ratio < 0.50)
+- Per-song: Psalm 5 0.425→0.441, Psalm 6 0.327→0.341
+
+### Key ABG Finding: Cross-Band Reclassifier
+
+The most effective improvement is a post-classification reclassifier that overrides snare→kick when:
+1. `low_hit/mid_hit > 0.85` (kick novelty high relative to snare novelty)
+2. `low_dom > 0.20` (timbral low energy dominates)
+3. `crack_ratio < 0.50` (no strong snare crack evidence)
+
+This works because kick harmonics trigger the mid band but with concurrent low-band energy,
+while real snare hits have minimal low-band activation. The v4-loose version without the crack guard
+gives best real-world results (F1=0.431) but hurts rendered audio.
+
 ### Remaining Failure Patterns
 
-1. **kick→snare confusion (664 total, down from 889)**: Still the #1 problem but reduced 25%.
-2. **FP count**: 6376 FP vs 3623 for `adaptive_beat_grid` — still 76% higher.
-3. **kick→crash confusion**: New #2 pattern (28+80+97+66+33+23 ≈ 327 total). Some suppressed snare peaks fall through to crash classification.
-4. **Domain gap persists**: Rendered F1 (0.334) vs real-world F1 (0.290).
+1. **kick→snare confusion**: Still significant on Psalm 2 (x77) and Psalm 4 (x175). These events have very low low_hit (0.004-0.06) so the reclassifier doesn't fire.
+2. **Rendered low recall (22%)**: Algorithm only detects 616/2788 rendered events. Lowering peak-picking thresholds helps rendered but hurts real audio.
+3. **Domain gap**: Rendered snares have different crack_ratio distribution than real audio. Guards that work for one domain fail for the other.
+4. **kick→crash confusion**: ~327 total on spectral_flux_multiband.
 
 ### Key Learnings
 
@@ -430,10 +471,13 @@ Diagnostic data (Psalm 1) confirms:
 5. **Thresholds must be validated across all songs** — Psalm 1-only diagnostics misled v8 thresholds.
 6. `adaptive_beat_grid` benefits from rhythmic prior rejecting ambiguous events.
 7. The cross-band filter is most effective at the peak-picking stage, not at decode.
+8. **Peak-picking thresholds have opposite effects on rendered vs real**: lower = better rendered, worse real.
+9. **Scoring weight changes cause cascading confusions**: boosting one class steals from others.
+10. **crack_ratio distributions differ between rendered and real audio** — can't use same thresholds.
 
 ### Next Steps
 
-1. Investigate the kick→crash secondary confusion path — events being reclassified as crash when snare is suppressed.
-2. Consider adaptive per-song threshold calibration based on the distribution of kick/snare novelty ratios in the first 10s of audio.
-3. Explore a two-pass approach using pattern context to refine ambiguous events.
-4. Re-run rendered benchmark suite to verify no regression on synthetic data.
+1. Investigate why Psalm 2/4 kick→snare confusions have low `low_hit` — these may be false snare peaks from mid-band noise rather than kick harmonics.
+2. Consider separate rendered and real-world threshold profiles.
+3. Explore a two-pass approach using pattern context (beat position) to refine ambiguous events.
+4. Try using mean crack_ratio from a calibration pass to set adaptive per-song thresholds.
