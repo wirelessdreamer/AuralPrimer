@@ -376,25 +376,64 @@ Per-song `spectral_flux_multiband` v6:
 
 **v6 (crack-to-low ratio)**: `snare_crack / (low + 0.5*sub)` ratio. 6-song mean F1=0.286 — marginal improvement.
 
+**v8 (inverted crack ratio — REJECTED)**: Diagnostic data from Psalm 1 revealed crack_to_low is inverted: kicks have HIGH crack_to_low (~2.0-2.8, broadband transient), snares have LOW (~0.8-1.2). Applied thresholds < 1.5/> 1.8 but lost too many snares — thresholds too kit-dependent. 6-song Psalm 1 F1 dropped to 0.276. Reverted.
+
+**v9 (cross-band novelty filter)**: Pre-filter snare peaks by comparing kick_novelty/snare_novelty ratio at each peak. Diagnostic showed: real snares have ratio 0.27-0.45, kick harmonics have 0.60-1.15. Used threshold 0.55 with sev>0.50 bypass. Cut kick→snare by 44% but lost too many real snares. Overall regressed to 0.272.
+
+**v9b (relaxed cross-band filter — BEST) ✓**: Raised ratio threshold to 0.60, lowered sev bypass to 0.35. Also raised snare peak-picking `k=2.65`, `percentile=0.86`.
+
+| Algorithm | Mean F1 | Precision | Recall | Total FP | kick→snare |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| v6 baseline | 0.286 | 0.221 | 0.409 | 6913 | 889 |
+| **v9b** | **0.290** | **0.230** | 0.399 | **6376** | **664** |
+
+v9b per-song kick→snare reduction:
+
+| Song | v6 | v9b | Change |
+| --- | ---: | ---: | --- |
+| Psalm 1 | 78 | 68 | -10 |
+| Psalm 2 | 235 | 192 | -43 |
+| Psalm 4 | 340 | 206 | **-134** |
+| Psalm 5 | 93 | 81 | -12 |
+| Psalm 6 | 96 | 85 | -11 |
+| Psalm 7 | 47 | 32 | -15 |
+| **Total** | **889** | **664** | **-225 (25%)** |
+
+### Novel Finding: Cross-Band Onset Novelty Ratio
+
+The key experimental finding from this session: **the onset novelty ratio between kick and snare bands is a better kick-vs-snare discriminator than static energy ratios**.
+
+Why it works: when a kick drum hits, it produces a broadband transient that causes **simultaneous** novelty spikes in both the kick band and snare band. When a real snare hits, only the snare band spikes — the kick band remains quiet. This temporal correlation is more reliable than comparing static energy because:
+
+1. It's independent of drum kit spectral profile
+2. It measures the *transition* (rate of change), not absolute energy
+3. It works at the onset frame where the difference is most pronounced
+
+Diagnostic data (Psalm 1) confirms:
+- Real snares: kick_novelty/snare_novelty ratio ≈ 0.27-0.45
+- Kick harmonics: ratio ≈ 0.60-1.15
+- Separation band: ~0.55-0.60
+
 ### Remaining Failure Patterns
 
-1. **kick→snare confusion (~889 total across 6 songs)**: #1 problem. Kick harmonics trigger `snare_crack` band.
-2. **FP explosion**: 6913 FP for `spectral_flux_multiband` vs 3623 for `adaptive_beat_grid`.
-3. **Domain gap**: Rendered F1 (0.334) >> real-world F1 (0.286).
+1. **kick→snare confusion (664 total, down from 889)**: Still the #1 problem but reduced 25%.
+2. **FP count**: 6376 FP vs 3623 for `adaptive_beat_grid` — still 76% higher.
+3. **kick→crash confusion**: New #2 pattern (28+80+97+66+33+23 ≈ 327 total). Some suppressed snare peaks fall through to crash classification.
+4. **Domain gap persists**: Rendered F1 (0.334) vs real-world F1 (0.290).
 
 ### Key Learnings
 
 1. Pure-Python DFT too slow. Replaced with band-envelope approach (197s → 36s).
 2. Rendered-audio thresholds transfer poorly to real-world audio.
-3. `snare_crack` band (1800-4500 Hz) overlaps with kick harmonics — physical limitation.
-4. Simple energy ratios at onset time are insufficient for kick-vs-snare.
-5. `adaptive_beat_grid` benefits from rhythmic prior rejecting ambiguous events.
-6. Results consistent across 6-song corpus — kick→snare universally top confusion.
+3. `snare_crack` band overlaps with kick harmonics — physical limitation.
+4. **Static energy ratios are insufficient for kick-vs-snare** — onset novelty cross-correlation is superior.
+5. **Thresholds must be validated across all songs** — Psalm 1-only diagnostics misled v8 thresholds.
+6. `adaptive_beat_grid` benefits from rhythmic prior rejecting ambiguous events.
+7. The cross-band filter is most effective at the peak-picking stage, not at decode.
 
 ### Next Steps
 
-1. Temporal envelope shape analysis for kick-vs-snare (energy curve over 5-20ms after onset).
-2. Two-pass approach: detect onsets first, refine classification with pattern context.
-3. Use kick band novelty as a veto for snare emissions.
-4. Monitor rendered benchmark suite for regression after changes.
-
+1. Investigate the kick→crash secondary confusion path — events being reclassified as crash when snare is suppressed.
+2. Consider adaptive per-song threshold calibration based on the distribution of kick/snare novelty ratios in the first 10s of audio.
+3. Explore a two-pass approach using pattern context to refine ambiguous events.
+4. Re-run rendered benchmark suite to verify no regression on synthetic data.
