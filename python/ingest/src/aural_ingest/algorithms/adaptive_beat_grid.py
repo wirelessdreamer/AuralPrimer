@@ -283,6 +283,16 @@ def _detect_candidates_internal(stem_path: Path) -> tuple[list[DrumCandidate], f
             key=lambda item: item[1],
         )
 
+        # Cross-band novelty tie-breaker for kick-vs-snare:
+        # When snare wins but the kick-band novelty is high at this frame,
+        # the mid-band energy is likely kick harmonics, not a real snare.
+        # Guard: high crack_ratio indicates real snare (crack energy present).
+        if drum_class == "snare" and low_hit > 0.12:
+            kick_to_mid_ratio = low_hit / max(1e-9, mid_hit)
+            if kick_to_mid_ratio > 0.85 and low_dom > 0.20 and crack_ratio < 0.50:
+                drum_class = "kick"
+                winner = kick_score
+
         if drum_class == "hh_closed":
             hat_class = classify_hat_or_cymbal(feat, prefer_ride_when_on_grid=False)
             if hat_class == "crash" and (high_hit < 0.22 or strength < 0.62):
