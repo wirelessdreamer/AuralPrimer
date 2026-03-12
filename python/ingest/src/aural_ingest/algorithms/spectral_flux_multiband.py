@@ -129,15 +129,28 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         percentile=0.82,
         density_boost=0.08,
     )
-    snare_peaks = adaptive_peak_pick(
+    snare_peaks_raw = adaptive_peak_pick(
         snare_novelty,
         hop_sec=hop_sec,
-        k=2.40,
+        k=2.65,
         min_gap_sec=0.080,
         window_sec=0.32,
-        percentile=0.84,
-        density_boost=0.06,
+        percentile=0.86,
+        density_boost=0.05,
     )
+    # Cross-band filter: suppress snare peaks where kick novelty is
+    # concurrently high — these are kick harmonics, not real snares.
+    # Diagnostic data shows: at real snare onsets, kick_novelty/snare_novelty ≈ 0.27-0.45
+    # At kick-harmonic false snares, ratio ≈ 0.60-1.15
+    snare_peaks = []
+    for idx, strength in snare_peaks_raw:
+        sev = snare_novelty[idx] if idx < len(snare_novelty) else 0.0
+        kev = kick_novelty[idx] if idx < len(kick_novelty) else 0.0
+        kick_ratio = kev / max(1e-9, sev)
+        if kick_ratio < 0.60 or sev > 0.35:
+            # Low kick concurrent novelty, or strong snare peak → keep
+            snare_peaks.append((idx, strength))
+        # else: suppress — kick novelty is too high relative to snare
     hat_peaks = adaptive_peak_pick(
         hat_novelty,
         hop_sec=hop_sec,
