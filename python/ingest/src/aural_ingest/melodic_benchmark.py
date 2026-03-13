@@ -180,12 +180,16 @@ MELODIC_ALGORITHMS = [
     "melodic_hpss_yin",
     "melodic_fft_hps",
     "melodic_librosa_pyin",
-    # --- experiments ---
+    # --- experiments (round 2) ---
     "melodic_yin_t020",
     "melodic_yin_bass80",
     "melodic_combined",
     "melodic_hpss_onset",
     "melodic_pyin_long",
+    # --- experiments (round 3) ---
+    "melodic_octave_fix",
+    "melodic_adaptive",
+    "melodic_hpss_combined",
 ]
 
 

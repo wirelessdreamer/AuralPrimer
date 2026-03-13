@@ -1,0 +1,2 @@
+[console_scripts]
+aural_ingest = aural_ingest.cli:main
