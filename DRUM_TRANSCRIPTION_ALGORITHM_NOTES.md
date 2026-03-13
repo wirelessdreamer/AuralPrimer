@@ -228,6 +228,67 @@ Expected output profile:
 - retains kick/snare backbone
 - more visual lane diversity in gameplay.
 
+## 4.8 `spectral_template_multipass` (song-adaptive, multi-pass)
+
+**Key differentiator vs all previous algorithms:** learns *this song's* drum kit spectral signatures before classifying, instead of using universal fixed frequency bands.
+
+All prior algorithms (4.1–4.7) share a fundamental limitation: they define static frequency bands (e.g. kick = 35–140 Hz, snare = 200–2200 Hz, hat = 5–12 kHz) and fixed timbral thresholds that work as an average compromise. These bands can't adapt to a metal kick (tight ~60 Hz) vs a hip-hop 808 kick (sub 40 Hz) vs a jazz kick (broader ~80–200 Hz).
+
+**Multi-pass design:**
+
+Pass 1 — Spectral Profiling:
+1. Broad onset detection with *lower* thresholds (k=1.50) to catch more events for analysis.
+2. For each onset, extract a 50ms FFT window and compute 11 features:
+   - 9-band energy (sub_bass through air, 20–18kHz in fine bands)
+   - Spectral centroid (weighted frequency center of mass)
+   - Attack sharpness (peak/rms ratio)
+3. K-means cluster all onsets (k=3–5 based on event count).
+4. Label clusters by heuristics: lowest centroid → kick, highest → hi-hat, broadband mid → snare.
+5. Build a spectral *template* (average energy profile) per drum type.
+
+Pass 2 — Refined Classification:
+1. Standard per-band peak-picking with tighter output thresholds.
+2. For each detected onset, extract features and compare against Pass 1 templates via Euclidean distance.
+3. Template match confidence > 0.55 overrides band detection; 0.35–0.55 overrides only when initial class seems implausible (e.g. hi-hat with centroid < 2kHz).
+4. Cross-band snare filter (from `spectral_flux_multiband`) still applied.
+5. Same soft-grid alignment and 25ms cluster merging as other algorithms.
+
+Versus specific prior approaches:
+
+| Feature | `spectral_flux_multiband` | `beat_conditioned` | `spectral_template_multipass` |
+|---|---|---|---|
+| Band definitions | Fixed 7 bands | Fixed + grid | Learned per-song (9 fine bands) |
+| Classification | Band energy ratios | Fusion voting | Template correlation |
+| Passes | 1 | 1 (fusion of 2 sources) | 2 (profile → classify) |
+| Adapts to song | No | Partially (tempo) | Yes (spectral signatures) |
+
+Benchmark (6 real Psalm songs, 60ms tolerance):
+
+| Metric | `spectral_template_multipass` | `spectral_flux_multiband` | `beat_conditioned` | `adaptive_beat_grid` |
+|---|---:|---:|---:|---:|
+| Mean F1 | 0.317 | 0.290 | 0.257 | **0.403** |
+| Precision | 0.226 | 0.230 | 0.177 | **0.384** |
+| Recall | 0.536 | 0.399 | 0.474 | 0.427 |
+| MAE | **30.9ms** | 30.6ms | 29.4ms | 31.6ms |
+
+Strengths: best timing accuracy, exceptional snare recall (97.5% on Psalm 5), beats all non-grid algorithms.  
+Weakness: low precision — too many false positives, dominant kick→hi-hat confusion.
+
+## 4.9 `spectral_template_with_grid` (multi-pass + beat grid fusion)
+
+Combines `spectral_template_multipass` detection with `adaptive_beat_grid` events. Template candidates get weight 1.1, grid candidates 0.85. Merges within 25ms windows, keeping highest-weighted candidate per drum class.
+
+Benchmark:
+
+| Metric | `spectral_template_with_grid` | `adaptive_beat_grid` |
+|---|---:|---:|
+| Mean F1 | 0.335 | **0.403** |
+| Recall | **0.632** | 0.427 |
+| MAE | 31.0ms | 31.6ms |
+
+Won on Psalm 4 (0.337 vs 0.323). Best recall of any algorithm (48% better than grid alone).
+
+
 ## 5. Orchestration and fallback chain to recreate
 
 For request `auto` or `combined_filter`:
