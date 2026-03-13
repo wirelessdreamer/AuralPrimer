@@ -79,6 +79,8 @@ DEFAULT_ALGORITHMS = [
     "spectral_flux_multiband",
     "beat_conditioned_multiband_decoder",
     "adaptive_beat_grid",
+    "spectral_template_multipass",
+    "spectral_template_with_grid",
 ]
 
 

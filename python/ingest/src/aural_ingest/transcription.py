@@ -15,6 +15,8 @@ KNOWN_DRUM_FILTERS: tuple[str, ...] = (
     "spectral_flux_multiband",
     "dsp_bandpass",
     "librosa_superflux",
+    "spectral_template_multipass",
+    "spectral_template_with_grid",
 )
 
 KNOWN_MELODIC_METHODS: tuple[str, ...] = ("auto", "pyin", "basic_pitch")
@@ -102,6 +104,8 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         dsp_spectral_flux,
         librosa_superflux,
         spectral_flux_multiband,
+        spectral_template_multipass,
+        spectral_template_with_grid,
     )
 
     return {
@@ -114,6 +118,8 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         "spectral_flux_multiband": spectral_flux_multiband.transcribe,
         "dsp_bandpass": dsp_bandpass.transcribe,
         "librosa_superflux": librosa_superflux.transcribe,
+        "spectral_template_multipass": spectral_template_multipass.transcribe,
+        "spectral_template_with_grid": spectral_template_with_grid.transcribe,
     }
 
 
