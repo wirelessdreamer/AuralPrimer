@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="776" height="238" style="background:#1e1e2e;font-family:monospace">
+<text x="388" y="22" fill="#cdd6f4" font-size="14" text-anchor="middle" font-weight="bold">Octave Error Rate by Song</text>
+<text x="388" y="40" fill="#a6adc8" font-size="10" text-anchor="middle">Fraction of matched notes with correct chroma but wrong octave. Lower is better.</text>
+<text x="236" y="62" fill="#a6adc8" font-size="9" text-anchor="end" transform="rotate(-35 236 62)">psalm_1_bass</text>
+<text x="316" y="62" fill="#a6adc8" font-size="9" text-anchor="end" transform="rotate(-35 316 62)">psalm_2_bass</text>
+<text x="396" y="62" fill="#a6adc8" font-size="9" text-anchor="end" transform="rotate(-35 396 62)">psalm_3_bass</text>
+<text x="476" y="62" fill="#a6adc8" font-size="9" text-anchor="end" transform="rotate(-35 476 62)">psalm_4_bass</text>
+<text x="556" y="62" fill="#a6adc8" font-size="9" text-anchor="end" transform="rotate(-35 556 62)">psalm_5_bass</text>
+<text x="636" y="62" fill="#a6adc8" font-size="9" text-anchor="end" transform="rotate(-35 636 62)">psalm_6_bass</text>
+<text x="716" y="62" fill="#a6adc8" font-size="9" text-anchor="end" transform="rotate(-35 716 62)">psalm_7_bass</text>
+<text x="188" y="92" fill="#cdd6f4" font-size="10" text-anchor="end">melodic_yin_octave_hps</text>
+<rect x="196" y="70" width="78" height="34" fill="#f6a024" rx="3"/>
+<text x="236" y="92" fill="#cdd6f4" font-size="11" text-anchor="middle">0.339</text>
+<rect x="276" y="70" width="78" height="34" fill="#f7ae1f" rx="3"/>
+<text x="316" y="92" fill="#cdd6f4" font-size="11" text-anchor="middle">0.390</text>
+<rect x="356" y="70" width="78" height="34" fill="#f59527" rx="3"/>
+<text x="396" y="92" fill="#cdd6f4" font-size="11" text-anchor="middle">0.299</text>
+<rect x="436" y="70" width="78" height="34" fill="#ef4e40" rx="3"/>
+<text x="476" y="92" fill="#cdd6f4" font-size="11" text-anchor="middle">0.040</text>
+<rect x="516" y="70" width="78" height="34" fill="#f6a522" rx="3"/>
+<text x="556" y="92" fill="#cdd6f4" font-size="11" text-anchor="middle">0.358</text>
+<rect x="596" y="70" width="78" height="34" fill="#f6a522" rx="3"/>
+<text x="636" y="92" fill="#cdd6f4" font-size="11" text-anchor="middle">0.360</text>
+<rect x="676" y="70" width="78" height="34" fill="#f48b2b" rx="3"/>
+<text x="716" y="92" fill="#cdd6f4" font-size="11" text-anchor="middle">0.262</text>
+<text x="188" y="128" fill="#cdd6f4" font-size="10" text-anchor="end">melodic_combined</text>
+<rect x="196" y="106" width="78" height="34" fill="#f26d35" rx="3"/>
+<text x="236" y="128" fill="#cdd6f4" font-size="11" text-anchor="middle">0.151</text>
+<rect x="276" y="106" width="78" height="34" fill="#f15e3a" rx="3"/>
+<text x="316" y="128" fill="#cdd6f4" font-size="11" text-anchor="middle">0.096</text>
+<rect x="356" y="106" width="78" height="34" fill="#f16139" rx="3"/>
+<text x="396" y="128" fill="#cdd6f4" font-size="11" text-anchor="middle">0.110</text>
+<rect x="436" y="106" width="78" height="34" fill="#ef4b41" rx="3"/>
+<text x="476" y="128" fill="#cdd6f4" font-size="11" text-anchor="middle">0.026</text>
+<rect x="516" y="106" width="78" height="34" fill="#f48c2a" rx="3"/>
+<text x="556" y="128" fill="#cdd6f4" font-size="11" text-anchor="middle">0.267</text>
+<rect x="596" y="106" width="78" height="34" fill="#f27034" rx="3"/>
+<text x="636" y="128" fill="#cdd6f4" font-size="11" text-anchor="middle">0.163</text>
+<rect x="676" y="106" width="78" height="34" fill="#f37632" rx="3"/>
+<text x="716" y="128" fill="#cdd6f4" font-size="11" text-anchor="middle">0.185</text>
+<text x="188" y="164" fill="#cdd6f4" font-size="10" text-anchor="end">melodic_octave_fix</text>
+<rect x="196" y="142" width="78" height="34" fill="#ef4444" rx="3"/>
+<text x="236" y="164" fill="#cdd6f4" font-size="11" text-anchor="middle">0.000</text>
+<rect x="276" y="142" width="78" height="34" fill="#f15e3a" rx="3"/>
+<text x="316" y="164" fill="#cdd6f4" font-size="11" text-anchor="middle">0.099</text>
+<rect x="356" y="142" width="78" height="34" fill="#ef4c40" rx="3"/>
+<text x="396" y="164" fill="#cdd6f4" font-size="11" text-anchor="middle">0.032</text>
+<rect x="436" y="142" width="78" height="34" fill="#f58f29" rx="3"/>
+<text x="476" y="164" fill="#cdd6f4" font-size="11" text-anchor="middle">0.279</text>
+<rect x="516" y="142" width="78" height="34" fill="#ef4543" rx="3"/>
+<text x="556" y="164" fill="#cdd6f4" font-size="11" text-anchor="middle">0.005</text>
+<rect x="596" y="142" width="78" height="34" fill="#f0533e" rx="3"/>
+<text x="636" y="164" fill="#cdd6f4" font-size="11" text-anchor="middle">0.058</text>
+<rect x="676" y="142" width="78" height="34" fill="#f16637" rx="3"/>
+<text x="716" y="164" fill="#cdd6f4" font-size="11" text-anchor="middle">0.128</text>
+</svg>

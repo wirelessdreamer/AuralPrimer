@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="244" height="350" style="background:#1e1e2e;font-family:monospace">
+<text x="122" y="22" fill="#cdd6f4" font-size="14" text-anchor="middle" font-weight="bold">Per-Instrument Mean F1</text>
+<text x="122" y="40" fill="#a6adc8" font-size="10" text-anchor="middle">Algorithm performance broken down by instrument.</text>
+<line x1="60" y1="270" x2="224" y2="270" stroke="#313244" stroke-width="1"/>
+<text x="55" y="274" fill="#a6adc8" font-size="9" text-anchor="end">0.0</text>
+<line x1="60" y1="230" x2="224" y2="230" stroke="#313244" stroke-width="1"/>
+<text x="55" y="234" fill="#a6adc8" font-size="9" text-anchor="end">0.2</text>
+<line x1="60" y1="190" x2="224" y2="190" stroke="#313244" stroke-width="1"/>
+<text x="55" y="194" fill="#a6adc8" font-size="9" text-anchor="end">0.4</text>
+<line x1="60" y1="150" x2="224" y2="150" stroke="#313244" stroke-width="1"/>
+<text x="55" y="154" fill="#a6adc8" font-size="9" text-anchor="end">0.6</text>
+<line x1="60" y1="110" x2="224" y2="110" stroke="#313244" stroke-width="1"/>
+<text x="55" y="114" fill="#a6adc8" font-size="9" text-anchor="end">0.8</text>
+<line x1="60" y1="70" x2="224" y2="70" stroke="#313244" stroke-width="1"/>
+<text x="55" y="74" fill="#a6adc8" font-size="9" text-anchor="end">1.0</text>
+<rect x="70" y="197" width="26" height="73" fill="#7bd389" rx="2"/>
+<text x="84" y="193" fill="#7bd389" font-size="8" text-anchor="middle">0.369</text>
+<text x="84" y="286" fill="#a6adc8" font-size="8" text-anchor="middle" transform="rotate(-20 84 286)">melodic_yin_octave_hps</text>
+<rect x="118" y="198" width="26" height="72" fill="#7bd389" rx="2"/>
+<text x="132" y="194" fill="#7bd389" font-size="8" text-anchor="middle">0.361</text>
+<text x="132" y="286" fill="#a6adc8" font-size="8" text-anchor="middle" transform="rotate(-20 132 286)">melodic_combined</text>
+<rect x="166" y="198" width="26" height="72" fill="#7bd389" rx="2"/>
+<text x="180" y="194" fill="#7bd389" font-size="8" text-anchor="middle">0.361</text>
+<text x="180" y="286" fill="#a6adc8" font-size="8" text-anchor="middle" transform="rotate(-20 180 286)">melodic_octave_fix</text>
+<rect x="60" y="322" width="12" height="12" fill="#7bd389" rx="2"/>
+<text x="76" y="332" fill="#cdd6f4" font-size="9">bass</text>
+</svg>
