@@ -1,0 +1,76 @@
+# Melodic Transcription Benchmark Report
+
+Generated: 2026-03-13T13:37:28.745191
+Tolerance: 60.0ms
+Algorithms: melodic_yin_octave_hps, melodic_combined, melodic_octave_fix
+
+## Aggregate Summary
+
+| Algorithm | Mean F1 | Pitch Acc | Octave Err | Timing MAE |
+|---|---:|---:|---:|---:|
+| melodic_yin_octave_hps | 0.369 | 18.1% | 29.2% | 30.6ms |
+| melodic_combined | 0.361 | 14.3% | 14.3% | 31.7ms |
+| melodic_octave_fix | 0.361 | 26.9% | 8.6% | 31.7ms |
+
+## Psalm 1 — Bass
+Instrument: bass | Reference notes: 370
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_yin_octave_hps          0.522  0.564  0.486     0.6%  33.9%   33.6ms    319
+  melodic_combined                0.508  0.517  0.500     0.0%  15.1%   31.6ms    358
+  melodic_octave_fix              0.508  0.517  0.500    33.0%   0.0%   31.6ms    358
+
+## Psalm 2 — Bass
+Instrument: bass | Reference notes: 555
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_yin_octave_hps          0.522  0.579  0.476     1.5%  39.0%   21.7ms    456
+  melodic_combined                0.540  0.490  0.602     0.3%   9.6%   25.9ms    682
+  melodic_octave_fix              0.540  0.490  0.602     0.0%   9.9%   25.9ms    682
+
+## Psalm 3 — Bass
+Instrument: bass | Reference notes: 1078
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_yin_octave_hps          0.273  0.408  0.205    13.1%  29.9%   33.2ms    542
+  melodic_combined                0.243  0.303  0.203     8.7%  11.0%   34.2ms    722
+  melodic_octave_fix              0.243  0.303  0.203    25.6%   3.2%   34.2ms    722
+
+## Psalm 4 — Bass
+Instrument: bass | Reference notes: 308
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_yin_octave_hps          0.342  0.295  0.406    77.6%   4.0%   32.1ms    423
+  melodic_combined                0.306  0.221  0.500    67.5%   2.6%   33.8ms    697
+  melodic_octave_fix              0.306  0.221  0.500    32.5%  27.9%   33.8ms    697
+
+## Psalm 5 — Bass
+Instrument: bass | Reference notes: 445
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_yin_octave_hps          0.284  0.243  0.339     9.3%  35.8%   33.1ms    620
+  melodic_combined                0.308  0.242  0.420     4.3%  26.7%   30.7ms    771
+  melodic_octave_fix              0.308  0.242  0.420    46.0%   0.5%   30.7ms    771
+
+## Psalm 6 — Bass
+Instrument: bass | Reference notes: 485
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_yin_octave_hps          0.428  0.514  0.367    12.4%  36.0%   27.6ms    346
+  melodic_combined                0.405  0.472  0.355     9.9%  16.3%   29.5ms    364
+  melodic_octave_fix              0.405  0.472  0.355    28.5%   5.8%   29.5ms    364
+
+## Psalm 7 — Bass
+Instrument: bass | Reference notes: 1349
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_yin_octave_hps          0.210  0.433  0.139    12.3%  26.2%   33.0ms    432
+  melodic_combined                0.213  0.336  0.156     9.5%  18.5%   35.9ms    629
+  melodic_octave_fix              0.213  0.336  0.156    22.8%  12.8%   35.9ms    629
