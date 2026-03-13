@@ -1,0 +1,364 @@
+# Melodic Transcription Benchmark Report
+
+Generated: 2026-03-12T19:23:59.509893
+Tolerance: 60.0ms
+Algorithms: melodic_basic_pitch, melodic_pyin, melodic_yin, melodic_onset_yin, melodic_hpss_yin, melodic_fft_hps, melodic_librosa_pyin, melodic_yin_t020, melodic_yin_bass80, melodic_combined, melodic_hpss_onset, melodic_pyin_long
+
+## Aggregate Summary
+
+| Algorithm | Mean F1 | Pitch Acc | Octave Err | Timing MAE |
+|---|---:|---:|---:|---:|
+| melodic_basic_pitch | 0.097 | 8.4% | 11.9% | 34.3ms |
+| melodic_pyin | 0.082 | 7.3% | 8.7% | 32.4ms |
+| melodic_yin | 0.207 | 19.5% | 24.9% | 33.8ms |
+| melodic_onset_yin | 0.237 | 16.9% | 22.0% | 33.3ms |
+| melodic_hpss_yin | 0.240 | 18.7% | 23.2% | 33.4ms |
+| melodic_fft_hps | 0.250 | 20.2% | 17.4% | 32.1ms |
+| melodic_librosa_pyin | 0.121 | 22.5% | 34.2% | 35.9ms |
+| melodic_yin_t020 | 0.207 | 20.7% | 23.0% | 33.6ms |
+| melodic_yin_bass80 | 0.247 | 18.7% | 32.3% | 31.7ms |
+| melodic_combined | 0.295 | 17.4% | 17.6% | 31.9ms |
+| melodic_hpss_onset | 0.265 | 16.5% | 20.5% | 32.7ms |
+| melodic_pyin_long | 0.175 | 17.3% | 34.4% | 33.6ms |
+
+## Psalm 1 — Bass
+Instrument: bass | Reference notes: 370
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.097  0.465  0.054    15.0%  10.0%   33.0ms     43
+  melodic_pyin                    0.078  0.262  0.046     0.0%   0.0%   30.4ms     65
+  melodic_yin                     0.248  0.333  0.197     4.1%  23.3%   41.1ms    219
+  melodic_onset_yin               0.326  0.353  0.303     5.4%  16.1%   36.4ms    317
+  melodic_hpss_yin                0.251  0.330  0.203     4.0%  22.7%   40.6ms    227
+  melodic_fft_hps                 0.421  0.520  0.354     0.0%  18.3%   33.6ms    252
+  melodic_librosa_pyin            0.091  0.286  0.054    10.0%  55.0%   40.0ms     70
+  melodic_yin_t020                0.235  0.318  0.186     5.8%  17.4%   40.3ms    217
+  melodic_yin_bass80              0.377  0.423  0.341     0.8%  50.8%   44.3ms    298
+  melodic_combined                0.508  0.517  0.500     0.0%  15.1%   31.6ms    358
+  melodic_hpss_onset              0.329  0.352  0.308     5.3%  16.7%   36.4ms    324
+  melodic_pyin_long               0.354  0.427  0.303     1.8%  59.8%   38.6ms    262
+
+## Psalm 1 — Guitar
+Instrument: lead_guitar | Reference notes: 566
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.003  0.071  0.002     0.0% 100.0%   54.6ms     14
+  melodic_pyin                    0.000  0.000  0.000     0.0%   0.0%     n/a      6
+  melodic_yin                     0.205  0.362  0.143     4.9%  18.5%   35.5ms    224
+  melodic_onset_yin               0.314  0.434  0.246     6.5%  19.4%   34.7ms    320
+  melodic_hpss_yin                0.266  0.373  0.207     9.4%  16.2%   35.2ms    314
+  melodic_fft_hps                 0.239  0.396  0.171    28.9%  14.4%   31.6ms    245
+  melodic_librosa_pyin            0.126  0.246  0.085    22.9%  16.7%   28.5ms    195
+  melodic_yin_t020                0.202  0.354  0.141     5.0%  17.5%   35.8ms    226
+  melodic_yin_bass80              0.197  0.367  0.134    11.8%  34.2%   35.1ms    207
+  melodic_combined                0.334  0.377  0.300    20.6%  12.9%   30.3ms    451
+  melodic_hpss_onset              0.362  0.439  0.307     9.2%  22.4%   33.0ms    396
+  melodic_pyin_long               0.155  0.266  0.110    12.9%  27.4%   34.0ms    233
+
+## Psalm 1 — Synth
+Instrument: keys | Reference notes: 482
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.113  0.600  0.062     3.3%   6.7%   37.2ms     50
+  melodic_pyin                    0.123  0.623  0.069     9.1%   6.1%   36.2ms     53
+  melodic_yin                     0.283  0.659  0.180    12.6%  19.5%   34.0ms    132
+  melodic_onset_yin               0.371  0.680  0.255    10.6%  18.7%   34.4ms    181
+  melodic_hpss_yin                0.334  0.714  0.218    12.4%  17.1%   34.4ms    147
+  melodic_fft_hps                 0.304  0.686  0.195    14.9%  13.8%   31.3ms    137
+  melodic_librosa_pyin            0.217  0.524  0.137    30.3%   7.6%   35.4ms    126
+  melodic_yin_t020                0.276  0.630  0.176    17.6%  20.0%   32.6ms    135
+  melodic_yin_bass80              0.338  0.726  0.220     9.4%  13.2%   30.6ms    146
+  melodic_combined                0.363  0.684  0.247    16.8%  14.3%   31.3ms    174
+  melodic_hpss_onset              0.372  0.670  0.257    13.7%  16.1%   34.0ms    185
+  melodic_pyin_long               0.176  0.328  0.120    22.4%   5.2%   32.7ms    177
+
+## Psalm 2 — Bass
+Instrument: bass | Reference notes: 555
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.264  0.354  0.211    51.3%  12.0%   30.6ms    330
+  melodic_pyin                    0.315  0.436  0.247    43.1%   4.4%   27.8ms    314
+  melodic_yin                     0.480  0.574  0.413     4.8%  34.5%   24.4ms    399
+  melodic_onset_yin               0.520  0.509  0.531     5.1%  28.1%   26.6ms    579
+  melodic_hpss_yin                0.476  0.566  0.411     6.1%  32.5%   24.8ms    403
+  melodic_fft_hps                 0.531  0.574  0.494     0.4%  10.6%   26.0ms    477
+  melodic_librosa_pyin            0.239  0.597  0.149     6.0%  56.6%   35.2ms    139
+  melodic_yin_t020                0.469  0.563  0.402     5.4%  34.1%   23.8ms    396
+  melodic_yin_bass80              0.598  0.668  0.540     1.7%  64.7%   18.0ms    449
+  melodic_combined                0.540  0.490  0.602     0.3%   9.6%   25.9ms    682
+  melodic_hpss_onset              0.523  0.505  0.542     6.6%  27.2%   26.6ms    596
+  melodic_pyin_long               0.471  0.605  0.386     3.7%  70.1%   37.4ms    354
+
+## Psalm 2 — Guitar
+Instrument: lead_guitar | Reference notes: 2050
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.036  0.263  0.019     0.0%   0.0%   35.5ms    152
+  melodic_pyin                    0.023  0.375  0.012     0.0%   4.2%   25.7ms     64
+  melodic_yin                     0.154  0.593  0.088    14.9%  37.6%   20.5ms    305
+  melodic_onset_yin               0.208  0.604  0.126    15.1%  34.5%   22.1ms    427
+  melodic_hpss_yin                0.215  0.556  0.133    13.2%  35.2%   23.6ms    491
+  melodic_fft_hps                 0.196  0.537  0.119    26.9%  20.8%   24.1ms    456
+  melodic_librosa_pyin            0.083  0.459  0.046    30.9%  28.7%   23.1ms    205
+  melodic_yin_t020                0.156  0.601  0.090    14.7%  38.6%   20.9ms    306
+  melodic_yin_bass80              0.143  0.574  0.082    18.0%  37.1%   20.0ms    291
+  melodic_combined                0.281  0.502  0.195    24.3%  23.3%   25.4ms    794
+  melodic_hpss_onset              0.259  0.529  0.171    14.2%  31.3%   23.9ms    663
+  melodic_pyin_long               0.156  0.495  0.093    16.8%  31.1%   25.9ms    384
+
+## Psalm 2 — Synth
+Instrument: keys | Reference notes: 310
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.163  0.134  0.206     0.0%   7.8%   26.1ms    477
+  melodic_pyin                    0.180  0.158  0.210     0.0%   4.6%   28.8ms    412
+  melodic_yin                     0.183  0.144  0.248    11.7%  26.0%   18.9ms    533
+  melodic_onset_yin               0.207  0.147  0.352    13.8%  22.9%   21.5ms    741
+  melodic_hpss_yin                0.206  0.153  0.316    13.3%  23.5%   25.7ms    641
+  melodic_fft_hps                 0.197  0.144  0.310    32.3%  12.5%   29.6ms    665
+  melodic_librosa_pyin            0.176  0.190  0.165    41.2%  23.5%   21.0ms    268
+  melodic_yin_t020                0.181  0.143  0.245    15.8%  22.4%   20.4ms    530
+  melodic_yin_bass80              0.191  0.164  0.229     7.0%  22.5%   25.8ms    432
+  melodic_combined                0.205  0.134  0.432    27.6%  14.9%   29.2ms   1000
+  melodic_hpss_onset              0.207  0.140  0.400    15.3%  22.6%   27.5ms    886
+  melodic_pyin_long               0.158  0.145  0.174    25.9%  27.8%   28.6ms    373
+
+## Psalm 3 — Bass
+Instrument: bass | Reference notes: 1078
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.034  0.328  0.018     0.0%   0.0%   35.9ms     58
+  melodic_pyin                    0.019  0.207  0.010     0.0%   9.1%   37.7ms     53
+  melodic_yin                     0.148  0.266  0.103    27.9%  12.6%   36.7ms    418
+  melodic_onset_yin               0.195  0.285  0.148    21.9%  10.6%   32.5ms    562
+  melodic_hpss_yin                0.154  0.271  0.108    27.6%  13.8%   37.2ms    428
+  melodic_fft_hps                 0.186  0.300  0.135    10.3%   9.0%   35.6ms    483
+  melodic_librosa_pyin            0.067  0.199  0.040    30.2%  20.9%   40.0ms    216
+  melodic_yin_t020                0.145  0.257  0.101    24.8%  11.9%   36.5ms    424
+  melodic_yin_bass80              0.238  0.391  0.171    16.9%  34.8%   37.4ms    471
+  melodic_combined                0.243  0.303  0.203     8.7%  11.0%   34.2ms    722
+  melodic_hpss_onset              0.197  0.281  0.151    22.1%  11.0%   33.2ms    580
+  melodic_pyin_long               0.124  0.242  0.084    16.7%  28.9%   39.5ms    372
+
+## Psalm 3 — Guitar
+Instrument: lead_guitar | Reference notes: 1140
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.018  0.115  0.010     0.0%   9.1%   29.6ms     96
+  melodic_pyin                    0.010  0.130  0.005     0.0%  16.7%   38.4ms     46
+  melodic_yin                     0.133  0.289  0.086    35.7%   9.2%   31.1ms    339
+  melodic_onset_yin               0.163  0.283  0.114    30.0%   9.2%   29.8ms    459
+  melodic_hpss_yin                0.197  0.342  0.139    31.0%  13.3%   31.8ms    462
+  melodic_fft_hps                 0.148  0.299  0.098    24.1%  12.5%   34.4ms    375
+  melodic_librosa_pyin            0.128  0.327  0.080    34.1%   6.6%   29.5ms    278
+  melodic_yin_t020                0.131  0.283  0.085    35.0%   8.2%   30.3ms    343
+  melodic_yin_bass80              0.158  0.342  0.103    33.3%   8.6%   33.8ms    342
+  melodic_combined                0.222  0.296  0.177    19.3%  12.4%   31.9ms    682
+  melodic_hpss_onset              0.225  0.320  0.174    25.8%  11.6%   32.5ms    619
+  melodic_pyin_long               0.189  0.330  0.133    27.2%   6.0%   25.8ms    457
+
+## Psalm 4 — Bass
+Instrument: bass | Reference notes: 308
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.017  0.071  0.010     0.0%   0.0%   48.6ms     42
+  melodic_pyin                    0.024  0.121  0.013     0.0%   0.0%   36.0ms     33
+  melodic_yin                     0.280  0.281  0.279    58.1%  17.4%   39.8ms    306
+  melodic_onset_yin               0.269  0.247  0.295    45.1%  17.6%   37.8ms    368
+  melodic_hpss_yin                0.291  0.289  0.292    56.7%  13.3%   40.4ms    311
+  melodic_fft_hps                 0.291  0.235  0.380    76.9%   0.0%   37.5ms    497
+  melodic_librosa_pyin            0.132  0.143  0.123    65.8%  18.4%   42.2ms    266
+  melodic_yin_t020                0.276  0.272  0.279    58.1%  16.3%   39.7ms    316
+  melodic_yin_bass80              0.431  0.494  0.383    91.5%   3.4%   33.7ms    239
+  melodic_combined                0.306  0.221  0.500    67.5%   2.6%   33.8ms    697
+  melodic_hpss_onset              0.281  0.258  0.308    46.3%  11.6%   37.9ms    368
+  melodic_pyin_long               0.187  0.228  0.159    75.5%   6.1%   37.1ms    215
+
+## Psalm 4 — Guitar
+Instrument: lead_guitar | Reference notes: 1536
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.005  0.154  0.003    25.0%   0.0%   10.7ms     26
+  melodic_pyin                    0.004  0.231  0.002     0.0%   0.0%   41.4ms     13
+  melodic_yin                     0.083  0.249  0.050    22.4%  21.1%   44.5ms    305
+  melodic_onset_yin               0.129  0.306  0.081    20.0%  18.4%   42.4ms    408
+  melodic_hpss_yin                0.173  0.344  0.116    21.9%  18.0%   38.9ms    517
+  melodic_fft_hps                 0.159  0.345  0.103    19.0%  22.8%   38.3ms    458
+  melodic_librosa_pyin            0.083  0.295  0.048    20.3%  12.2%   43.8ms    251
+  melodic_yin_t020                0.083  0.248  0.050    25.0%  18.4%   44.7ms    307
+  melodic_yin_bass80              0.090  0.287  0.053    25.6%  31.7%   41.2ms    286
+  melodic_combined                0.230  0.336  0.174    22.4%  19.8%   36.4ms    798
+  melodic_hpss_onset              0.202  0.347  0.142    18.4%  17.4%   37.4ms    628
+  melodic_pyin_long               0.130  0.349  0.080    17.1%  17.9%   34.7ms    352
+
+## Psalm 4 — Synth
+Instrument: keys | Reference notes: 367
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.172  0.147  0.207     1.3%  11.8%   30.2ms    517
+  melodic_pyin                    0.142  0.130  0.158     1.7%   5.2%   29.4ms    447
+  melodic_yin                     0.195  0.186  0.204    16.0%  26.7%   34.4ms    403
+  melodic_onset_yin               0.206  0.172  0.256    11.7%  26.6%   35.7ms    547
+  melodic_hpss_yin                0.219  0.203  0.237    14.9%  26.4%   30.9ms    428
+  melodic_fft_hps                 0.201  0.184  0.221    27.2%  18.5%   28.8ms    439
+  melodic_librosa_pyin            0.152  0.151  0.153    14.3%  17.9%   40.6ms    371
+  melodic_yin_t020                0.198  0.187  0.210    18.2%  26.0%   33.4ms    412
+  melodic_yin_bass80              0.214  0.185  0.253    10.8%  23.7%   25.9ms    503
+  melodic_combined                0.206  0.165  0.275    24.8%  17.8%   30.8ms    613
+  melodic_hpss_onset              0.225  0.189  0.278    10.8%  23.5%   33.9ms    541
+  melodic_pyin_long               0.161  0.173  0.150    14.5%  23.6%   32.2ms    317
+
+## Psalm 5 — Bass
+Instrument: bass | Reference notes: 445
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.066  0.124  0.045    10.0%   0.0%   23.4ms    161
+  melodic_pyin                    0.045  0.094  0.029    15.4%   7.7%   34.1ms    138
+  melodic_yin                     0.219  0.232  0.207    28.3%  27.2%   34.0ms    396
+  melodic_onset_yin               0.253  0.233  0.276    27.6%  20.3%   31.0ms    527
+  melodic_hpss_yin                0.205  0.223  0.189    29.8%  26.2%   33.1ms    376
+  melodic_fft_hps                 0.228  0.268  0.198     2.3%  15.9%   34.7ms    328
+  melodic_librosa_pyin            0.141  0.210  0.106     2.1%  55.3%   35.1ms    224
+  melodic_yin_t020                0.209  0.225  0.196    28.7%  21.8%   34.2ms    386
+  melodic_yin_bass80              0.195  0.200  0.191    10.6%  54.1%   45.3ms    425
+  melodic_combined                0.308  0.242  0.420     4.3%  26.7%   30.7ms    771
+  melodic_hpss_onset              0.260  0.241  0.283    27.8%  16.7%   30.3ms    523
+  melodic_pyin_long               0.202  0.226  0.182     4.9%  61.7%   28.1ms    358
+
+## Psalm 5 — Guitar
+Instrument: lead_guitar | Reference notes: 869
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.064  0.143  0.041     2.8%   8.3%   34.7ms    252
+  melodic_pyin                    0.032  0.132  0.018    12.5%  12.5%   37.0ms    121
+  melodic_yin                     0.076  0.123  0.055    20.8%  29.2%   39.4ms    390
+  melodic_onset_yin               0.095  0.125  0.076    15.2%  21.2%   36.6ms    527
+  melodic_hpss_yin                0.129  0.157  0.109    12.6%  15.8%   35.5ms    605
+  melodic_fft_hps                 0.137  0.171  0.114    23.2%  12.1%   36.0ms    578
+  melodic_librosa_pyin            0.059  0.114  0.040     8.6%  28.6%   34.0ms    308
+  melodic_yin_t020                0.081  0.132  0.059    19.6%  27.5%   38.5ms    386
+  melodic_yin_bass80              0.082  0.137  0.059    21.6%  23.5%   28.3ms    372
+  melodic_combined                0.177  0.168  0.186    15.4%  11.1%   32.8ms    964
+  melodic_hpss_onset              0.141  0.146  0.137     8.4%  12.6%   34.6ms    815
+  melodic_pyin_long               0.135  0.192  0.105     9.9%  14.3%   36.7ms    475
+
+## Psalm 5 — Synth
+Instrument: keys | Reference notes: 139
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.339  0.333  0.345    12.5%   6.2%   31.7ms    144
+  melodic_pyin                    0.272  0.297  0.252    14.3%   0.0%   33.0ms    118
+  melodic_yin                     0.166  0.211  0.137     5.3%  42.1%   29.6ms     90
+  melodic_onset_yin               0.133  0.157  0.115     0.0%  43.8%   31.4ms    102
+  melodic_hpss_yin                0.220  0.268  0.187     3.9%  34.6%   33.0ms     97
+  melodic_fft_hps                 0.197  0.262  0.158    31.8%  36.4%   33.9ms     84
+  melodic_librosa_pyin            0.030  0.047  0.022     0.0% 100.0%   44.9ms     64
+  melodic_yin_t020                0.221  0.257  0.194    14.8%  29.6%   28.8ms    105
+  melodic_yin_bass80              0.189  0.253  0.151     4.8%  42.9%   33.7ms     83
+  melodic_combined                0.183  0.216  0.158    22.7%  31.8%   38.9ms    102
+  melodic_hpss_onset              0.185  0.211  0.166     0.0%  34.8%   30.0ms    109
+  melodic_pyin_long               0.054  0.059  0.050     0.0%  57.1%   48.9ms    119
+
+## Psalm 6 — Bass
+Instrument: bass | Reference notes: 485
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.155  0.317  0.103    32.0%  16.0%   32.0ms    158
+  melodic_pyin                    0.161  0.370  0.103    24.0%   8.0%   28.5ms    135
+  melodic_yin                     0.324  0.552  0.229    28.8%  19.8%   25.8ms    201
+  melodic_onset_yin               0.366  0.507  0.287    28.1%  17.3%   29.0ms    274
+  melodic_hpss_yin                0.323  0.547  0.229    31.5%  18.9%   26.6ms    203
+  melodic_fft_hps                 0.250  0.557  0.161     7.7%   3.9%   28.7ms    140
+  melodic_librosa_pyin            0.234  0.529  0.150    35.6%  37.0%   33.0ms    138
+  melodic_yin_t020                0.343  0.558  0.247    32.5%  19.2%   25.1ms    215
+  melodic_yin_bass80              0.371  0.649  0.260    19.8%  54.8%   25.0ms    194
+  melodic_combined                0.405  0.472  0.355     9.9%  16.3%   29.5ms    364
+  melodic_hpss_onset              0.365  0.504  0.287    28.1%  16.6%   30.5ms    276
+  melodic_pyin_long               0.299  0.556  0.204    25.2%  50.5%   29.3ms    178
+
+## Psalm 6 — Guitar
+Instrument: lead_guitar | Reference notes: 2920
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.018  0.643  0.009     0.0%  29.6%   32.6ms     42
+  melodic_pyin                    0.009  0.609  0.005     0.0%  21.4%   33.1ms     23
+  melodic_yin                     0.150  0.659  0.085    30.8%  14.2%   30.5ms    375
+  melodic_onset_yin               0.178  0.665  0.103    28.3%  12.7%   31.3ms    451
+  melodic_hpss_yin                0.203  0.750  0.117    24.5%  14.0%   30.7ms    457
+  melodic_fft_hps                 0.200  0.730  0.116    19.8%  15.7%   29.6ms    463
+  melodic_librosa_pyin            0.106  0.586  0.058    33.5%  11.8%   32.6ms    290
+  melodic_yin_t020                0.153  0.672  0.086    30.6%  15.1%   30.8ms    375
+  melodic_yin_bass80              0.161  0.758  0.090    27.8%  16.4%   29.8ms    347
+  melodic_combined                0.270  0.716  0.166    15.9%  14.8%   28.6ms    677
+  melodic_hpss_onset              0.242  0.735  0.145    21.2%  12.5%   30.3ms    577
+  melodic_pyin_long               0.136  0.606  0.076    22.9%  11.7%   30.9ms    368
+
+## Psalm 7 — Bass
+Instrument: bass | Reference notes: 1349
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.045  0.206  0.025     5.9%   8.8%   40.3ms    165
+  melodic_pyin                    0.043  0.218  0.024    18.8%  15.6%   34.3ms    147
+  melodic_yin                     0.148  0.330  0.096    16.3%  27.9%   42.2ms    391
+  melodic_onset_yin               0.155  0.314  0.103    15.1%  28.1%   41.5ms    443
+  melodic_hpss_yin                0.149  0.328  0.096    17.7%  24.6%   41.0ms    397
+  melodic_fft_hps                 0.178  0.367  0.118    10.7%  23.3%   37.2ms    433
+  melodic_librosa_pyin            0.041  0.108  0.025    14.7%  29.4%   38.2ms    314
+  melodic_yin_t020                0.159  0.347  0.103    17.3%  23.0%   42.5ms    401
+  melodic_yin_bass80              0.173  0.431  0.108    10.3%  42.5%   35.7ms    339
+  melodic_combined                0.213  0.336  0.156     9.5%  18.5%   35.9ms    629
+  melodic_hpss_onset              0.162  0.322  0.108    17.1%  26.7%   39.7ms    453
+  melodic_pyin_long               0.042  0.144  0.025     3.0%  33.3%   41.9ms    229
+
+## Psalm 7 — Guitar
+Instrument: lead_guitar | Reference notes: 862
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.026  0.162  0.014     0.0%   0.0%   37.7ms     74
+  melodic_pyin                    0.004  0.071  0.002     0.0%  50.0%   50.3ms     28
+  melodic_yin                     0.122  0.226  0.084    26.4%  26.4%   41.8ms    319
+  melodic_onset_yin               0.158  0.247  0.116    22.0%  28.0%   39.5ms    404
+  melodic_hpss_yin                0.222  0.331  0.167    25.7%  35.4%   37.6ms    435
+  melodic_fft_hps                 0.223  0.357  0.162    27.9%  19.3%   35.0ms    392
+  melodic_librosa_pyin            0.094  0.176  0.064    27.3%  23.6%   36.6ms    312
+  melodic_yin_t020                0.115  0.212  0.079    25.0%  30.9%   41.9ms    320
+  melodic_yin_bass80              0.150  0.290  0.101    34.5%  21.8%   36.9ms    300
+  melodic_combined                0.247  0.290  0.215    21.1%  22.2%   35.3ms    638
+  melodic_hpss_onset              0.247  0.321  0.201    23.1%  33.0%   35.2ms    539
+  melodic_pyin_long               0.160  0.298  0.109    28.7%  21.3%   31.8ms    315
+
+## Psalm 7 — Synth
+Instrument: keys | Reference notes: 16
+
+  Algorithm                          F1   Prec    Rec PitchAcc OctErr     MAE  Notes
+  ------------------------------------------------------------------------------------------
+  melodic_basic_pitch             0.200  0.214  0.188     0.0%   0.0%   47.8ms     14
+  melodic_pyin                    0.074  0.091  0.062     0.0%   0.0%    1.6ms     11
+  melodic_yin                     0.333  0.357  0.312     0.0%  40.0%   38.4ms     14
+  melodic_onset_yin               0.258  0.267  0.250     0.0%  25.0%   39.5ms     15
+  melodic_hpss_yin                0.323  0.333  0.312     0.0%  40.0%   34.4ms     15
+  melodic_fft_hps                 0.462  0.600  0.375     0.0%  50.0%   23.7ms     10
+  melodic_librosa_pyin            0.100  0.083  0.125     0.0% 100.0%   49.2ms     24
+  melodic_yin_t020                0.294  0.278  0.312     0.0%  40.0%   38.4ms     18
+  melodic_yin_bass80              0.400  0.429  0.375     0.0%  33.3%   22.7ms     14
+  melodic_combined                0.357  0.417  0.312     0.0%  40.0%   32.9ms     12
+  melodic_hpss_onset              0.250  0.250  0.250     0.0%  25.0%   34.5ms     16
+  melodic_pyin_long               0.031  0.021  0.062     0.0% 100.0%   24.4ms     48

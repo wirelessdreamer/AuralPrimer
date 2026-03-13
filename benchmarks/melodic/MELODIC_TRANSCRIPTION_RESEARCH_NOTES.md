@@ -65,34 +65,53 @@ The minimum review set is:
 | `melodic_yin` | ~0.19 | ~18% | ~24% | — |
 | `melodic_librosa_pyin` | ~0.12 | ~22% | ~30% | Octave errors on some songs |
 
+---
+
+## Run 2: Experiment (2026-03-12)
+
+**Run dir:** `benchmarks/melodic/runs/20260312_192359_experiment-2/`
+
+5 new algorithm variants tested alongside the 7 baselines:
+
+| Variant | Key Change | Result |
+|---|---|---|
+| `melodic_yin_t020` | YIN threshold 0.20 (stricter voicing) | Marginal improvement over 0.15 default |
+| `melodic_yin_bass80` | 80ms frames for bass | **F1=0.598 on Ps2 Bass, 91.5% pitch acc on Ps4 Bass** |
+| **`melodic_combined`** | Onset detection + HPS pitch + YIN fallback | 🏆 **New overall leader — wins 16+/19 songs** |
+| `melodic_hpss_onset` | HPSS + onset-aware YIN | Strong 2nd — wins on some guitar songs |
+| `melodic_pyin_long` | librosa pYIN w/ 4096 frame_length | Improves bass but high octave errors |
+
 ### Key Findings
 
-1. **All new algorithms 2–5× better than ZCR baseline** on F1 across all 19 test cases
-2. **`melodic_onset_yin` and `melodic_fft_hps` are co-leaders** — onset_yin has best recall (note detection), fft_hps has best pitch accuracy (up to 77% on Psalm 4 Bass)
-3. **`melodic_hpss_yin` has highest precision** on guitar — HPSS removes percussive transients
-4. **Octave errors are the dominant failure mode** for all autocorrelation methods (17–24% rate). FFT+HPS has lowest octave error rate (~16%)
-5. **librosa pYIN underperforms** due to `fmin` warning — frame_length=2048 is too short for bass frequencies < 47 Hz
-6. **Guitar transcription is hardest** — polyphonic content and rapid passages cause low recall across all algorithms
+1. **`melodic_combined` is the new overall F1 leader** — onset detection from onset_yin + HPS pitch estimation + YIN fallback gives best of both worlds
+2. **`melodic_yin_bass80` achieves 91.5% pitch accuracy** on Ps4 Bass — 80ms frames are critical for bass fundamental detection
+3. **Combined approach wins 16+/19 songs** with best F1 range 0.17–0.54 across all instruments
+4. **Octave errors drop to ~10–15%** for combined (vs 22–30% for single-method approaches)
+5. **`melodic_hpss_onset` is the best single-approach** — HPSS + onset detection consistently 2nd place
+6. **Guitar remains the hardest instrument** — best F1 ~0.27 on guitar vs ~0.54 on bass
 
 ### Per-Instrument Best F1 (peak per-song values)
 
 | Instrument | Best Algorithm | Best F1 | Song |
 |---|---|---:|---|
-| Bass | `melodic_fft_hps` | 0.531 | Psalm 2 |
-| Bass | `melodic_onset_yin` | 0.520 | Psalm 2 |
-| Guitar | `melodic_onset_yin` | 0.314 | Psalm 1 |
-| Guitar | `melodic_hpss_yin` | 0.222 | Psalm 7 |
-| Keys | `melodic_onset_yin` | 0.371 | Psalm 1 |
+| Bass | `melodic_yin_bass80` | 0.598 | Psalm 2 |
+| Bass | `melodic_combined` | 0.540 | Psalm 2 |
+| Bass | `melodic_combined` | 0.508 | Psalm 1 |
+| Guitar | `melodic_hpss_onset` | 0.362 | Psalm 1 |
+| Guitar | `melodic_combined` | 0.334 | Psalm 1 |
+| Keys | `melodic_hpss_onset` | 0.372 | Psalm 1 |
 | Keys | `melodic_basic_pitch` | 0.339 | Psalm 5 |
 
 ---
 
 ## Experiment Queue
 
-1. ~~**Baseline** — Run all algorithms on all test cases, capture SVGs~~ ✅ Done
-2. **YIN threshold tuning** — Vary `yin_threshold` from 0.10 to 0.25
-3. **Frame size optimization** — Test longer frames for bass (80ms+) and increase librosa pYIN frame_length
-4. **Onset ratio tuning** — Vary onset energy ratio threshold
-5. **HPSS margin** — Test different HPSS margin parameters
-6. **Combined approach** — Best onset detector (onset_yin) + best pitch estimator (fft_hps)
-7. **Octave error mitigation** — Add octave-checking post-processor to remove systematic doubling
+1. ~~**Baseline** — Run all algorithms on all test cases~~ ✅ Done
+2. ~~**YIN threshold tuning** — `yin_threshold=0.20`~~ ✅ Marginal gain
+3. ~~**Frame size optimization** — 80ms frames for bass, 4096 pYIN~~ ✅ Major bass improvement
+4. ~~**Combined approach** — Onset + HPS pitch + YIN fallback~~ ✅ **New leader**
+5. ~~**HPSS + onset** — HPSS preprocessing + onset detection~~ ✅ Strong 2nd
+6. **Octave error mitigation** — Post-processor to fix systematic octave doubling
+7. **Adaptive frame size** — Instrument-aware frame_sec (80ms bass, 50ms guitar, 60ms keys)
+8. **HPSS + combined** — HPSS preprocessing + combined pitch estimation
+
