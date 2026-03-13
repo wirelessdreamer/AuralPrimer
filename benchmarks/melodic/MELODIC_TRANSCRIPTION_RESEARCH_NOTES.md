@@ -104,6 +104,39 @@ The minimum review set is:
 
 ---
 
+## Run 3: Experiment (2026-03-13)
+
+**Run dir:** `benchmarks/melodic/runs/20260313_061007_experiment-3/`
+
+3 new algorithm variants tested alongside the 12 existing:
+
+| Variant | Key Change | Result |
+|---|---|---|
+| `melodic_octave_fix` | Post-processing octave correction + median filter on `melodic_combined` | 🏆 **Tied leader F1=0.295, lowest octave errors (17.2%)** |
+| `melodic_adaptive` | Instrument-specific frame sizes (80ms bass, 50ms guitar, 60ms keys) | Strong 4th (F1=0.272), best on some instruments |
+| `melodic_hpss_combined` | HPSS preprocessing + combined pitch estimation | Close 3rd (F1=0.290), lowest octave errors on some songs |
+
+### Aggregate Results
+
+| Algorithm | Mean F1 | Pitch Acc | Octave Err | Timing MAE |
+|---|---:|---:|---:|---:|
+| **`melodic_combined`** | **0.295** | 17.4% | 17.6% | 31.9ms |
+| **`melodic_octave_fix`** | **0.295** | 19.2% | **17.2%** | 31.9ms |
+| `melodic_hpss_combined` | 0.290 | 16.8% | **16.7%** | 32.3ms |
+| `melodic_adaptive` | 0.272 | 19.1% | 19.8% | 32.2ms |
+| `melodic_hpss_onset` | 0.265 | 16.5% | 20.5% | 32.7ms |
+| `melodic_fft_hps` | 0.250 | **20.2%** | 17.4% | 32.1ms |
+
+### Key Findings
+
+1. **Octave fix is the safest overall** — same F1 as combined, fewer octave errors
+2. **HPSS combined has lowest octave errors** (16.7%) — harmonic separation reduces octave confusion
+3. **Adaptive frames help bass** (Ps4: 0.317, Ps2: 0.518) but don't lift guitar/keys enough
+4. **Guitar remains hardest** — best peak F1 ~0.28 across all algorithms
+5. **Pitch accuracy still low** (~17–22%) — fundamental limitation of current single-pass approaches
+
+---
+
 ## Experiment Queue
 
 1. ~~**Baseline** — Run all algorithms on all test cases~~ ✅ Done
@@ -111,7 +144,10 @@ The minimum review set is:
 3. ~~**Frame size optimization** — 80ms frames for bass, 4096 pYIN~~ ✅ Major bass improvement
 4. ~~**Combined approach** — Onset + HPS pitch + YIN fallback~~ ✅ **New leader**
 5. ~~**HPSS + onset** — HPSS preprocessing + onset detection~~ ✅ Strong 2nd
-6. **Octave error mitigation** — Post-processor to fix systematic octave doubling
-7. **Adaptive frame size** — Instrument-aware frame_sec (80ms bass, 50ms guitar, 60ms keys)
-8. **HPSS + combined** — HPSS preprocessing + combined pitch estimation
+6. ~~**Octave error mitigation** — Post-processor to fix systematic octave doubling~~ ✅ Tied leader
+7. ~~**Adaptive frame size** — Instrument-aware frame_sec~~ ✅ Helps bass
+8. ~~**HPSS + combined** — HPSS preprocessing + combined pitch estimation~~ ✅ Close 3rd
+9. **Template multi-pass** — Learn instrument spectral profile, then re-estimate pitch with song-specific parameters (inspired by drum spectral template approach)
+10. **Template + octave fix** — Template multi-pass with octave correction post-processing
+
 
