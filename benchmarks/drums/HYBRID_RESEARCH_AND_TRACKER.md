@@ -481,3 +481,67 @@ gives best real-world results (F1=0.431) but hurts rendered audio.
 2. Consider separate rendered and real-world threshold profiles.
 3. Explore a two-pass approach using pattern context (beat position) to refine ambiguous events.
 4. Try using mean crack_ratio from a calibration pass to set adaptive per-song thresholds.
+
+## Spectral Template Multi-Pass Approach
+
+### Concept
+
+Multi-pass spectral template matching: learn song-specific spectral signatures for each drum type, then re-classify using learned templates. The key insight is that every song uses different drum samples/kits, so fixed frequency bands are always a compromise.
+
+**Pass 1 — Spectral Profiling:**
+1. Broad onset detection (lower thresholds to catch more events)
+2. Extract 50ms FFT windows per onset → 9-band energy features + centroid + sharpness
+3. K-means cluster onsets (k=3–5 clusters)
+4. Label clusters using heuristics: lowest centroid → kick, highest → hi-hat, broadband mid → snare
+
+**Pass 2 — Refined Classification:**
+1. Standard per-band peak-picking (tighter thresholds for output)
+2. For each onset, compare features against Pass 1 templates
+3. Template match with confidence > 0.55 overrides band detection
+4. Medium confidence (0.35–0.55): override only when initial class seems implausible
+
+### Benchmark Results (2026-03-13, spectral-template-v1)
+
+Run: [20260313_085252_spectral-template-v1.json](C:\Users\dreamer\Documents\drum_benchmark_runs\20260313_085252_spectral-template-v1.json)
+
+Mean scores across 6 real-world Psalm songs:
+
+| Algorithm | Mean F1 | Precision | Recall | MAE |
+| --- | ---: | ---: | ---: | ---: |
+| `adaptive_beat_grid` | **0.403** | **0.384** | 0.427 | 31.6 ms |
+| `spectral_template_with_grid` | 0.335 | 0.229 | **0.632** | 31.0 ms |
+| `spectral_template_multipass` | 0.317 | 0.226 | 0.536 | **30.9 ms** |
+| `spectral_flux_multiband` | 0.290 | 0.230 | 0.399 | 30.6 ms |
+| `beat_conditioned_multiband_decoder` | 0.257 | 0.177 | 0.474 | 29.4 ms |
+
+Per-song detail:
+
+| Algorithm | Ps1 | Ps2 | Ps4 | Ps5 | Ps6 | Ps7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `adaptive_beat_grid` | **0.552** | **0.304** | 0.323 | **0.441** | **0.341** | **0.455** |
+| `spectral_template_with_grid` | 0.398 | 0.289 | **0.337** | 0.344 | 0.288 | 0.356 |
+| `spectral_template_multipass` | 0.399 | 0.245 | 0.280 | 0.348 | 0.270 | 0.359 |
+| `spectral_flux_multiband` | 0.354 | 0.228 | 0.194 | 0.328 | 0.258 | 0.378 |
+| `beat_conditioned_multiband_decoder` | 0.264 | 0.212 | 0.244 | 0.285 | 0.274 | 0.265 |
+
+### Key Findings
+
+1. **Spectral template is consistently 2nd or 3rd place** — beats `spectral_flux_multiband` and `beat_conditioned_multiband_decoder` on all 6 songs.
+2. **Best timing accuracy**: `spectral_template_multipass` has lowest MAE on Psalm 2 (18.9ms) and Psalm 6 (18.8ms).
+3. **Exceptional snare recall**: 97.5% on Psalm 5, near-perfect snare detection.
+4. **Combined version won Psalm 4**: `spectral_template_with_grid` (0.337) beat `adaptive_beat_grid` (0.323).
+5. **Best recall across the board**: `spectral_template_with_grid` recall of 0.632 is 48% better than adaptive_beat_grid (0.427).
+
+### Weaknesses
+
+1. **Low precision (0.226–0.229)** — too many false positives. The profiling pass threshold is too sensitive.
+2. **kick→hi-hat confusion** — dominant error pattern (up to 189 events on Psalm 4). The spectral centroid labeling sometimes misassigns kicks with harmonics above ~4kHz.
+3. **crash→hi-hat confusion** — cymbals being classified as hi-hats due to overlapping spectral ranges.
+
+### Improvement Directions
+
+1. **Raise Pass 2 thresholds**: Lower recall to improve precision — current k=2.0 is too low, try k=2.2+.
+2. **Post-classification energy check**: Before emitting a hi-hat, verify sub_bass energy is low. If sub_bass > threshold, reclassify to kick.
+3. **Template confidence weighting**: Weight template vs band detection based on Pass 1 cluster separation quality (tight clusters = trust template more).
+4. **Iterative Pass 3**: Use Pass 2 classifications to refine templates, then re-classify once more.
+5. **Cross-band suppression**: Apply the existing kick→snare cross-band filter to kick→hi-hat as well.
