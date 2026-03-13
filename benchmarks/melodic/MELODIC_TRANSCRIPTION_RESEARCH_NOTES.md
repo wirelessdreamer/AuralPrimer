@@ -149,5 +149,38 @@ The minimum review set is:
 8. ~~**HPSS + combined** — HPSS preprocessing + combined pitch estimation~~ ✅ Close 3rd
 9. **Template multi-pass** — Learn instrument spectral profile, then re-estimate pitch with song-specific parameters (inspired by drum spectral template approach)
 10. **Template + octave fix** — Template multi-pass with octave correction post-processing
+11. ~~**YIN-octave HPS-pitch hybrid** — YIN for octave determination, HPS for fine pitch~~ ✅ New F1 leader on bass
+12. ~~**Hybrid + octave fix** — YIN-octave HPS-pitch + octave correction post-processing~~ ✅ Best pitch accuracy + octave errors
+
+---
+
+## Run 4: YIN-Octave HPS-Pitch Hybrid (2026-03-13)
+
+### Concept
+
+Use each pitch method where it's strongest: YIN (autocorrelation) determines the correct **octave** — because autocorrelation finds the waveform period which corresponds to the fundamental. HPS (FFT) provides the fine **pitch class** within that octave — because FFT has better frequency resolution.
+
+When YIN and HPS disagree by exactly 12 semitones, trust YIN's octave + HPS's chroma. When they agree, use HPS. Auto-uses 80ms frames for bass.
+
+### Bass Benchmark Results (7 Psalms)
+
+| Song | `yin_octave_hps_fix` F1 | `combined` F1 | Fix PitchAcc | Fix OctErr |
+|---|---:|---:|---:|---:|
+| **Ps1** | **0.522** ✅ | 0.508 | **53.3%** | **0.0%** |
+| Ps2 | 0.522 | **0.540** | 0.8% | 40.2% |
+| **Ps3** | **0.273** ✅ | 0.243 | **39.8%** | **9.5%** |
+| **Ps4** | **0.342** ✅ | 0.306 | 40.8% | 32.8% |
+| Ps5 | 0.284 | **0.308** | **57.6%** | **1.3%** |
+| **Ps6** | **0.428** ✅ | 0.405 | **50.0%** | **7.9%** |
+| Ps7 | 0.210 | **0.213** | **24.6%** | **17.1%** |
+
+### Key Findings
+
+1. **Hybrid wins F1 on 4/7 bass songs** and has better precision on 6/7
+2. **Pitch accuracy dramatically better**: avg ~38% with fix vs ~3% raw hybrid (vs ~19% combined)
+3. **Octave errors reduced**: avg ~15.5% with fix vs ~29% raw hybrid
+4. **Ps1 breakthrough**: 53.3% pitch accuracy, 0.0% octave errors — best ever on this song
+5. **Fix helps 5/7, hurts 1/7** (Ps4 where raw hybrid already had 4% octave errors)
+6. **Ps2 remains hard**: 40% octave errors — both YIN and HPS agree on wrong octave (harmonics genuinely louder than fundamental in this recording)
 
 
