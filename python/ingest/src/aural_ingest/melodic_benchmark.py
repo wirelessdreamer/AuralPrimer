@@ -192,6 +192,7 @@ MELODIC_ALGORITHMS = [
     "melodic_hpss_combined",
     # --- experiments (round 4: template multi-pass) ---
     "melodic_template_multipass",
+    "melodic_yin_octave_hps",
 ]
 
 
