@@ -190,6 +190,8 @@ MELODIC_ALGORITHMS = [
     "melodic_octave_fix",
     "melodic_adaptive",
     "melodic_hpss_combined",
+    # --- experiments (round 4: template multi-pass) ---
+    "melodic_template_multipass",
 ]
 
 
