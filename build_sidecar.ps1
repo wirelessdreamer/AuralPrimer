@@ -70,7 +70,7 @@ if (-not $sourceAbs) {
 
     Push-Location $ingestRoot
     try {
-      & py -3 -m PyInstaller --noconfirm --clean --onefile --name aural_ingest --paths (Join-Path $ingestRoot "src") $entryPath
+      & python -m PyInstaller --noconfirm --clean --onefile --name aural_ingest --paths (Join-Path $ingestRoot "src") $entryPath
       if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller build failed with exit code $LASTEXITCODE"
       }

@@ -102,12 +102,25 @@ def _parse_config_arg(raw: str | None) -> dict[str, Any]:
     return json.loads(raw)
 
 
-def _have_ffmpeg() -> bool:
+def _resolve_ffmpeg_path() -> str | None:
+    """Return the absolute path to an ffmpeg binary, or *None* if unavailable.
+
+    Lookup order:
+    1. Next to ``sys.executable`` (portable / PyInstaller sidecar layout)
+    2. System PATH via ``shutil.which``
+    """
     try:
-        cp = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, check=False)
-        return cp.returncode == 0
-    except FileNotFoundError:
-        return False
+        exe_dir = Path(sys.executable).resolve().parent
+        candidate = exe_dir / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+        if candidate.is_file():
+            return str(candidate)
+    except Exception:
+        pass
+    return shutil.which("ffmpeg")
+
+
+def _have_ffmpeg() -> bool:
+    return _resolve_ffmpeg_path() is not None
 
 
 def _decode_to_wav(src: Path, dst_wav: Path, *, target_sr: int = 48_000) -> tuple[float, int]:
@@ -127,7 +140,8 @@ def _decode_to_wav(src: Path, dst_wav: Path, *, target_sr: int = 48_000) -> tupl
         duration, sr = _wav_duration_sec(dst_wav)
         return duration, sr
 
-    if not _have_ffmpeg():
+    ffmpeg_bin = _resolve_ffmpeg_path()
+    if ffmpeg_bin is None:
         raise RuntimeError(
             "ffmpeg not found on PATH; non-wav inputs require ffmpeg for decode. "
             "Provide a .wav input or install ffmpeg."
@@ -138,7 +152,7 @@ def _decode_to_wav(src: Path, dst_wav: Path, *, target_sr: int = 48_000) -> tupl
     # - normalized sample rate
     # Note: ffmpeg can still include encoder metadata in non-wav outputs; we only require wav here.
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-y",
         "-v",
         "error",
