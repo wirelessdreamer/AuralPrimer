@@ -3,6 +3,7 @@ param(
   [string]$RepoRoot = "",
   [string]$PortableRoot = "D:/AuralPrimer/AuralPrimerPortable",
   [string]$Demucs6ModelPackZipPath = "",
+  [string]$FfmpegExePath = "",
   [string]$GameExePath = "",
   # Legacy alias for GameExePath.
   [string]$DesktopExePath = "",
@@ -370,6 +371,88 @@ if ($demucs6SourceSha256 -ne $demucs6PortableSha256) {
   throw "Portable demucs_6 modelpack hash mismatch: expected $demucs6SourceSha256 got $demucs6PortableSha256"
 }
 
+# --- ffmpeg bundling ---
+# Resolve ffmpeg.exe: explicit path -> local candidates -> system PATH -> download
+$ffmpegSourceAbs = ""
+if (-not [string]::IsNullOrWhiteSpace($FfmpegExePath)) {
+  $ffmpegSourceAbs = Resolve-AbsolutePath $repoRootAbs $FfmpegExePath
+  if (-not (Test-Path -LiteralPath $ffmpegSourceAbs -PathType Leaf)) {
+    throw "Explicit FfmpegExePath not found: $ffmpegSourceAbs"
+  }
+}
+
+if (-not $ffmpegSourceAbs) {
+  $ffmpegCandidates = @(
+    "dist/ffmpeg/ffmpeg.exe",
+    "external/ffmpeg/ffmpeg.exe",
+    "ffmpeg.exe"
+  )
+  foreach ($candidate in $ffmpegCandidates) {
+    $abs = Resolve-AbsolutePath $repoRootAbs $candidate
+    if (Test-Path -LiteralPath $abs -PathType Leaf) {
+      $ffmpegSourceAbs = $abs
+      break
+    }
+  }
+}
+
+if (-not $ffmpegSourceAbs) {
+  $systemFfmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+  if ($systemFfmpeg) {
+    $ffmpegSourceAbs = $systemFfmpeg.Source
+  }
+}
+
+if (-not $ffmpegSourceAbs) {
+  Write-Host "ffmpeg not found locally or on PATH; downloading ffmpeg-release-essentials..."
+  $ffmpegDownloadDir = Join-Path $repoRootAbs "dist/ffmpeg"
+  New-Item -ItemType Directory -Path $ffmpegDownloadDir -Force | Out-Null
+  $ffmpegZipPath = Join-Path $ffmpegDownloadDir "ffmpeg-release-essentials.zip"
+  $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+  Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZipPath -UseBasicParsing
+  if (-not (Test-Path -LiteralPath $ffmpegZipPath -PathType Leaf)) {
+    throw "Failed to download ffmpeg from $ffmpegUrl"
+  }
+  # Extract only ffmpeg.exe from the zip (it's inside a versioned subdirectory)
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $ffmpegZip = [System.IO.Compression.ZipFile]::OpenRead($ffmpegZipPath)
+  try {
+    $ffmpegEntry = $ffmpegZip.Entries | Where-Object { $_.Name -eq "ffmpeg.exe" -and $_.FullName -match "bin/ffmpeg\.exe$" } | Select-Object -First 1
+    if ($null -eq $ffmpegEntry) {
+      throw "ffmpeg.exe not found inside downloaded archive $ffmpegZipPath"
+    }
+    $ffmpegExtractedPath = Join-Path $ffmpegDownloadDir "ffmpeg.exe"
+    $stream = $ffmpegEntry.Open()
+    try {
+      $outStream = [System.IO.File]::Create($ffmpegExtractedPath)
+      try {
+        $stream.CopyTo($outStream)
+      } finally {
+        $outStream.Dispose()
+      }
+    } finally {
+      $stream.Dispose()
+    }
+  } finally {
+    $ffmpegZip.Dispose()
+  }
+  if (-not (Test-Path -LiteralPath $ffmpegExtractedPath -PathType Leaf)) {
+    throw "Failed to extract ffmpeg.exe from $ffmpegZipPath"
+  }
+  $ffmpegSourceAbs = $ffmpegExtractedPath
+  Write-Host "Downloaded ffmpeg to: $ffmpegSourceAbs"
+}
+
+Assert-NotBlank $ffmpegSourceAbs "FfmpegExePath"
+$portableFfmpegExe = Join-Path $portableSidecarDir "ffmpeg.exe"
+Copy-Item -LiteralPath $ffmpegSourceAbs -Destination $portableFfmpegExe -Force
+$ffmpegSourceSha256 = Get-Sha256Lower $ffmpegSourceAbs
+$ffmpegPortableSha256 = Get-Sha256Lower $portableFfmpegExe
+if ($ffmpegSourceSha256 -ne $ffmpegPortableSha256) {
+  throw "Portable ffmpeg hash mismatch: expected $ffmpegSourceSha256 got $ffmpegPortableSha256"
+}
+
 $portableManifestPath = Join-Path $portableRootAbs "portable_manifest.json"
 $portableManifest = [ordered]@{
   schema_version = 1
@@ -402,6 +485,12 @@ $portableManifest = [ordered]@{
       timestamp_check = "portable_last_write_utc>=source_last_write_utc"
     }
   }
+  ffmpeg = @{
+    source_path = $ffmpegSourceAbs
+    source_sha256 = $ffmpegSourceSha256
+    portable_path = $portableFfmpegExe
+    portable_sha256 = $ffmpegPortableSha256
+  }
   modelpacks = @(
     [ordered]@{
       id = "demucs_6"
@@ -433,5 +522,6 @@ if ($ZipOutput) {
   portable_manifest = $portableManifestPath
   sidecar_hash = $portableSidecarHash
   demucs6_modelpack_zip = $portableDemucs6ModelPackZip
+  ffmpeg_exe = $portableFfmpegExe
   zip_path = $zipPath
 } | Write-Output

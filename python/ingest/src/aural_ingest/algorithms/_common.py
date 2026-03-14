@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import array
-import audioop
 from dataclasses import dataclass
 import math
 from pathlib import Path
 import statistics
+import struct
 import sys
 from typing import Iterable, Mapping, Protocol
 import wave
@@ -90,6 +90,45 @@ def estimate_duration_sec(stem_path: Path) -> float:
     return 1.0 + float(size % 40_000) / 10_000.0
 
 
+def _tomono(raw: bytes, sampwidth: int, channels: int) -> bytes:
+    """Mix multi-channel PCM to mono by averaging channels (replaces audioop.tomono)."""
+    if channels <= 1:
+        return raw
+    fmt = {1: "b", 2: "<h", 4: "<i"}.get(sampwidth)
+    if fmt is None:
+        raise ValueError(f"unsupported sample width: {sampwidth}")
+    frame_count = len(raw) // (sampwidth * channels)
+    out = bytearray(frame_count * sampwidth)
+    for i in range(frame_count):
+        total = 0
+        for ch in range(channels):
+            offset = (i * channels + ch) * sampwidth
+            (val,) = struct.unpack_from(fmt, raw, offset)
+            total += val
+        mono_val = total // channels
+        struct.pack_into(fmt, out, i * sampwidth, mono_val)
+    return bytes(out)
+
+
+def _lin2lin(raw: bytes, src_width: int, dst_width: int) -> bytes:
+    """Convert sample width (replaces audioop.lin2lin)."""
+    if src_width == dst_width:
+        return raw
+    src_fmt = {1: "b", 2: "<h", 4: "<i"}.get(src_width)
+    dst_fmt = {1: "b", 2: "<h", 4: "<i"}.get(dst_width)
+    if src_fmt is None or dst_fmt is None:
+        raise ValueError(f"unsupported sample widths: {src_width} -> {dst_width}")
+    src_max = (1 << (src_width * 8 - 1)) - 1
+    dst_max = (1 << (dst_width * 8 - 1)) - 1
+    count = len(raw) // src_width
+    out = bytearray(count * dst_width)
+    for i in range(count):
+        (val,) = struct.unpack_from(src_fmt, raw, i * src_width)
+        converted = int(val * dst_max / src_max) if src_max != dst_max else val
+        struct.pack_into(dst_fmt, out, i * dst_width, max(-(dst_max + 1), min(dst_max, converted)))
+    return bytes(out)
+
+
 def read_wav_mono_normalized(stem_path: Path) -> tuple[list[float], int]:
     if stem_path.suffix.lower() != ".wav" or not stem_path.is_file():
         return [], 0
@@ -106,10 +145,10 @@ def read_wav_mono_normalized(stem_path: Path) -> tuple[list[float], int]:
 
             raw = w.readframes(nframes)
             if channels > 1:
-                raw = audioop.tomono(raw, sampwidth, 0.5, 0.5)
+                raw = _tomono(raw, sampwidth, channels)
 
             if sampwidth != 2:
-                raw = audioop.lin2lin(raw, sampwidth, 2)
+                raw = _lin2lin(raw, sampwidth, 2)
 
             pcm = array.array("h")
             pcm.frombytes(raw)

@@ -142,7 +142,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -Demuc
 
 # Also create zip output
 powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -ZipOutput
+
+# Provide explicit ffmpeg binary
+powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -FfmpegExePath C:\path\to\ffmpeg.exe
 ```
+
+> If `ffmpeg.exe` is not found locally or on PATH, the build script will automatically download it from https://www.gyan.dev/ffmpeg/builds/.
 
 ## 7) Smoke test
 
