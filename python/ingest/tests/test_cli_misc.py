@@ -104,6 +104,7 @@ def test_build_parser_knows_core_commands() -> None:
     assert p.parse_args(["validate", "x"]).cmd == "validate"
     assert p.parse_args(["info", "x"]).cmd == "info"
     assert p.parse_args(["benchmark-drums", "stem.wav", "reference.json"]).cmd == "benchmark-drums"
+    assert p.parse_args(["runtime-check"]).cmd == "runtime-check"
     assert p.parse_args(["import", "in.wav", "--out", "o.songpack"]).cmd == "import"
     assert p.parse_args(["import-dir", "in_dir", "--out", "o.songpack"]).cmd == "import-dir"
     assert p.parse_args(["import-dtx", "chart.dtx", "--out", "o.songpack"]).cmd == "import-dtx"
@@ -171,6 +172,50 @@ def test_cmd_benchmark_drums_emits_json_payload(tmp_path: Path, monkeypatch, cap
     assert results["adaptive_beat_grid"]["confusions"] == [
         {"reference_class": "snare", "predicted_class": "tom1", "count": 1}
     ]
+
+
+def test_cmd_runtime_check_emits_json_payload(monkeypatch, capsys) -> None:
+    from aural_ingest import cli
+
+    seen = {}
+
+    def fake_collect(config: dict[str, object], *, load_model: bool) -> dict[str, object]:
+        seen["config"] = config
+        seen["load_model"] = load_model
+        return {
+            "python_executable": "D:/AuralPrimer/python/ingest/.venv/Scripts/python.exe",
+            "torch_version": "2.11.0",
+            "torchaudio_version": "2.11.0",
+            "demucs_version": "4.0.1",
+            "modelpack": {
+                "id": "demucs_6",
+                "version": "htdemucs_6s",
+            },
+            "model": {
+                "sources": ["drums", "bass", "guitar", "keys", "vocals", "other"],
+            },
+        }
+
+    monkeypatch.setattr(cli, "_collect_demucs_runtime_status", fake_collect)
+
+    rc = cli.main(
+        [
+            "runtime-check",
+            "--json",
+            "--demucs-modelpack-zip-path",
+            "D:/AuralPrimer/modelpacks/demucs_6.zip",
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is True
+    assert payload["runtime"]["torch_version"] == "2.11.0"
+    assert payload["runtime"]["modelpack"]["id"] == "demucs_6"
+    assert seen == {
+        "config": {"demucs_modelpack_zip_path": "D:/AuralPrimer/modelpacks/demucs_6.zip"},
+        "load_model": True,
+    }
 
 
 def test_main_runs_stages_command(capsys) -> None:
@@ -374,7 +419,7 @@ def test_cmd_import_handles_unknown_drum_filter_and_rejects_other_invalid_transc
     tr_opts, tr_err = cli._resolve_transcription_options(args)
     assert tr_err is None
     assert tr_opts is not None
-    assert tr_opts["drum_filter"] == "combined_filter"
+    assert tr_opts["drum_filter"] == "adaptive_beat_grid"
     assert tr_opts["warnings"]
 
     args.drum_filter = "combined_filter"

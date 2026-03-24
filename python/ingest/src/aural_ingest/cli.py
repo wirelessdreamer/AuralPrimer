@@ -577,6 +577,68 @@ def _load_demucs_model(weight_path: Path) -> Any:
     return model
 
 
+def _package_version(distribution_name: str) -> str | None:
+    from importlib import metadata as importlib_metadata
+
+    try:
+        return importlib_metadata.version(distribution_name)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+
+def _collect_demucs_runtime_status(
+    config: dict[str, Any],
+    *,
+    load_model: bool = True,
+) -> dict[str, Any]:
+    try:
+        import demucs  # type: ignore[import-not-found]
+        import torch
+        from demucs.apply import apply_model
+        from demucs.audio import convert_audio
+    except Exception as exc:
+        raise RuntimeError(f"demucs runtime unavailable: {exc}") from exc
+
+    modelpack_zip, modelpack_manifest, err = _resolve_demucs_modelpack(config)
+    if modelpack_zip is None or modelpack_manifest is None:
+        raise RuntimeError(err or "demucs modelpack unavailable")
+
+    weight_path, weight_info, cache_dir = _prepare_demucs_weight_file(modelpack_zip, modelpack_manifest)
+
+    runtime_status: dict[str, Any] = {
+        "python_executable": sys.executable,
+        "python_version": sys.version.split()[0],
+        "frozen": bool(getattr(sys, "frozen", False)),
+        "torch_version": getattr(torch, "__version__", None) or _package_version("torch"),
+        "torchaudio_version": _package_version("torchaudio"),
+        "demucs_version": getattr(demucs, "__version__", None) or _package_version("demucs"),
+        "cuda_available": bool(torch.cuda.is_available()),
+        "modelpack": {
+            "id": str(modelpack_manifest.get("id", "")).strip() or DEMUCS_MODELPACK_ID,
+            "version": str(modelpack_manifest.get("version", "unknown")).strip() or "unknown",
+            "architecture": str(modelpack_manifest.get("architecture", "unknown")).strip() or "unknown",
+            "zip_path": str(modelpack_zip),
+            "weight_path": str(weight_path),
+            "weight_sha256": str(weight_info.get("sha256", "")).strip().lower() or None,
+            "cache_dir": str(cache_dir),
+        },
+        "imports": {
+            "demucs.apply": bool(apply_model),
+            "demucs.audio": bool(convert_audio),
+        },
+    }
+
+    if load_model:
+        model = _load_demucs_model(weight_path)
+        runtime_status["model"] = {
+            "samplerate": int(model.samplerate),
+            "audio_channels": int(model.audio_channels),
+            "sources": [str(source) for source in model.sources],
+        }
+
+    return runtime_status
+
+
 def _read_wav_tensor(path: Path) -> tuple[Any, int]:
     import torch
     import wave
@@ -1418,6 +1480,37 @@ def cmd_benchmark_drums(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def cmd_runtime_check(args: argparse.Namespace) -> int:
+    config: dict[str, Any] = {}
+    configured_modelpack = str(getattr(args, "demucs_modelpack_zip_path", "") or "").strip()
+    if configured_modelpack:
+        config["demucs_modelpack_zip_path"] = configured_modelpack
+
+    try:
+        payload = {
+            "ok": True,
+            "runtime": _collect_demucs_runtime_status(
+                config,
+                load_model=not bool(getattr(args, "skip_model_load", False)),
+            ),
+        }
+        rc = 0
+    except Exception as exc:
+        payload = {
+            "ok": False,
+            "error": str(exc),
+            "python_executable": sys.executable,
+            "frozen": bool(getattr(sys, "frozen", False)),
+        }
+        rc = 1
+
+    if bool(getattr(args, "json_output", False)):
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    return rc
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     src = Path(args.input_audio_path)
     out = Path(args.out)
@@ -1530,6 +1623,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     )
 
     mix_sha256 = _sha256_file(dst_wav)
+    stem_separation_required = bool(config.get("require_stem_separation", True))
 
     # Stage 4: separate_stems (Demucs htdemucs_6s)
     stems_dir = out / "audio" / "stems"
@@ -1570,6 +1664,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "cache_hit": bool(separation_summary.get("cache_hit", False)),
             "shifts": int(separation_summary.get("shifts", 1) or 1),
             "device": separation_summary.get("device"),
+            "required": stem_separation_required,
             "stems": sorted(stem_paths.keys()) if isinstance(stem_paths, dict) else [],
         }
         _write_json(out / "manifest.json", manifest)
@@ -1592,6 +1687,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "reason": msg,
             "source_path": "audio/mix.wav",
             "mix_sha256": mix_sha256,
+            "required": stem_separation_required,
         }
         _write_json(out / "manifest.json", manifest)
         emit(
@@ -1599,10 +1695,13 @@ def cmd_import(args: argparse.Namespace) -> int:
                 type="stage_done",
                 id="separate_stems",
                 progress=0.78,
-                message="skipped",
+                message="failed" if stem_separation_required else "skipped",
                 artifact=None,
             )
         )
+        if stem_separation_required:
+            log(f"stem separation required; aborting import: {msg}")
+            return 4
 
     # Stage 5: split_guitar_stems (use Demucs guitar stem when available)
     emit(ProgressEvent(type="stage_start", id="split_guitar_stems", progress=0.78))
@@ -1893,6 +1992,12 @@ def build_parser() -> argparse.ArgumentParser:
     s_benchmark.add_argument("--tolerance-ms", type=float, default=60.0, dest="tolerance_ms")
     s_benchmark.add_argument("--json", action="store_true", dest="json_output")
     s_benchmark.set_defaults(func=cmd_benchmark_drums)
+
+    s_runtime_check = sub.add_parser("runtime-check")
+    s_runtime_check.add_argument("--demucs-modelpack-zip-path")
+    s_runtime_check.add_argument("--skip-model-load", action="store_true")
+    s_runtime_check.add_argument("--json", action="store_true", dest="json_output")
+    s_runtime_check.set_defaults(func=cmd_runtime_check)
 
     s_import = sub.add_parser("import")
     s_import.add_argument("input_audio_path")

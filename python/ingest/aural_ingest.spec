@@ -1,12 +1,52 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_all
+
+
+project_root = Path(SPEC).resolve().parent
+src_root = project_root / "src"
+entry_path = src_root / "aural_ingest" / "cli.py"
+
+datas = []
+binaries = []
+hiddenimports = []
+
+
+def collect_optional(package_name):
+    try:
+        return collect_all(package_name)
+    except Exception:
+        return [], [], []
+
+
+for package_name in (
+    "torch",
+    "torchaudio",
+    "demucs",
+    "julius",
+    "openunmix",
+    "dora_search",
+    "hydra",
+    "omegaconf",
+    "antlr4",
+    "lameenc",
+    "retrying",
+    "treetable",
+):
+    pkg_datas, pkg_binaries, pkg_hiddenimports = collect_optional(package_name)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hiddenimports
+
 
 a = Analysis(
-    ['D:\\AuralPrimer\\python\\ingest\\src\\aural_ingest\\cli.py'],
-    pathex=['D:\\AuralPrimer\\python\\ingest\\src'],
-    binaries=[],
-    datas=[],
-    hiddenimports=[],
+    [str(entry_path)],
+    pathex=[str(src_root)],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,11 +62,11 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='aural_ingest',
+    name="aural_ingest",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,

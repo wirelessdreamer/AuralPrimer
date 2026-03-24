@@ -69,6 +69,11 @@ def _read_pcm16_wav(path: Path) -> tuple[int, int, list[int]]:
     return channels, sr, list(samples)
 
 
+def _wav_duration_sec(path: Path) -> float:
+    with wave.open(str(path), "rb") as w:
+        return float(w.getnframes()) / float(w.getframerate())
+
+
 def _extract_tempo_bpm_from_midi_bytes(midi_bytes: bytes) -> float:
     idx = midi_bytes.find(b"\xFF\x51\x03")
     if idx < 0 or idx + 6 > len(midi_bytes):
@@ -92,6 +97,42 @@ def _count_note_on(midi_bytes: bytes, status: int, notes: set[int] | None = None
             continue
         out += 1
     return out
+
+
+@pytest.fixture(autouse=True)
+def _fake_demucs_separation(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aural_ingest import cli
+
+    def fake_separate(
+        mix_wav: Path,
+        stems_dir: Path,
+        *,
+        mix_sha256: str,
+        shifts: int,
+        config: dict[str, object],
+    ) -> dict[str, object]:
+        duration_sec = _wav_duration_sec(mix_wav)
+        _write_clicktrack_wav(stems_dir / "drums.wav", sr=48_000, duration_sec=duration_sec, bpm=90.0)
+        _write_dual_tone_wav(stems_dir / "guitar.wav", sr=48_000, duration_sec=duration_sec)
+        return {
+            "ok": True,
+            "status": "fresh",
+            "provider": "demucs",
+            "modelpack_id": "demucs_6",
+            "modelpack_version": "htdemucs_6s-test",
+            "architecture": "htdemucs_6s",
+            "modelpack_path": str(stems_dir / ".." / ".." / "demucs_6.zip"),
+            "weight_path": str(stems_dir / ".." / ".." / "htdemucs_6s-test.th"),
+            "stem_paths": {
+                "drums": "audio/stems/drums.wav",
+                "guitar": "audio/stems/guitar.wav",
+            },
+            "cache_hit": False,
+            "shifts": shifts,
+            "device": "cpu",
+        }
+
+    monkeypatch.setattr(cli, "_separate_stems_with_demucs", fake_separate)
 
 
 @pytest.mark.parametrize("bpm", [90.0, 120.0])
@@ -142,58 +183,54 @@ def test_import_generates_valid_songpack(tmp_path: Path, bpm: float) -> None:
     assert structure_beat_notes > 0
     # Drums: channel 10 note-on status (0x99)
     assert _count_note_on(notes_mid, 0x99) > 0
-    # Melodic: channel 1 note-on status (0x90)
-    assert _count_note_on(notes_mid, 0x90) > 0
+    # Melodic notes may land on per-instrument channels when stem transcription is available.
+    assert any(_count_note_on(notes_mid, status) > 0 for status in range(0x90, 0x9F) if status not in {0x99, 0x9F})
 
 
-def test_import_guitar_split_preserves_shape_and_reconstructs_source(tmp_path: Path) -> None:
+def test_import_fails_when_stem_separation_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     src = tmp_path / "src_stereo.wav"
     _write_dual_tone_wav(src, sr=48_000, duration_sec=2.0)
     out = tmp_path / "Split.songpack"
 
-    from aural_ingest.cli import cmd_import
+    from aural_ingest import cli
+
+    def fake_separate_unavailable(
+        mix_wav: Path,
+        stems_dir: Path,
+        *,
+        mix_sha256: str,
+        shifts: int,
+        config: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "ok": False,
+            "status": "skipped",
+            "reason": "demucs runtime unavailable: No module named 'torch'",
+        }
+
+    monkeypatch.setattr(cli, "_separate_stems_with_demucs", fake_separate_unavailable)
 
     args = type("Args", (), {})()
     args.input_audio_path = str(src)
     args.out = str(out)
     args.profile = "full"
-    args.config = json.dumps(
-        {
-            "ingest_timestamp": "2000-01-01T00:00:00Z",
-            "disable_stem_separation": True,
-        }
-    )
+    args.config = json.dumps({"ingest_timestamp": "2000-01-01T00:00:00Z"})
     args.title = None
     args.artist = None
     args.duration_sec = None
 
-    assert cmd_import(args) == 0
-
-    lead = out / "audio" / "stems" / "lead_guitar.wav"
-    rhythm = out / "audio" / "stems" / "rhythm_guitar.wav"
-    assert lead.is_file()
-    assert rhythm.is_file()
-
-    ch_src, sr_src, src_samples = _read_pcm16_wav(src)
-    ch_lead, sr_lead, lead_samples = _read_pcm16_wav(lead)
-    ch_rhythm, sr_rhythm, rhythm_samples = _read_pcm16_wav(rhythm)
-
-    assert ch_src == ch_lead == ch_rhythm
-    assert sr_src == sr_lead == sr_rhythm
-    assert len(src_samples) == len(lead_samples) == len(rhythm_samples)
-
-    abs_err = 0
-    for src_i, lead_i, rhythm_i in zip(src_samples, lead_samples, rhythm_samples):
-        abs_err += abs(int(src_i) - int(lead_i) - int(rhythm_i))
-    mean_abs_err = abs_err / float(len(src_samples))
-    assert mean_abs_err <= 2.0
+    assert cli.cmd_import(args) == 4
 
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
-    stems = manifest["assets"]["audio"]["stems"]
-    assert stems["lead_guitar_path"] == "audio/stems/lead_guitar.wav"
-    assert stems["rhythm_guitar_path"] == "audio/stems/rhythm_guitar.wav"
-    assert stems["guitar_split_source_kind"] == "mix_fallback"
-    assert manifest["pipeline"]["guitar_split"]["method"] == "spectral_energy_mask_v1"
+    stem_meta = manifest["pipeline"]["stem_separation"]
+    assert stem_meta["status"] == "skipped"
+    assert stem_meta["required"] is True
+    assert "torch" in stem_meta["reason"]
+    assert not (out / "audio" / "stems" / "lead_guitar.wav").exists()
+    assert not (out / "audio" / "stems" / "rhythm_guitar.wav").exists()
+    assert not (out / "features" / "notes.mid").exists()
 
 
 def test_import_guitar_split_uses_configured_guitar_stem_path(tmp_path: Path) -> None:
@@ -610,12 +647,12 @@ def test_import_unknown_drum_filter_falls_back_to_combined_and_records_warning(t
     assert cmd_import(args) == 0
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     tr = manifest["pipeline"]["transcription"]
-    assert tr["drum_filter"] == "combined_filter"
+    assert tr["drum_filter"] == "adaptive_beat_grid"
     assert tr["drum_filter_requested"] == "legacy_unknown_filter"
-    assert tr["drum_filter_used"] == "combined_filter"
+    assert tr["drum_filter_used"] == "adaptive_beat_grid"
     assert tr["warnings"]
     assert manifest["recognition"]["drums"]["requested_engine"] == "legacy_unknown_filter"
-    assert manifest["recognition"]["drums"]["used_engine"] == "combined_filter"
+    assert manifest["recognition"]["drums"]["used_engine"] == "adaptive_beat_grid"
 
 
 def test_import_auto_melodic_no_longer_requires_external_basic_pitch_model(tmp_path: Path) -> None:
@@ -641,7 +678,7 @@ def test_import_auto_melodic_no_longer_requires_external_basic_pitch_model(tmp_p
     assert cmd_import(args) == 0
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     tr = manifest["pipeline"]["transcription"]
-    assert tr["melodic_method_used"] == "basic_pitch"
+    assert tr["melodic_method_used"] == "melodic_octave_fix"
     assert not any("model path unavailable" in w for w in tr.get("warnings", []))
 
 
