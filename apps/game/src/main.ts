@@ -197,14 +197,66 @@ type IngestImportProgressEvent = {
   parsed?: unknown;
 };
 
+type MidiTrackInfo = {
+  index: number;
+  name: string;
+  note_count: number;
+  channels: number[];
+  pitch_min: number | null;
+  pitch_max: number | null;
+  suggested_role: string;
+};
+
+type TrackAssignment = {
+  track_index: number;
+  role: string;
+};
+
 type StemMidiCreateRequest = {
   title: string;
   artist: string;
   stemWavPaths: string[];
   midiPath: string;
+  trackAssignments?: TrackAssignment[];
 };
 
 type StemMidiCreateResult = { songpack_path: string };
+
+type RawSongDetectedPart = {
+  path: string;
+  detected_role: string;
+  game_role?: string | null;
+};
+
+type RawSongFolderInspection = {
+  folder_path: string;
+  title_guess: string;
+  stem_wav_paths: string[];
+  midi_paths: string[];
+  stem_parts: RawSongDetectedPart[];
+  midi_parts: RawSongDetectedPart[];
+  lyrics_txt_path?: string | null;
+  karaoke_json_path?: string | null;
+  vocal_stem_path?: string | null;
+  mix_wav_path?: string | null;
+  mapped_game_roles: string[];
+  warnings: string[];
+};
+
+type ImportRawSongFolderRequest = {
+  folder_path: string;
+  title?: string;
+  artist?: string;
+};
+
+type ImportRawSongFolderResult = {
+  songpack_path: string;
+  stems_count: number;
+  midi_files_count: number;
+  lyrics_included: boolean;
+  mapped_game_roles: string[];
+  warnings: string[];
+};
 
 const root = document.getElementById("app");
 if (!root) throw new Error("missing #app");
@@ -308,6 +360,10 @@ root.innerHTML = `
             </div>
 
             <canvas id="viz" width="800" height="240"></canvas>
+            <div id="playLyrics" class="playLyrics" hidden aria-live="polite" aria-atomic="true">
+              <div id="playLyricsCurrent" class="playLyricsCurrent"></div>
+              <div id="playLyricsNext" class="playLyricsNext"></div>
+            </div>
             <pre id="vizStatus">(not running)</pre>
 
             <div id="instrumentSelector" class="instrumentSelector" style="display:none">
@@ -395,7 +451,7 @@ root.innerHTML = `
           </div>
           <p class="meta">
             Build content now from <strong>Configure</strong>:
-            stems+MIDI SongPack creator, sidecar ingest import, GHWT import, and model-pack setup.
+            Suno stem+MIDI import, sidecar ingest import, GHWT import, and model-pack setup.
           </p>
           <div class="row">
             <button id="makeGoConfig">Open Configure</button>
@@ -523,18 +579,19 @@ root.innerHTML = `
             </div>
             <pre id="ingestStatus" class="meta">(not started)</pre>
 
-            <h3>Create SongPack (stems + MIDI)</h3>
+            <h3>Import stem WAV + MIDI (Suno)</h3>
             <p class="meta">
-              Create a playable SongPack from one or more WAV stems plus a MIDI file.
-              This will mix down to <code>audio/mix.wav</code> and store the MIDI as <code>features/notes.mid</code>.
+              Pick one Suno export folder. We will validate the root-level WAV and MIDI files,
+              prefer a full-mix WAV when present, and create timed lyrics from <code>lyrics.txt</code>
+              against the vocals stem when possible.
             </p>
             <div class="row">
               <label class="meta">Title</label>
-              <input id="stemMidiTitle" class="grow" type="text" placeholder="Song title" />
+              <input id="stemMidiTitle" class="grow" type="text" placeholder="Optional title override" />
             </div>
             <div class="row">
               <label class="meta">Artist</label>
-              <input id="stemMidiArtist" class="grow" type="text" placeholder="Artist" />
+              <input id="stemMidiArtist" class="grow" type="text" placeholder="Optional artist override" />
             </div>
             <div class="row">
               <button id="stemMidiPickStems">Pick stem WAVsâ€¦</button>
@@ -544,6 +601,7 @@ root.innerHTML = `
               <button id="stemMidiPickMidi">Pick MIDIâ€¦</button>
               <div class="meta grow" id="stemMidiMidiLabel">(none)</div>
             </div>
+            <div id="stemMidiTrackList" class="meta" style="margin:6px 0;max-height:260px;overflow-y:auto"></div>
             <div class="row">
               <button id="stemMidiCreate">Create SongPack</button>
             </div>
@@ -794,6 +852,9 @@ document.getElementById("homeExit")?.addEventListener("click", () => {
 const hudKeyModeEl = document.getElementById("hudKeyMode") as HTMLDivElement;
 
 const vizCanvas = document.getElementById("viz") as HTMLCanvasElement;
+const playLyricsEl = document.getElementById("playLyrics") as HTMLDivElement;
+const playLyricsCurrentEl = document.getElementById("playLyricsCurrent") as HTMLDivElement;
+const playLyricsNextEl = document.getElementById("playLyricsNext") as HTMLDivElement;
 const vizStatusEl = document.getElementById("vizStatus") as HTMLPreElement;
 const pluginSelect = document.getElementById("pluginSelect") as HTMLSelectElement;
 const pluginRefreshBtn = document.getElementById("pluginRefresh") as HTMLButtonElement;
@@ -1024,6 +1085,108 @@ function escapeHtml(s: string): string {
   const el = document.createElement("span");
   el.textContent = s;
   return el.innerHTML;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function findActiveLyricLineIndex(lines: LyricsFile["lines"], t: number): number {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (t >= line.start && t <= line.end) return i;
+  }
+  let idx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (t >= lines[i].start) idx = i;
+  }
+  return idx;
+}
+
+function computeLyricHighlightCharIndex(line: LyricsFile["lines"][number], t: number): number {
+  const text = line.text ?? "";
+  const chunks = line.chunks ?? [];
+  if (!chunks.length) {
+    const dur = Math.max(0.001, line.end - line.start);
+    const p = clamp((t - line.start) / dur, 0, 1);
+    return Math.round(p * text.length);
+  }
+
+  let idx = -1;
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    if (t >= chunk.start && t <= chunk.end) {
+      const dur = Math.max(0.001, chunk.end - chunk.start);
+      const p = clamp((t - chunk.start) / dur, 0, 1);
+      const span = Math.max(0, chunk.char_end - chunk.char_start);
+      return chunk.char_start + Math.round(p * span);
+    }
+    if (t >= chunk.end) idx = i;
+  }
+  if (idx >= 0) return chunks[idx].char_end;
+  return 0;
+}
+
+let lastPlaybackLyricsState = "__hidden";
+
+function clearPlaybackLyrics(): void {
+  if (lastPlaybackLyricsState === "__hidden") return;
+  playLyricsEl.hidden = true;
+  playLyricsCurrentEl.innerHTML = "";
+  playLyricsNextEl.textContent = "";
+  lastPlaybackLyricsState = "__hidden";
+}
+
+function renderPlaybackLyrics(t: number): void {
+  if (!currentLyrics?.lines?.length) {
+    clearPlaybackLyrics();
+    return;
+  }
+  if (currentSelectedPlugin().id === "viz-lyrics") {
+    clearPlaybackLyrics();
+    return;
+  }
+
+  const lines = currentLyrics.lines;
+  const previewLeadSec = 3;
+  const postLineHoldSec = 1.5;
+  const idx = findActiveLyricLineIndex(lines, t);
+
+  if (idx < 0) {
+    const firstLine = lines[0];
+    if (firstLine.start - t > previewLeadSec) {
+      clearPlaybackLyrics();
+      return;
+    }
+    const previewState = `preview|${firstLine.text}`;
+    if (lastPlaybackLyricsState === previewState) return;
+    playLyricsEl.hidden = false;
+    playLyricsCurrentEl.innerHTML = "";
+    playLyricsNextEl.textContent = firstLine.text ?? "";
+    lastPlaybackLyricsState = previewState;
+    return;
+  }
+
+  const line = lines[idx];
+  if (idx === lines.length - 1 && t > line.end + postLineHoldSec) {
+    clearPlaybackLyrics();
+    return;
+  }
+
+  const text = line.text ?? "";
+  const splitAt = clamp(computeLyricHighlightCharIndex(line, t), 0, text.length);
+  const currentHtml = [
+    `<span class="playLyricsDone">${escapeHtml(text.slice(0, splitAt))}</span>`,
+    `<span class="playLyricsRest">${escapeHtml(text.slice(splitAt))}</span>`
+  ].join("");
+  const nextText = lines[idx + 1]?.text ?? "";
+  const renderState = `${idx}|${splitAt}|${currentHtml}|${nextText}`;
+  if (lastPlaybackLyricsState === renderState) return;
+
+  playLyricsEl.hidden = false;
+  playLyricsCurrentEl.innerHTML = currentHtml;
+  playLyricsNextEl.textContent = nextText;
+  lastPlaybackLyricsState = renderState;
 }
 
 function yesNo(v: boolean): string {
@@ -1348,6 +1511,7 @@ const INSTRUMENT_LABELS: Record<Instrument, string> = {
 };
 
 async function readDrumChartSelection(containerPath: string, details: SongPackDetails): Promise<DrumChartSelection | null> {
+  selectedMelodicTracks = [];
   if (!details.has_notes_mid) {
     return null;
   }
@@ -1367,6 +1531,7 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
 
     return selectDrumChartFromMidiBytes(midiBytes);
   } catch (e) {
+    selectedMelodicTracks = [];
     warnConsole("debugging", `failed to load/parse features/notes.mid from ${containerPath}`, e);
     return null;
   }
@@ -1436,6 +1601,61 @@ function applyInstrumentHintsFromChartJson(
   }
 }
 
+function applyInstrumentHintsFromMappedRole(
+  roleRaw: string,
+  byInstrument: SongCapabilities["charts"]["byInstrument"]
+): void {
+  switch (roleRaw) {
+    case "drums":
+      byInstrument.drums = true;
+      break;
+    case "bass":
+      byInstrument.bass = true;
+      break;
+    case "lead_guitar":
+      byInstrument.lead_guitar = true;
+      break;
+    case "rhythm_guitar":
+      byInstrument.rhythm_guitar = true;
+      break;
+    case "keys":
+      byInstrument.keys = true;
+      break;
+    case "vocals":
+      byInstrument.vocals = true;
+      break;
+    default:
+      break;
+  }
+}
+
+function applyInstrumentHintsFromManifestRaw(
+  manifestRaw: unknown,
+  byInstrument: SongCapabilities["charts"]["byInstrument"]
+): void {
+  const manifest = asObjectRecord(manifestRaw);
+  if (!manifest) return;
+
+  const source = asObjectRecord(manifest.source);
+  const parts = source ? asObjectRecord(source.parts) : null;
+  const mappedRoles = Array.isArray(parts?.mapped_game_roles) ? parts?.mapped_game_roles : [];
+  for (const role of mappedRoles) {
+    if (typeof role === "string") {
+      applyInstrumentHintsFromMappedRole(role, byInstrument);
+    }
+  }
+
+  const assets = asObjectRecord(manifest.assets);
+  const midi = assets ? asObjectRecord(assets.midi) : null;
+  const midiTracks = Array.isArray(midi?.tracks) ? midi?.tracks : [];
+  for (const track of midiTracks) {
+    const rec = asObjectRecord(track);
+    if (rec && typeof rec.role === "string") {
+      applyInstrumentHintsFromMappedRole(rec.role, byInstrument);
+    }
+  }
+}
+
 function computeSongCapabilities(
   details: SongPackDetails | null,
   drumSelection: DrumChartSelection | null,
@@ -1454,6 +1674,12 @@ function computeSongCapabilities(
   for (const [chartPath, chartJson] of Object.entries(chartsByPath ?? {})) {
     applyInstrumentHintsFromToken(chartPath, byInstrument);
     applyInstrumentHintsFromChartJson(chartJson, byInstrument);
+  }
+
+  applyInstrumentHintsFromManifestRaw(details?.manifest_raw, byInstrument);
+
+  for (const track of selectedMelodicTracks) {
+    applyInstrumentHintsFromMappedRole(track.role, byInstrument);
   }
 
   if (midiDrumsAvailable) {
@@ -1913,6 +2139,7 @@ async function generateLyricsForSelectedSongPack(): Promise<void> {
 
     // Update local state so viz init sees it without requiring the user to click Details again.
     currentLyrics = lyricsJson as unknown as LyricsFile;
+    renderPlaybackLyrics(transport.t);
 
     setVizStatus("Generated features/lyrics.json (MVP line-level timings)");
     await refresh();
@@ -2355,48 +2582,324 @@ function inferIngestOutPathFromCommand(command: string[]): string | undefined {
   return value || undefined;
 }
 
-let stemMidiStemPaths: string[] = [];
-let stemMidiPath: string | null = null;
+let stemMidiFolderPath: string | null = null;
+let stemMidiInspection: RawSongFolderInspection | null = null;
+
+const stemMidiTrackListEl = document.getElementById("stemMidiTrackList") as HTMLDivElement;
+
+function stemMidiBaseName(path: string): string {
+  return path.replace(/^.*[\\\/]/, "");
+}
+
+function formatDetectedRoleLabel(role: string): string {
+  switch (role) {
+    case "mix":
+      return "Mix";
+    case "drums":
+      return "Drums";
+    case "bass":
+      return "Bass";
+    case "lead_guitar":
+      return "Lead Guitar";
+    case "rhythm_guitar":
+      return "Rhythm Guitar";
+    case "guitar":
+      return "Guitar";
+    case "synth":
+      return "Synth";
+    case "keys":
+      return "Keyboard / Keys";
+    case "vocals":
+      return "Vocals";
+    case "backing_vocals":
+      return "Backing Vocals";
+    case "fx":
+      return "FX";
+    default:
+      return "Unknown";
+  }
+}
+
+function formatGameRoleLabel(role?: string | null): string {
+  switch (role) {
+    case "drums":
+      return "Drums";
+    case "bass":
+      return "Bass";
+    case "lead_guitar":
+      return "Lead Guitar";
+    case "rhythm_guitar":
+      return "Rhythm Guitar";
+    case "keys":
+      return "Keys / Synth";
+    case "vocals":
+      return "Vocals";
+    default:
+      return "Unmapped";
+  }
+}
+
+function renderDetectedPartList(parts: RawSongDetectedPart[]): string {
+  if (!parts.length) {
+    return `<div class="meta">(none detected)</div>`;
+  }
+  return parts
+    .map((part) => {
+      const detectedLabel = formatDetectedRoleLabel(part.detected_role);
+      const mappedLabel = part.game_role ? formatGameRoleLabel(part.game_role) : null;
+      const roleLabel = mappedLabel && mappedLabel !== detectedLabel
+        ? `${detectedLabel} -> ${mappedLabel}`
+        : detectedLabel;
+      return `<div class="meta">${escapeHtml(roleLabel)}: ${escapeHtml(stemMidiBaseName(part.path))}</div>`;
+    })
+    .join("");
+}
+
+function findDetectedParts(
+  parts: RawSongDetectedPart[],
+  options: { gameRoles?: string[]; detectedRoles?: string[] }
+): RawSongDetectedPart[] {
+  const gameRoleSet = new Set(options.gameRoles ?? []);
+  const detectedRoleSet = new Set(options.detectedRoles ?? []);
+  return parts.filter((part) => {
+    if (part.game_role && gameRoleSet.has(part.game_role)) return true;
+    return detectedRoleSet.has(part.detected_role);
+  });
+}
+
+function renderAuditState(value: boolean | null): string {
+  if (value === null) {
+    return `<span class="importAuditStatus importAuditStatus--na">n/a</span>`;
+  }
+  return value
+    ? `<span class="importAuditStatus importAuditStatus--found">found</span>`
+    : `<span class="importAuditStatus importAuditStatus--missing">missing</span>`;
+}
+
+function summarizePartKinds(parts: RawSongDetectedPart[]): string {
+  const labels = Array.from(new Set(parts.map((part) => formatDetectedRoleLabel(part.detected_role))));
+  return labels.join(", ");
+}
+
+function renderStemMidiAuditTable(inspection: RawSongFolderInspection): string {
+  const drumsAudio = findDetectedParts(inspection.stem_parts, { gameRoles: ["drums"], detectedRoles: ["drums"] });
+  const drumsMidi = findDetectedParts(inspection.midi_parts, { gameRoles: ["drums"], detectedRoles: ["drums"] });
+  const bassAudio = findDetectedParts(inspection.stem_parts, { gameRoles: ["bass"], detectedRoles: ["bass"] });
+  const bassMidi = findDetectedParts(inspection.midi_parts, { gameRoles: ["bass"], detectedRoles: ["bass"] });
+  const guitarAudio = findDetectedParts(inspection.stem_parts, {
+    gameRoles: ["lead_guitar", "rhythm_guitar"],
+    detectedRoles: ["guitar", "lead_guitar", "rhythm_guitar"],
+  });
+  const guitarMidi = findDetectedParts(inspection.midi_parts, {
+    gameRoles: ["lead_guitar", "rhythm_guitar"],
+    detectedRoles: ["guitar", "lead_guitar", "rhythm_guitar"],
+  });
+  const keysAudio = findDetectedParts(inspection.stem_parts, {
+    gameRoles: ["keys"],
+    detectedRoles: ["keys", "synth"],
+  });
+  const keysMidi = findDetectedParts(inspection.midi_parts, {
+    gameRoles: ["keys"],
+    detectedRoles: ["keys", "synth"],
+  });
+  const vocalsAudio = findDetectedParts(inspection.stem_parts, {
+    gameRoles: ["vocals"],
+    detectedRoles: ["vocals", "backing_vocals"],
+  });
+  const vocalsMidi = findDetectedParts(inspection.midi_parts, {
+    gameRoles: ["vocals"],
+    detectedRoles: ["vocals", "backing_vocals"],
+  });
+  const lyricAlignSource = inspection.vocal_stem_path ?? inspection.mix_wav_path ?? inspection.stem_wav_paths[0] ?? null;
+
+  const rows = [
+    {
+      label: "Drums",
+      audio: drumsAudio.length > 0,
+      midi: drumsMidi.length > 0,
+      note: drumsMidi.length > 1 ? `${drumsMidi.length} MIDI parts merged` : "mapped to Drums",
+    },
+    {
+      label: "Bass",
+      audio: bassAudio.length > 0,
+      midi: bassMidi.length > 0,
+      note: bassMidi.length > 0 ? "mapped to Bass" : "missing bass MIDI",
+    },
+    {
+      label: "Guitar",
+      audio: guitarAudio.length > 0,
+      midi: guitarMidi.length > 0,
+      note: guitarMidi.length > 0 ? summarizePartKinds(guitarMidi) : "missing guitar MIDI",
+    },
+    {
+      label: "Keys / Synth",
+      audio: keysAudio.length > 0,
+      midi: keysMidi.length > 0,
+      note: keysMidi.length > 1 ? `${keysMidi.length} MIDI parts merged` : (keysMidi.length > 0 ? summarizePartKinds(keysMidi) : "missing keys MIDI"),
+    },
+    {
+      label: "Vocals",
+      audio: vocalsAudio.length > 0,
+      midi: vocalsMidi.length > 0,
+      note: inspection.karaoke_json_path || inspection.lyrics_txt_path ? "lyric timing source present" : "no lyrics source",
+    },
+    {
+      label: "Lyrics",
+      audio: Boolean(lyricAlignSource),
+      midi: null,
+      note: inspection.karaoke_json_path
+        ? "karaoke JSON"
+        : inspection.lyrics_txt_path
+          ? lyricAlignSource
+            ? `lyrics.txt + ${stemMidiBaseName(lyricAlignSource)}`
+            : "lyrics.txt (uniform fallback)"
+          : "missing lyrics",
+    },
+  ];
+
+  const body = rows
+    .map((row) => `
+      <tr>
+        <th scope="row">${escapeHtml(row.label)}</th>
+        <td>${renderAuditState(row.audio)}</td>
+        <td>${renderAuditState(row.midi)}</td>
+        <td class="importAuditNotes">${escapeHtml(row.note)}</td>
+      </tr>
+    `)
+    .join("");
+
+  return `
+    <div class="importAuditWrap">
+      <table class="importAuditTable">
+        <thead>
+          <tr>
+            <th>Track</th>
+            <th>Audio</th>
+            <th>MIDI</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
+}
 
 function renderStemMidiSelection() {
-  stemMidiStemsLabel.textContent = stemMidiStemPaths.length ? `${stemMidiStemPaths.length} stem(s)` : "(none)";
-  stemMidiMidiLabel.textContent = stemMidiPath ? stemMidiPath : "(none)";
+  stemMidiPickStemsBtn.textContent = "Pick Suno folder...";
+  stemMidiPickMidiBtn.textContent = "Validate folder";
+  stemMidiCreateBtn.textContent = "Import SongPack";
+  stemMidiStemsLabel.textContent = stemMidiFolderPath ?? "(no folder selected)";
+  if (!stemMidiInspection) {
+    stemMidiMidiLabel.textContent = stemMidiFolderPath ? "(not validated)" : "(not validated)";
+  } else {
+    const summary = [
+      `${stemMidiInspection.stem_wav_paths.length} WAV${stemMidiInspection.stem_wav_paths.length === 1 ? "" : "s"}`,
+      `${stemMidiInspection.midi_paths.length} MIDI${stemMidiInspection.midi_paths.length === 1 ? "" : "s"}`,
+      stemMidiInspection.lyrics_txt_path ? "lyrics.txt" : "no lyrics.txt",
+      stemMidiInspection.mapped_game_roles.length
+        ? stemMidiInspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")
+        : "no mapped roles",
+      stemMidiInspection.karaoke_json_path
+        ? "karaoke JSON"
+        : stemMidiInspection.vocal_stem_path
+          ? "vocals align"
+          : undefined,
+    ].filter(Boolean);
+    stemMidiMidiLabel.textContent = summary.join(" · ");
+  }
+  renderStemMidiTrackList();
+}
+
+function renderStemMidiTrackList() {
+  if (!stemMidiInspection) {
+    stemMidiTrackListEl.innerHTML = "";
+    return;
+  }
+
+  const warningItems = stemMidiInspection.warnings.length
+    ? `<div class="error" style="margin-top:8px"><strong>Warnings:</strong><br />${stemMidiInspection.warnings.map((warning) => escapeHtml(warning)).join("<br />")}</div>`
+    : "";
+
+  const lyricSource = stemMidiInspection.karaoke_json_path
+    ? `Using existing karaoke JSON: ${escapeHtml(stemMidiBaseName(stemMidiInspection.karaoke_json_path))}`
+    : stemMidiInspection.lyrics_txt_path
+      ? `Will align ${escapeHtml(stemMidiBaseName(stemMidiInspection.lyrics_txt_path))} using ${escapeHtml(stemMidiBaseName(stemMidiInspection.vocal_stem_path ?? stemMidiInspection.mix_wav_path ?? stemMidiInspection.stem_wav_paths[0] ?? ""))}`
+      : "No lyrics source detected";
+
+  stemMidiTrackListEl.innerHTML = `
+    <div style="font-weight:600;margin-bottom:4px">Folder check</div>
+    <div class="meta">default title: ${escapeHtml(stemMidiInspection.title_guess)}</div>
+    <div class="meta">game mapping: ${escapeHtml(stemMidiInspection.mapped_game_roles.length ? stemMidiInspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ") : "none")}</div>
+    <div class="meta">mix audio: ${escapeHtml(stemMidiInspection.mix_wav_path ? stemMidiBaseName(stemMidiInspection.mix_wav_path) : "sum the detected stems")}</div>
+    <div class="meta">lyrics: ${lyricSource}</div>
+    <div class="meta" style="margin-top:8px;font-weight:600">Track detection</div>
+    ${renderStemMidiAuditTable(stemMidiInspection)}
+    ${warningItems}
+  `;
+}
+
+async function inspectStemMidiFolder(folderPath: string): Promise<void> {
+  try {
+    const inspection = await safeInvoke<RawSongFolderInspection>("inspect_raw_song_folder", { folderPath });
+    stemMidiInspection = inspection;
+    if (!stemMidiTitleInput.value.trim() && inspection.title_guess) {
+      stemMidiTitleInput.value = inspection.title_guess;
+    }
+    renderStemMidiSelection();
+    const warningCount = inspection.warnings.length;
+    const warningSuffix = warningCount ? ` · ${warningCount} warning${warningCount === 1 ? "" : "s"}` : "";
+    const mappedSuffix = inspection.mapped_game_roles.length
+      ? ` · mapped: ${inspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")}`
+      : "";
+    setStemMidiStatus(`validated: ${inspection.stem_wav_paths.length} WAV(s), ${inspection.midi_paths.length} MIDI file(s)${warningSuffix}${mappedSuffix}`);
+  } catch (e) {
+    stemMidiInspection = null;
+    renderStemMidiSelection();
+    setStemMidiStatus(`Folder validation failed: ${String(e)}`);
+    throw e;
+  }
 }
 
 async function stemMidiCreateSongPack() {
-  const title = stemMidiTitleInput.value.trim();
-  const artist = stemMidiArtistInput.value.trim();
-  if (!title || !artist) {
-    setStemMidiStatus("title + artist are required");
-    return;
-  }
-  if (!stemMidiStemPaths.length) {
-    setStemMidiStatus("pick at least one stem WAV");
-    return;
-  }
-  if (!stemMidiPath) {
-    setStemMidiStatus("pick a MIDI file");
+  if (!stemMidiFolderPath) {
+    setStemMidiStatus("pick a Suno folder first");
     return;
   }
 
-  setStemMidiStatus("creatingâ€¦");
+  if (!stemMidiInspection) {
+    await inspectStemMidiFolder(stemMidiFolderPath);
+  }
+
+  const title = stemMidiTitleInput.value.trim();
+  const artist = stemMidiArtistInput.value.trim();
+
+  setStemMidiStatus("importing...");
   stemMidiCreateBtn.disabled = true;
   try {
-    const res = await safeInvoke<StemMidiCreateResult>("stem_midi_create_songpack", {
+    const res = await safeInvoke<ImportRawSongFolderResult>("import_raw_song_folder", {
       req: {
-        title,
-        artist,
-        stemWavPaths: stemMidiStemPaths,
-        midiPath: stemMidiPath,
-      } satisfies StemMidiCreateRequest,
+        folder_path: stemMidiFolderPath,
+        title: title || undefined,
+        artist: artist || undefined,
+      } satisfies ImportRawSongFolderRequest,
     });
-    setStemMidiStatus(`created: ${res.songpack_path}`);
+    const lines = [
+      `imported: ${res.songpack_path}`,
+      `detected ${res.stems_count} WAV stem(s), ${res.midi_files_count} MIDI file(s)${res.lyrics_included ? " · lyrics ready" : ""}`,
+    ];
+    if (res.mapped_game_roles.length) {
+      lines.push(`game roles: ${res.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")}`);
+    }
+    if (res.warnings.length) {
+      lines.push(`warnings:\n- ${res.warnings.join("\n- ")}`);
+    }
+    setStemMidiStatus(lines.join("\n"));
     void refresh();
   } finally {
     stemMidiCreateBtn.disabled = false;
   }
 }
-
 function ingestSourceExtensions(mode: IngestSubcommand): string[] {
   if (mode === "import-dtx") return ["dtx"];
   return ["wav", "mp3", "ogg", "flac", "m4a"];
@@ -2726,6 +3229,7 @@ function stopVisualizer(opts?: { keepStatus?: boolean; preserveTransport?: boole
   if (!opts?.keepStatus) {
     setVizStatus("(not running)");
   }
+  clearPlaybackLyrics();
   vizStartBtn.disabled = false;
   vizStopBtn.disabled = true;
 }
@@ -2844,6 +3348,7 @@ async function selectSongPack(containerPath: string) {
     } catch {
       currentLyrics = null;
     }
+    renderPlaybackLyrics(transport.t);
 
     // Selecting a SongPack enables audio load.
     selectedSongPackPath = containerPath;
@@ -3027,6 +3532,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
   vizStartBtn.disabled = true;
   vizStopBtn.disabled = false;
   setVizStatus(`running: ${plugin.id}`);
+  renderPlaybackLyrics(transport.t);
 
   const tick = (ms: number) => {
     if (!viz) return;
@@ -3036,6 +3542,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     lastFrameMs = ms;
 
     transport = transportController.tick(dt);
+    renderPlaybackLyrics(transport.t);
 
     // If MIDI clock out is enabled, keep its BPM tracking the transport.
     // (Transport bpm will be influenced by external clock if follow is enabled.)
@@ -3563,17 +4070,22 @@ ingestRunBtn.addEventListener("click", () => {
 
 stemMidiPickStemsBtn.addEventListener("click", () => {
   void (async () => {
-    const files = await pickFiles(["wav"], true);
-    stemMidiStemPaths = files;
+    const folder = await pickFolder();
+    if (!folder) return;
+    stemMidiFolderPath = folder;
+    stemMidiInspection = null;
     renderStemMidiSelection();
+    await inspectStemMidiFolder(folder);
   })().catch((e) => setStemMidiStatus(String(e)));
 });
 
 stemMidiPickMidiBtn.addEventListener("click", () => {
   void (async () => {
-    const files = await pickFiles(["mid", "midi"], false);
-    stemMidiPath = files[0] ?? null;
-    renderStemMidiSelection();
+    if (!stemMidiFolderPath) {
+      setStemMidiStatus("pick a Suno folder first");
+      return;
+    }
+    await inspectStemMidiFolder(stemMidiFolderPath);
   })().catch((e) => setStemMidiStatus(String(e)));
 });
 
@@ -3590,6 +4102,7 @@ void ghwtLoadSettings();
 setIngestSourcePlaceholder(ingestModeSelect.value as IngestSubcommand);
 
 renderStemMidiSelection();
+setStemMidiStatus("(not imported)");
 
 // Populate MIDI ports.
 void refreshMidiInputPorts();

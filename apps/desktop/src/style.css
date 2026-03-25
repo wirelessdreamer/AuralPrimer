@@ -612,6 +612,31 @@ audio {
   gap: 14px;
 }
 
+.makeLayout {
+  align-items: start;
+}
+
+.stackCol {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.makeSummary {
+  margin: 6px 0;
+  max-height: clamp(220px, 46vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.importStageNote {
+  margin: 0 0 10px;
+}
+
+#songpackEditorStatus {
+  margin-top: 8px;
+}
+
 @media (max-width: 960px) {
   .twoCol {
     grid-template-columns: 1fr;
@@ -647,4 +672,77 @@ li {
   background: rgba(255, 40, 94, 0.12);
   border: 1px solid rgba(255, 92, 122, 0.32);
   color: rgba(255, 220, 226, 0.95);
+}
+
+.importAuditWrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.importAuditTable {
+  width: 100%;
+  min-width: 540px;
+  border-collapse: collapse;
+}
+
+.importAuditTable th,
+.importAuditTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.importAuditTable thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.importAuditTable tbody th {
+  white-space: nowrap;
+}
+
+.importAuditStatus {
+  display: inline-block;
+  min-width: 58px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.importAuditStatus--found {
+  color: #7ef0ad;
+  background: rgba(25, 206, 118, 0.16);
+  border: 1px solid rgba(25, 206, 118, 0.35);
+}
+
+.importAuditStatus--missing {
+  color: #ffb0b0;
+  background: rgba(255, 93, 93, 0.14);
+  border: 1px solid rgba(255, 93, 93, 0.35);
+}
+
+.importAuditStatus--na {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.importAuditNotes {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 960px) {
+  .makeSummary {
+    max-height: none;
+    overflow-y: visible;
+    padding-right: 0;
+  }
 }

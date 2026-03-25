@@ -191,14 +191,66 @@ type IngestImportProgressEvent = {
   parsed?: unknown;
 };
 
+type MidiTrackInfo = {
+  index: number;
+  name: string;
+  note_count: number;
+  channels: number[];
+  pitch_min: number | null;
+  pitch_max: number | null;
+  suggested_role: string;
+};
+
+type TrackAssignment = {
+  track_index: number;
+  role: string;
+};
+
 type StemMidiCreateRequest = {
   title: string;
   artist: string;
   stemWavPaths: string[];
   midiPath: string;
+  trackAssignments?: TrackAssignment[];
 };
 
 type StemMidiCreateResult = { songpack_path: string };
+
+type RawSongDetectedPart = {
+  path: string;
+  detected_role: string;
+  game_role?: string | null;
+};
+
+type RawSongFolderInspection = {
+  folder_path: string;
+  title_guess: string;
+  stem_wav_paths: string[];
+  midi_paths: string[];
+  stem_parts: RawSongDetectedPart[];
+  midi_parts: RawSongDetectedPart[];
+  lyrics_txt_path?: string | null;
+  karaoke_json_path?: string | null;
+  vocal_stem_path?: string | null;
+  mix_wav_path?: string | null;
+  mapped_game_roles: string[];
+  warnings: string[];
+};
+
+type ImportRawSongFolderRequest = {
+  folder_path: string;
+  title?: string;
+  artist?: string;
+};
+
+type ImportRawSongFolderResult = {
+  songpack_path: string;
+  stems_count: number;
+  midi_files_count: number;
+  lyrics_included: boolean;
+  mapped_game_roles: string[];
+  warnings: string[];
+};
 
 const root = document.getElementById("app");
 if (!root) throw new Error("missing #app");
@@ -211,14 +263,13 @@ root.innerHTML = `
         <span class="logoMark" aria-hidden="true"></span>
         <span class="brandText">
           <span class="brandName">AuralStudio</span>
-          <span class="brandTag">ingest · chart · author</span>
+          <span class="brandTag">import | cleanup | edit</span>
         </span>
       </button>
 
       <nav class="topNav" aria-label="Primary">
-        <button id="navPlay" class="navBtn">Play Songs</button>
-        <button id="navLearn" class="navBtn">Learn Songs</button>
-        <button id="navMake" class="navBtn">Make Music</button>
+        <button id="navMake" class="navBtn">Import</button>
+        <button id="navPlay" class="navBtn">Cleanup &amp; Edit</button>
         <button id="navConfig" class="navBtn">Configure</button>
       </nav>
     </header>
@@ -230,25 +281,21 @@ root.innerHTML = `
             <span class="logoMark logoMark--xl" aria-hidden="true"></span>
             <div>
               <h1 class="heroTitle">AuralStudio</h1>
-              <div class="meta heroMeta">Branding/logo artwork coming soon — this spot is reserved front-and-center.</div>
+              <div class="meta heroMeta">Import raw source material, clean up SongPacks, and edit pack metadata without the gameplay shell.</div>
             </div>
           </div>
           <div class="menuGrid" role="list">
-            <button class="menuCard" id="homePlay" role="listitem">
-              <div class="menuTitle">Play Songs</div>
-              <div class="meta">Pick a songpack and play with visuals + sync.</div>
-            </button>
-            <button class="menuCard" id="homeLearn" role="listitem">
-              <div class="menuTitle">Learn Songs</div>
-              <div class="meta">Practice mode (loops/slowdown) — evolving.</div>
-            </button>
             <button class="menuCard" id="homeMake" role="listitem">
-              <div class="menuTitle">Make Music</div>
-              <div class="meta">Create SongPacks from stems+MIDI or ingest local audio/chart sources.</div>
+              <div class="menuTitle">Import</div>
+              <div class="meta">Suno folders, perform-analysis import, and GHWT import.</div>
+            </button>
+            <button class="menuCard" id="homePlay" role="listitem">
+              <div class="menuTitle">Cleanup &amp; Edit</div>
+              <div class="meta">Inspect SongPacks, regenerate lyrics, and review pack contents.</div>
             </button>
             <button class="menuCard" id="homeConfig" role="listitem">
               <div class="menuTitle">Configure</div>
-              <div class="meta">Song folders, plugins, models, MIDI, etc.</div>
+              <div class="meta">Song library path, model packs, and import defaults.</div>
             </button>
           </div>
         </div>
@@ -258,136 +305,158 @@ root.innerHTML = `
         <div class="twoCol playLayout" id="playLayout">
           <section class="panel">
             <div class="panelHeader">
-              <h2>Play Songs</h2>
+              <h2>Cleanup &amp; Edit</h2>
               <div class="row" style="margin:0">
                 <button id="refresh">Refresh</button>
               </div>
             </div>
 
             <pre id="status">(not loaded)</pre>
-            <div class="twoCol" style="grid-template-columns: 1fr; gap: 10px;">
+            <div class="twoCol" style="grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr); gap: 12px;">
               <div id="list"></div>
               <div id="details" class="details"></div>
             </div>
           </section>
 
           <section class="panel">
-            <div class="hud" id="globalHud">
-              <div class="hudLabel">Key / Mode</div>
-              <div class="hudValue" id="hudKeyMode">C major</div>
-            </div>
-
             <div class="panelHeader">
-              <h2>Now Playing</h2>
-              <div class="row" style="margin:0">
-                <span class="meta">Visualizer + transport</span>
-                <button id="toggleFocus" class="ghostBtn" title="Toggle play focus mode">Focus</button>
-              </div>
+              <h2>Selected SongPack</h2>
+              <div class="meta">editor tools</div>
             </div>
-
+            <p class="meta">
+              Studio stays focused on inspection and authoring. Use <strong>AuralPrimer</strong> for live playback and performance.
+            </p>
             <div class="row">
-              <label class="meta">Plugin</label>
-              <select id="pluginSelect"></select>
-              <button id="pluginRefresh">Refresh</button>
+              <button id="songpackRefreshSelection">Reload selection</button>
+              <button id="songpackGenerateLyrics">Generate lyrics.json from .txt</button>
             </div>
-
-            <div class="row">
-              <label class="meta">Players</label>
-              <div class="grow" id="players"></div>
-              <button id="addPlayer">Add</button>
-            </div>
-
-            <div class="row">
-              <button id="vizStart">Start visualizer</button>
-              <button id="vizStop" disabled>Stop</button>
-            </div>
-
-            <canvas id="viz" width="800" height="240"></canvas>
-            <pre id="vizStatus">(not running)</pre>
-
-            <h3>Transport</h3>
-            <div class="row">
-              <button id="audioLoad" disabled>Load audio</button>
-              <button id="audioPlay" disabled>Play</button>
-              <button id="audioPause" disabled>Pause</button>
-              <button id="audioStop" disabled>Stop</button>
-            </div>
-            <div class="row">
-              <label class="meta">Backend</label>
-              <select id="audioBackend" disabled>
-                <option value="native">Native (Rust)</option>
-              </select>
-            </div>
-            <div class="row">
-              <label class="meta">Output host</label>
-              <select id="audioOutputHost"></select>
-              <button id="audioOutputHostRefresh">Refresh</button>
-              <button id="audioOutputHostApply">Apply</button>
-            </div>
-            <div class="row">
-              <label class="meta">Output device</label>
-              <select id="audioOutputDevice"></select>
-              <button id="audioOutputDeviceRefresh">Refresh</button>
-              <button id="audioOutputDeviceApply">Apply</button>
-            </div>
-            <div class="row">
-              <label class="meta">Slowdown</label>
-              <input id="playbackRate" type="number" min="0.25" max="2" step="0.05" value="1" />
-              <button id="playbackRateApply">Set rate</button>
-            </div>
-            <div class="row">
-              <label class="meta">Metronome</label>
-              <label><input id="metronomeEnabled" type="checkbox" /> enabled</label>
-              <label class="meta">vol</label>
-              <input id="metronomeVolume" type="range" min="0" max="1" step="0.05" value="0.25" />
-            </div>
-            <div class="row">
-              <label class="meta">Seek (sec)</label>
-              <input id="audioSeek" type="number" min="0" step="0.25" value="0" />
-              <button id="audioSeekGo" disabled>Go</button>
-            </div>
-            <div class="row">
-              <label class="meta">Loop</label>
-              <input id="loopT0" type="number" min="0" step="0.25" value="0" />
-              <input id="loopT1" type="number" min="0" step="0.25" value="4" />
-              <button id="loopSet" disabled>Set</button>
-              <button id="loopClear" disabled>Clear</button>
-            </div>
-            <pre id="audioStatus">(no audio)</pre>
+            <pre id="songpackEditorStatus" class="meta">(select a SongPack to inspect or edit)</pre>
           </section>
         </div>
       </section>
 
-      <section class="route" data-route="learn">
-        <section class="panel">
-          <div class="panelHeader">
-            <h2>Learn Songs</h2>
-            <div class="meta">Practice mode</div>
-          </div>
-          <p class="meta">
-            This section is evolving. For now, use <strong>Play Songs</strong> for selection + playback.
-            Next we’ll add practice-first defaults (loop presets, beat-aligned looping, section navigation, and guided exercises).
-          </p>
-          <div class="row">
-            <button id="learnGoPlay">Go to Play Songs</button>
-          </div>
-        </section>
-      </section>
-
       <section class="route" data-route="make">
-        <section class="panel">
-          <div class="panelHeader">
-            <h2>Make Music</h2>
-            <div class="meta">Creation tools</div>
+        <div class="twoCol makeLayout">
+          <section class="panel">
+            <div class="panelHeader">
+              <h2>Import</h2>
+              <div class="meta">Suno folders</div>
+            </div>
+            <h3>Import stem WAV + MIDI (Suno)</h3>
+            <p class="meta">
+              Point this at one Suno export folder. We will scan the folder for stem WAVs, MIDI,
+              <code>lyrics.txt</code>, and optional karaoke JSON, validate what we can, then build the SongPack.
+            </p>
+            <div class="row">
+              <button id="stemMidiPickFolderMake">Choose Suno folder...</button>
+              <div class="meta grow" id="stemMidiFolderLabelMake">(no folder selected)</div>
+            </div>
+            <div id="stemMidiSummaryMake" class="meta makeSummary"></div>
+            <div class="row">
+              <button id="stemMidiImportMake">Import SongPack</button>
+            </div>
+            <pre id="stemMidiStatusMake" class="meta">(not imported)</pre>
+          </section>
+
+          <div class="stackCol">
+            <section class="panel">
+              <div class="panelHeader">
+                <h2>Perform analysis import</h2>
+                <div class="meta">beat analysis + stem split + transcription</div>
+              </div>
+              <p class="meta">
+                Run the Python ingest sidecar on a file, folder, or DTX chart. This path performs beat/tempo analysis,
+                stem separation, guitar lead/rhythm stem split, and chart transcription.
+              </p>
+              <div class="meta importStageNote">
+                Stages: decode audio -> analyze beats/tempo -> separate stems -> split guitar stems -> transcribe drums/melodic parts.
+              </div>
+              <div class="row">
+                <label class="meta">Mode</label>
+                <select id="ingestMode">
+                  <option value="import">perform analysis import (single audio file)</option>
+                  <option value="import-dir">perform analysis import (scan folder)</option>
+                  <option value="import-dtx">perform analysis import (DTX chart)</option>
+                </select>
+              </div>
+              <div class="row">
+                <label class="meta">Source</label>
+                <input id="ingestSourcePath" class="grow" type="text" placeholder="C:\\music\\song.wav" />
+                <button id="ingestBrowseSource">Browse...</button>
+              </div>
+              <div class="row">
+                <label class="meta">Output SongPack (optional)</label>
+                <input id="ingestOutPath" class="grow" type="text" placeholder="(leave blank for songs folder default)" />
+              </div>
+              <div class="row">
+                <label class="meta">Profile</label>
+                <input id="ingestProfile" type="text" value="full" />
+                <label class="meta">Shifts</label>
+                <input id="ingestShifts" type="number" min="1" step="1" value="1" />
+                <label><input id="ingestMultiFilter" type="checkbox" /> multi-filter</label>
+              </div>
+              <div class="row">
+                <label class="meta">Drum filter</label>
+                <select id="ingestDrumFilter">
+                  <option value="combined_filter">combined_filter</option>
+                  <option value="dsp_bandpass_improved">dsp_bandpass_improved</option>
+                  <option value="dsp_spectral_flux">dsp_spectral_flux</option>
+                  <option value="adaptive_beat_grid">adaptive_beat_grid</option>
+                  <option value="aural_onset">aural_onset</option>
+                  <option value="dsp_bandpass">dsp_bandpass</option>
+                  <option value="librosa_superflux">librosa_superflux</option>
+                </select>
+                <label class="meta">Melodic</label>
+                <select id="ingestMelodicMethod">
+                  <option value="auto">auto</option>
+                  <option value="basic_pitch">basic_pitch</option>
+                  <option value="pyin">pyin</option>
+                </select>
+              </div>
+              <div class="row">
+                <label class="meta">Config JSON/path (optional)</label>
+                <input id="ingestConfig" class="grow" type="text" placeholder='{"ingest_timestamp":"..."} or C:\\cfg.json' />
+              </div>
+              <div class="row">
+                <label class="meta">Title</label>
+                <input id="ingestTitle" class="grow" type="text" placeholder="Optional title override" />
+                <label class="meta">Artist</label>
+                <input id="ingestArtist" class="grow" type="text" placeholder="Optional artist override" />
+                <button id="ingestRun">Run import</button>
+              </div>
+              <pre id="ingestStatus" class="meta">(not started)</pre>
+            </section>
+
+            <section class="panel">
+              <div class="panelHeader">
+                <h2>Import GHWT songs</h2>
+                <div class="meta">advanced archive import</div>
+              </div>
+              <p class="meta">
+                Scan your local <strong>Guitar Hero World Tour Definitive Edition</strong> <code>DATA</code> folder
+                and import each DLC song's <code>*_preview.fsb.xen</code> into a SongPack.
+                <br />
+                Requires <code>vgmstream-cli</code> on PATH (or provide an explicit path).
+              </p>
+              <div class="row">
+                <label class="meta">GHWT DATA root</label>
+                <input id="ghwtDataRoot" class="grow" type="text" placeholder="D:\\Guitar Hero World Tour\\DATA" />
+                <button id="ghwtBrowse">Browse...</button>
+              </div>
+              <div class="row">
+                <label class="meta">vgmstream-cli path (optional)</label>
+                <input id="ghwtVgmstream" type="text" placeholder="C:\\tools\\vgmstream-cli.exe" />
+              </div>
+              <div class="row">
+                <button id="ghwtSave">Save</button>
+                <button id="ghwtScan">Scan DLC</button>
+                <button id="ghwtImportAll">Import all</button>
+              </div>
+              <pre id="ghwtStatus" class="meta">(not scanned)</pre>
+              <div id="ghwtList"></div>
+            </section>
           </div>
-          <p class="meta">
-            Build content now from <strong>Configure</strong>:
-            stems+MIDI SongPack creator, sidecar ingest import, GHWT import, and model-pack setup.
-          </p>
-          <div class="row">
-            <button id="makeGoConfig">Open Configure</button>
-          </div>
-        </section>
+        </div>
       </section>
 
       <section class="route" data-route="config">
@@ -395,7 +464,7 @@ root.innerHTML = `
           <section class="panel">
             <div class="panelHeader">
               <h2>Configure</h2>
-              <div class="meta">Folders + plugins + models</div>
+              <div class="meta">library + model packs</div>
             </div>
 
             <h3>Song Library</h3>
@@ -425,193 +494,92 @@ root.innerHTML = `
 
             <h4>Installed</h4>
             <pre id="modelsStatus">(not loaded)</pre>
-
-            <h3>Import GHWT songs (MVP)</h3>
-            <p class="meta">
-              This importer scans your local <strong>Guitar Hero World Tour Definitive Edition</strong> <code>DATA</code> folder
-              and imports each DLC song’s <code>*_preview.fsb.xen</code> into an AuralPrimer SongPack.
-              <br />
-              Requires <code>vgmstream-cli</code> on PATH (or provide an explicit path).
-            </p>
-
-            <div class="row">
-              <label class="meta">GHWT DATA root</label>
-              <input id="ghwtDataRoot" class="grow" type="text" placeholder="D:\\Guitar Hero World Tour\\DATA" />
-              <button id="ghwtBrowse">Browse…</button>
-            </div>
-            <div class="row">
-              <label class="meta">vgmstream-cli path (optional)</label>
-              <input id="ghwtVgmstream" type="text" placeholder="C:\\tools\\vgmstream-cli.exe" />
-            </div>
-            <div class="row">
-              <button id="ghwtSave">Save</button>
-              <button id="ghwtScan">Scan DLC</button>
-              <button id="ghwtImportAll">Import all</button>
-            </div>
-            <pre id="ghwtStatus" class="meta">(not scanned)</pre>
-            <div id="ghwtList"></div>
-
-            <h3>Ingest Audio (sidecar)</h3>
-            <p class="meta">
-              Run the Python ingest sidecar directly to create SongPacks from audio files, folders, or DTX charts.
-            </p>
-            <div class="row">
-              <label class="meta">Mode</label>
-              <select id="ingestMode">
-                <option value="import">import (single audio file)</option>
-                <option value="import-dir">import-dir (scan folder)</option>
-                <option value="import-dtx">import-dtx (DTX chart)</option>
-              </select>
-            </div>
-            <div class="row">
-              <label class="meta">Source</label>
-              <input id="ingestSourcePath" class="grow" type="text" placeholder="C:\\music\\song.wav" />
-              <button id="ingestBrowseSource">Browse…</button>
-            </div>
-            <div class="row">
-              <label class="meta">Output SongPack (optional)</label>
-              <input id="ingestOutPath" class="grow" type="text" placeholder="(leave blank for songs folder default)" />
-            </div>
-            <div class="row">
-              <label class="meta">Profile</label>
-              <input id="ingestProfile" type="text" value="full" />
-              <label class="meta">Shifts</label>
-              <input id="ingestShifts" type="number" min="1" step="1" value="1" />
-              <label><input id="ingestMultiFilter" type="checkbox" /> multi-filter</label>
-            </div>
-            <div class="row">
-              <label class="meta">Drum filter</label>
-              <select id="ingestDrumFilter">
-                <option value="combined_filter">combined_filter</option>
-                <option value="dsp_bandpass_improved">dsp_bandpass_improved</option>
-                <option value="dsp_spectral_flux">dsp_spectral_flux</option>
-                <option value="adaptive_beat_grid">adaptive_beat_grid</option>
-                <option value="aural_onset">aural_onset</option>
-                <option value="dsp_bandpass">dsp_bandpass</option>
-                <option value="librosa_superflux">librosa_superflux</option>
-              </select>
-              <label class="meta">Melodic</label>
-              <select id="ingestMelodicMethod">
-                <option value="auto">auto</option>
-                <option value="basic_pitch">basic_pitch</option>
-                <option value="pyin">pyin</option>
-              </select>
-            </div>
-            <div class="row">
-              <label class="meta">Config JSON/path (optional)</label>
-              <input id="ingestConfig" class="grow" type="text" placeholder='{"ingest_timestamp":"..."} or C:\\cfg.json' />
-            </div>
-            <div class="row">
-              <label class="meta">Title</label>
-              <input id="ingestTitle" class="grow" type="text" placeholder="Optional title override" />
-              <label class="meta">Artist</label>
-              <input id="ingestArtist" class="grow" type="text" placeholder="Optional artist override" />
-              <button id="ingestRun">Run ingest</button>
-            </div>
-            <pre id="ingestStatus" class="meta">(not started)</pre>
-
-            <h3>Create SongPack (stems + MIDI)</h3>
-            <p class="meta">
-              Create a playable SongPack from one or more WAV stems plus a MIDI file.
-              This will mix down to <code>audio/mix.wav</code> and store the MIDI as <code>features/notes.mid</code>.
-            </p>
-            <div class="row">
-              <label class="meta">Title</label>
-              <input id="stemMidiTitle" class="grow" type="text" placeholder="Song title" />
-            </div>
-            <div class="row">
-              <label class="meta">Artist</label>
-              <input id="stemMidiArtist" class="grow" type="text" placeholder="Artist" />
-            </div>
-            <div class="row">
-              <button id="stemMidiPickStems">Pick stem WAVs…</button>
-              <div class="meta grow" id="stemMidiStemsLabel">(none)</div>
-            </div>
-            <div class="row">
-              <button id="stemMidiPickMidi">Pick MIDI…</button>
-              <div class="meta grow" id="stemMidiMidiLabel">(none)</div>
-            </div>
-            <div class="row">
-              <button id="stemMidiCreate">Create SongPack</button>
-            </div>
-            <pre id="stemMidiStatus" class="meta">(not created)</pre>
           </section>
 
           <section class="panel">
             <div class="panelHeader">
-              <h2>MIDI</h2>
-              <div class="meta">Clock + full I/O</div>
+              <h2>Workflow split</h2>
+              <div class="meta">Studio vs AuralPrimer</div>
             </div>
-
-            <h3>MIDI Sync (clock follow)</h3>
-            <div class="row">
-              <label><input id="midiFollowEnabled" type="checkbox" checked /> follow external clock</label>
-            </div>
-            <div class="row">
-              <label class="meta">MIDI input port</label>
-              <select id="midiInPort"></select>
-              <button id="midiInRefresh">Refresh</button>
-              <button id="midiInConnect">Connect</button>
-              <button id="midiInDisconnect">Disconnect</button>
-            </div>
-            <div class="row">
-              <label class="meta">tempo scale</label>
-              <input id="midiTempoScale" type="number" min="0.25" max="4" step="0.05" value="1" />
-              <span class="meta">(device bpm × scale = song bpm)</span>
-            </div>
-            <div class="row">
-              <label><input id="midiInSysexEnabled" type="checkbox" /> allow SysEx input</label>
-            </div>
-            <pre id="midiStatus" class="meta">(midi clock: not connected)</pre>
-            <pre id="midiInEvents" class="meta">(midi input events)</pre>
-
-            <h3>MIDI Sync (clock out)</h3>
-            <div class="row">
-              <label><input id="midiOutEnabled" type="checkbox" /> send MIDI clock</label>
-            </div>
-            <div class="row">
-              <label class="meta">MIDI clock output port</label>
-              <select id="midiOutPort"></select>
-              <button id="midiOutRefresh">Refresh</button>
-              <button id="midiOutSelect">Select</button>
-            </div>
-            <div class="row">
-              <label><input id="midiOutSysexEnabled" type="checkbox" /> allow SysEx output</label>
-            </div>
-            <div class="row">
-              <button id="midiOutStart">Start</button>
-              <button id="midiOutContinue">Continue</button>
-              <button id="midiOutStop">Stop</button>
-            </div>
-
-            <h3>MIDI Output (messages)</h3>
-            <div class="row">
-              <label class="meta">channel</label>
-              <input id="midiMsgChannel" type="number" min="1" max="16" step="1" value="1" />
-              <label class="meta">note</label>
-              <input id="midiMsgNote" type="number" min="0" max="127" step="1" value="60" />
-              <label class="meta">velocity</label>
-              <input id="midiMsgVelocity" type="number" min="0" max="127" step="1" value="100" />
-            </div>
-            <div class="row">
-              <button id="midiMsgNoteOn">Note On</button>
-              <button id="midiMsgNoteOff">Note Off</button>
-              <button id="midiMsgAllNotesOff">All Notes Off</button>
-            </div>
-            <div class="row">
-              <label class="meta">cc</label>
-              <input id="midiMsgCc" type="number" min="0" max="127" step="1" value="1" />
-              <label class="meta">value</label>
-              <input id="midiMsgCcValue" type="number" min="0" max="127" step="1" value="64" />
-              <button id="midiMsgCcSend">Send CC</button>
-            </div>
-            <div class="row">
-              <label class="meta">raw hex bytes</label>
-              <input id="midiOutRawHex" class="grow" type="text" placeholder="90 3C 64" />
-              <button id="midiOutRawSend">Send Raw</button>
-            </div>
-            <pre id="midiOutStatus" class="meta">(midi clock out: disabled)</pre>
+            <p class="meta">
+              <strong>AuralStudio</strong> is the authoring app: import raw material, inspect SongPacks, regenerate lyrics,
+              and maintain the library.
+            </p>
+            <p class="meta">
+              <strong>AuralPrimer</strong> is the play app: highway, transport, audio playback, MIDI clock, and performance UX.
+            </p>
           </section>
+        </div>
+      </section>
+
+      <section class="legacyPlaybackScaffold" aria-hidden="true" hidden>
+        <div id="globalHud" class="hud">
+          <div class="hudLabel">Key / Mode</div>
+          <div class="hudValue" id="hudKeyMode">C major</div>
+        </div>
+        <div id="playbackLegacyHost">
+          <div id="players"></div>
+          <button id="addPlayer">Add</button>
+          <button id="toggleFocus">Focus</button>
+          <select id="pluginSelect"></select>
+          <button id="pluginRefresh">Refresh</button>
+          <button id="vizStart">Start visualizer</button>
+          <button id="vizStop" disabled>Stop</button>
+          <canvas id="viz" width="800" height="240"></canvas>
+          <pre id="vizStatus">(not running)</pre>
+          <button id="audioLoad" disabled>Load audio</button>
+          <button id="audioPlay" disabled>Play</button>
+          <button id="audioPause" disabled>Pause</button>
+          <button id="audioStop" disabled>Stop</button>
+          <select id="audioBackend" disabled>
+            <option value="native">Native (Rust)</option>
+          </select>
+          <select id="audioOutputHost"></select>
+          <button id="audioOutputHostRefresh">Refresh</button>
+          <button id="audioOutputHostApply">Apply</button>
+          <select id="audioOutputDevice"></select>
+          <button id="audioOutputDeviceRefresh">Refresh</button>
+          <button id="audioOutputDeviceApply">Apply</button>
+          <input id="playbackRate" type="number" min="0.25" max="2" step="0.05" value="1" />
+          <button id="playbackRateApply">Set rate</button>
+          <label><input id="metronomeEnabled" type="checkbox" /> enabled</label>
+          <input id="metronomeVolume" type="range" min="0" max="1" step="0.05" value="0.25" />
+          <input id="audioSeek" type="number" min="0" step="0.25" value="0" />
+          <button id="audioSeekGo" disabled>Go</button>
+          <input id="loopT0" type="number" min="0" step="0.25" value="0" />
+          <input id="loopT1" type="number" min="0" step="0.25" value="4" />
+          <button id="loopSet" disabled>Set</button>
+          <button id="loopClear" disabled>Clear</button>
+          <pre id="audioStatus">(no audio)</pre>
+          <label><input id="midiFollowEnabled" type="checkbox" checked /> follow external clock</label>
+          <select id="midiInPort"></select>
+          <button id="midiInRefresh">Refresh</button>
+          <button id="midiInConnect">Connect</button>
+          <button id="midiInDisconnect">Disconnect</button>
+          <input id="midiTempoScale" type="number" min="0.25" max="4" step="0.05" value="1" />
+          <label><input id="midiInSysexEnabled" type="checkbox" /> allow SysEx input</label>
+          <pre id="midiStatus">(midi clock: not connected)</pre>
+          <pre id="midiInEvents">(midi input events)</pre>
+          <label><input id="midiOutEnabled" type="checkbox" /> send MIDI clock</label>
+          <select id="midiOutPort"></select>
+          <button id="midiOutRefresh">Refresh</button>
+          <button id="midiOutSelect">Select</button>
+          <label><input id="midiOutSysexEnabled" type="checkbox" /> allow SysEx output</label>
+          <button id="midiOutStart">Start</button>
+          <button id="midiOutContinue">Continue</button>
+          <button id="midiOutStop">Stop</button>
+          <input id="midiMsgChannel" type="number" min="1" max="16" step="1" value="1" />
+          <input id="midiMsgNote" type="number" min="0" max="127" step="1" value="60" />
+          <input id="midiMsgVelocity" type="number" min="0" max="127" step="1" value="100" />
+          <button id="midiMsgNoteOn">Note On</button>
+          <button id="midiMsgNoteOff">Note Off</button>
+          <button id="midiMsgAllNotesOff">All Notes Off</button>
+          <input id="midiMsgCc" type="number" min="0" max="127" step="1" value="1" />
+          <input id="midiMsgCcValue" type="number" min="0" max="127" step="1" value="64" />
+          <button id="midiMsgCcSend">Send CC</button>
+          <input id="midiOutRawHex" class="grow" type="text" placeholder="90 3C 64" />
+          <button id="midiOutRawSend">Send Raw</button>
+          <pre id="midiOutStatus">(midi clock out: disabled)</pre>
         </div>
       </section>
     </main>
@@ -632,16 +600,7 @@ root.innerHTML = `
   }
 }
 
-const STUDIO_IMPORT_ONLY_MODE = true;
-if (STUDIO_IMPORT_ONLY_MODE) {
-  document.body.classList.add("studioImportOnly");
-  const brandTagEl = document.querySelector<HTMLElement>(".brandTag");
-  if (brandTagEl) {
-    brandTagEl.textContent = "import | preferences";
-  }
-}
-
-type Route = "home" | "play" | "learn" | "make" | "config";
+type Route = "home" | "play" | "make" | "config";
 
 type ConsoleLogCategory = "gamestate" | "play" | "debugging" | "ingest";
 type ConsoleLogLevel = "log" | "warn" | "error";
@@ -713,7 +672,6 @@ function setRoute(route: Route) {
   const navMap: Record<Route, string> = {
     home: "navHome",
     play: "navPlay",
-    learn: "navLearn",
     make: "navMake",
     config: "navConfig"
   };
@@ -739,16 +697,12 @@ function setRoute(route: Route) {
 
 document.getElementById("navHome")?.addEventListener("click", () => setRoute("home"));
 document.getElementById("navPlay")?.addEventListener("click", () => setRoute("play"));
-document.getElementById("navLearn")?.addEventListener("click", () => setRoute("learn"));
 document.getElementById("navMake")?.addEventListener("click", () => setRoute("make"));
 document.getElementById("navConfig")?.addEventListener("click", () => setRoute("config"));
 
 document.getElementById("homePlay")?.addEventListener("click", () => setRoute("play"));
-document.getElementById("homeLearn")?.addEventListener("click", () => setRoute("learn"));
 document.getElementById("homeMake")?.addEventListener("click", () => setRoute("make"));
 document.getElementById("homeConfig")?.addEventListener("click", () => setRoute("config"));
-document.getElementById("learnGoPlay")?.addEventListener("click", () => setRoute("play"));
-document.getElementById("makeGoConfig")?.addEventListener("click", () => setRoute("config"));
 
 const hudKeyModeEl = document.getElementById("hudKeyMode") as HTMLDivElement;
 
@@ -854,14 +808,11 @@ const ingestArtistInput = document.getElementById("ingestArtist") as HTMLInputEl
 const ingestRunBtn = document.getElementById("ingestRun") as HTMLButtonElement;
 const ingestStatusEl = document.getElementById("ingestStatus") as HTMLPreElement;
 
-const stemMidiTitleInput = document.getElementById("stemMidiTitle") as HTMLInputElement;
-const stemMidiArtistInput = document.getElementById("stemMidiArtist") as HTMLInputElement;
-const stemMidiPickStemsBtn = document.getElementById("stemMidiPickStems") as HTMLButtonElement;
-const stemMidiPickMidiBtn = document.getElementById("stemMidiPickMidi") as HTMLButtonElement;
-const stemMidiCreateBtn = document.getElementById("stemMidiCreate") as HTMLButtonElement;
-const stemMidiStemsLabel = document.getElementById("stemMidiStemsLabel") as HTMLDivElement;
-const stemMidiMidiLabel = document.getElementById("stemMidiMidiLabel") as HTMLDivElement;
-const stemMidiStatusEl = document.getElementById("stemMidiStatus") as HTMLPreElement;
+const stemMidiPickFolderBtn = document.getElementById("stemMidiPickFolderMake") as HTMLButtonElement;
+const stemMidiImportBtn = document.getElementById("stemMidiImportMake") as HTMLButtonElement;
+const stemMidiFolderLabel = document.getElementById("stemMidiFolderLabelMake") as HTMLDivElement;
+const stemMidiSummaryEl = document.getElementById("stemMidiSummaryMake") as HTMLDivElement;
+const stemMidiStatusEl = document.getElementById("stemMidiStatusMake") as HTMLPreElement;
 
 const statusEl = document.getElementById("status") as HTMLPreElement;
 const listEl = document.getElementById("list") as HTMLDivElement;
@@ -870,6 +821,10 @@ const refreshBtn = document.getElementById("refresh") as HTMLButtonElement;
 const songsFolderInput = document.getElementById("songsFolder") as HTMLInputElement;
 const setOverrideBtn = document.getElementById("setOverride") as HTMLButtonElement;
 const clearOverrideBtn = document.getElementById("clearOverride") as HTMLButtonElement;
+
+const songpackRefreshSelectionBtn = document.getElementById("songpackRefreshSelection") as HTMLButtonElement;
+const songpackGenerateLyricsBtn = document.getElementById("songpackGenerateLyrics") as HTMLButtonElement;
+const songpackEditorStatusEl = document.getElementById("songpackEditorStatus") as HTMLPreElement;
 
 // Disable desktop-only actions when running without the Tauri runtime.
 if (!haveTauri()) {
@@ -881,9 +836,8 @@ if (!haveTauri()) {
   setOverrideBtn.disabled = true;
   clearOverrideBtn.disabled = true;
 
-  stemMidiPickStemsBtn.disabled = true;
-  stemMidiPickMidiBtn.disabled = true;
-  stemMidiCreateBtn.disabled = true;
+  stemMidiPickFolderBtn.disabled = true;
+  stemMidiImportBtn.disabled = true;
 
   ingestBrowseSourceBtn.disabled = true;
   ingestRunBtn.disabled = true;
@@ -1866,6 +1820,7 @@ async function applyAudioOutputDeviceSelection() {
 
 function setVizStatus(msg: string) {
   vizStatusEl.textContent = msg;
+  songpackEditorStatusEl.textContent = msg;
   logConsole("debugging", msg);
 }
 
@@ -1880,6 +1835,10 @@ function setStemMidiStatus(msg: string) {
 function setIngestStatus(msg: string) {
   ingestStatusEl.textContent = msg;
   logConsole("ingest", msg);
+}
+
+function setSongpackEditorStatus(msg: string) {
+  songpackEditorStatusEl.textContent = msg;
 }
 
 function debugIngestConsole(message: string, details?: unknown) {
@@ -1932,48 +1891,317 @@ function inferIngestOutPathFromCommand(command: string[]): string | undefined {
   return value || undefined;
 }
 
-let stemMidiStemPaths: string[] = [];
-let stemMidiPath: string | null = null;
+let stemMidiFolderPath: string | null = null;
+let stemMidiInspection: RawSongFolderInspection | null = null;
+
+function stemMidiBaseName(path: string): string {
+  return path.replace(/^.*[\\\/]/, "");
+}
+
+function formatDetectedRoleLabel(role: string): string {
+  switch (role) {
+    case "mix":
+      return "Mix";
+    case "drums":
+      return "Drums";
+    case "bass":
+      return "Bass";
+    case "lead_guitar":
+      return "Lead Guitar";
+    case "rhythm_guitar":
+      return "Rhythm Guitar";
+    case "guitar":
+      return "Guitar";
+    case "synth":
+      return "Synth";
+    case "keys":
+      return "Keyboard / Keys";
+    case "vocals":
+      return "Vocals";
+    case "backing_vocals":
+      return "Backing Vocals";
+    case "fx":
+      return "FX";
+    default:
+      return "Unknown";
+  }
+}
+
+function formatGameRoleLabel(role?: string | null): string {
+  switch (role) {
+    case "drums":
+      return "Drums";
+    case "bass":
+      return "Bass";
+    case "lead_guitar":
+      return "Lead Guitar";
+    case "rhythm_guitar":
+      return "Rhythm Guitar";
+    case "keys":
+      return "Keys / Synth";
+    case "vocals":
+      return "Vocals";
+    default:
+      return "Unmapped";
+  }
+}
+
+function renderDetectedPartList(parts: RawSongDetectedPart[]): string {
+  if (!parts.length) {
+    return `<div class="meta">(none detected)</div>`;
+  }
+  return parts
+    .map((part) => {
+      const detectedLabel = formatDetectedRoleLabel(part.detected_role);
+      const mappedLabel = part.game_role ? formatGameRoleLabel(part.game_role) : null;
+      const roleLabel = mappedLabel && mappedLabel !== detectedLabel
+        ? `${detectedLabel} -> ${mappedLabel}`
+        : detectedLabel;
+      return `<div class="meta">${escapeHtml(roleLabel)}: ${escapeHtml(stemMidiBaseName(part.path))}</div>`;
+    })
+    .join("");
+}
+
+function findDetectedParts(
+  parts: RawSongDetectedPart[],
+  options: { gameRoles?: string[]; detectedRoles?: string[] }
+): RawSongDetectedPart[] {
+  const gameRoleSet = new Set(options.gameRoles ?? []);
+  const detectedRoleSet = new Set(options.detectedRoles ?? []);
+  return parts.filter((part) => {
+    if (part.game_role && gameRoleSet.has(part.game_role)) return true;
+    return detectedRoleSet.has(part.detected_role);
+  });
+}
+
+function renderAuditState(value: boolean | null): string {
+  if (value === null) {
+    return `<span class="importAuditStatus importAuditStatus--na">n/a</span>`;
+  }
+  return value
+    ? `<span class="importAuditStatus importAuditStatus--found">found</span>`
+    : `<span class="importAuditStatus importAuditStatus--missing">missing</span>`;
+}
+
+function summarizePartKinds(parts: RawSongDetectedPart[]): string {
+  const labels = Array.from(new Set(parts.map((part) => formatDetectedRoleLabel(part.detected_role))));
+  return labels.join(", ");
+}
+
+function renderStemMidiAuditTable(inspection: RawSongFolderInspection): string {
+  const drumsAudio = findDetectedParts(inspection.stem_parts, { gameRoles: ["drums"], detectedRoles: ["drums"] });
+  const drumsMidi = findDetectedParts(inspection.midi_parts, { gameRoles: ["drums"], detectedRoles: ["drums"] });
+  const bassAudio = findDetectedParts(inspection.stem_parts, { gameRoles: ["bass"], detectedRoles: ["bass"] });
+  const bassMidi = findDetectedParts(inspection.midi_parts, { gameRoles: ["bass"], detectedRoles: ["bass"] });
+  const guitarAudio = findDetectedParts(inspection.stem_parts, {
+    gameRoles: ["lead_guitar", "rhythm_guitar"],
+    detectedRoles: ["guitar", "lead_guitar", "rhythm_guitar"],
+  });
+  const guitarMidi = findDetectedParts(inspection.midi_parts, {
+    gameRoles: ["lead_guitar", "rhythm_guitar"],
+    detectedRoles: ["guitar", "lead_guitar", "rhythm_guitar"],
+  });
+  const keysAudio = findDetectedParts(inspection.stem_parts, {
+    gameRoles: ["keys"],
+    detectedRoles: ["keys", "synth"],
+  });
+  const keysMidi = findDetectedParts(inspection.midi_parts, {
+    gameRoles: ["keys"],
+    detectedRoles: ["keys", "synth"],
+  });
+  const vocalsAudio = findDetectedParts(inspection.stem_parts, {
+    gameRoles: ["vocals"],
+    detectedRoles: ["vocals", "backing_vocals"],
+  });
+  const vocalsMidi = findDetectedParts(inspection.midi_parts, {
+    gameRoles: ["vocals"],
+    detectedRoles: ["vocals", "backing_vocals"],
+  });
+  const lyricAlignSource = inspection.vocal_stem_path ?? inspection.mix_wav_path ?? inspection.stem_wav_paths[0] ?? null;
+
+  const rows = [
+    {
+      label: "Drums",
+      audio: drumsAudio.length > 0,
+      midi: drumsMidi.length > 0,
+      note: drumsMidi.length > 1 ? `${drumsMidi.length} MIDI parts merged` : "mapped to Drums",
+    },
+    {
+      label: "Bass",
+      audio: bassAudio.length > 0,
+      midi: bassMidi.length > 0,
+      note: bassMidi.length > 0 ? "mapped to Bass" : "missing bass MIDI",
+    },
+    {
+      label: "Guitar",
+      audio: guitarAudio.length > 0,
+      midi: guitarMidi.length > 0,
+      note: guitarMidi.length > 0 ? summarizePartKinds(guitarMidi) : "missing guitar MIDI",
+    },
+    {
+      label: "Keys / Synth",
+      audio: keysAudio.length > 0,
+      midi: keysMidi.length > 0,
+      note: keysMidi.length > 1 ? `${keysMidi.length} MIDI parts merged` : (keysMidi.length > 0 ? summarizePartKinds(keysMidi) : "missing keys MIDI"),
+    },
+    {
+      label: "Vocals",
+      audio: vocalsAudio.length > 0,
+      midi: vocalsMidi.length > 0,
+      note: inspection.karaoke_json_path || inspection.lyrics_txt_path ? "lyric timing source present" : "no lyrics source",
+    },
+    {
+      label: "Lyrics",
+      audio: Boolean(lyricAlignSource),
+      midi: null,
+      note: inspection.karaoke_json_path
+        ? "karaoke JSON"
+        : inspection.lyrics_txt_path
+          ? lyricAlignSource
+            ? `lyrics.txt + ${stemMidiBaseName(lyricAlignSource)}`
+            : "lyrics.txt (uniform fallback)"
+          : "missing lyrics",
+    },
+  ];
+
+  const body = rows
+    .map((row) => `
+      <tr>
+        <th scope="row">${escapeHtml(row.label)}</th>
+        <td>${renderAuditState(row.audio)}</td>
+        <td>${renderAuditState(row.midi)}</td>
+        <td class="importAuditNotes">${escapeHtml(row.note)}</td>
+      </tr>
+    `)
+    .join("");
+
+  return `
+    <div class="importAuditWrap">
+      <table class="importAuditTable">
+        <thead>
+        <tr>
+          <th>Track</th>
+          <th>Audio</th>
+          <th>MIDI</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
+}
 
 function renderStemMidiSelection() {
-  stemMidiStemsLabel.textContent = stemMidiStemPaths.length ? `${stemMidiStemPaths.length} stem(s)` : "(none)";
-  stemMidiMidiLabel.textContent = stemMidiPath ? stemMidiPath : "(none)";
+  stemMidiPickFolderBtn.textContent = "Choose Suno folder...";
+  stemMidiImportBtn.textContent = "Import SongPack";
+  stemMidiFolderLabel.textContent = stemMidiFolderPath ?? "(no folder selected)";
+  stemMidiImportBtn.disabled = !stemMidiInspection;
+  if (!stemMidiInspection) {
+    stemMidiSummaryEl.innerHTML = stemMidiFolderPath
+      ? `<div class="meta">Scanning ${escapeHtml(stemMidiBaseName(stemMidiFolderPath))}...</div>`
+      : `<div class="meta">(choose a Suno folder)</div>`;
+    return;
+  } else {
+    const summary = [
+      `${stemMidiInspection.stem_wav_paths.length} WAV${stemMidiInspection.stem_wav_paths.length === 1 ? "" : "s"}`,
+      `${stemMidiInspection.midi_paths.length} MIDI${stemMidiInspection.midi_paths.length === 1 ? "" : "s"}`,
+      stemMidiInspection.lyrics_txt_path ? "lyrics.txt" : "no lyrics.txt",
+      stemMidiInspection.mapped_game_roles.length
+        ? stemMidiInspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")
+        : "no mapped roles",
+      stemMidiInspection.karaoke_json_path
+        ? "karaoke JSON"
+        : stemMidiInspection.vocal_stem_path
+          ? "vocals align"
+          : undefined,
+    ].filter(Boolean);
+    stemMidiSummaryEl.textContent = summary.join(" | ");
+  }
+  renderStemMidiTrackList();
+}
+
+function renderStemMidiTrackList() {
+  if (!stemMidiInspection) {
+    stemMidiSummaryEl.innerHTML = "";
+    return;
+  }
+
+  const warningItems = stemMidiInspection.warnings.length
+    ? `<div class="error" style="margin-top:8px"><strong>Warnings:</strong><br />${stemMidiInspection.warnings.map((warning) => escapeHtml(warning)).join("<br />")}</div>`
+    : "";
+
+  const lyricSource = stemMidiInspection.karaoke_json_path
+    ? `Using existing karaoke JSON: ${escapeHtml(stemMidiBaseName(stemMidiInspection.karaoke_json_path))}`
+    : stemMidiInspection.lyrics_txt_path
+      ? `Will align ${escapeHtml(stemMidiBaseName(stemMidiInspection.lyrics_txt_path))} using ${escapeHtml(stemMidiBaseName(stemMidiInspection.vocal_stem_path ?? stemMidiInspection.mix_wav_path ?? stemMidiInspection.stem_wav_paths[0] ?? ""))}`
+      : "No lyrics source detected";
+
+  stemMidiSummaryEl.innerHTML = `
+    <div class="meta" style="margin-top:6px;font-weight:600">Folder check</div>
+    <div class="meta">default title: ${escapeHtml(stemMidiInspection.title_guess)}</div>
+    <div class="meta">game mapping: ${escapeHtml(stemMidiInspection.mapped_game_roles.length ? stemMidiInspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ") : "none")}</div>
+    <div class="meta">mix audio: ${escapeHtml(stemMidiInspection.mix_wav_path ? stemMidiBaseName(stemMidiInspection.mix_wav_path) : "sum the detected stems")}</div>
+    <div class="meta">lyrics: ${lyricSource}</div>
+    <div class="meta" style="margin-top:8px;font-weight:600">Track detection</div>
+    ${renderStemMidiAuditTable(stemMidiInspection)}
+    ${warningItems}
+  `;
+}
+
+async function inspectStemMidiFolder(folderPath: string): Promise<void> {
+  try {
+    const inspection = await safeInvoke<RawSongFolderInspection>("inspect_raw_song_folder", { folderPath });
+    stemMidiInspection = inspection;
+    renderStemMidiSelection();
+    const warningCount = inspection.warnings.length;
+    const warningSuffix = warningCount ? ` | ${warningCount} warning${warningCount === 1 ? "" : "s"}` : "";
+    const mappedSuffix = inspection.mapped_game_roles.length
+      ? ` | mapped: ${inspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")}`
+      : "";
+    setStemMidiStatus(`validated: ${inspection.stem_wav_paths.length} WAV(s), ${inspection.midi_paths.length} MIDI file(s)${warningSuffix}${mappedSuffix}`);
+  } catch (e) {
+    stemMidiInspection = null;
+    renderStemMidiSelection();
+    setStemMidiStatus(`Folder validation failed: ${String(e)}`);
+    throw e;
+  }
 }
 
 async function stemMidiCreateSongPack() {
-  const title = stemMidiTitleInput.value.trim();
-  const artist = stemMidiArtistInput.value.trim();
-  if (!title || !artist) {
-    setStemMidiStatus("title + artist are required");
-    return;
-  }
-  if (!stemMidiStemPaths.length) {
-    setStemMidiStatus("pick at least one stem WAV");
-    return;
-  }
-  if (!stemMidiPath) {
-    setStemMidiStatus("pick a MIDI file");
+  if (!stemMidiFolderPath) {
+    setStemMidiStatus("choose a Suno folder first");
     return;
   }
 
-  setStemMidiStatus("creating…");
-  stemMidiCreateBtn.disabled = true;
+  if (!stemMidiInspection) {
+    await inspectStemMidiFolder(stemMidiFolderPath);
+  }
+
+  setStemMidiStatus("importing...");
+  stemMidiImportBtn.disabled = true;
   try {
-    const res = await safeInvoke<StemMidiCreateResult>("stem_midi_create_songpack", {
+    const res = await safeInvoke<ImportRawSongFolderResult>("import_raw_song_folder", {
       req: {
-        title,
-        artist,
-        stemWavPaths: stemMidiStemPaths,
-        midiPath: stemMidiPath,
-      } satisfies StemMidiCreateRequest,
+        folder_path: stemMidiFolderPath,
+      } satisfies ImportRawSongFolderRequest,
     });
-    setStemMidiStatus(`created: ${res.songpack_path}`);
+    const lines = [
+      `imported: ${res.songpack_path}`,
+      `detected ${res.stems_count} WAV stem(s), ${res.midi_files_count} MIDI file(s)${res.lyrics_included ? " | lyrics ready" : ""}`,
+    ];
+    if (res.mapped_game_roles.length) {
+      lines.push(`game roles: ${res.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")}`);
+    }
+    if (res.warnings.length) {
+      lines.push(`warnings:\n- ${res.warnings.join("\n- ")}`);
+    }
+    setStemMidiStatus(lines.join("\n"));
     void refresh();
   } finally {
-    stemMidiCreateBtn.disabled = false;
+    stemMidiImportBtn.disabled = !stemMidiInspection;
   }
 }
-
 function ingestSourceExtensions(mode: IngestSubcommand): string[] {
   if (mode === "import-dtx") return ["dtx"];
   return ["wav", "mp3", "ogg", "flac", "m4a"];
@@ -2306,23 +2534,15 @@ function stopVisualizer(opts?: { keepStatus?: boolean }) {
 }
 
 async function selectSongPack(containerPath: string, opts?: { autoLoadAudio?: boolean }) {
-  selectedDrumChartSelection = null;
-  detailsEl.innerHTML = "Loading details…";
+  detailsEl.innerHTML = "Loading details...";
   try {
     const details = await invoke<SongPackDetails>("get_songpack_details", {
       containerPath,
     });
     renderDetails(details);
     selectedSongPackDetails = details;
-    setHudKeyMode(details.manifest_raw);
-    selectedDrumChartSelection = await readDrumChartSelection(containerPath, details);
+    selectedDrumChartSelection = null;
 
-    // Show per-song data availability so users know what’s actually present.
-    renderCaps(details, selectedDrumChartSelection);
-    applyInstrumentAvailability(details, selectedDrumChartSelection);
-    renderPluginsWithAvailability(details);
-
-    // Load lyrics (best-effort)
     try {
       const lyr = await invoke<unknown>("read_songpack_json", { containerPath, relPath: "features/lyrics.json" });
       currentLyrics = (lyr ?? null) as LyricsFile | null;
@@ -2330,28 +2550,17 @@ async function selectSongPack(containerPath: string, opts?: { autoLoadAudio?: bo
       currentLyrics = null;
     }
 
-    // Selecting a SongPack enables audio load.
     selectedSongPackPath = containerPath;
-    audioLoadBtn.disabled = false;
+    setSongpackEditorStatus(`selected SongPack: ${containerPath}`);
     logConsole("gamestate", "selected songpack", {
       containerPath,
       autoLoadAudio: Boolean(opts?.autoLoadAudio),
     });
-
-    if (opts?.autoLoadAudio) {
-      // For the desktop app, auto-load audio so the transport becomes usable immediately.
-      setAudioStatus(`selected songpack: ${containerPath}\n(auto-loading audio…)`);
-      void loadAudioFromSelectedSongPack();
-      // Default UX: once a song is selected, shift attention to Now Playing.
-      setPlayFocusMode(true);
-    } else {
-      setAudioStatus(`selected songpack: ${containerPath}`);
-    }
   } catch (e) {
     detailsEl.innerHTML = `<pre class="error">${escapeHtml(String(e))}</pre>`;
+    setSongpackEditorStatus(`selection failed: ${String(e)}`);
   }
 }
-
 async function loadAudioFromSelectedSongPack() {
   if (!selectedSongPackPath) {
     setAudioStatus("Select a SongPack first (click Details)");
@@ -2867,16 +3076,15 @@ async function refresh() {
         const containerPath = el.getAttribute("data-path");
         if (!containerPath) return;
 
-        await selectSongPack(containerPath, { autoLoadAudio: true });
+        await selectSongPack(containerPath, { autoLoadAudio: false });
       });
     }
 
-    // UX improvement: if no SongPack is selected yet, auto-select the first valid one
-    // so the Transport controls become usable immediately.
+    // UX improvement: if nothing is selected yet, preload the first valid SongPack into the editor view.
     if (!selectedSongPackPath) {
       const firstOk = entries.find((e) => e.ok);
       if (firstOk?.container_path) {
-        await selectSongPack(firstOk.container_path, { autoLoadAudio: true });
+        await selectSongPack(firstOk.container_path, { autoLoadAudio: false });
       }
     }
   } catch (e) {
@@ -2890,6 +3098,20 @@ async function refresh() {
 }
 
 refreshBtn.addEventListener("click", () => void refresh());
+
+songpackRefreshSelectionBtn.addEventListener("click", () => {
+  if (!selectedSongPackPath) {
+    setSongpackEditorStatus("Select a SongPack first");
+    return;
+  }
+  void selectSongPack(selectedSongPackPath, { autoLoadAudio: false }).catch((e) =>
+    setSongpackEditorStatus(String(e))
+  );
+});
+
+songpackGenerateLyricsBtn.addEventListener("click", () => {
+  void generateLyricsForSelectedSongPack().catch((e) => setSongpackEditorStatus(String(e)));
+});
 
 setOverrideBtn.addEventListener("click", () => {
   const v = songsFolderInput.value.trim();
@@ -2945,28 +3167,20 @@ ingestRunBtn.addEventListener("click", () => {
   void runIngestImport();
 });
 
-stemMidiPickStemsBtn.addEventListener("click", () => {
+stemMidiPickFolderBtn.addEventListener("click", () => {
   void (async () => {
-    const files = await pickFiles(["wav"], true);
-    stemMidiStemPaths = files;
+    const folder = await pickFolder();
+    if (!folder) return;
+    stemMidiFolderPath = folder;
+    stemMidiInspection = null;
     renderStemMidiSelection();
+    await inspectStemMidiFolder(folder);
   })().catch((e) => setStemMidiStatus(String(e)));
 });
 
-stemMidiPickMidiBtn.addEventListener("click", () => {
-  void (async () => {
-    const files = await pickFiles(["mid", "midi"], false);
-    stemMidiPath = files[0] ?? null;
-    renderStemMidiSelection();
-  })().catch((e) => setStemMidiStatus(String(e)));
-});
-
-stemMidiCreateBtn.addEventListener("click", () => {
+stemMidiImportBtn.addEventListener("click", () => {
   void stemMidiCreateSongPack().catch((e) => setStemMidiStatus(String(e)));
 });
-
-// Populate plugin list on startup.
-void refreshPlugins();
 
 // Load GHWT settings.
 void ghwtLoadSettings();
@@ -2974,12 +3188,7 @@ void ghwtLoadSettings();
 setIngestSourcePlaceholder(ingestModeSelect.value as IngestSubcommand);
 
 renderStemMidiSelection();
-
-// Populate MIDI ports.
-void refreshMidiInputPorts();
-void refreshMidiOutputPorts();
-void refreshAudioOutputHosts();
-void refreshAudioOutputDevices();
+setStemMidiStatus("(not imported)");
 
 // Ensure we stop background threads on window close.
 window.addEventListener("beforeunload", () => {
@@ -2992,8 +3201,6 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
-if (STUDIO_IMPORT_ONLY_MODE) {
-  setRoute("config");
-}
+setRoute("make");
 
 void refresh();

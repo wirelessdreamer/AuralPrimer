@@ -1063,6 +1063,12 @@ fn ghwt_import_all(
 // -----------------
 
 #[tauri::command]
+fn midi_list_tracks(path: String) -> Result<Vec<stem_midi::MidiTrackInfo>, String> {
+    let midi_bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+    stem_midi::list_midi_tracks(&midi_bytes)
+}
+
+#[tauri::command]
 fn stem_midi_create_songpack(
     app: AppHandle,
     req: stem_midi::StemMidiCreateRequest,
@@ -1134,6 +1140,13 @@ fn ingest_import(
     }
 
     ingest_sidecar::run_ingest_import_with_progress(req, Some(&app))
+}
+
+#[tauri::command]
+fn inspect_raw_song_folder(
+    folder_path: String,
+) -> Result<raw_song::RawSongFolderInspection, String> {
+    raw_song::inspect_raw_song_folder(Path::new(&folder_path))
 }
 
 #[tauri::command]
@@ -1856,8 +1869,10 @@ pub fn run() {
             ghwt_import_preview,
             ghwt_import_all,
             // stem+midi
+            midi_list_tracks,
             stem_midi_create_songpack,
             ingest_import,
+            inspect_raw_song_folder,
             import_raw_song_folder,
             scan_songpacks,
             get_songpack_details,

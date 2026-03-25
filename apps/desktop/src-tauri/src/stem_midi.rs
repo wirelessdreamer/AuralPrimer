@@ -73,6 +73,29 @@ fn generate_sections(duration_sec: f64, bpm: f64, bars_per_section: i32) -> serd
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MidiTrackInfo {
+    pub index: usize,
+    pub name: String,
+    pub note_count: usize,
+    /// Unique MIDI channels used in this track.
+    pub channels: Vec<u8>,
+    /// Lowest MIDI pitch in the track (None if no notes).
+    pub pitch_min: Option<u8>,
+    /// Highest MIDI pitch in the track (None if no notes).
+    pub pitch_max: Option<u8>,
+    /// Auto-detected suggested role based on heuristics.
+    pub suggested_role: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TrackAssignment {
+    /// 0-based MIDI track index.
+    pub track_index: usize,
+    /// Role: "drums", "bass", "guitar", "keys", "other", or "skip".
+    pub role: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StemMidiCreateRequest {
     pub title: String,
     pub artist: String,
@@ -82,6 +105,10 @@ pub struct StemMidiCreateRequest {
 
     /// Absolute path to a MIDI file.
     pub midi_path: String,
+
+    /// Optional per-track role assignments. When provided, events.json
+    /// will have separate track entries per assigned role.
+    pub track_assignments: Option<Vec<TrackAssignment>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -122,13 +149,107 @@ fn wav_duration_sec_from_pcm(w: &WavPcm16) -> f64 {
     frames / (w.sample_rate as f64)
 }
 
+/// List MIDI tracks with metadata for UI display.
+pub fn list_midi_tracks(midi_bytes: &[u8]) -> Result<Vec<MidiTrackInfo>, String> {
+    let smf = Smf::parse(midi_bytes).map_err(|e| format!("invalid midi: {e:?}"))?;
+    let mut tracks: Vec<MidiTrackInfo> = vec![];
+
+    for (idx, track) in smf.tracks.iter().enumerate() {
+        let mut name = String::new();
+        let mut note_count: usize = 0;
+        let mut channels: std::collections::BTreeSet<u8> = std::collections::BTreeSet::new();
+        let mut pitch_min: Option<u8> = None;
+        let mut pitch_max: Option<u8> = None;
+
+        for ev in track {
+            match &ev.kind {
+                TrackEventKind::Meta(m) => {
+                    if let midly::MetaMessage::TrackName(raw) = m {
+                        if name.is_empty() {
+                            name = String::from_utf8_lossy(raw).trim().to_string();
+                        }
+                    }
+                }
+                TrackEventKind::Midi { channel, message } => {
+                    let ch = channel.as_int() as u8;
+                    match message {
+                        midly::MidiMessage::NoteOn { key, vel } => {
+                            let v = vel.as_int();
+                            if v > 0 {
+                                let p = key.as_int() as u8;
+                                note_count += 1;
+                                channels.insert(ch);
+                                pitch_min = Some(pitch_min.map_or(p, |m: u8| m.min(p)));
+                                pitch_max = Some(pitch_max.map_or(p, |m: u8| m.max(p)));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let suggested_role = suggest_track_role(&name, &channels, pitch_min, pitch_max, note_count);
+
+        tracks.push(MidiTrackInfo {
+            index: idx,
+            name,
+            note_count,
+            channels: channels.into_iter().collect(),
+            pitch_min,
+            pitch_max,
+            suggested_role,
+        });
+    }
+
+    Ok(tracks)
+}
+
+/// Heuristic to suggest a role for a MIDI track.
+fn suggest_track_role(
+    name: &str,
+    channels: &std::collections::BTreeSet<u8>,
+    _pitch_min: Option<u8>,
+    _pitch_max: Option<u8>,
+    note_count: usize,
+) -> String {
+    if note_count == 0 {
+        return "skip".to_string();
+    }
+
+    let lower = name.to_lowercase();
+
+    // Channel 9 (0-indexed) is the GM drum channel.
+    if channels.contains(&9) {
+        return "drums".to_string();
+    }
+
+    // Name-based heuristics.
+    if lower.contains("drum") || lower.contains("percussion") || lower.contains("kit") {
+        return "drums".to_string();
+    }
+    if lower.contains("bass") {
+        return "bass".to_string();
+    }
+    if lower.contains("guitar") || lower.contains("gtr") {
+        return "guitar".to_string();
+    }
+    if lower.contains("key") || lower.contains("piano") || lower.contains("organ") || lower.contains("synth") {
+        return "keys".to_string();
+    }
+
+    "other".to_string()
+}
+
 /// Parse a MIDI file and return note events as JSON-ready objects.
 ///
-/// Implementation notes:
-/// - We treat tempo as constant 120bpm unless a SetTempo is present.
-/// - We only emit a single track ("midi").
-/// - Timestamps are in seconds.
-fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
+/// When `assignments` is provided, notes are grouped into per-role tracks.
+/// When absent, all notes go into a single `track_id: "midi"` (legacy behavior).
+fn midi_to_events_json(
+    midi_bytes: &[u8],
+    assignments: Option<&[TrackAssignment]>,
+) -> Result<serde_json::Value, String> {
     let smf = Smf::parse(midi_bytes).map_err(|e| format!("invalid midi: {e:?}"))?;
 
     let tpq = match smf.header.timing {
@@ -138,11 +259,41 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
         }
     };
 
+    // Build a lookup: MIDI track index → role string.
+    // When no assignments, all tracks map to "midi" (legacy).
+    let track_role_map: std::collections::HashMap<usize, String> = match assignments {
+        Some(assigns) => assigns
+            .iter()
+            .filter(|a| a.role != "skip")
+            .map(|a| (a.track_index, a.role.clone()))
+            .collect(),
+        None => {
+            // Legacy: map all tracks to "midi".
+            smf.tracks
+                .iter()
+                .enumerate()
+                .map(|(i, _)| (i, "midi".to_string()))
+                .collect()
+        }
+    };
+
+    // Collect track names for the tracks descriptor.
+    let mut track_names: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    for (idx, track) in smf.tracks.iter().enumerate() {
+        for ev in track {
+            if let TrackEventKind::Meta(midly::MetaMessage::TrackName(raw)) = &ev.kind {
+                let n = String::from_utf8_lossy(raw).trim().to_string();
+                if !n.is_empty() {
+                    track_names.insert(idx, n);
+                    break;
+                }
+            }
+        }
+    }
+
     // Default: 120 bpm => 500_000 us per beat.
     let mut tempo_us_per_beat: u32 = 500_000;
 
-    // Gather events across tracks in a naive way: keep per-track time.
-    // We'll only emit note events; the schema is flexible (notes array is untyped).
     #[derive(Clone, Copy, Debug)]
     struct NoteOn {
         t_ticks: u32,
@@ -153,8 +304,15 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
     let mut open_notes: std::collections::BTreeMap<(u8, u8), NoteOn> =
         std::collections::BTreeMap::new();
 
-    for track in &smf.tracks {
+    for (track_idx, track) in smf.tracks.iter().enumerate() {
+        let role = match track_role_map.get(&track_idx) {
+            Some(r) => r.clone(),
+            None => continue, // Track not assigned, skip.
+        };
+
         let mut t_ticks: u32 = 0;
+        open_notes.clear();
+
         for ev in track {
             t_ticks = t_ticks.saturating_add(ev.delta.as_int() as u32);
             match &ev.kind {
@@ -170,16 +328,15 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
                             let pitch = key.as_int() as u8;
                             let v = vel.as_int() as u8;
                             if v == 0 {
-                                // treat NoteOn vel=0 as NoteOff
                                 if let Some(on) = open_notes.remove(&(ch, pitch)) {
                                     notes_out.push(serde_json::json!({
-                                        "track_id": "midi",
+                                        "track_id": role,
                                         "t_on": ticks_to_sec(on.t_ticks, tpq, tempo_us_per_beat),
                                         "t_off": ticks_to_sec(t_ticks, tpq, tempo_us_per_beat),
                                         "pitch": {"type": "midi", "value": pitch},
                                         "velocity": (on.vel as f64) / 127.0,
                                         "confidence": 1.0,
-                                        "source": "midi"
+                                        "source": "midi_import"
                                     }));
                                 }
                             } else {
@@ -190,13 +347,13 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
                             let pitch = key.as_int() as u8;
                             if let Some(on) = open_notes.remove(&(ch, pitch)) {
                                 notes_out.push(serde_json::json!({
-                                    "track_id": "midi",
+                                    "track_id": role,
                                     "t_on": ticks_to_sec(on.t_ticks, tpq, tempo_us_per_beat),
                                     "t_off": ticks_to_sec(t_ticks, tpq, tempo_us_per_beat),
                                     "pitch": {"type": "midi", "value": pitch},
                                     "velocity": (on.vel as f64) / 127.0,
                                     "confidence": 1.0,
-                                    "source": "midi"
+                                    "source": "midi_import"
                                 }));
                             }
                         }
@@ -208,16 +365,47 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
         }
     }
 
-    // Sort by t_on for stable output.
+    // Sort by t_on.
     notes_out.sort_by(|a, b| {
         let ta = a.get("t_on").and_then(|x| x.as_f64()).unwrap_or(0.0);
         let tb = b.get("t_on").and_then(|x| x.as_f64()).unwrap_or(0.0);
         ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    // Build tracks descriptor.
+    let mut seen_roles: Vec<String> = vec![];
+    let tracks_desc: Vec<serde_json::Value> = match assignments {
+        Some(assigns) => {
+            assigns
+                .iter()
+                .filter(|a| a.role != "skip")
+                .filter(|a| {
+                    if seen_roles.contains(&a.role) {
+                        false
+                    } else {
+                        seen_roles.push(a.role.clone());
+                        true
+                    }
+                })
+                .map(|a| {
+                    let display_name = track_names
+                        .get(&a.track_index)
+                        .cloned()
+                        .unwrap_or_else(|| format!("Track {}", a.track_index));
+                    serde_json::json!({
+                        "track_id": a.role,
+                        "role": a.role,
+                        "name": display_name,
+                    })
+                })
+                .collect()
+        }
+        None => vec![serde_json::json!({"track_id": "midi", "role": "other", "name": "MIDI"})],
+    };
+
     Ok(serde_json::json!({
         "events_version": "1.0.0",
-        "tracks": [{"track_id": "midi", "role": "other", "name": "MIDI"}],
+        "tracks": tracks_desc,
         "notes": notes_out
     }))
 }
@@ -351,7 +539,7 @@ pub fn create_songpack(
     .map_err(|e| format!("write chart easy.json: {e}"))?;
 
     // Minimal events.json from MIDI.
-    let events_json = midi_to_events_json(&midi_bytes)?;
+    let events_json = midi_to_events_json(&midi_bytes, req.track_assignments.as_deref())?;
     fs::write(
         out_dir.join("features").join("events.json"),
         serde_json::to_string_pretty(&events_json).map_err(|e| format!("events json: {e}"))?,
