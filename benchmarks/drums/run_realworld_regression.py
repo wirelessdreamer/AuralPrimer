@@ -81,6 +81,11 @@ DEFAULT_ALGORITHMS = [
     "adaptive_beat_grid",
     "spectral_template_multipass",
     "spectral_template_with_grid",
+    "multi_resolution",
+    "template_xcorr",
+    "probabilistic_pattern",
+    "onset_aligned",
+    "multi_resolution_template",
 ]
 
 

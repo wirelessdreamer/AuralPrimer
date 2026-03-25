@@ -1137,6 +1137,13 @@ fn ingest_import(
 }
 
 #[tauri::command]
+fn inspect_raw_song_folder(
+    folder_path: String,
+) -> Result<raw_song::RawSongFolderInspection, String> {
+    raw_song::inspect_raw_song_folder(Path::new(&folder_path))
+}
+
+#[tauri::command]
 fn import_raw_song_folder(
     app: AppHandle,
     req: raw_song::ImportRawSongFolderRequest,
@@ -1858,6 +1865,7 @@ pub fn run() {
             // stem+midi
             stem_midi_create_songpack,
             ingest_import,
+            inspect_raw_song_folder,
             import_raw_song_folder,
             scan_songpacks,
             get_songpack_details,

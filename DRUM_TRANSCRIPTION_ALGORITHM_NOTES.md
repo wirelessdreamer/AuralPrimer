@@ -436,3 +436,52 @@ When debugging the current complaint, inspect these first:
 1. snare precision / recall / F1
 2. `snare -> tom*` confusions
 3. `snare -> crash/ride` confusions
+
+## 12. Novel Theoretical Approaches for F1 > 0.7
+
+### Theory 1: Onset-Aligned Ground Truth
+
+**Hypothesis:** Poor F1 on real recordings is due to timing offset, not detection failure.
+**Approach:** Before scoring, align predicted onsets to ground truth using dynamic time warping (DTW) or cross-correlation.
+**Expected Impact:** +0.2 F1 on real recordings.
+
+### Theory 2: Multi-Resolution Analysis
+
+**Hypothesis:** Single FFT window size misses either fast hats (need small window) or low kicks (need large window).
+**Approach:** Analyze at 3 resolutions simultaneously:
+- 512 samples (23ms) for hi-hats
+- 2048 samples (93ms) for snares
+- 4096 samples (186ms) for kicks
+
+Combine detections with instrument-specific weights.
+**Expected Impact:** +0.1 F1 overall, especially on fast patterns.
+
+### Theory 3: Template Matching with Learned Templates
+
+**Hypothesis:** Each drum type has a consistent spectral "shape" that can be matched.
+**Approach:**
+1. Extract spectral templates for kick/snare/hat from first few hits.
+2. Cross-correlate template with full audio.
+3. Peaks in correlation = hits of that type.
+
+**Expected Impact:** +0.15 F1 on classification accuracy.
+
+Note: this is conceptually similar to `spectral_template_multipass` (section 4.8), which already learns per-song templates. The difference is using cross-correlation rather than Euclidean distance for matching.
+
+### Theory 4: Neural Network Onset Detection
+
+**Hypothesis:** CNN can learn complex onset patterns better than hand-crafted features.
+**Approach:** Use pre-trained onset detection network (madmom) or train small CNN on our synthetic data.
+**Expected Impact:** +0.2 F1, state-of-the-art approach.
+
+### Theory 5: Probabilistic Drum Pattern Model
+
+**Hypothesis:** Drum hits follow rhythmic patterns; use pattern knowledge to filter false positives.
+**Approach:**
+1. Detect BPM and beat grid.
+2. Weight detections by proximity to likely beat positions.
+3. E.g., kicks on 1 and 3, snare on 2 and 4 are more likely.
+
+**Expected Impact:** +0.1 F1 on precision (fewer false positives).
+
+Note: this overlaps with `adaptive_beat_grid` (section 4.5) and `beat_conditioned_multiband_decoder` (section 4.x) but could be applied as a post-processing pass on any algorithm's output.

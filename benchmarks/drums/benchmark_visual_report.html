@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AuralPrimer Drum Benchmark Visual Report</title>
+  <style>
+    :root {
+      --bg: #081018;
+      --panel: #101924;
+      --panel-2: #121d2a;
+      --text: #f2f6fb;
+      --muted: #93a7bc;
+      --line: #223144;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(86,181,255,0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(74,208,166,0.10), transparent 22%),
+        linear-gradient(180deg, #081018 0%, #09131d 30%, #081018 100%);
+    }
+    a { color: #8cc8ff; }
+    .page {
+      width: min(1200px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 64px;
+    }
+    .hero {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(18,29,42,0.95), rgba(11,18,27,0.95));
+      border-radius: 24px;
+      padding: 28px 28px 22px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.28);
+    }
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-size: clamp(32px, 4.5vw, 54px);
+      line-height: 1.02;
+      margin: 0 0 14px;
+      letter-spacing: -0.03em;
+    }
+    h2 { font-size: 26px; margin: 0 0 10px; }
+    h3 { font-size: 19px; margin: 0 0 8px; }
+    p { margin: 0 0 12px; color: #dce7f2; line-height: 1.6; }
+    .lede { max-width: 950px; font-size: 18px; color: #d7e3ef; }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .nav a {
+      text-decoration: none;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(14, 22, 33, 0.8);
+      color: #d9e2ec;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(12, 1fr);
+      margin-top: 18px;
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(16,25,36,0.98), rgba(12,20,30,0.98));
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    }
+    .stat-card { min-height: 160px; }
+    .stat-value {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 10px;
+    }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+    .section { margin-top: 28px; }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+    .kicker {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .chart { overflow-x: auto; }
+    .chart svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      color: #a9bacb;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+    tbody tr:last-child td { border-bottom: 0; }
+    ul { margin: 0; padding-left: 18px; color: #dce7f2; }
+    li { margin-bottom: 10px; line-height: 1.55; }
+    .findings li { margin-bottom: 12px; }
+    .source-list {
+      list-style: none;
+      padding-left: 0;
+      margin: 0;
+    }
+    .source-list li {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .source-list li:last-child { border-bottom: 0; }
+    .source-list span {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      color: #dfe9f3;
+      font-size: 13px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    .footer {
+      margin-top: 26px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 980px) {
+      .span-3, .span-4, .span-5, .span-6, .span-7, .span-8 {
+        grid-column: span 12;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero" id="top">
+      <div class="eyebrow">AuralPrimer / Drum Benchmark Program</div>
+      <h1>Visual benchmark report: trusted synthetic truth vs suspect Suno MIDI</h1>
+      <p class="lede">This report consolidates the current drum-transcription research path, the retained benchmark milestones, the old King in Zion holdout context, and the new trusted-vs-suspect shootout. The core conclusion is stable: the rendered fixture suite with known-good MIDI remains the truth set, while Suno-exported MIDI is diagnostic-only and cannot be used as a tuning target.</p>
+      <div class="nav">
+        <a href="#overview">Overview</a>
+        <a href="#milestones">Milestones</a>
+        <a href="#shootout">Current shootout</a>
+        <a href="#holdout">Historic holdout</a>
+        <a href="#research">Research synthesis</a>
+        <a href="#sources">Sources</a>
+      </div>
+    </section>
+
+    <section class="section" id="overview">
+      <div class="section-header">
+        <div>
+          <div class="kicker">Executive summary</div>
+          <h2>What the current benchmark evidence says</h2>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="span-3"><div class="card stat-card"><div class="eyebrow">Best trusted result</div><div class="stat-value">0.329</div><p>Beat-conditioned multiband is still the top performer on the rendered known-good fixture suite.</p></div></div>
+        <div class="span-3"><div class="card stat-card"><div class="eyebrow">Best suspect Suno result</div><div class="stat-value">0.202</div><p>Adaptive beat grid multilabel tops the suspect Suno ranking, but only at an absolute score of 0.202.</p></div></div>
+        <div class="span-3"><div class="card stat-card"><div class="eyebrow">Biggest false promotion</div><div class="stat-value">DSP bandpass improved #13 to #2</div><p>Suspect Suno MIDI rewards behavior that does not survive the trusted synthetic suite.</p></div></div>
+        <div class="span-3"><div class="card stat-card"><div class="eyebrow">Biggest false demotion</div><div class="stat-value">Beat-conditioned multiband #1 to #12</div><p>A top performer gets pushed down by the suspect reference, which is why Suno MIDI can no longer be treated as truth.</p></div></div>
+      </div>
+      <div class="grid">
+        <div class="card span-8">
+          <h3>Current operational policy</h3>
+          <p>The benchmark program now has a clean rule: optimize against the trusted rendered suite, keep a manually audited real-audio holdout for sanity checks, and treat Suno-exported MIDI as advisory metadata only. The latest shootout exists specifically to show how badly the suspect Suno timing can distort the leaderboard.</p>
+          <div>
+            <span class="pill">18 algorithms</span>
+            <span class="pill">10 rendered trusted fixtures</span>
+            <span class="pill">1 suspect Suno case</span>
+            <span class="pill">60 ms matching tolerance</span>
+            <span class="pill">Offline HTML, no server required</span>
+          </div>
+        </div>
+        <div class="card span-4">
+          <h3>Key findings</h3>
+          <ul class="findings">
+            <li>The hybrid line was the first real structural win because it lifted overall, kick, snare, and hi-hat together.</li>
+            <li>The adaptive refinement is real, but mainly as a kick-specific improvement.</li>
+            <li>The latest trusted-vs-suspect shootout proves Suno MIDI can reward weaker legacy DSP paths and punish the strongest trusted methods.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="milestones">
+      <div class="section-header">
+        <div>
+          <div class="kicker">Milestones</div>
+          <h2>How the local research program evolved</h2>
+        </div>
+      </div>
+      <div class="card chart span-12"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="494" viewBox="0 0 1020 494" role="img"><rect x="0" y="0" width="1020" height="494" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Research milestones across core lanes</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">How the local program moved from early baselines to the current trusted winner.</text><line x1="84" y1="406" x2="990" y2="406" stroke="#66768c" stroke-width="1.5" /><line x1="84" y1="406.00" x2="990" y2="406.00" stroke="#233041" stroke-width="1" /><text x="72" y="410.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.00</text><line x1="84" y1="342.00" x2="990" y2="342.00" stroke="#233041" stroke-width="1" /><text x="72" y="346.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.10</text><line x1="84" y1="278.00" x2="990" y2="278.00" stroke="#233041" stroke-width="1" /><text x="72" y="282.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.20</text><line x1="84" y1="214.00" x2="990" y2="214.00" stroke="#233041" stroke-width="1" /><text x="72" y="218.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.30</text><line x1="84" y1="150.00" x2="990" y2="150.00" stroke="#233041" stroke-width="1" /><text x="72" y="154.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.40</text><line x1="84" y1="86.00" x2="990" y2="86.00" stroke="#233041" stroke-width="1" /><text x="72" y="90.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.50</text><rect x="94.00" y="276.35" width="21.36" height="129.65" rx="8" fill="#56b5ff" /><rect x="123.36" y="169.58" width="21.36" height="236.42" rx="8" fill="#4ad0a6" /><rect x="152.71" y="244.99" width="21.36" height="161.01" rx="8" fill="#f1c75b" /><rect x="182.07" y="404.68" width="21.36" height="1.32" rx="8" fill="#ff8b5e" /><text x="148.71" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Aural baseline</text><rect x="223.43" y="256.39" width="21.36" height="149.61" rx="8" fill="#56b5ff" /><rect x="252.79" y="146.29" width="21.36" height="259.71" rx="8" fill="#4ad0a6" /><rect x="282.14" y="235.66" width="21.36" height="170.34" rx="8" fill="#f1c75b" /><rect x="311.50" y="394.28" width="21.36" height="11.72" rx="8" fill="#ff8b5e" /><text x="278.14" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Adaptive baseline</text><rect x="352.86" y="252.85" width="21.36" height="153.15" rx="8" fill="#56b5ff" /><rect x="382.21" y="139.92" width="21.36" height="266.08" rx="8" fill="#4ad0a6" /><rect x="411.57" y="218.42" width="21.36" height="187.58" rx="8" fill="#f1c75b" /><rect x="440.93" y="394.27" width="21.36" height="11.73" rx="8" fill="#ff8b5e" /><text x="407.57" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Case-wise upper bound</text><rect x="482.29" y="181.67" width="21.36" height="224.33" rx="8" fill="#56b5ff" /><rect x="511.64" y="144.12" width="21.36" height="261.88" rx="8" fill="#4ad0a6" /><rect x="541.00" y="233.00" width="21.36" height="173.00" rx="8" fill="#f1c75b" /><rect x="570.36" y="184.95" width="21.36" height="221.05" rx="8" fill="#ff8b5e" /><text x="537.00" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Hybrid MVP</text><rect x="611.71" y="230.34" width="21.36" height="175.66" rx="8" fill="#56b5ff" /><rect x="641.07" y="118.89" width="21.36" height="287.11" rx="8" fill="#4ad0a6" /><rect x="670.43" y="270.56" width="21.36" height="135.44" rx="8" fill="#f1c75b" /><rect x="699.79" y="339.46" width="21.36" height="66.54" rx="8" fill="#ff8b5e" /><text x="666.43" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Adaptive refined</text><rect x="741.14" y="197.01" width="21.36" height="208.99" rx="8" fill="#56b5ff" /><rect x="770.50" y="133.57" width="21.36" height="272.43" rx="8" fill="#4ad0a6" /><rect x="799.86" y="243.35" width="21.36" height="162.65" rx="8" fill="#f1c75b" /><rect x="829.21" y="214.84" width="21.36" height="191.16" rx="8" fill="#ff8b5e" /><text x="795.86" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Retained retry</text><rect x="870.57" y="195.49" width="21.36" height="210.51" rx="8" fill="#56b5ff" /><rect x="899.93" y="132.76" width="21.36" height="273.24" rx="8" fill="#4ad0a6" /><rect x="929.29" y="249.76" width="21.36" height="156.24" rx="8" fill="#f1c75b" /><rect x="958.64" y="214.93" width="21.36" height="191.07" rx="8" fill="#ff8b5e" /><text x="925.29" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Current trusted best</text><rect x="26" y="456" width="14" height="14" rx="4" fill="#56b5ff" /><text x="46" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Overall</text><rect x="166" y="456" width="14" height="14" rx="4" fill="#4ad0a6" /><text x="186" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Kick</text><rect x="306" y="456" width="14" height="14" rx="4" fill="#f1c75b" /><text x="326" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Snare</text><rect x="446" y="456" width="14" height="14" rx="4" fill="#ff8b5e" /><text x="466" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Hi-hat</text></svg></div>
+      <div class="card chart span-12" style="margin-top:18px;"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="292" viewBox="0 0 1020 292" role="img"><rect x="0" y="0" width="1020" height="292" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Timing budget across milestones</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">Lower is better. The hybrid gains did not come from a large timing penalty.</text><text x="26" y="99" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Aural baseline</text><rect x="290" y="84" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="84" width="525.29" height="20" rx="10" fill="#7dd3fc" /><text x="950" y="99" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">28.285</text><text x="26" y="129" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive baseline</text><rect x="290" y="114" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="114" width="489.63" height="20" rx="10" fill="#7dd3fc" /><text x="950" y="129" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">26.365</text><text x="26" y="159" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Hybrid MVP</text><rect x="290" y="144" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="144" width="509.14" height="20" rx="10" fill="#7dd3fc" /><text x="950" y="159" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">27.415</text><text x="26" y="189" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive refined</text><rect x="290" y="174" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="174" width="477.33" height="20" rx="10" fill="#7dd3fc" /><text x="950" y="189" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">25.703</text><text x="26" y="219" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Retained retry</text><rect x="290" y="204" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="204" width="511.55" height="20" rx="10" fill="#7dd3fc" /><text x="950" y="219" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">27.545</text><text x="26" y="249" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Current trusted best</text><rect x="290" y="234" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="234" width="503.15" height="20" rx="10" fill="#7dd3fc" /><text x="950" y="249" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">27.093</text></svg></div>
+      <div class="grid">
+        <div class="card span-12">
+          <h3>Milestone details</h3>
+          <p>The timeline below is the retained local path: early baselines, the failed "just ensemble it" upper bound, the first hybrid breakthrough, the kick-focused adaptive refinement, the retained retry, and the current trusted winner.</p>
+          <table><thead><tr><th>Milestone</th><th>Overall</th><th>Kick</th><th>Snare</th><th>Hi-hat</th><th>Timing</th><th>Interpretation</th></tr></thead><tbody><tr><td>Aural baseline</td><td>0.203</td><td>0.369</td><td>0.252</td><td>0.002</td><td>28.3 ms</td><td>Strongest early baseline on snare feel, but effectively zero hi-hat recovery.</td></tr><tr><td>Adaptive baseline</td><td>0.234</td><td>0.406</td><td>0.266</td><td>0.018</td><td>26.4 ms</td><td>Better kick timing and slightly better overall F1, but hats still collapse into kick or snare.</td></tr><tr><td>Case-wise upper bound</td><td>0.239</td><td>0.416</td><td>0.293</td><td>0.018</td><td>n/a</td><td>Naive fusion barely helped. That forced a structural model change instead of more ensembling.</td></tr><tr><td>Hybrid MVP</td><td>0.351</td><td>0.409</td><td>0.270</td><td>0.345</td><td>27.4 ms</td><td>First real step-change. Hi-hat finally becomes usable while overall and core-lane F1 jump together.</td></tr><tr><td>Adaptive refined</td><td>0.274</td><td>0.449</td><td>0.212</td><td>0.104</td><td>25.7 ms</td><td>Real kick gain, especially on double-bass material, but snare tradeoff means it is not the universal winner.</td></tr><tr><td>Retained retry</td><td>0.327</td><td>0.426</td><td>0.254</td><td>0.299</td><td>27.5 ms</td><td>Conservative dual-hit retry gives a small but real retained improvement without blowing up the holdout.</td></tr><tr><td>Current trusted best</td><td>0.329</td><td>0.427</td><td>0.244</td><td>0.299</td><td>27.1 ms</td><td>Best current performer on the rendered trusted suite. This remains the optimization gate.</td></tr></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="shootout">
+      <div class="section-header">
+        <div>
+          <div class="kicker">Current shootout</div>
+          <h2>Trusted synthetic truth vs suspect Suno MIDI</h2>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span-12 chart"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="494" viewBox="0 0 1020 494" role="img"><rect x="0" y="0" width="1020" height="494" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Top trusted algorithms measured against trusted vs suspect references</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">The same algorithms are scored twice: once against known-good rendered MIDI and once against suspect Suno MIDI.</text><line x1="84" y1="406" x2="990" y2="406" stroke="#66768c" stroke-width="1.5" /><line x1="84" y1="406.00" x2="990" y2="406.00" stroke="#233041" stroke-width="1" /><text x="72" y="410.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.00</text><line x1="84" y1="342.00" x2="990" y2="342.00" stroke="#233041" stroke-width="1" /><text x="72" y="346.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.08</text><line x1="84" y1="278.00" x2="990" y2="278.00" stroke="#233041" stroke-width="1" /><text x="72" y="282.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.16</text><line x1="84" y1="214.00" x2="990" y2="214.00" stroke="#233041" stroke-width="1" /><text x="72" y="218.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.24</text><line x1="84" y1="150.00" x2="990" y2="150.00" stroke="#233041" stroke-width="1" /><text x="72" y="154.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.32</text><line x1="84" y1="86.00" x2="990" y2="86.00" stroke="#233041" stroke-width="1" /><text x="72" y="90.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.40</text><rect x="94.00" y="142.87" width="61.50" height="263.13" rx="8" fill="#4ad0a6" /><rect x="163.50" y="276.98" width="61.50" height="129.02" rx="8" fill="#ff8b5e" /><text x="159.50" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Beat-conditioned multiband</text><rect x="245.00" y="143.92" width="61.50" height="262.08" rx="8" fill="#4ad0a6" /><rect x="314.50" y="274.69" width="61.50" height="131.31" rx="8" fill="#ff8b5e" /><text x="310.50" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Hybrid kick grid</text><rect x="396.00" y="148.68" width="61.50" height="257.32" rx="8" fill="#4ad0a6" /><rect x="465.50" y="262.97" width="61.50" height="143.03" rx="8" fill="#ff8b5e" /><text x="461.50" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Template + grid</text><rect x="547.00" y="148.68" width="61.50" height="257.32" rx="8" fill="#4ad0a6" /><rect x="616.50" y="262.97" width="61.50" height="143.03" rx="8" fill="#ff8b5e" /><text x="612.50" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Onset aligned</text><rect x="698.00" y="155.41" width="61.50" height="250.59" rx="8" fill="#4ad0a6" /><rect x="767.50" y="262.97" width="61.50" height="143.03" rx="8" fill="#ff8b5e" /><text x="763.50" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Probabilistic pattern</text><rect x="849.00" y="157.77" width="61.50" height="248.23" rx="8" fill="#4ad0a6" /><rect x="918.50" y="274.31" width="61.50" height="131.69" rx="8" fill="#ff8b5e" /><text x="914.50" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Template multipass</text><rect x="26" y="456" width="14" height="14" rx="4" fill="#4ad0a6" /><text x="46" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Trusted synthetic</text><rect x="166" y="456" width="14" height="14" rx="4" fill="#ff8b5e" /><text x="186" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Suspect Suno</text></svg></div>
+        <div class="card span-6 chart"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="352" viewBox="0 0 1020 352" role="img"><rect x="0" y="0" width="1020" height="352" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Trusted synthetic leaderboard</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">18 algorithms on the rendered known-good fixture suite.</text><text x="26" y="99" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Beat-conditioned multiband</text><rect x="290" y="84" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="84" width="593.87" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="99" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.329</text><text x="26" y="129" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Hybrid kick grid</text><rect x="290" y="114" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="114" width="591.50" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="129" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.328</text><text x="26" y="159" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template + grid</text><rect x="290" y="144" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="144" width="580.76" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="159" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.322</text><text x="26" y="189" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Onset aligned</text><rect x="290" y="174" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="174" width="580.76" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="189" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.322</text><text x="26" y="219" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Probabilistic pattern</text><rect x="290" y="204" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="204" width="565.57" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="219" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.313</text><text x="26" y="249" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template multipass</text><rect x="290" y="234" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="234" width="560.24" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="249" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.310</text><text x="26" y="279" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive beat grid multilabel</text><rect x="290" y="264" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="264" width="523.94" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="279" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.290</text><text x="26" y="309" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Multi-resolution template</text><rect x="290" y="294" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="294" width="523.27" height="20" rx="10" fill="#4ad0a6" /><text x="950" y="309" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.290</text></svg></div>
+        <div class="card span-6 chart"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="352" viewBox="0 0 1020 352" role="img"><rect x="0" y="0" width="1020" height="352" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Suspect Suno leaderboard</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">The same 18 algorithms, but scored against the suspect King in Zion Suno MIDI reference.</text><text x="26" y="99" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive beat grid multilabel</text><rect x="290" y="84" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="84" width="547.22" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="99" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.202</text><text x="26" y="129" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP bandpass improved</text><rect x="290" y="114" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="114" width="497.14" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="129" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.184</text><text x="26" y="159" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Multi-resolution template</text><rect x="290" y="144" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="144" width="495.52" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="159" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.183</text><text x="26" y="189" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP spectral flux</text><rect x="290" y="174" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="174" width="489.30" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="189" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.181</text><text x="26" y="219" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template + grid</text><rect x="290" y="204" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="204" width="484.21" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="219" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.179</text><text x="26" y="249" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Probabilistic pattern</text><rect x="290" y="234" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="234" width="484.21" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="249" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.179</text><text x="26" y="279" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Onset aligned</text><rect x="290" y="264" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="264" width="484.21" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="279" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.179</text><text x="26" y="309" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive beat grid</text><rect x="290" y="294" width="650" height="20" rx="10" fill="#1a2230" /><rect x="290" y="294" width="480.11" height="20" rx="10" fill="#ff8b5e" /><text x="950" y="309" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">0.177</text></svg></div>
+        <div class="card span-12 chart"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="652" viewBox="0 0 1020 652" role="img"><rect x="0" y="0" width="1020" height="652" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Overall F1 distortion when Suno MIDI is used as reference</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">Positive means the algorithm looks better on suspect Suno than on trusted synthetic. Negative means it gets punished by the suspect reference.</text><line x1="615.00" y1="76" x2="615.00" y2="634" stroke="#66768c" stroke-width="1.5" /><text x="26" y="98" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Combined filter</text><rect x="290" y="84" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="84" width="149.90" height="18" rx="9" fill="hsl(162, 58%, 28%)" /><text x="950" y="98" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+0.083</text><text x="26" y="128" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP spectral flux</text><rect x="290" y="114" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="114" width="2.51" height="18" rx="9" fill="hsl(162, 56%, 26%)" /><text x="950" y="128" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+0.001</text><text x="26" y="158" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP bandpass improved</text><rect x="290" y="144" width="650" height="18" rx="9" fill="#1a2230" /><rect x="549.56" y="144" width="65.44" height="18" rx="9" fill="hsl(8, 57%, 27%)" /><text x="950" y="158" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.036</text><text x="26" y="188" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Aural onset</text><rect x="290" y="174" width="650" height="18" rx="9" fill="#1a2230" /><rect x="532.53" y="174" width="82.47" height="18" rx="9" fill="hsl(8, 57%, 27%)" /><text x="950" y="188" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.046</text><text x="26" y="218" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP bandpass</text><rect x="290" y="204" width="650" height="18" rx="9" fill="#1a2230" /><rect x="524.57" y="204" width="90.43" height="18" rx="9" fill="hsl(8, 57%, 27%)" /><text x="950" y="218" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.050</text><text x="26" y="248" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Librosa superflux</text><rect x="290" y="234" width="650" height="18" rx="9" fill="#1a2230" /><rect x="523.83" y="234" width="91.17" height="18" rx="9" fill="hsl(8, 57%, 27%)" /><text x="950" y="248" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.050</text><text x="26" y="278" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive beat grid</text><rect x="290" y="264" width="650" height="18" rx="9" fill="#1a2230" /><rect x="492.91" y="264" width="122.09" height="18" rx="9" fill="hsl(8, 58%, 27%)" /><text x="950" y="278" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.068</text><text x="26" y="308" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Spectral flux multiband</text><rect x="290" y="294" width="650" height="18" rx="9" fill="#1a2230" /><rect x="475.01" y="294" width="139.99" height="18" rx="9" fill="hsl(8, 58%, 28%)" /><text x="950" y="308" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.078</text><text x="26" y="338" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive beat grid multilabel</text><rect x="290" y="324" width="650" height="18" rx="9" fill="#1a2230" /><rect x="455.87" y="324" width="159.13" height="18" rx="9" fill="hsl(8, 58%, 28%)" /><text x="950" y="338" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.088</text><text x="26" y="368" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Multi-resolution template</text><rect x="290" y="354" width="650" height="18" rx="9" fill="#1a2230" /><rect x="422.08" y="354" width="192.92" height="18" rx="9" fill="hsl(8, 59%, 28%)" /><text x="950" y="368" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.107</text><text x="26" y="398" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Probabilistic pattern</text><rect x="290" y="384" width="650" height="18" rx="9" fill="#1a2230" /><rect x="372.24" y="384" width="242.76" height="18" rx="9" fill="hsl(8, 59%, 29%)" /><text x="950" y="398" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.134</text><text x="26" y="428" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Multi-resolution</text><rect x="290" y="414" width="650" height="18" rx="9" fill="#1a2230" /><rect x="372.07" y="414" width="242.93" height="18" rx="9" fill="hsl(8, 59%, 29%)" /><text x="950" y="428" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.135</text><text x="26" y="458" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template xcorr</text><rect x="290" y="444" width="650" height="18" rx="9" fill="#1a2230" /><rect x="360.32" y="444" width="254.68" height="18" rx="9" fill="hsl(8, 59%, 29%)" /><text x="950" y="458" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.141</text><text x="26" y="488" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template + grid</text><rect x="290" y="474" width="650" height="18" rx="9" fill="#1a2230" /><rect x="357.04" y="474" width="257.96" height="18" rx="9" fill="hsl(8, 59%, 29%)" /><text x="950" y="488" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.143</text><text x="26" y="518" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Onset aligned</text><rect x="290" y="504" width="650" height="18" rx="9" fill="#1a2230" /><rect x="357.04" y="504" width="257.96" height="18" rx="9" fill="hsl(8, 59%, 29%)" /><text x="950" y="518" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.143</text><text x="26" y="548" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template multipass</text><rect x="290" y="534" width="650" height="18" rx="9" fill="#1a2230" /><rect x="351.98" y="534" width="263.02" height="18" rx="9" fill="hsl(8, 59%, 29%)" /><text x="950" y="548" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.146</text><text x="26" y="578" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Hybrid kick grid</text><rect x="290" y="564" width="650" height="18" rx="9" fill="#1a2230" /><rect x="319.86" y="564" width="295.14" height="18" rx="9" fill="hsl(8, 60%, 30%)" /><text x="950" y="578" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.163</text><text x="26" y="608" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Beat-conditioned multiband</text><rect x="290" y="594" width="650" height="18" rx="9" fill="#1a2230" /><rect x="312.33" y="594" width="302.67" height="18" rx="9" fill="hsl(8, 60%, 30%)" /><text x="950" y="608" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-0.168</text></svg></div>
+        <div class="card span-12 chart"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="652" viewBox="0 0 1020 652" role="img"><rect x="0" y="0" width="1020" height="652" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Leaderboard rank shift caused by suspect Suno MIDI</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">Negative means promoted by suspect Suno. Positive means demoted by suspect Suno.</text><line x1="615.00" y1="76" x2="615.00" y2="634" stroke="#66768c" stroke-width="1.5" /><text x="26" y="98" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP bandpass improved</text><rect x="290" y="84" width="650" height="18" rx="9" fill="#1a2230" /><rect x="317.08" y="84" width="297.92" height="18" rx="9" fill="hsl(8, 80%, 48%)" /><text x="950" y="98" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-11</text><text x="26" y="128" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP spectral flux</text><rect x="290" y="114" width="650" height="18" rx="9" fill="#1a2230" /><rect x="317.08" y="114" width="297.92" height="18" rx="9" fill="hsl(8, 80%, 48%)" /><text x="950" y="128" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-11</text><text x="26" y="158" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Beat-conditioned multiband</text><rect x="290" y="144" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="144" width="297.92" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="158" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+11</text><text x="26" y="188" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Hybrid kick grid</text><rect x="290" y="174" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="174" width="216.67" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="188" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+8</text><text x="26" y="218" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template xcorr</text><rect x="290" y="204" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="204" width="162.50" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="218" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+6</text><text x="26" y="248" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive beat grid multilabel</text><rect x="290" y="234" width="650" height="18" rx="9" fill="#1a2230" /><rect x="452.50" y="234" width="162.50" height="18" rx="9" fill="hsl(8, 80%, 48%)" /><text x="950" y="248" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-6</text><text x="26" y="278" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Multi-resolution template</text><rect x="290" y="264" width="650" height="18" rx="9" fill="#1a2230" /><rect x="479.58" y="264" width="135.42" height="18" rx="9" fill="hsl(8, 80%, 48%)" /><text x="950" y="278" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-5</text><text x="26" y="308" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Multi-resolution</text><rect x="290" y="294" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="294" width="108.33" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="308" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+4</text><text x="26" y="338" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Combined filter</text><rect x="290" y="324" width="650" height="18" rx="9" fill="#1a2230" /><rect x="533.75" y="324" width="81.25" height="18" rx="9" fill="hsl(8, 80%, 48%)" /><text x="950" y="338" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-3</text><text x="26" y="368" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Aural onset</text><rect x="290" y="354" width="650" height="18" rx="9" fill="#1a2230" /><rect x="533.75" y="354" width="81.25" height="18" rx="9" fill="hsl(8, 80%, 48%)" /><text x="950" y="368" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-3</text><text x="26" y="398" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Adaptive beat grid</text><rect x="290" y="384" width="650" height="18" rx="9" fill="#1a2230" /><rect x="533.75" y="384" width="81.25" height="18" rx="9" fill="hsl(8, 80%, 48%)" /><text x="950" y="398" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">-3</text><text x="26" y="428" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template multipass</text><rect x="290" y="414" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="414" width="81.25" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="428" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+3</text><text x="26" y="458" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Template + grid</text><rect x="290" y="444" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="444" width="81.25" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="458" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+3</text><text x="26" y="488" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Spectral flux multiband</text><rect x="290" y="474" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="474" width="54.17" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="488" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+2</text><text x="26" y="518" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Onset aligned</text><rect x="290" y="504" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="504" width="54.17" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="518" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+2</text><text x="26" y="548" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">DSP bandpass</text><rect x="290" y="534" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="534" width="27.08" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="548" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+1</text><text x="26" y="578" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Librosa superflux</text><rect x="290" y="564" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="564" width="27.08" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="578" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+1</text><text x="26" y="608" fill="#d9e2ec" font-size="13" font-family="Segoe UI, Arial">Probabilistic pattern</text><rect x="290" y="594" width="650" height="18" rx="9" fill="#1a2230" /><rect x="615.00" y="594" width="27.08" height="18" rx="9" fill="hsl(162, 80%, 48%)" /><text x="950" y="608" fill="#d9e2ec" font-size="12" font-family="Consolas, monospace">+1</text></svg></div>
+        <div class="card span-12">
+          <h3>What the shootout proves</h3>
+          <p>On trusted synthetic, the top of the board is still led by the hybrid line. On suspect Suno, weaker legacy methods get promoted and strong trusted methods get punished. That is exactly the failure mode the benchmark needed to catch before those suspect references could bias further tuning.</p>
+          <table><thead><tr><th>Algorithm</th><th>Trusted rank</th><th>Suspect rank</th><th>Overall delta</th><th>Why it matters</th></tr></thead><tbody><tr><td>Beat-conditioned multiband</td><td>#1</td><td>#12</td><td>-0.168</td><td>Best trusted method collapses on suspect Suno reference. Strong evidence that the reference is bad, not that the decoder regressed.</td></tr><tr><td>Hybrid kick grid</td><td>#2</td><td>#10</td><td>-0.163</td><td>Another top trusted method gets pushed down sharply by suspect Suno MIDI. The tuning signal would move in the wrong direction if Suno were treated as truth.</td></tr><tr><td>Adaptive beat grid multilabel</td><td>#7</td><td>#1</td><td>-0.088</td><td>Looks best on suspect Suno, but only at 0.202 overall. That is not a real absolute win; it is a distorted ranking.</td></tr><tr><td>DSP bandpass improved</td><td>#13</td><td>#2</td><td>-0.036</td><td>Legacy DSP path gets artificially promoted by suspect Suno MIDI. This is exactly the kind of false optimization target the shootout was designed to catch.</td></tr><tr><td>DSP spectral flux</td><td>#15</td><td>#4</td><td>+0.001</td><td>Another weak legacy path looks stronger than it should when measured against suspect Suno MIDI.</td></tr><tr><td>Combined filter</td><td>#18</td><td>#15</td><td>+0.083</td><td>The only material positive delta. It is still weak on trusted synthetic, so the Suno reference is rewarding the wrong behavior.</td></tr></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="holdout">
+      <div class="section-header">
+        <div>
+          <div class="kicker">Historic context</div>
+          <h2>King in Zion holdout, reinterpreted correctly</h2>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span-12 chart"><svg xmlns="http://www.w3.org/2000/svg" width="1020" height="494" viewBox="0 0 1020 494" role="img"><rect x="0" y="0" width="1020" height="494" rx="18" fill="#121821" stroke="#243041" /><text x="26" y="36" fill="#f2f6fb" font-size="24" font-family="Segoe UI, Arial">Historic King in Zion holdout view</text><text x="26" y="60" fill="#91a4bb" font-size="13" font-family="Segoe UI, Arial">Useful as a diagnostic snapshot, but no longer acceptable as truth because the Suno MIDI reference is suspect.</text><line x1="84" y1="406" x2="990" y2="406" stroke="#66768c" stroke-width="1.5" /><line x1="84" y1="406.00" x2="990" y2="406.00" stroke="#233041" stroke-width="1" /><text x="72" y="410.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.00</text><line x1="84" y1="342.00" x2="990" y2="342.00" stroke="#233041" stroke-width="1" /><text x="72" y="346.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.07</text><line x1="84" y1="278.00" x2="990" y2="278.00" stroke="#233041" stroke-width="1" /><text x="72" y="282.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.14</text><line x1="84" y1="214.00" x2="990" y2="214.00" stroke="#233041" stroke-width="1" /><text x="72" y="218.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.21</text><line x1="84" y1="150.00" x2="990" y2="150.00" stroke="#233041" stroke-width="1" /><text x="72" y="154.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.28</text><line x1="84" y1="86.00" x2="990" y2="86.00" stroke="#233041" stroke-width="1" /><text x="72" y="90.00" text-anchor="end" fill="#91a4bb" font-size="11" font-family="Consolas, monospace">0.35</text><rect x="94.00" y="243.64" width="63.50" height="162.36" rx="8" fill="#56b5ff" /><rect x="165.50" y="205.90" width="63.50" height="200.10" rx="8" fill="#4ad0a6" /><rect x="237.00" y="192.83" width="63.50" height="213.17" rx="8" fill="#f1c75b" /><text x="197.25" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Overall</text><rect x="320.50" y="173.27" width="63.50" height="232.73" rx="8" fill="#56b5ff" /><rect x="392.00" y="103.71" width="63.50" height="302.29" rx="8" fill="#4ad0a6" /><rect x="463.50" y="86.05" width="63.50" height="319.95" rx="8" fill="#f1c75b" /><text x="423.75" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Kick</text><rect x="547.00" y="181.37" width="63.50" height="224.63" rx="8" fill="#56b5ff" /><rect x="618.50" y="240.07" width="63.50" height="165.93" rx="8" fill="#4ad0a6" /><rect x="690.00" y="189.60" width="63.50" height="216.40" rx="8" fill="#f1c75b" /><text x="650.25" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Snare</text><rect x="773.50" y="292.41" width="63.50" height="113.59" rx="8" fill="#56b5ff" /><rect x="845.00" y="287.03" width="63.50" height="118.97" rx="8" fill="#4ad0a6" /><rect x="916.50" y="406.00" width="63.50" height="0.00" rx="8" fill="#f1c75b" /><text x="876.75" y="428" text-anchor="middle" fill="#d9e2ec" font-size="11" font-family="Segoe UI, Arial">Hi-hat</text><rect x="26" y="456" width="14" height="14" rx="4" fill="#56b5ff" /><text x="46" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Beat-conditioned multiband</text><rect x="166" y="456" width="14" height="14" rx="4" fill="#4ad0a6" /><text x="186" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">Adaptive beat grid</text><rect x="306" y="456" width="14" height="14" rx="4" fill="#f1c75b" /><text x="326" y="467" fill="#d9e2ec" font-size="12" font-family="Segoe UI, Arial">DSP bandpass improved</text></svg></div>
+        <div class="card span-7">
+          <h3>How to read this now</h3>
+          <p>The older King in Zion holdout is still useful as a diagnostic snapshot of real-audio behavior, but it is no longer acceptable as a truth benchmark because the Suno MIDI reference itself is suspect. That means the chart below should inform error analysis, not optimization targets.</p>
+          <table><thead><tr><th>Algorithm</th><th>Overall</th><th>Kick</th><th>Snare</th><th>Hi-hat</th><th>Timing</th></tr></thead><tbody><tr><td>Beat-conditioned multiband</td><td>0.178</td><td>0.255</td><td>0.246</td><td>0.124</td><td>38.9 ms</td></tr><tr><td>Adaptive beat grid</td><td>0.219</td><td>0.331</td><td>0.181</td><td>0.130</td><td>33.9 ms</td></tr><tr><td>DSP bandpass improved</td><td>0.233</td><td>0.350</td><td>0.237</td><td>0.000</td><td>34.3 ms</td></tr></tbody></table>
+        </div>
+        <div class="card span-5">
+          <h3>Diagnostic takeaway</h3>
+          <ul>
+            <li>The retained retry did improve the old holdout slightly, but only by a small margin.</li>
+            <li>Manual inspection of King in Zion is what exposed that the Suno-exported MIDI timing could not be trusted.</li>
+            <li>The correct follow-up is to keep real audio in the loop, but only with validated references or manual audit, not raw Suno MIDI exports.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="research">
+      <div class="section-header">
+        <div>
+          <div class="kicker">Research synthesis</div>
+          <h2>What the literature says and how it maps to this repo</h2>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span-5">
+          <h3>Local synthesis</h3>
+          <ul>
+            <li>Beat context matters, but the evidence favors soft conditioning rather than hard grid overwrite.</li>
+            <li>Sequence-aware and structure-aware models fit the failure patterns better than isolated frame heuristics.</li>
+            <li>Template and factorization ideas still matter for local overlap resolution.</li>
+            <li>Benchmark hygiene matters as much as model quality. The Suno shootout is now part of that hygiene story.</li>
+          </ul>
+        </div>
+        <div class="card span-7">
+          <h3>Primary-source reading that still matters</h3>
+          <ul class="source-list"><li><a href="https://doi.org/10.1109/TASLP.2018.2830113">Wu et al. 2018 - A Review of Automatic Drum Transcription</a><span>Frames the main ADT families and reinforces that overlap, class imbalance, and dataset mismatch remain the core failure sources.</span></li><li><a href="https://doi.org/10.1109/ICASSP.2017.7952146">Vogl et al. 2017 - Drum transcription from polyphonic music with recurrent neural networks</a><span>Supports sequence-aware decoding. The current kick, snare, and hat failures are sequence failures, not isolated frame errors.</span></li><li><a href="https://doi.org/10.1109/APSIPAASC58517.2023.10317285">Yeh et al. 2023 - Joint Drum Transcription and Metrical Analysis Based on Periodicity-Aware Multi-Task Learning</a><span>Supports using metrical context as a model input rather than a blunt post-hoc quantizer.</span></li><li><a href="https://doi.org/10.3390/signals2030031">Ishizuka et al. 2022 - Global Structure-Aware Drum Transcription Based on Self-Attention Mechanisms</a><span>Adds support for longer-range structure cues, especially for odd meter, repeated sections, and phrase-level pattern continuity.</span></li><li><a href="https://doi.org/10.1109/EUSIPCO.2015.7362590">Roebel et al. 2015 - Drum transcription using partially fixed non-negative matrix factorization</a><span>Keeps template and factorization methods relevant for local overlap disambiguation, especially kick + hat and snare + hat collisions.</span></li><li><a href="https://doi.org/10.5334/TISMIR.244">Foscarin et al. 2024 - STAR Drums</a><span>Reinforces that benchmark quality matters. Useful for future external evaluation, but not a replacement for the local rendered suite and audited holdouts.</span></li><li><a href="https://doi.org/10.3390/app13031549">Heyen et al. 2023 - High-Quality and Reproducible Automatic Drum Transcription from Crowdsourced Data</a><span>Aligns with the repo&#x27;s insistence on reproducible evaluation and static report review after every run.</span></li><li><a href="http://arxiv.org/abs/2509.24853v1">Elhussein et al. 2025 - Enhanced Automatic Drum Transcription via Drum Stem Source Separation</a><span>Still emerging, but worth tracking because separation-assisted ADT could reduce overlap failures on dense mixed audio.</span></li></ul>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span-12">
+          <h3>Current direction</h3>
+          <p>The retained path is still to improve the hybrid family on trusted synthetic while keeping a manually audited real-audio gate. The new trusted-vs-suspect shootout did not replace the older research program; it clarified the data policy around it. Future work should keep Suno assets for import, lyrics, and diagnostics, but never let suspect Suno MIDI become a source-of-truth benchmark again.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sources">
+      <div class="section-header">
+        <div>
+          <div class="kicker">Artifacts</div>
+          <h2>Local files behind this report</h2>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span-8">
+          <h3>Direct local sources</h3>
+          <ul class="source-list"><li><a href="shootouts/runs/20260324_124421_king-in-zion-synthetic-vs-suno-full18/report.html">Latest shootout report.html</a></li><li><a href="shootouts/runs/20260324_124421_king-in-zion-synthetic-vs-suno-full18/report.md">Latest shootout report.md</a></li><li><a href="shootouts/runs/20260324_124421_king-in-zion-synthetic-vs-suno-full18/summary.json">Latest shootout summary.json</a></li><li><a href="HYBRID_RESEARCH_AND_TRACKER.md">Hybrid research tracker</a></li><li><a href="PROCESS.md">Benchmark process</a></li><li><a href="runs/20260310_113817_hybrid-research-core-lanes/report.html">Hybrid research core-lanes report</a></li><li><a href="runs/20260310_124533_hybrid-mvp/report.html">Hybrid MVP report</a></li><li><a href="runs/20260311_134907_adaptive-double-bass-fix-v2/report.html">Adaptive refined report</a></li><li><a href="runs/20260310_213515_final-retry-validation/report.html">Final retry validation report</a></li><li><a href="king_in_zion_final_retry_validation.json">Historic King in Zion holdout JSON</a></li></ul>
+        </div>
+        <div class="card span-4">
+          <h3>Report metadata</h3>
+          <p><strong>Generated:</strong> 2026-03-24 15:19 Eastern Daylight Time</p>
+          <p><strong>Output:</strong> D:\AuralPrimer\benchmarks\drums\benchmark_visual_report.html</p>
+          <p><strong>Generator:</strong> D:\AuralPrimer\benchmarks\drums\build_visual_report.py</p>
+          <p><strong>Latest shootout folder:</strong> D:\AuralPrimer\benchmarks\drums\shootouts\runs\20260324_124421_king-in-zion-synthetic-vs-suno-full18</p>
+        </div>
+      </div>
+      <div class="footer">Open this file directly from disk. All charts are inline SVG and the page does not require a web server.</div>
+    </section>
+  </main>
+</body>
+</html>

@@ -17,9 +17,23 @@ KNOWN_DRUM_FILTERS: tuple[str, ...] = (
     "librosa_superflux",
     "spectral_template_multipass",
     "spectral_template_with_grid",
+    "multi_resolution",
+    "template_xcorr",
+    "probabilistic_pattern",
+    "onset_aligned",
+    "multi_resolution_template",
+    "hybrid_kick_grid",
+    "adaptive_beat_grid_multilabel",
 )
 
-KNOWN_MELODIC_METHODS: tuple[str, ...] = ("auto", "pyin", "basic_pitch")
+KNOWN_MELODIC_METHODS: tuple[str, ...] = (
+    "auto", 
+    "pyin", 
+    "basic_pitch",
+    "melodic_combined",
+    "melodic_octave_fix",
+    "melodic_yin_octave_hps_fix",
+)
 
 INSTRUMENT_ROLES: tuple[str, ...] = (
     "bass",
@@ -38,7 +52,7 @@ INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
     "melodic": (45.0, 1700.0),       # legacy default
 }
 
-DEFAULT_DRUM_FILTER = "combined_filter"
+DEFAULT_DRUM_FILTER = "adaptive_beat_grid"
 DEFAULT_MELODIC_METHOD = "auto"
 
 
@@ -96,16 +110,26 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
     # Import lazily to keep module import lightweight and avoid unnecessary startup costs.
     from aural_ingest.algorithms import (
         adaptive_beat_grid,
+        adaptive_beat_grid_multilabel,
         aural_onset,
         beat_conditioned_multiband_decoder,
         combined_filter,
         dsp_bandpass,
         dsp_bandpass_improved,
         dsp_spectral_flux,
+        hpss_percussive,
+        hybrid_kick_grid,
         librosa_superflux,
+        mfcc_cepstral,
+        multi_resolution,
+        multi_resolution_template,
+        nmf_decomposition,
+        onset_aligned,
+        probabilistic_pattern,
         spectral_flux_multiband,
         spectral_template_multipass,
         spectral_template_with_grid,
+        template_xcorr,
     )
 
     return {
@@ -114,12 +138,22 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         "dsp_spectral_flux": dsp_spectral_flux.transcribe,
         "aural_onset": aural_onset.transcribe,
         "adaptive_beat_grid": adaptive_beat_grid.transcribe,
+        "adaptive_beat_grid_multilabel": adaptive_beat_grid_multilabel.transcribe,
         "beat_conditioned_multiband_decoder": beat_conditioned_multiband_decoder.transcribe,
         "spectral_flux_multiband": spectral_flux_multiband.transcribe,
         "dsp_bandpass": dsp_bandpass.transcribe,
         "librosa_superflux": librosa_superflux.transcribe,
         "spectral_template_multipass": spectral_template_multipass.transcribe,
         "spectral_template_with_grid": spectral_template_with_grid.transcribe,
+        "multi_resolution": multi_resolution.transcribe,
+        "template_xcorr": template_xcorr.transcribe,
+        "probabilistic_pattern": probabilistic_pattern.transcribe,
+        "onset_aligned": onset_aligned.transcribe,
+        "multi_resolution_template": multi_resolution_template.transcribe,
+        "hybrid_kick_grid": hybrid_kick_grid.transcribe,
+        "nmf_decomposition": nmf_decomposition.transcribe,
+        "mfcc_cepstral": mfcc_cepstral.transcribe,
+        "hpss_percussive": hpss_percussive.transcribe,
     }
 
 
@@ -172,7 +206,13 @@ def build_default_melodic_algorithm_registry(
     instrument: str = "melodic",
 ) -> dict[str, MelodicTranscriber]:
     # Import lazily to keep module import lightweight and avoid unnecessary startup costs.
-    from aural_ingest.algorithms import melodic_basic_pitch, melodic_pyin
+    from aural_ingest.algorithms import (
+        melodic_basic_pitch,
+        melodic_pyin,
+        melodic_combined,
+        melodic_octave_fix,
+        melodic_yin_octave_hps_fix,
+    )
 
     roots = list(model_search_roots) if model_search_roots is not None else _default_basic_pitch_model_roots()
     basic_pitch_model_path = resolve_basic_pitch_model_path(roots)
@@ -185,9 +225,21 @@ def build_default_melodic_algorithm_registry(
     def _pyin(stem_path: Path) -> list[MelodicNote]:
         return melodic_pyin.transcribe(stem_path, instrument=_inst)
 
+    def _combined(stem_path: Path) -> list[MelodicNote]:
+        return melodic_combined.transcribe(stem_path, instrument=_inst)
+
+    def _octave_fix(stem_path: Path) -> list[MelodicNote]:
+        return melodic_octave_fix.transcribe(stem_path, instrument=_inst)
+
+    def _yin_octave_hps_fix(stem_path: Path) -> list[MelodicNote]:
+        return melodic_yin_octave_hps_fix.transcribe(stem_path, instrument=_inst)
+
     return {
         "basic_pitch": _basic_pitch,
         "pyin": _pyin,
+        "melodic_combined": _combined,
+        "melodic_octave_fix": _octave_fix,
+        "melodic_yin_octave_hps_fix": _yin_octave_hps_fix,
     }
 
 
@@ -220,7 +272,18 @@ def validate_melodic_method(method: str | None) -> str | None:
 def drum_fallback_chain(requested_filter: str | None) -> list[str]:
     normalized, _warnings = resolve_drum_filter(requested_filter)
 
-    if normalized == "combined_filter":
+    if normalized == "spectral_template_with_grid":
+        chain = [
+            "spectral_template_with_grid",
+            "spectral_template_multipass",
+            "adaptive_beat_grid",
+            "combined_filter",
+            "dsp_bandpass_improved",
+            "dsp_spectral_flux",
+            "dsp_bandpass",
+            "aural_onset",
+        ]
+    elif normalized == "combined_filter":
         chain = [
             "combined_filter",
             "dsp_bandpass_improved",
@@ -296,15 +359,20 @@ def drum_fallback_chain(requested_filter: str | None) -> list[str]:
     return out
 
 
-def melodic_fallback_chain(requested_method: str | None) -> list[str]:
+def melodic_fallback_chain(requested_method: str | None, instrument: str = "melodic") -> list[str]:
     normalized = validate_melodic_method(requested_method)
     if normalized is None:
         normalized = DEFAULT_MELODIC_METHOD
 
-    if normalized in {"auto", "basic_pitch"}:
+    if normalized == "auto":
+        if instrument == "bass":
+            chain = ["melodic_yin_octave_hps_fix", "melodic_octave_fix", "melodic_combined", "basic_pitch", "pyin"]
+        else:
+            chain = ["melodic_octave_fix", "melodic_combined", "basic_pitch", "pyin"]
+    elif normalized == "basic_pitch":
         chain = ["basic_pitch", "pyin"]
     else:
-        chain = ["pyin"]
+        chain = [normalized, "melodic_octave_fix", "melodic_yin_octave_hps_fix", "melodic_combined", "basic_pitch", "pyin"]
 
     out: list[str] = []
     for x in chain:
@@ -362,6 +430,7 @@ def transcribe_melodic(
     requested_method: str | None,
     algorithm_registry: dict[str, MelodicTranscriber],
     logger: Callable[[str], None] | None = None,
+    instrument: str = "melodic",
 ) -> MelodicTranscriptionResult:
     normalized = validate_melodic_method(requested_method)
     warnings: list[str] = []
@@ -372,7 +441,7 @@ def transcribe_melodic(
         )
 
     attempted: list[str] = []
-    for method in melodic_fallback_chain(normalized):
+    for method in melodic_fallback_chain(normalized, instrument=instrument):
         attempted.append(method)
         fn = algorithm_registry.get(method)
         if fn is None:
@@ -444,6 +513,7 @@ def transcribe_all_melodic_stems(
             requested_method=requested_method,
             algorithm_registry=inst_registry,
             logger=logger,
+            instrument=instrument,
         )
 
         # Tag each note with the instrument role.

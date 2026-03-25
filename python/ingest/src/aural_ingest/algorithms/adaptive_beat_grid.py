@@ -232,7 +232,7 @@ def _detect_candidates_internal(stem_path: Path) -> tuple[list[DrumCandidate], f
     beat_period, beat_conf = estimate_tempo_from_onset_env(novelty, hop_sec)
     duration_sec = len(samples) / float(sr)
     step = _choose_grid_step(beat_period, len(peaks), duration_sec, beat_conf)
-    tolerance = 0.045 if beat_conf < 0.22 else 0.03
+    tolerance = 0.050 if beat_conf < 0.22 else 0.038
     dense_kick_grid = _estimate_dense_kick_grid(low_n, hop_sec=hop_sec)
     kick_step = dense_kick_grid[0] if dense_kick_grid else None
     kick_anchor = dense_kick_grid[1] if dense_kick_grid else 0.0
@@ -293,6 +293,25 @@ def _detect_candidates_internal(stem_path: Path) -> tuple[list[DrumCandidate], f
                 drum_class = "kick"
                 winner = kick_score
 
+        # Cross-band tie-breaker for kick-vs-hat:
+        # When hat wins but the low-band novelty is present, this is often a
+        # simultaneous kick + hat hit where the hat's high-frequency transient
+        # dominates the novelty curve.  Isolated drum stems commonly have this
+        # overlap because the hi-hat mic captures significant kick bleed.
+        # Tier 1: strong low-band evidence → override to kick.
+        if drum_class in ("hh_closed", "hh_open") and low_hit > 0.14:
+            kick_to_high_ratio = low_hit / max(1e-9, high_hit)
+            if kick_to_high_ratio > 0.65 and low_dom > 0.22:
+                drum_class = "kick"
+                winner = kick_score
+        # Tier 2: hat wins narrowly and there is moderate low-band activity.
+        # In gameplay, kicks are more critical to display than hats.
+        if drum_class in ("hh_closed", "hh_open"):
+            hat_margin = hat_score - kick_score
+            if hat_margin < 0.06 and low_hit > 0.10 and low_dom > 0.16:
+                drum_class = "kick"
+                winner = kick_score
+
         if drum_class == "hh_closed":
             hat_class = classify_hat_or_cymbal(feat, prefer_ride_when_on_grid=False)
             if hat_class == "crash" and (high_hit < 0.22 or strength < 0.62):
@@ -300,9 +319,15 @@ def _detect_candidates_internal(stem_path: Path) -> tuple[list[DrumCandidate], f
             drum_class = hat_class
 
         snapped_t = snap_time_to_grid(t_raw, anchor=0.0, step=step, tolerance=tolerance)
+        # Safety cap: never let grid snap push an event more than 55ms from raw time.
+        # This prevents creating false negatives against a 60ms matching tolerance.
+        if abs(snapped_t - t_raw) > 0.055:
+            snapped_t = t_raw
         if drum_class == "kick" and kick_step is not None:
             kick_tolerance = min(0.028, max(0.016, kick_step * 0.22))
             snapped_t = snap_time_to_grid(t_raw, anchor=kick_anchor, step=kick_step, tolerance=kick_tolerance)
+            if abs(snapped_t - t_raw) > 0.055:
+                snapped_t = t_raw
 
         confidence = clamp((strength * 0.6) + (winner * 0.4), 0.0, 1.0)
         if drum_class == "crash" and confidence < 0.74:

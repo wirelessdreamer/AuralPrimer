@@ -66,6 +66,7 @@ fn stem_midi_creator_writes_songpack_artifacts() {
             stem2.to_string_lossy().to_string(),
         ],
         midi_path: midi.to_string_lossy().to_string(),
+        track_assignments: None,
     };
 
     let res = stem_midi::create_songpack(req, &songs_dir).unwrap();

@@ -1,0 +1,25 @@
+{
+  "corpus_id": "suno_suspect",
+  "title": "Suno suspect MIDI corpus",
+  "reference_trust": "suspect",
+  "description": "Raw Suno drum export audio paired with Suno-exported MIDI. Use this only as a diagnostic reference corpus, not as ground truth.",
+  "cases": [
+    {
+      "id": "king_in_zion_suno",
+      "title": "King in Zion (Suno export)",
+      "wav_path": "D:\\Psalms\\Psalm 2\\Book of Psalms - Psalm 2 - King in Zion Stems\\Book of Psalms - Psalm 2 - King in Zion (Drums).wav",
+      "reference_path": "D:\\Psalms\\Psalm 2\\Book of Psalms - Psalm 2 - King in Zion Stems\\Book of Psalms - Psalm 2 - King in Zion (Drums).mid",
+      "tags": [
+        "suno",
+        "psalm2",
+        "suspect-midi"
+      ],
+      "focus": [
+        "reference quality audit",
+        "drum lane drift",
+        "timing mismatch"
+      ],
+      "summary": "Direct Suno drum stem and exported drum MIDI from King in Zion."
+    }
+  ]
+}

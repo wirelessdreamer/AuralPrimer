@@ -474,6 +474,52 @@ label.meta {
   box-shadow: var(--shadow);
 }
 
+.playLyrics[hidden] {
+  display: none !important;
+}
+
+.playLyrics {
+  margin-top: 10px;
+  padding: 14px 18px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  background: linear-gradient(180deg, rgba(10, 14, 24, 0.92), rgba(10, 14, 24, 0.72));
+  box-shadow: var(--shadow2);
+}
+
+.playLyricsCurrent {
+  min-height: 1.25em;
+  font-size: clamp(22px, 2.7vw, 34px);
+  line-height: 1.18;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-wrap: balance;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.42);
+}
+
+.playLyricsCurrent:empty::before,
+.playLyricsNext:empty::before {
+  content: "\00a0";
+}
+
+.playLyricsDone {
+  color: #ffd200;
+}
+
+.playLyricsRest {
+  color: rgba(245, 247, 255, 0.92);
+}
+
+.playLyricsNext {
+  min-height: 1.25em;
+  margin-top: 6px;
+  color: rgba(245, 247, 255, 0.52);
+  font-size: clamp(14px, 1.7vw, 18px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-wrap: balance;
+}
+
 /* Play focus mode: make Now Playing the star (GH-ish) */
 .playLayout.isFocus {
   grid-template-columns: 1fr;
@@ -485,6 +531,19 @@ label.meta {
 
 .playLayout.isFocus #viz {
   height: min(70vh, 680px);
+}
+
+.playLayout.isFocus .playLyrics {
+  margin-top: 14px;
+  padding: 18px 22px 16px;
+}
+
+.playLayout.isFocus .playLyricsCurrent {
+  font-size: clamp(28px, 4vw, 46px);
+}
+
+.playLayout.isFocus .playLyricsNext {
+  font-size: clamp(16px, 2vw, 22px);
 }
 
 /* Song library step first, then setup step */
@@ -878,6 +937,71 @@ li {
   background: rgba(255, 40, 94, 0.12);
   border: 1px solid rgba(255, 92, 122, 0.32);
   color: rgba(255, 220, 226, 0.95);
+}
+
+.importAuditWrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.importAuditTable {
+  width: 100%;
+  min-width: 540px;
+  border-collapse: collapse;
+}
+
+.importAuditTable th,
+.importAuditTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.importAuditTable thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.importAuditTable tbody th {
+  white-space: nowrap;
+}
+
+.importAuditStatus {
+  display: inline-block;
+  min-width: 58px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.importAuditStatus--found {
+  color: #7ef0ad;
+  background: rgba(25, 206, 118, 0.16);
+  border: 1px solid rgba(25, 206, 118, 0.35);
+}
+
+.importAuditStatus--missing {
+  color: #ffb0b0;
+  background: rgba(255, 93, 93, 0.14);
+  border: 1px solid rgba(255, 93, 93, 0.35);
+}
+
+.importAuditStatus--na {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.importAuditNotes {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.88rem;
 }
 
 /* ─── Instrument selector ────────────────────────────────────── */

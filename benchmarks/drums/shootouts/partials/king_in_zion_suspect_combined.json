@@ -1,0 +1,2066 @@
+{
+  "suite_version": "1.0.0",
+  "generated_at_utc": "2026-03-14T10:57:37Z",
+  "fixtures_dir": "D:\\AuralPrimer\\benchmarks\\drums",
+  "algorithms": [
+    "spectral_flux_multiband",
+    "beat_conditioned_multiband_decoder",
+    "adaptive_beat_grid",
+    "spectral_template_multipass",
+    "spectral_template_with_grid",
+    "multi_resolution",
+    "template_xcorr",
+    "probabilistic_pattern",
+    "onset_aligned",
+    "multi_resolution_template"
+  ],
+  "tolerance_ms": 60.0,
+  "class_order": [
+    "kick",
+    "snare",
+    "hi_hat",
+    "crash",
+    "ride",
+    "tom1",
+    "tom2",
+    "tom3"
+  ],
+  "manifest_format": "auralprimer_manual_corpus_v1",
+  "warnings": [],
+  "cases": [
+    {
+      "case_id": "king_in_zion_suno",
+      "title": "King in Zion (Suno export)",
+      "bpm": 0.0,
+      "tags": [
+        "suno",
+        "psalm2",
+        "suspect-midi"
+      ],
+      "focus": [
+        "reference quality audit",
+        "drum lane drift",
+        "timing mismatch"
+      ],
+      "summary": "Direct Suno drum stem and exported drum MIDI from King in Zion.",
+      "wav_path": "D:\\Psalms\\Psalm 2\\Book of Psalms - Psalm 2 - King in Zion Stems\\Book of Psalms - Psalm 2 - King in Zion (Drums).wav",
+      "reference_path": "D:\\Psalms\\Psalm 2\\Book of Psalms - Psalm 2 - King in Zion Stems\\Book of Psalms - Psalm 2 - King in Zion (Drums).mid",
+      "reference_count": 1020,
+      "reference_meta": {
+        "format": "midi",
+        "ignored_reference_events": 0,
+        "selected_mode": "strict",
+        "ticks_per_quarter": 480
+      },
+      "results": [
+        {
+          "algorithm": "spectral_flux_multiband",
+          "confusions": [
+            {
+              "count": 147,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 122,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 32,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 32,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 32,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 24,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 23,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 16,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 16,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 6,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 4,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 3,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.152595,
+            "fn": 823,
+            "fp": 1365,
+            "precision": 0.12612,
+            "predicted_count": 1562,
+            "recall": 0.193137,
+            "reference_count": 1020,
+            "timing_mae_ms": 39.685,
+            "tp": 197
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.082695,
+              "fn": 35,
+              "fp": 564,
+              "precision": 0.045685,
+              "predicted_count": 591,
+              "recall": 0.435484,
+              "reference_count": 62,
+              "timing_mae_ms": 32.054,
+              "tp": 27
+            },
+            "hi_hat": {
+              "f1": 0.0,
+              "fn": 116,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 116,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "kick": {
+              "f1": 0.166667,
+              "fn": 392,
+              "fp": 148,
+              "precision": 0.267327,
+              "predicted_count": 202,
+              "recall": 0.121076,
+              "reference_count": 446,
+              "timing_mae_ms": 36.996,
+              "tp": 54
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.237462,
+              "fn": 100,
+              "fp": 645,
+              "precision": 0.152431,
+              "predicted_count": 761,
+              "recall": 0.537037,
+              "reference_count": 216,
+              "timing_mae_ms": 42.714,
+              "tp": 116
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 8,
+              "precision": 0.0,
+              "predicted_count": 8,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 1562,
+          "raw_predicted_count": 1562,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "beat_conditioned_multiband_decoder",
+          "confusions": [
+            {
+              "count": 195,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 152,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 65,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 48,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 24,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 21,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 14,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 14,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 10,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 8,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 4,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.161281,
+            "fn": 733,
+            "fp": 2252,
+            "precision": 0.113037,
+            "predicted_count": 2539,
+            "recall": 0.281373,
+            "reference_count": 1020,
+            "timing_mae_ms": 39.32,
+            "tp": 287
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.0,
+              "fn": 62,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 62,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "hi_hat": {
+              "f1": 0.117128,
+              "fn": 23,
+              "fp": 1379,
+              "precision": 0.063179,
+              "predicted_count": 1472,
+              "recall": 0.801724,
+              "reference_count": 116,
+              "timing_mae_ms": 39.134,
+              "tp": 93
+            },
+            "kick": {
+              "f1": 0.135177,
+              "fn": 402,
+              "fp": 161,
+              "precision": 0.214634,
+              "predicted_count": 205,
+              "recall": 0.098655,
+              "reference_count": 446,
+              "timing_mae_ms": 27.715,
+              "tp": 44
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.278293,
+              "fn": 66,
+              "fp": 712,
+              "precision": 0.174014,
+              "predicted_count": 862,
+              "recall": 0.694444,
+              "reference_count": 216,
+              "timing_mae_ms": 42.839,
+              "tp": 150
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 2539,
+          "raw_predicted_count": 2539,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "adaptive_beat_grid",
+          "confusions": [
+            {
+              "count": 102,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 72,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 63,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 38,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 31,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 30,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 12,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 9,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 9,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 8,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 7,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 2,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.177273,
+            "fn": 825,
+            "fp": 985,
+            "precision": 0.165254,
+            "predicted_count": 1180,
+            "recall": 0.191176,
+            "reference_count": 1020,
+            "timing_mae_ms": 35.447,
+            "tp": 195
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.0,
+              "fn": 62,
+              "fp": 1,
+              "precision": 0.0,
+              "predicted_count": 1,
+              "recall": 0.0,
+              "reference_count": 62,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "hi_hat": {
+              "f1": 0.109777,
+              "fn": 84,
+              "fp": 435,
+              "precision": 0.068522,
+              "predicted_count": 467,
+              "recall": 0.275862,
+              "reference_count": 116,
+              "timing_mae_ms": 39.194,
+              "tp": 32
+            },
+            "kick": {
+              "f1": 0.283768,
+              "fn": 321,
+              "fp": 310,
+              "precision": 0.287356,
+              "predicted_count": 435,
+              "recall": 0.280269,
+              "reference_count": 446,
+              "timing_mae_ms": 35.045,
+              "tp": 125
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.154158,
+              "fn": 178,
+              "fp": 239,
+              "precision": 0.137184,
+              "predicted_count": 277,
+              "recall": 0.175926,
+              "reference_count": 216,
+              "timing_mae_ms": 33.614,
+              "tp": 38
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 1180,
+          "raw_predicted_count": 1180,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "spectral_template_multipass",
+          "confusions": [
+            {
+              "count": 103,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 98,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 84,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 45,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 31,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 29,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 29,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 28,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 25,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 21,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 17,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 8,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 6,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 5,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 3,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 3,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom3"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.164616,
+            "fn": 739,
+            "fp": 2113,
+            "precision": 0.117377,
+            "predicted_count": 2394,
+            "recall": 0.27549,
+            "reference_count": 1020,
+            "timing_mae_ms": 40.086,
+            "tp": 281
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.082803,
+              "fn": 36,
+              "fp": 540,
+              "precision": 0.045936,
+              "predicted_count": 566,
+              "recall": 0.419355,
+              "reference_count": 62,
+              "timing_mae_ms": 34.268,
+              "tp": 26
+            },
+            "hi_hat": {
+              "f1": 0.124046,
+              "fn": 51,
+              "fp": 867,
+              "precision": 0.069742,
+              "predicted_count": 932,
+              "recall": 0.560345,
+              "reference_count": 116,
+              "timing_mae_ms": 38.474,
+              "tp": 65
+            },
+            "kick": {
+              "f1": 0.243137,
+              "fn": 353,
+              "fp": 226,
+              "precision": 0.291536,
+              "predicted_count": 319,
+              "recall": 0.20852,
+              "reference_count": 446,
+              "timing_mae_ms": 39.778,
+              "tp": 93
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.244641,
+              "fn": 119,
+              "fp": 480,
+              "precision": 0.168111,
+              "predicted_count": 577,
+              "recall": 0.449074,
+              "reference_count": 216,
+              "timing_mae_ms": 43.021,
+              "tp": 97
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 2394,
+          "raw_predicted_count": 2394,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "spectral_template_with_grid",
+          "confusions": [
+            {
+              "count": 97,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 79,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 77,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 52,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 35,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 27,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 26,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 25,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 22,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 20,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 9,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 8,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 7,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 5,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 4,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 3,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 2,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom3"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.178786,
+            "fn": 677,
+            "fp": 2474,
+            "precision": 0.121761,
+            "predicted_count": 2817,
+            "recall": 0.336275,
+            "reference_count": 1020,
+            "timing_mae_ms": 36.956,
+            "tp": 343
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.082803,
+              "fn": 36,
+              "fp": 540,
+              "precision": 0.045936,
+              "predicted_count": 566,
+              "recall": 0.419355,
+              "reference_count": 62,
+              "timing_mae_ms": 34.268,
+              "tp": 26
+            },
+            "hi_hat": {
+              "f1": 0.121556,
+              "fn": 41,
+              "fp": 1043,
+              "precision": 0.067084,
+              "predicted_count": 1118,
+              "recall": 0.646552,
+              "reference_count": 116,
+              "timing_mae_ms": 37.908,
+              "tp": 75
+            },
+            "kick": {
+              "f1": 0.298701,
+              "fn": 308,
+              "fp": 340,
+              "precision": 0.288703,
+              "predicted_count": 478,
+              "recall": 0.309417,
+              "reference_count": 446,
+              "timing_mae_ms": 34.844,
+              "tp": 138
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.238806,
+              "fn": 112,
+              "fp": 551,
+              "precision": 0.158779,
+              "predicted_count": 655,
+              "recall": 0.481481,
+              "reference_count": 216,
+              "timing_mae_ms": 39.744,
+              "tp": 104
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 2817,
+          "raw_predicted_count": 2817,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "multi_resolution",
+          "confusions": [
+            {
+              "count": 88,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 62,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 61,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 52,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 50,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 47,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 47,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 41,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 32,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 22,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 21,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 11,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 7,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 4,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 4,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 2,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "crash",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 1,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom3"
+            },
+            {
+              "count": 1,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom3"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.153562,
+            "fn": 646,
+            "fp": 3477,
+            "precision": 0.097118,
+            "predicted_count": 3851,
+            "recall": 0.366667,
+            "reference_count": 1020,
+            "timing_mae_ms": 37.103,
+            "tp": 374
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.085189,
+              "fn": 18,
+              "fp": 927,
+              "precision": 0.045314,
+              "predicted_count": 971,
+              "recall": 0.709677,
+              "reference_count": 62,
+              "timing_mae_ms": 21.427,
+              "tp": 44
+            },
+            "hi_hat": {
+              "f1": 0.108243,
+              "fn": 51,
+              "fp": 1020,
+              "precision": 0.059908,
+              "predicted_count": 1085,
+              "recall": 0.560345,
+              "reference_count": 116,
+              "timing_mae_ms": 34.738,
+              "tp": 65
+            },
+            "kick": {
+              "f1": 0.365118,
+              "fn": 222,
+              "fp": 557,
+              "precision": 0.286812,
+              "predicted_count": 781,
+              "recall": 0.502242,
+              "reference_count": 446,
+              "timing_mae_ms": 41.922,
+              "tp": 224
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.066667,
+              "fn": 175,
+              "fp": 973,
+              "precision": 0.040434,
+              "predicted_count": 1014,
+              "recall": 0.189815,
+              "reference_count": 216,
+              "timing_mae_ms": 31.348,
+              "tp": 41
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 3851,
+          "raw_predicted_count": 3851,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "template_xcorr",
+          "confusions": [
+            {
+              "count": 43,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 13,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 10,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 8,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 6,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 5,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 4,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 3,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 3,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 2,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 2,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 2,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 1,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.134027,
+            "fn": 904,
+            "fp": 595,
+            "precision": 0.16315,
+            "predicted_count": 711,
+            "recall": 0.113725,
+            "reference_count": 1020,
+            "timing_mae_ms": 39.546,
+            "tp": 116
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.068571,
+              "fn": 56,
+              "fp": 107,
+              "precision": 0.053097,
+              "predicted_count": 113,
+              "recall": 0.096774,
+              "reference_count": 62,
+              "timing_mae_ms": 34.059,
+              "tp": 6
+            },
+            "hi_hat": {
+              "f1": 0.055336,
+              "fn": 109,
+              "fp": 130,
+              "precision": 0.051095,
+              "predicted_count": 137,
+              "recall": 0.060345,
+              "reference_count": 116,
+              "timing_mae_ms": 48.862,
+              "tp": 7
+            },
+            "kick": {
+              "f1": 0.245566,
+              "fn": 356,
+              "fp": 197,
+              "precision": 0.313589,
+              "predicted_count": 287,
+              "recall": 0.201794,
+              "reference_count": 446,
+              "timing_mae_ms": 38.844,
+              "tp": 90
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.066667,
+              "fn": 203,
+              "fp": 161,
+              "precision": 0.074713,
+              "predicted_count": 174,
+              "recall": 0.060185,
+              "reference_count": 216,
+              "timing_mae_ms": 41.929,
+              "tp": 13
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 711,
+          "raw_predicted_count": 711,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "probabilistic_pattern",
+          "confusions": [
+            {
+              "count": 97,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 79,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 77,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 52,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 35,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 27,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 26,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 25,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 22,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 20,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 9,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 8,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 7,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 5,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 4,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 3,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 2,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom3"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.178786,
+            "fn": 677,
+            "fp": 2474,
+            "precision": 0.121761,
+            "predicted_count": 2817,
+            "recall": 0.336275,
+            "reference_count": 1020,
+            "timing_mae_ms": 36.956,
+            "tp": 343
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.082803,
+              "fn": 36,
+              "fp": 540,
+              "precision": 0.045936,
+              "predicted_count": 566,
+              "recall": 0.419355,
+              "reference_count": 62,
+              "timing_mae_ms": 34.268,
+              "tp": 26
+            },
+            "hi_hat": {
+              "f1": 0.121556,
+              "fn": 41,
+              "fp": 1043,
+              "precision": 0.067084,
+              "predicted_count": 1118,
+              "recall": 0.646552,
+              "reference_count": 116,
+              "timing_mae_ms": 37.908,
+              "tp": 75
+            },
+            "kick": {
+              "f1": 0.298701,
+              "fn": 308,
+              "fp": 340,
+              "precision": 0.288703,
+              "predicted_count": 478,
+              "recall": 0.309417,
+              "reference_count": 446,
+              "timing_mae_ms": 34.844,
+              "tp": 138
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.238806,
+              "fn": 112,
+              "fp": 551,
+              "precision": 0.158779,
+              "predicted_count": 655,
+              "recall": 0.481481,
+              "reference_count": 216,
+              "timing_mae_ms": 39.744,
+              "tp": 104
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 2817,
+          "raw_predicted_count": 2817,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "onset_aligned",
+          "confusions": [
+            {
+              "count": 97,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 79,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 77,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 52,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 35,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 27,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 26,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 25,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 22,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 20,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 9,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 8,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 7,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 5,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 4,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 3,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 2,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom3"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.178786,
+            "fn": 677,
+            "fp": 2474,
+            "precision": 0.121761,
+            "predicted_count": 2817,
+            "recall": 0.336275,
+            "reference_count": 1020,
+            "timing_mae_ms": 36.956,
+            "tp": 343
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.082803,
+              "fn": 36,
+              "fp": 540,
+              "precision": 0.045936,
+              "predicted_count": 566,
+              "recall": 0.419355,
+              "reference_count": 62,
+              "timing_mae_ms": 34.268,
+              "tp": 26
+            },
+            "hi_hat": {
+              "f1": 0.121556,
+              "fn": 41,
+              "fp": 1043,
+              "precision": 0.067084,
+              "predicted_count": 1118,
+              "recall": 0.646552,
+              "reference_count": 116,
+              "timing_mae_ms": 37.908,
+              "tp": 75
+            },
+            "kick": {
+              "f1": 0.298701,
+              "fn": 308,
+              "fp": 340,
+              "precision": 0.288703,
+              "predicted_count": 478,
+              "recall": 0.309417,
+              "reference_count": 446,
+              "timing_mae_ms": 34.844,
+              "tp": 138
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.238806,
+              "fn": 112,
+              "fp": 551,
+              "precision": 0.158779,
+              "predicted_count": 655,
+              "recall": 0.481481,
+              "reference_count": 216,
+              "timing_mae_ms": 39.744,
+              "tp": 104
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 2817,
+          "raw_predicted_count": 2817,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        },
+        {
+          "algorithm": "multi_resolution_template",
+          "confusions": [
+            {
+              "count": 89,
+              "predicted_class": "kick",
+              "reference_class": "snare"
+            },
+            {
+              "count": 50,
+              "predicted_class": "snare",
+              "reference_class": "kick"
+            },
+            {
+              "count": 43,
+              "predicted_class": "kick",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 42,
+              "predicted_class": "crash",
+              "reference_class": "kick"
+            },
+            {
+              "count": 41,
+              "predicted_class": "hi_hat",
+              "reference_class": "kick"
+            },
+            {
+              "count": 35,
+              "predicted_class": "crash",
+              "reference_class": "snare"
+            },
+            {
+              "count": 29,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 25,
+              "predicted_class": "kick",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 23,
+              "predicted_class": "hi_hat",
+              "reference_class": "snare"
+            },
+            {
+              "count": 18,
+              "predicted_class": "crash",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 12,
+              "predicted_class": "kick",
+              "reference_class": "crash"
+            },
+            {
+              "count": 10,
+              "predicted_class": "snare",
+              "reference_class": "tom2"
+            },
+            {
+              "count": 7,
+              "predicted_class": "snare",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 5,
+              "predicted_class": "crash",
+              "reference_class": "hi_hat"
+            },
+            {
+              "count": 3,
+              "predicted_class": "hi_hat",
+              "reference_class": "crash"
+            },
+            {
+              "count": 3,
+              "predicted_class": "snare",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "kick",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 2,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom1"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "crash"
+            },
+            {
+              "count": 1,
+              "predicted_class": "snare",
+              "reference_class": "tom3"
+            },
+            {
+              "count": 1,
+              "predicted_class": "hi_hat",
+              "reference_class": "tom3"
+            }
+          ],
+          "ignored_predicted_events": 0,
+          "overall": {
+            "f1": 0.182962,
+            "fn": 700,
+            "fp": 2158,
+            "precision": 0.129136,
+            "predicted_count": 2478,
+            "recall": 0.313725,
+            "reference_count": 1020,
+            "timing_mae_ms": 35.592,
+            "tp": 320
+          },
+          "per_class": {
+            "crash": {
+              "f1": 0.044944,
+              "fn": 50,
+              "fp": 460,
+              "precision": 0.025424,
+              "predicted_count": 472,
+              "recall": 0.193548,
+              "reference_count": 62,
+              "timing_mae_ms": 18.817,
+              "tp": 12
+            },
+            "hi_hat": {
+              "f1": 0.067633,
+              "fn": 95,
+              "fp": 484,
+              "precision": 0.041584,
+              "predicted_count": 505,
+              "recall": 0.181034,
+              "reference_count": 116,
+              "timing_mae_ms": 28.155,
+              "tp": 21
+            },
+            "kick": {
+              "f1": 0.358123,
+              "fn": 198,
+              "fp": 691,
+              "precision": 0.264111,
+              "predicted_count": 939,
+              "recall": 0.556054,
+              "reference_count": 446,
+              "timing_mae_ms": 36.157,
+              "tp": 248
+            },
+            "ride": {
+              "f1": 0.0,
+              "fn": 0,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 0,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "snare": {
+              "f1": 0.100257,
+              "fn": 177,
+              "fp": 523,
+              "precision": 0.069395,
+              "predicted_count": 562,
+              "recall": 0.180556,
+              "reference_count": 216,
+              "timing_mae_ms": 41.167,
+              "tp": 39
+            },
+            "tom1": {
+              "f1": 0.0,
+              "fn": 10,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 10,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom2": {
+              "f1": 0.0,
+              "fn": 167,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 167,
+              "timing_mae_ms": null,
+              "tp": 0
+            },
+            "tom3": {
+              "f1": 0.0,
+              "fn": 3,
+              "fp": 0,
+              "precision": 0.0,
+              "predicted_count": 0,
+              "recall": 0.0,
+              "reference_count": 3,
+              "timing_mae_ms": null,
+              "tp": 0
+            }
+          },
+          "predicted_count": 2478,
+          "raw_predicted_count": 2478,
+          "reference_count": 1020,
+          "tolerance_ms": 60.0
+        }
+      ]
+    }
+  ],
+  "corpus": {
+    "corpus_id": "suno_suspect",
+    "title": "Suno suspect MIDI corpus",
+    "reference_trust": "suspect",
+    "description": "Raw Suno drum export audio paired with Suno-exported MIDI. Use this only as a diagnostic reference corpus, not as ground truth.",
+    "manifest_path": "D:\\AuralPrimer\\benchmarks\\drums\\shootout_king_in_zion_suno_vs_synthetic.json"
+  }
+}
