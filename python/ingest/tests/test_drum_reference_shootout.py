@@ -75,6 +75,10 @@ def _fake_corpus_payload(corpus_id: str, title: str, trust: str, algo_a: dict[st
         "generated_at_utc": "2026-03-24T10:00:00Z",
         "fixtures_dir": "fixtures",
         "algorithms": ["algo_a", "algo_b"],
+        "algorithm_metadata": {
+            "algo_a": {"backend": "heuristic", "description": "Heuristic baseline"},
+            "algo_b": {"backend": "mt3", "description": "Learned MT3 candidate", "size_mb": 176.0},
+        },
         "tolerance_ms": 60.0,
         "class_order": [],
         "manifest_format": "auralprimer_manual_corpus_v1",
@@ -132,6 +136,8 @@ def test_build_reference_shootout_payload_computes_ranks_and_deltas() -> None:
     assert rows["algo_a"]["rank_shift"] == 1
     assert rows["algo_a"]["delta_suspect_minus_trusted"]["mean_overall_f1"] == -0.5
     assert rows["algo_a"]["delta_suspect_minus_trusted"]["mean_timing_mae_ms"] == 13.0
+    assert payload["selection_policy"]["diagnostic_only_corpora"] == ["suno_suspect_diagnostics"]
+    assert payload["recommendation"]["current_default"] == "adaptive_beat_grid"
 
     assert rows["algo_b"]["trusted_rank"] == 2
     assert rows["algo_b"]["suspect_rank"] == 1
@@ -169,4 +175,8 @@ def test_write_reference_shootout_outputs_emits_required_files(tmp_path: Path) -
 
     summary = json.loads((out_dir / "summary.json").read_text("utf-8"))
     assert summary["comparison"]["rows"][0]["algorithm"] == "algo_a"
-    assert "Delta (Suspect - Trusted)" in (out_dir / "report.md").read_text("utf-8")
+    report_md = (out_dir / "report.md").read_text("utf-8")
+    report_html = (out_dir / "report.html").read_text("utf-8")
+    assert "Delta (Suspect - Trusted)" in report_md
+    assert "Selection Policy" in report_md
+    assert "Engine Notes" in report_html

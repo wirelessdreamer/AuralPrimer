@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 import sys
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 
-KNOWN_DRUM_FILTERS: tuple[str, ...] = (
+from aural_ingest.mt3_compat import ensure_mt3_transformers_compat, suppress_mt3_runtime_warnings
+
+KNOWN_HEURISTIC_DRUM_FILTERS: tuple[str, ...] = (
     "combined_filter",
     "dsp_bandpass_improved",
     "dsp_spectral_flux",
@@ -25,6 +31,14 @@ KNOWN_DRUM_FILTERS: tuple[str, ...] = (
     "hybrid_kick_grid",
     "adaptive_beat_grid_multilabel",
 )
+
+KNOWN_MT3_DRUM_ENGINES: tuple[str, ...] = (
+    "mr_mt3_drums",
+    "yourmt3_drums",
+)
+
+KNOWN_DRUM_ENGINES: tuple[str, ...] = KNOWN_HEURISTIC_DRUM_FILTERS + KNOWN_MT3_DRUM_ENGINES
+KNOWN_DRUM_FILTERS: tuple[str, ...] = KNOWN_DRUM_ENGINES
 
 KNOWN_MELODIC_METHODS: tuple[str, ...] = (
     "auto", 
@@ -52,8 +66,76 @@ INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
     "melodic": (45.0, 1700.0),       # legacy default
 }
 
-DEFAULT_DRUM_FILTER = "adaptive_beat_grid"
+DEFAULT_DRUM_ENGINE = "adaptive_beat_grid"
+DEFAULT_DRUM_FILTER = DEFAULT_DRUM_ENGINE
 DEFAULT_MELODIC_METHOD = "auto"
+
+MT3_MODELPACK_DIRNAME = "assets/models"
+
+MT3_DRUM_ENGINE_MODEL_INFO: dict[str, dict[str, Any]] = {
+    "mr_mt3_drums": {
+        "engine": "mr_mt3_drums",
+        "backend": "mt3",
+        "model_id": "mr_mt3",
+        "modelpack_id": "mr_mt3",
+        "checkpoint_path": Path("files") / "checkpoints" / "mr_mt3" / "mt3.pth",
+        "format": "pytorch",
+        "size_mb": 176.0,
+        "speed_x_realtime": 57.0,
+        "description": "MR-MT3 drum transcription baseline",
+    },
+    "yourmt3_drums": {
+        "engine": "yourmt3_drums",
+        "backend": "mt3",
+        "model_id": "yourmt3",
+        "modelpack_id": "yourmt3",
+        "checkpoint_path": Path("files")
+        / "checkpoints"
+        / "yourmt3"
+        / "mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops"
+        / "last.ckpt",
+        "format": "pytorch_lightning",
+        "size_mb": 536.0,
+        "speed_x_realtime": 15.0,
+        "description": "YourMT3 drum transcription research candidate",
+    },
+}
+
+_BENCHMARK_NOTE_TO_CLASS: dict[int, str] = {
+    35: "kick",
+    36: "kick",
+    37: "snare",
+    38: "snare",
+    39: "snare",
+    40: "snare",
+    41: "tom3",
+    42: "hi_hat",
+    43: "tom3",
+    44: "hi_hat",
+    45: "tom2",
+    46: "hi_hat",
+    47: "tom2",
+    48: "tom1",
+    49: "crash",
+    50: "tom1",
+    51: "ride",
+    52: "crash",
+    53: "ride",
+    55: "crash",
+    57: "crash",
+    59: "ride",
+}
+
+_CLASS_TO_CANONICAL_NOTE: dict[str, int] = {
+    "kick": 36,
+    "snare": 38,
+    "hi_hat": 42,
+    "crash": 49,
+    "ride": 51,
+    "tom1": 48,
+    "tom2": 47,
+    "tom3": 41,
+}
 
 
 @dataclass(frozen=True)
@@ -70,6 +152,7 @@ class DrumTranscriptionResult:
     used_algorithm: str | None
     attempted_algorithms: list[str]
     warnings: list[str]
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 DrumTranscriber = Callable[[Path], list[DrumEvent]]
@@ -106,6 +189,353 @@ class InstrumentTranscriptionResult:
     stem_path: str | None = None
 
 
+def is_mt3_drum_engine(engine_id: str | None) -> bool:
+    if engine_id is None:
+        return False
+    return str(engine_id).strip().lower() in KNOWN_MT3_DRUM_ENGINES
+
+
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_value(item) for item in value]
+    return value
+
+
+def drum_engine_metadata(engine_id: str) -> dict[str, Any]:
+    normalized = str(engine_id).strip().lower()
+    if normalized in MT3_DRUM_ENGINE_MODEL_INFO:
+        return _json_safe_value(MT3_DRUM_ENGINE_MODEL_INFO[normalized])
+    return {
+        "engine": normalized,
+        "backend": "heuristic",
+        "description": "Heuristic/DSP drum transcription engine",
+    }
+
+
+def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
+    out: list[str] = []
+    for value in values:
+        if value not in out:
+            out.append(value)
+    return out
+
+
+def _candidate_model_roots(base: Path) -> list[Path]:
+    return [
+        base,
+        base / MT3_MODELPACK_DIRNAME,
+        base / "data" / MT3_MODELPACK_DIRNAME,
+        base / "AuralPrimerPortable" / "data" / MT3_MODELPACK_DIRNAME,
+    ]
+
+
+def _default_mt3_model_search_roots(stem_path: Path | None = None) -> list[Path]:
+    roots: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        meipass_path = Path(str(meipass))
+        roots.extend([meipass_path, meipass_path.parent])
+
+    try:
+        exe_dir = Path(sys.executable).resolve().parent
+        roots.extend([exe_dir, exe_dir.parent, exe_dir.parent.parent])
+    except Exception:
+        pass
+
+    cwd = Path.cwd()
+    roots.extend([cwd, cwd.parent])
+
+    try:
+        this_file = Path(__file__).resolve()
+        roots.extend([this_file.parent, this_file.parents[2], this_file.parents[4]])
+    except Exception:
+        pass
+
+    if stem_path is not None:
+        try:
+            roots.extend(list(stem_path.resolve().parents[:6]))
+        except Exception:
+            pass
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        for candidate in _candidate_model_roots(root):
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+    return deduped
+
+
+def _iter_installed_modelpack_dirs(modelpack_id: str, search_roots: Iterable[Path]) -> list[Path]:
+    matches: list[Path] = []
+    for root in search_roots:
+        candidate_root = Path(root)
+        if candidate_root.name == modelpack_id and (candidate_root / "modelpack.json").is_file():
+            matches.append(candidate_root)
+            continue
+
+        id_root = candidate_root / modelpack_id
+        if not id_root.is_dir():
+            continue
+        for version_dir in sorted(
+            [child for child in id_root.iterdir() if child.is_dir()],
+            key=lambda item: item.name,
+            reverse=True,
+        ):
+            if (version_dir / "modelpack.json").is_file():
+                matches.append(version_dir)
+    return matches
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text("utf-8"))
+
+
+def _resolve_mt3_checkpoint_from_manifest(
+    model_root: Path,
+    manifest: dict[str, Any],
+    model_id: str,
+    default_relpath: Path,
+) -> Path | None:
+    checkpoints = manifest.get("checkpoints")
+    if isinstance(checkpoints, list):
+        for item in checkpoints:
+            if not isinstance(item, dict):
+                continue
+            candidate_model = str(item.get("model", "")).strip().lower()
+            candidate_path = str(item.get("path", "")).strip()
+            if candidate_model and candidate_model != model_id:
+                continue
+            if not candidate_path:
+                continue
+            candidate = model_root / Path(candidate_path)
+            if candidate.is_file():
+                return candidate
+
+    candidate = model_root / default_relpath
+    if candidate.is_file():
+        return candidate
+
+    trimmed = default_relpath
+    if list(trimmed.parts[:2]) == ["files", "checkpoints"]:
+        candidate = model_root / Path("checkpoints") / Path(*trimmed.parts[2:])
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def resolve_mt3_modelpack(
+    engine_id: str,
+    *,
+    stem_path: Path | None = None,
+    search_roots: Iterable[Path | str] | None = None,
+) -> dict[str, Any]:
+    engine = str(engine_id).strip().lower()
+    info = MT3_DRUM_ENGINE_MODEL_INFO.get(engine)
+    if info is None:
+        raise FileNotFoundError(f"unknown MT3 drum engine '{engine_id}'")
+
+    explicit_checkpoint = os.getenv(f"AURALPRIMER_{str(info['model_id']).upper()}_CHECKPOINT_PATH")
+    if explicit_checkpoint:
+        checkpoint_path = Path(explicit_checkpoint).expanduser()
+        if checkpoint_path.is_file():
+            return _json_safe_value({
+                **info,
+                "checkpoint_path_resolved": checkpoint_path,
+                "modelpack_root": checkpoint_path.parent,
+                "modelpack_manifest": {},
+                "modelpack_version": "explicit",
+            })
+        raise FileNotFoundError(f"configured checkpoint does not exist: {checkpoint_path}")
+
+    env_checkpoint_root = os.getenv("MT3_CHECKPOINT_DIR")
+    if env_checkpoint_root:
+        env_candidate = Path(env_checkpoint_root).expanduser() / Path(info["checkpoint_path"])
+        if env_candidate.is_file():
+            return _json_safe_value({
+                **info,
+                "checkpoint_path_resolved": env_candidate,
+                "modelpack_root": Path(env_checkpoint_root).expanduser(),
+                "modelpack_manifest": {},
+                "modelpack_version": "env",
+            })
+
+    if search_roots is not None:
+        roots = []
+        seen: set[str] = set()
+        for raw_root in search_roots:
+            for candidate in _candidate_model_roots(Path(raw_root)):
+                key = str(candidate)
+                if key in seen:
+                    continue
+                seen.add(key)
+                roots.append(candidate)
+    else:
+        roots = _default_mt3_model_search_roots(stem_path)
+    for model_root in _iter_installed_modelpack_dirs(str(info["modelpack_id"]), roots):
+        manifest_path = model_root / "modelpack.json"
+        manifest = _read_json_file(manifest_path)
+        checkpoint_path = _resolve_mt3_checkpoint_from_manifest(
+            model_root,
+            manifest,
+            str(info["model_id"]),
+            Path(info["checkpoint_path"]),
+        )
+        if checkpoint_path is None:
+            continue
+        return _json_safe_value({
+            **info,
+            "checkpoint_path_resolved": checkpoint_path,
+            "modelpack_root": model_root,
+            "modelpack_manifest": manifest,
+            "modelpack_version": str(manifest.get("version", "unknown")).strip() or "unknown",
+        })
+
+    searched = ", ".join(str(root) for root in roots)
+    raise FileNotFoundError(
+        f"missing modelpack for {engine}: expected installed '{info['modelpack_id']}' checkpoint under files/checkpoints; searched {searched}"
+    )
+
+
+def available_mt3_modelpacks(
+    search_roots: Iterable[Path | str] | None = None,
+    *,
+    stem_path: Path | None = None,
+) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for engine_id in KNOWN_MT3_DRUM_ENGINES:
+        info = MT3_DRUM_ENGINE_MODEL_INFO[engine_id]
+        try:
+            resolved = resolve_mt3_modelpack(engine_id, stem_path=stem_path, search_roots=search_roots)
+            out[engine_id] = {
+                "ok": True,
+                "backend": "mt3",
+                "engine": engine_id,
+                "model_id": resolved["model_id"],
+                "modelpack_id": resolved["modelpack_id"],
+                "modelpack_version": resolved["modelpack_version"],
+                "checkpoint_path": str(resolved["checkpoint_path_resolved"]),
+                "modelpack_root": str(resolved["modelpack_root"]),
+                "size_mb": resolved.get("size_mb"),
+                "speed_x_realtime": resolved.get("speed_x_realtime"),
+                "description": resolved.get("description"),
+            }
+        except Exception as exc:
+            out[engine_id] = {
+                "ok": False,
+                "backend": "mt3",
+                "engine": engine_id,
+                "model_id": info["model_id"],
+                "modelpack_id": info["modelpack_id"],
+                "size_mb": info.get("size_mb"),
+                "speed_x_realtime": info.get("speed_x_realtime"),
+                "description": info.get("description"),
+                "error": str(exc),
+            }
+    return out
+
+
+def _midi_note_to_benchmark_class(note: int) -> str | None:
+    return _BENCHMARK_NOTE_TO_CLASS.get(int(note))
+
+
+def _normalize_midi_note_to_canonical(note: int) -> int | None:
+    drum_class = _midi_note_to_benchmark_class(note)
+    if drum_class is None:
+        return None
+    return _CLASS_TO_CANONICAL_NOTE[drum_class]
+
+
+def _midi_to_drum_events(midi_file: Any) -> list[DrumEvent]:
+    import mido
+
+    merged = mido.merge_tracks(midi_file.tracks)
+    ticks_per_beat = int(getattr(midi_file, "ticks_per_beat", 480) or 480)
+    tempo = 500000
+    current_time_sec = 0.0
+    events: list[DrumEvent] = []
+    saw_drum_channel = False
+
+    for msg in merged:
+        current_time_sec += mido.tick2second(msg.time, ticks_per_beat, tempo)
+        if msg.type == "set_tempo":
+            tempo = int(msg.tempo)
+            continue
+        if msg.type != "note_on" or int(getattr(msg, "velocity", 0)) <= 0:
+            continue
+        channel = getattr(msg, "channel", None)
+        note = int(getattr(msg, "note", 0))
+        if channel == 9:
+            saw_drum_channel = True
+        canonical_note = _normalize_midi_note_to_canonical(note)
+        if canonical_note is None:
+            continue
+        if saw_drum_channel and channel not in (None, 9):
+            continue
+        events.append(
+            DrumEvent(
+                time=max(0.0, float(current_time_sec)),
+                note=canonical_note,
+                velocity=max(1, min(127, int(getattr(msg, "velocity", 100)))),
+            )
+        )
+    return events
+
+
+def _transcribe_drums_mt3_events(
+    stem_path: Path,
+    engine_id: str,
+    *,
+    search_roots: Iterable[Path | str] | None = None,
+) -> tuple[list[DrumEvent], dict[str, Any]]:
+    import librosa
+
+    resolved = resolve_mt3_modelpack(engine_id, stem_path=stem_path, search_roots=search_roots)
+    checkpoint_path = Path(resolved["checkpoint_path_resolved"])
+    modelpack_root = Path(resolved["modelpack_root"])
+    os.environ["MT3_CHECKPOINT_DIR"] = str(modelpack_root)
+    audio, sr = librosa.load(str(stem_path), sr=16000, mono=True)
+    captured_stdout = io.StringIO()
+    captured_stderr = io.StringIO()
+    try:
+        with suppress_mt3_runtime_warnings():
+            with contextlib.redirect_stdout(captured_stdout), contextlib.redirect_stderr(captured_stderr):
+                ensure_mt3_transformers_compat()
+                from mt3_infer import load_model
+
+                model = load_model(
+                    str(resolved["model_id"]),
+                    checkpoint_path=str(checkpoint_path),
+                    device="cpu",
+                    auto_download=False,
+                )
+                midi = model.transcribe(audio.astype("float32"), sr=sr)
+    except Exception as exc:
+        detail = "\n".join(
+            part for part in (captured_stdout.getvalue().strip(), captured_stderr.getvalue().strip()) if part
+        )
+        if detail:
+            raise RuntimeError(f"MT3 inference failed: {exc}\n{detail}") from exc
+        raise
+    return _midi_to_drum_events(midi), {
+        "backend": "mt3",
+        "model_id": resolved["model_id"],
+        "modelpack_id": resolved["modelpack_id"],
+        "modelpack_version": resolved["modelpack_version"],
+        "checkpoint_path": str(checkpoint_path),
+        "modelpack_root": str(modelpack_root),
+        "size_mb": resolved.get("size_mb"),
+        "speed_x_realtime": resolved.get("speed_x_realtime"),
+    }
+
+
 def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
     # Import lazily to keep module import lightweight and avoid unnecessary startup costs.
     from aural_ingest.algorithms import (
@@ -132,7 +562,7 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         template_xcorr,
     )
 
-    return {
+    registry: dict[str, DrumTranscriber] = {
         "combined_filter": combined_filter.transcribe,
         "dsp_bandpass_improved": dsp_bandpass_improved.transcribe,
         "dsp_spectral_flux": dsp_spectral_flux.transcribe,
@@ -155,6 +585,18 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         "mfcc_cepstral": mfcc_cepstral.transcribe,
         "hpss_percussive": hpss_percussive.transcribe,
     }
+
+    def _wrap_mt3(engine_id: str) -> DrumTranscriber:
+        def _runner(stem_path: Path) -> list[DrumEvent]:
+            events, _meta = _transcribe_drums_mt3_events(stem_path, engine_id)
+            return events
+
+        return _runner
+
+    for engine_id in KNOWN_MT3_DRUM_ENGINES:
+        registry[engine_id] = _wrap_mt3(engine_id)
+
+    return registry
 
 
 def _default_basic_pitch_model_roots() -> list[Path]:
@@ -243,19 +685,23 @@ def build_default_melodic_algorithm_registry(
     }
 
 
-def resolve_drum_filter(requested_filter: str | None) -> tuple[str, list[str]]:
-    if requested_filter is None:
-        return DEFAULT_DRUM_FILTER, []
+def resolve_drum_engine(requested_engine: str | None) -> tuple[str, list[str]]:
+    if requested_engine is None:
+        return DEFAULT_DRUM_ENGINE, []
 
-    rf = requested_filter.strip().lower()
+    rf = requested_engine.strip().lower()
     if not rf or rf == "auto":
-        return DEFAULT_DRUM_FILTER, []
-    if rf in KNOWN_DRUM_FILTERS:
+        return DEFAULT_DRUM_ENGINE, []
+    if rf in KNOWN_DRUM_ENGINES:
         return rf, []
 
-    return DEFAULT_DRUM_FILTER, [
-        f"unknown drum filter '{requested_filter}', falling back to {DEFAULT_DRUM_FILTER}"
+    return DEFAULT_DRUM_ENGINE, [
+        f"unknown drum engine '{requested_engine}', falling back to {DEFAULT_DRUM_ENGINE}"
     ]
+
+
+def resolve_drum_filter(requested_filter: str | None) -> tuple[str, list[str]]:
+    return resolve_drum_engine(requested_filter)
 
 
 def validate_melodic_method(method: str | None) -> str | None:
@@ -270,7 +716,10 @@ def validate_melodic_method(method: str | None) -> str | None:
 
 
 def drum_fallback_chain(requested_filter: str | None) -> list[str]:
-    normalized, _warnings = resolve_drum_filter(requested_filter)
+    normalized, _warnings = resolve_drum_engine(requested_filter)
+
+    if normalized in KNOWN_MT3_DRUM_ENGINES:
+        return [normalized]
 
     if normalized == "spectral_template_with_grid":
         chain = [
@@ -387,7 +836,7 @@ def transcribe_drums_dsp(
     algorithm_registry: dict[str, DrumTranscriber],
     logger: Callable[[str], None] | None = None,
 ) -> DrumTranscriptionResult:
-    normalized, warnings = resolve_drum_filter(requested_filter)
+    normalized, warnings = resolve_drum_engine(requested_filter)
     attempted: list[str] = []
 
     for algorithm_id in drum_fallback_chain(normalized):
@@ -415,6 +864,7 @@ def transcribe_drums_dsp(
                 used_algorithm=algorithm_id,
                 attempted_algorithms=attempted,
                 warnings=warnings,
+                meta={"backend": "heuristic"},
             )
 
     return DrumTranscriptionResult(
@@ -422,6 +872,48 @@ def transcribe_drums_dsp(
         used_algorithm=None,
         attempted_algorithms=attempted,
         warnings=warnings,
+        meta={"backend": "heuristic"},
+    )
+
+
+def transcribe_drums(
+    stem_path: Path,
+    requested_engine: str | None,
+    algorithm_registry: dict[str, DrumTranscriber],
+    logger: Callable[[str], None] | None = None,
+) -> DrumTranscriptionResult:
+    normalized, warnings = resolve_drum_engine(requested_engine)
+
+    if normalized in KNOWN_MT3_DRUM_ENGINES:
+        attempted = [normalized]
+        try:
+            events, meta = _transcribe_drums_mt3_events(stem_path, normalized)
+        except Exception as exc:
+            msg = f"drum engine '{normalized}' failed: {exc}"
+            warnings.append(msg)
+            if logger:
+                logger(msg)
+            return DrumTranscriptionResult(
+                events=[],
+                used_algorithm=None,
+                attempted_algorithms=attempted,
+                warnings=warnings,
+                meta={"backend": "mt3", "engine": normalized},
+            )
+
+        return DrumTranscriptionResult(
+            events=events,
+            used_algorithm=normalized,
+            attempted_algorithms=attempted,
+            warnings=warnings,
+            meta=meta,
+        )
+
+    return transcribe_drums_dsp(
+        stem_path,
+        requested_filter=normalized,
+        algorithm_registry=algorithm_registry,
+        logger=logger,
     )
 
 
@@ -540,5 +1032,3 @@ def transcribe_all_melodic_stems(
         )
 
     return results
-
-

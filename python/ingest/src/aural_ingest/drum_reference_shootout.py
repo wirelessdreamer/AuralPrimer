@@ -13,7 +13,11 @@ from aural_ingest.drum_benchmark_suite import (
     run_benchmark_suite,
     summarize_suite_results,
 )
-from aural_ingest.transcription import KNOWN_DRUM_FILTERS, build_default_drum_algorithm_registry
+from aural_ingest.transcription import (
+    KNOWN_DRUM_FILTERS,
+    build_default_drum_algorithm_registry,
+    drum_engine_metadata,
+)
 
 
 SHOOTOUT_VERSION = "1.0.0"
@@ -145,6 +149,90 @@ def _build_rank_map(algorithm_summaries: Sequence[Mapping[str, Any]]) -> dict[st
     }
 
 
+def _pick_best_algorithm(
+    algorithm_summaries: Sequence[Mapping[str, Any]],
+    *,
+    backend_filter: str | None = None,
+) -> dict[str, Any] | None:
+    candidates: list[Mapping[str, Any]] = []
+    for item in algorithm_summaries:
+        algorithm = str(item.get("algorithm", "")).strip()
+        if not algorithm:
+            continue
+        if backend_filter is not None:
+            metadata = drum_engine_metadata(algorithm)
+            if str(metadata.get("backend", "")).strip().lower() != backend_filter:
+                continue
+        candidates.append(item)
+
+    if not candidates:
+        return None
+
+    ordered = sorted(
+        candidates,
+        key=lambda item: (
+            -(float(item["mean_core_f1"]) if item.get("mean_core_f1") is not None else -1.0),
+            -(float(item["mean_overall_f1"]) if item.get("mean_overall_f1") is not None else -1.0),
+            float(item.get("mean_timing_mae_ms", 10_000.0) or 10_000.0),
+            str(item.get("algorithm", "")),
+        ),
+    )
+    return dict(ordered[0])
+
+
+def _build_recommendation(trusted_summary: Mapping[str, Any]) -> dict[str, Any]:
+    trusted_algorithms = trusted_summary.get("algorithm_summaries", [])
+    best_heuristic = _pick_best_algorithm(trusted_algorithms, backend_filter="heuristic")
+    best_learned = _pick_best_algorithm(trusted_algorithms, backend_filter="mt3")
+    current_default = "adaptive_beat_grid"
+
+    if best_heuristic is None:
+        return {
+            "status": "benchmark_incomplete",
+            "current_default": current_default,
+            "reason": "Trusted benchmark payload did not contain any heuristic baseline rows.",
+            "promotion_ready": False,
+        }
+
+    recommendation: dict[str, Any] = {
+        "status": "hold_current_default",
+        "current_default": current_default,
+        "best_trusted_heuristic": {
+            "algorithm": best_heuristic["algorithm"],
+            "mean_core_f1": best_heuristic.get("mean_core_f1"),
+            "mean_overall_f1": best_heuristic.get("mean_overall_f1"),
+            "mean_timing_mae_ms": best_heuristic.get("mean_timing_mae_ms"),
+        },
+        "best_learned_candidate": None,
+        "promotion_ready": False,
+        "reason": "Keep the current heuristic default until a curated real drum-stem holdout is populated; suspect Suno references remain diagnostic-only.",
+    }
+
+    if best_learned is None:
+        recommendation["reason"] = (
+            "No learned MT3 engine was benchmarked in this shootout. Keep the current heuristic default and treat this report as infrastructure validation."
+        )
+        return recommendation
+
+    core_delta = None
+    if best_learned.get("mean_core_f1") is not None and best_heuristic.get("mean_core_f1") is not None:
+        core_delta = float(best_learned["mean_core_f1"]) - float(best_heuristic["mean_core_f1"])
+
+    recommendation["best_learned_candidate"] = {
+        "algorithm": best_learned["algorithm"],
+        "mean_core_f1": best_learned.get("mean_core_f1"),
+        "mean_overall_f1": best_learned.get("mean_overall_f1"),
+        "mean_timing_mae_ms": best_learned.get("mean_timing_mae_ms"),
+        "delta_vs_best_heuristic_core_f1": core_delta,
+    }
+    if core_delta is not None and core_delta >= 0.03:
+        recommendation["status"] = "candidate_beats_trusted_gate_but_hold"
+        recommendation["reason"] = (
+            "The learned MT3 candidate clears the trusted synthetic +0.03 core-F1 gate, but promotion remains blocked until a curated real drum-stem holdout is populated and reviewed."
+        )
+    return recommendation
+
+
 def load_manual_corpus_manifest(manifest_path: Path | str) -> tuple[dict[str, Any], list[str], list[ShootoutCase]]:
     path = Path(manifest_path)
     data = json.loads(path.read_text("utf-8"))
@@ -238,6 +326,7 @@ def run_manual_corpus_benchmark(
         "generated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fixtures_dir": str(Path(manifest_path).parent),
         "algorithms": algorithm_ids,
+        "algorithm_metadata": {algorithm_id: drum_engine_metadata(algorithm_id) for algorithm_id in algorithm_ids},
         "tolerance_ms": round(float(tolerance_ms), 3),
         "class_order": [],
         "manifest_format": "auralprimer_manual_corpus_v1",
@@ -257,6 +346,15 @@ def build_reference_shootout_payload(
     if not algorithms:
         algorithms = list(suspect_payload.get("algorithms", []))
     algorithms = _dedupe_preserve_order(algorithms)
+    algorithm_metadata = {
+        algorithm: dict(
+            trusted_payload.get("algorithm_metadata", {}).get(
+                algorithm,
+                suspect_payload.get("algorithm_metadata", {}).get(algorithm, drum_engine_metadata(algorithm)),
+            )
+        )
+        for algorithm in algorithms
+    }
 
     trusted_lookup = {
         str(item["algorithm"]): item for item in trusted_summary.get("algorithm_summaries", [])
@@ -304,11 +402,24 @@ def build_reference_shootout_payload(
             }
         )
 
+    recommendation = _build_recommendation(trusted_summary)
+
     return {
         "shootout_version": SHOOTOUT_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "algorithms": algorithms,
+        "algorithm_metadata": algorithm_metadata,
         "tolerance_ms": float(trusted_payload.get("tolerance_ms", suspect_payload.get("tolerance_ms", 60.0))),
+        "selection_policy": {
+            "gating_corpora": ["trusted_synthetic_rendered", "real_curated_holdout"],
+            "diagnostic_only_corpora": ["suno_suspect_diagnostics"],
+            "promotion_rule": {
+                "trusted_min_core_f1_delta": 0.03,
+                "curated_real_required": True,
+                "max_priority_lane_regression": 0.02,
+            },
+        },
+        "recommendation": recommendation,
         "trusted": {
             "meta": dict(trusted_payload.get("corpus", {})),
             "payload": trusted_payload,
@@ -468,11 +579,31 @@ def _delta_rows(payload: Mapping[str, Any]) -> list[list[str]]:
     return rows
 
 
+def _engine_metadata_rows(payload: Mapping[str, Any]) -> list[list[str]]:
+    rows = []
+    metadata = payload.get("algorithm_metadata", {})
+    for algorithm in payload.get("algorithms", []):
+        item = metadata.get(algorithm, {})
+        rows.append(
+            [
+                algorithm,
+                str(item.get("backend", "heuristic")),
+                str(item.get("size_mb", "-")),
+                str(item.get("speed_x_realtime", "-")),
+                str(item.get("description", "")),
+            ]
+        )
+    return rows
+
+
 def _render_report_markdown(payload: Mapping[str, Any]) -> str:
     trusted_meta = payload["trusted"]["meta"]
     suspect_meta = payload["suspect"]["meta"]
     trusted_cases = payload["trusted"]["payload"]["cases"]
     suspect_cases = payload["suspect"]["payload"]["cases"]
+    recommendation = payload.get("recommendation", {})
+    best_heuristic = recommendation.get("best_trusted_heuristic") or {}
+    best_learned = recommendation.get("best_learned_candidate") or {}
     lines = [
         "# Drum Reference Shootout",
         "",
@@ -483,11 +614,32 @@ def _render_report_markdown(payload: Mapping[str, Any]) -> str:
         "",
         "Interpretation: negative F1 deltas mean the algorithm scored worse against the suspect Suno references than it did on the trusted synthetic fixture corpus. Positive timing deltas mean worse timing error on the suspect corpus.",
         "",
+        "## Selection Policy",
+        "",
+        "- Trusted synthetic remains a gating corpus for algorithm quality.",
+        "- Curated real drum-stem holdout remains required before any default switch.",
+        "- Suspect Suno references are diagnostic-only and are excluded from promotion decisions.",
+        "",
+        "## Recommendation",
+        "",
+        f"- Status: `{recommendation.get('status', 'unknown')}`",
+        f"- Current default: `{recommendation.get('current_default', 'adaptive_beat_grid')}`",
+        f"- Best trusted heuristic: `{best_heuristic.get('algorithm', '-')}` core=`{_format_score(best_heuristic.get('mean_core_f1'))}` overall=`{_format_score(best_heuristic.get('mean_overall_f1'))}` timing=`{_format_ms(best_heuristic.get('mean_timing_mae_ms'))}`",
+        f"- Best learned candidate: `{best_learned.get('algorithm', '-')}` core=`{_format_score(best_learned.get('mean_core_f1'))}` overall=`{_format_score(best_learned.get('mean_overall_f1'))}` timing=`{_format_ms(best_learned.get('mean_timing_mae_ms'))}` delta-vs-heuristic-core=`{_format_delta(best_learned.get('delta_vs_best_heuristic_core_f1'))}`",
+        f"- Reason: {recommendation.get('reason', 'n/a')}",
+        "",
         "## Delta (Suspect - Trusted)",
         "",
         _render_markdown_table(
             ("Algorithm", "Trusted Rank", "Suspect Rank", "Rank Shift", "Overall Δ", "Core Δ", "Kick Δ", "Snare Δ", "Hi-Hat Δ", "Timing Δ"),
             _delta_rows(payload),
+        ),
+        "",
+        "## Engine Notes",
+        "",
+        _render_markdown_table(
+            ("Engine", "Backend", "Model Size MB", "Speed x Realtime", "Notes"),
+            _engine_metadata_rows(payload),
         ),
         "",
         "## Trusted Synthetic Corpus",
@@ -522,6 +674,10 @@ def _render_report_html(payload: Mapping[str, Any]) -> str:
     trusted_meta = payload["trusted"]["meta"]
     suspect_meta = payload["suspect"]["meta"]
     suspect_cases = payload["suspect"]["payload"]["cases"]
+    recommendation = payload.get("recommendation", {})
+    best_heuristic = recommendation.get("best_trusted_heuristic") or {}
+    best_learned = recommendation.get("best_learned_candidate") or {}
+    selection_policy = payload.get("selection_policy", {})
     suspect_case_list = "".join(
         "<li><strong>"
         + html.escape(str(case["case_id"]))
@@ -602,8 +758,33 @@ def _render_report_html(payload: Mapping[str, Any]) -> str:
     <div class="card"><strong>Suspect corpus</strong><br />{html.escape(str(suspect_meta.get('title', 'suspect')))}</div>
   </div>
   <p>Negative F1 deltas mean the algorithm scored worse against the suspect Suno references than it did on the trusted synthetic fixture corpus. Positive timing deltas mean worse timing error on the suspect corpus.</p>
+  <h2>Selection Policy</h2>
+  <ul>
+    <li>Gating corpora: <code>{html.escape(", ".join(selection_policy.get("gating_corpora", [])))}</code></li>
+    <li>Diagnostic-only corpora: <code>{html.escape(", ".join(selection_policy.get("diagnostic_only_corpora", [])))}</code></li>
+    <li>Suspect Suno references do not participate in default-selection decisions.</li>
+  </ul>
+  <h2>Recommendation</h2>
+  {_render_html_table(
+      ("Field", "Value"),
+      (
+          ("Status", str(recommendation.get("status", "unknown"))),
+          ("Current default", str(recommendation.get("current_default", "adaptive_beat_grid"))),
+          (
+              "Best trusted heuristic",
+              f"{best_heuristic.get('algorithm', '-')} | core {_format_score(best_heuristic.get('mean_core_f1'))} | overall {_format_score(best_heuristic.get('mean_overall_f1'))} | timing {_format_ms(best_heuristic.get('mean_timing_mae_ms'))}",
+          ),
+          (
+              "Best learned candidate",
+              f"{best_learned.get('algorithm', '-')} | core {_format_score(best_learned.get('mean_core_f1'))} | overall {_format_score(best_learned.get('mean_overall_f1'))} | timing {_format_ms(best_learned.get('mean_timing_mae_ms'))} | core Δ {_format_delta(best_learned.get('delta_vs_best_heuristic_core_f1'))}",
+          ),
+          ("Reason", str(recommendation.get("reason", "n/a"))),
+      ),
+  )}
   <h2>Delta (Suspect - Trusted)</h2>
   {_render_html_table(("Algorithm", "Trusted Rank", "Suspect Rank", "Rank Shift", "Overall Δ", "Core Δ", "Kick Δ", "Snare Δ", "Hi-Hat Δ", "Timing Δ"), _delta_rows(payload))}
+  <h2>Engine Notes</h2>
+  {_render_html_table(("Engine", "Backend", "Model Size MB", "Speed x Realtime", "Notes"), _engine_metadata_rows(payload))}
   <h2>Trusted Synthetic Corpus</h2>
   {_render_html_table(("Rank", "Algorithm", "Overall", "Core", "Kick", "Snare", "Hi-Hat", "Timing"), _trusted_rows(payload))}
   <h2>Suspect Suno Corpus</h2>

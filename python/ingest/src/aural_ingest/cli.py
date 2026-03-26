@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import inspect
 import json
 import math
@@ -10,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import warnings
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,17 +25,22 @@ from aural_ingest.drum_benchmark import (
     load_drum_reference,
 )
 from aural_ingest.guitar_split import split_lead_rhythm_guitar_stem
+from aural_ingest.mt3_compat import ensure_mt3_transformers_compat
 from aural_ingest.progress import ProgressEvent, emit, log
 from aural_ingest.transcription import (
     DEFAULT_DRUM_FILTER,
     DEFAULT_MELODIC_METHOD,
     KNOWN_DRUM_FILTERS,
+    KNOWN_MT3_DRUM_ENGINES,
+    available_mt3_modelpacks,
     build_default_drum_algorithm_registry,
     build_default_melodic_algorithm_registry,
+    drum_engine_metadata,
+    is_mt3_drum_engine,
+    resolve_drum_engine,
     transcribe_all_melodic_stems,
     transcribe_melodic,
-    transcribe_drums_dsp,
-    resolve_drum_filter,
+    transcribe_drums,
     validate_melodic_method,
 )
 
@@ -1101,7 +1109,7 @@ def _resolve_transcription_options(
     if config is None:
         config = {}
     raw_drum_filter = getattr(args, "drum_filter", DEFAULT_DRUM_FILTER)
-    normalized_drum_filter, warnings = resolve_drum_filter(raw_drum_filter)
+    normalized_drum_filter, warnings = resolve_drum_engine(raw_drum_filter)
 
     raw_melodic_method = getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD)
     melodic_method = validate_melodic_method(raw_melodic_method)
@@ -1124,6 +1132,8 @@ def _resolve_transcription_options(
     modelpack_zip, modelpack_manifest, _modelpack_err = _resolve_demucs_modelpack(config)
 
     return {
+        "drum_engine_requested": raw_drum_filter,
+        "drum_engine": normalized_drum_filter,
         "drum_filter_requested": raw_drum_filter,
         "drum_filter": normalized_drum_filter,
         "drum_source_kind": requested_drum_stem_kind,
@@ -1144,7 +1154,7 @@ def _resolve_transcription_options(
 
 
 def _add_transcription_options(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--drum-filter", default=DEFAULT_DRUM_FILTER)
+    p.add_argument("--drum-filter", "--drum-engine", dest="drum_filter", default=DEFAULT_DRUM_FILTER)
     p.add_argument("--drum-stem-path")
     p.add_argument("--melodic-method", default=DEFAULT_MELODIC_METHOD)
     p.add_argument("--shifts", type=int, default=1)
@@ -1405,6 +1415,9 @@ def cmd_benchmark_drums(args: argparse.Namespace) -> int:
         "reference_path": str(reference),
         "reference_count": len(reference_events),
         "reference_meta": reference_meta,
+        "algorithm_metadata": {
+            algorithm_id: drum_engine_metadata(algorithm_id) for algorithm_id in algorithm_ids
+        },
         "tolerance_ms": round(float(args.tolerance_ms), 3),
         "class_order": list(BENCHMARK_CLASS_ORDER),
         "results": results,
@@ -1415,6 +1428,81 @@ def cmd_benchmark_drums(args: argparse.Namespace) -> int:
     else:
         print(format_benchmark_summary(payload))
 
+    return 0 if payload["ok"] else 1
+
+
+def _mt3_runtime_snapshot() -> dict[str, Any]:
+    import numpy as np
+
+    payload = {
+        "ok": True,
+        "dependencies": {},
+        "drum_engines": available_mt3_modelpacks(),
+    }
+
+    for module_name in ("torch", "torchaudio", "mt3_infer", "demucs"):
+        try:
+            module = __import__(module_name)
+            payload["dependencies"][module_name] = {
+                "ok": True,
+                "version": getattr(module, "__version__", "unknown"),
+            }
+        except Exception as exc:
+            payload["dependencies"][module_name] = {"ok": False, "error": str(exc)}
+            payload["ok"] = False
+
+    mt3_module = sys.modules.get("mt3_infer")
+    mt3_load_model = getattr(mt3_module, "load_model", None) if mt3_module is not None else None
+    if callable(mt3_load_model):
+        for engine_id, engine_info in payload["drum_engines"].items():
+            if not engine_info.get("ok"):
+                continue
+            checkpoint_path = str(engine_info.get("checkpoint_path", "")).strip()
+            model_id = str(engine_info.get("model_id", "")).strip()
+            if not checkpoint_path or not model_id:
+                continue
+            try:
+                ensure_mt3_transformers_compat()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        model = mt3_load_model(
+                            model_id,
+                            checkpoint_path=checkpoint_path,
+                            device="cpu",
+                            auto_download=False,
+                        )
+                        midi = model.transcribe(np.zeros(16_000, dtype=np.float32), sr=16_000)
+                note_count = 0
+                for track in getattr(midi, "tracks", []):
+                    for message in track:
+                        if getattr(message, "type", "") == "note_on" and int(getattr(message, "velocity", 0)) > 0:
+                            note_count += 1
+                engine_info["loadable"] = True
+                engine_info["adapter_class"] = model.__class__.__name__
+                engine_info["transcribe_smoke_ok"] = True
+                engine_info["smoke_note_count"] = note_count
+                del model
+            except Exception as exc:
+                engine_info["loadable"] = False
+                engine_info["transcribe_smoke_ok"] = False
+                engine_info["error"] = str(exc)
+                payload["ok"] = False
+
+    if not any(item.get("ok") for item in payload["drum_engines"].values()):
+        payload["warnings"] = [
+            "No MT3 modelpacks were discovered. Install mr_mt3 and/or yourmt3 modelpacks for local learned-drum benchmarking."
+        ]
+
+    return payload
+
+
+def cmd_runtime_check(args: argparse.Namespace) -> int:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            payload = _mt3_runtime_snapshot()
+    print(json.dumps(payload, sort_keys=True))
     return 0 if payload["ok"] else 1
 
 
@@ -1670,13 +1758,22 @@ def cmd_import(args: argparse.Namespace) -> int:
     manifest["assets"]["audio"]["stems"]["drum_transcription_source_kind"] = drum_source_kind
     _write_json(out / "manifest.json", manifest)
 
+    if is_mt3_drum_engine(tr_opts["drum_engine"]) and drum_source_kind == "mix_fallback":
+        log(
+            f"requested MT3 drum engine '{tr_opts['drum_engine']}' requires an explicit or separated drum stem; mix fallback is not allowed"
+        )
+        return 4
+
     drum_registry = build_default_drum_algorithm_registry()
-    drum_result = transcribe_drums_dsp(
+    drum_result = transcribe_drums(
         drum_source,
-        requested_filter=tr_opts["drum_filter_requested"],
+        requested_engine=tr_opts["drum_filter_requested"],
         algorithm_registry=drum_registry,
         logger=log,
     )
+    if is_mt3_drum_engine(tr_opts["drum_filter_requested"]) and drum_result.used_algorithm is None:
+        log("requested MT3 drum engine did not produce a chart; aborting import")
+        return 4
 
     # Collect available instrument stems for per-instrument melodic transcription.
     instrument_stems: dict[str, Path] = {}
@@ -1757,8 +1854,11 @@ def cmd_import(args: argparse.Namespace) -> int:
     tr_opts["drum_source_path"] = drum_source_path
     if tr_opts.get("drum_source_sha256") is None and drum_source_kind != "mix_fallback":
         tr_opts["drum_source_sha256"] = _sha256_file(drum_source)
+    tr_opts["drum_engine_backend"] = drum_result.meta.get("backend", "heuristic")
     tr_opts["drum_filter_used"] = drum_result.used_algorithm or tr_opts["drum_filter"]
     tr_opts["drum_attempted_algorithms"] = drum_result.attempted_algorithms
+    if drum_result.meta:
+        tr_opts["drum_engine_meta"] = drum_result.meta
     tr_opts["melodic_method_used"] = melodic_result.used_method or tr_opts["melodic_method"]
     tr_opts["melodic_attempted_methods"] = melodic_result.attempted_methods
 
@@ -1885,6 +1985,9 @@ def build_parser() -> argparse.ArgumentParser:
     s_info = sub.add_parser("info")
     s_info.add_argument("songpack_dir")
     s_info.set_defaults(func=cmd_info)
+
+    s_runtime = sub.add_parser("runtime-check")
+    s_runtime.set_defaults(func=cmd_runtime_check)
 
     s_benchmark = sub.add_parser("benchmark-drums")
     s_benchmark.add_argument("stem_path")

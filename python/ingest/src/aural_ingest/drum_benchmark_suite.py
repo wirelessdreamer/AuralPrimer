@@ -9,7 +9,11 @@ import statistics
 from typing import Any, Mapping, Sequence
 
 from aural_ingest.drum_benchmark import BENCHMARK_CLASS_ORDER, benchmark_algorithms, load_drum_reference
-from aural_ingest.transcription import KNOWN_DRUM_FILTERS, build_default_drum_algorithm_registry
+from aural_ingest.transcription import (
+    KNOWN_DRUM_FILTERS,
+    build_default_drum_algorithm_registry,
+    drum_engine_metadata,
+)
 
 
 SUITE_VERSION = "1.0.0"
@@ -222,6 +226,7 @@ def run_benchmark_suite(
         "generated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fixtures_dir": str(fixtures_path),
         "algorithms": algorithm_ids,
+        "algorithm_metadata": {algorithm_id: drum_engine_metadata(algorithm_id) for algorithm_id in algorithm_ids},
         "tolerance_ms": round(float(tolerance_ms), 3),
         "class_order": list(BENCHMARK_CLASS_ORDER),
         "manifest_format": manifest.get("format"),
@@ -686,6 +691,30 @@ def _case_table_markdown(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _render_markdown_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
+    head = "| " + " | ".join(headers) + " |"
+    divider = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(row) + " |" for row in rows]
+    return "\n".join([head, divider, *body])
+
+
+def _engine_metadata_rows(payload: Mapping[str, Any]) -> list[list[str]]:
+    metadata = payload.get("algorithm_metadata", {})
+    rows: list[list[str]] = []
+    for algorithm in payload.get("algorithms", []):
+        item = metadata.get(algorithm, {})
+        rows.append(
+            [
+                algorithm,
+                str(item.get("backend", "heuristic")),
+                str(item.get("size_mb", "-")),
+                str(item.get("speed_x_realtime", "-")),
+                str(item.get("description", "")),
+            ]
+        )
+    return rows
+
+
 def _render_report_markdown(payload: Mapping[str, Any], summary: Mapping[str, Any]) -> str:
     lines = [
         "# Drum Benchmark Report",
@@ -723,6 +752,13 @@ def _render_report_markdown(payload: Mapping[str, Any], summary: Mapping[str, An
         "## Algorithm Summary",
         "",
         _summary_table_markdown(summary),
+        "",
+        "## Engine Notes",
+        "",
+        _render_markdown_table(
+            ("Engine", "Backend", "Model Size MB", "Speed x Realtime", "Notes"),
+            _engine_metadata_rows(payload),
+        ),
         "",
         "## Cases",
         "",
@@ -769,6 +805,7 @@ def _render_report_html(payload: Mapping[str, Any], summary: Mapping[str, Any]) 
         ]
         for case in payload.get("cases", [])
     ]
+    engine_rows = _engine_metadata_rows(payload)
     warning_list = "".join(f"<li>{html.escape(warning)}</li>" for warning in payload.get("warnings", []))
     return f"""<!doctype html>
 <html lang="en">
@@ -869,6 +906,8 @@ def _render_report_html(payload: Mapping[str, Any], summary: Mapping[str, Any]) 
         ["Algorithm", "Mean Overall F1", "Mean Kick F1", "Mean Snare F1", "Mean Hi-Hat F1", "Mean Timing MAE", "Errors"],
         alg_rows,
     )}
+    <h2>Engine Notes</h2>
+    {_render_html_table(["Engine", "Backend", "Model Size MB", "Speed x Realtime", "Notes"], engine_rows)}
     <h2>Cases</h2>
     {_render_html_table(["Case", "Title", "BPM", "Tags", "Focus"], case_rows)}
     {"<h2>Warnings</h2><ul>" + warning_list + "</ul>" if warning_list else ""}
