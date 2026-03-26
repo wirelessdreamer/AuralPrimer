@@ -1,5 +1,8 @@
+import importlib.machinery
 import json
 from pathlib import Path
+import sys
+import types
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -103,6 +106,7 @@ def test_build_parser_knows_core_commands() -> None:
     assert p.parse_args(["stages"]).cmd == "stages"
     assert p.parse_args(["validate", "x"]).cmd == "validate"
     assert p.parse_args(["info", "x"]).cmd == "info"
+    assert p.parse_args(["runtime-check"]).cmd == "runtime-check"
     assert p.parse_args(["benchmark-drums", "stem.wav", "reference.json"]).cmd == "benchmark-drums"
     assert p.parse_args(["import", "in.wav", "--out", "o.songpack"]).cmd == "import"
     assert p.parse_args(["import-dir", "in_dir", "--out", "o.songpack"]).cmd == "import-dir"
@@ -127,6 +131,18 @@ def test_build_parser_knows_core_commands() -> None:
     assert parsed.melodic_method == "pyin"
     assert parsed.shifts == 2
     assert parsed.multi_filter is True
+
+    parsed_engine = p.parse_args(
+        [
+            "import",
+            "in.wav",
+            "--out",
+            "o.songpack",
+            "--drum-engine",
+            "mr_mt3_drums",
+        ]
+    )
+    assert parsed_engine.drum_filter == "mr_mt3_drums"
 
 
 def test_cmd_benchmark_drums_emits_json_payload(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -163,6 +179,7 @@ def test_cmd_benchmark_drums_emits_json_payload(tmp_path: Path, monkeypatch, cap
     assert rc == 0
     payload = json.loads(capsys.readouterr().out.strip())
     assert payload["ok"] is True
+    assert payload["algorithm_metadata"]["combined_filter"]["backend"] == "heuristic"
     assert payload["class_order"] == ["kick", "snare", "hi_hat", "crash", "ride", "tom1", "tom2", "tom3"]
 
     results = {result["algorithm"]: result for result in payload["results"]}
@@ -171,6 +188,58 @@ def test_cmd_benchmark_drums_emits_json_payload(tmp_path: Path, monkeypatch, cap
     assert results["adaptive_beat_grid"]["confusions"] == [
         {"reference_class": "snare", "predicted_class": "tom1", "count": 1}
     ]
+
+
+def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(monkeypatch, capsys) -> None:
+    from aural_ingest import cli
+
+    fake_modules = {
+        "torch": "2.11.0",
+        "torchaudio": "2.11.0",
+        "mt3_infer": "0.1.3",
+        "demucs": "4.0.1",
+    }
+    for name, version in fake_modules.items():
+        module = types.ModuleType(name)
+        module.__version__ = version
+        module.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
+        monkeypatch.setitem(sys.modules, name, module)
+    class _FakeMidi:
+        tracks = []
+
+    class FakeAdapter:
+        def transcribe(self, audio, sr=16000):
+            assert sr == 16000
+            return _FakeMidi()
+
+    sys.modules["mt3_infer"].load_model = lambda *args, **kwargs: FakeAdapter()
+    monkeypatch.setattr(cli, "ensure_mt3_transformers_compat", lambda: None)
+
+    monkeypatch.setattr(
+        cli,
+        "available_mt3_modelpacks",
+        lambda: {
+                "mr_mt3_drums": {
+                    "ok": True,
+                    "model_id": "mr_mt3",
+                    "modelpack_id": "mr_mt3",
+                    "modelpack_version": "0.0.1",
+                    "checkpoint_path": "D:/models/mr_mt3/mt3.pth",
+                    "modelpack_root": "D:/models/mr_mt3",
+                },
+            "yourmt3_drums": {"ok": False, "error": "missing modelpack"},
+        },
+    )
+
+    rc = cli.cmd_runtime_check(type("Args", (), {})())
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is True
+    assert payload["dependencies"]["torch"]["version"] == "2.11.0"
+    assert payload["drum_engines"]["mr_mt3_drums"]["ok"] is True
+    assert payload["drum_engines"]["mr_mt3_drums"]["loadable"] is True
+    assert payload["drum_engines"]["mr_mt3_drums"]["adapter_class"] == "FakeAdapter"
+    assert payload["drum_engines"]["mr_mt3_drums"]["transcribe_smoke_ok"] is True
 
 
 def test_main_runs_stages_command(capsys) -> None:
@@ -374,7 +443,7 @@ def test_cmd_import_handles_unknown_drum_filter_and_rejects_other_invalid_transc
     tr_opts, tr_err = cli._resolve_transcription_options(args)
     assert tr_err is None
     assert tr_opts is not None
-    assert tr_opts["drum_filter"] == "combined_filter"
+    assert tr_opts["drum_filter"] == "adaptive_beat_grid"
     assert tr_opts["warnings"]
 
     args.drum_filter = "combined_filter"

@@ -82,6 +82,12 @@ function isDemoSongPack(e: SongPackScanEntry): boolean {
   return (e.manifest?.song_id ?? "") === "demo_sine_440hz";
 }
 
+async function waitForUiPaint(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 type SongPackDetails = {
   container_path: string;
   kind: string;
@@ -396,15 +402,17 @@ root.innerHTML = `
                 <label><input id="ingestMultiFilter" type="checkbox" /> multi-filter</label>
               </div>
               <div class="row">
-                <label class="meta">Drum filter</label>
+                <label class="meta">Drum engine</label>
                 <select id="ingestDrumFilter">
+                  <option value="adaptive_beat_grid">adaptive_beat_grid (default heuristic)</option>
                   <option value="combined_filter">combined_filter</option>
                   <option value="dsp_bandpass_improved">dsp_bandpass_improved</option>
                   <option value="dsp_spectral_flux">dsp_spectral_flux</option>
-                  <option value="adaptive_beat_grid">adaptive_beat_grid</option>
                   <option value="aural_onset">aural_onset</option>
                   <option value="dsp_bandpass">dsp_bandpass</option>
                   <option value="librosa_superflux">librosa_superflux</option>
+                  <option value="mr_mt3_drums">mr_mt3_drums (local modelpack required)</option>
+                  <option value="yourmt3_drums">yourmt3_drums (local modelpack required)</option>
                 </select>
                 <label class="meta">Melodic</label>
                 <select id="ingestMelodicMethod">
@@ -412,6 +420,9 @@ root.innerHTML = `
                   <option value="basic_pitch">basic_pitch</option>
                   <option value="pyin">pyin</option>
                 </select>
+              </div>
+              <div class="meta importStageNote">
+                MT3 drum engines are benchmark-first research options. They require local <code>mr_mt3</code> or <code>yourmt3</code> modelpacks and will fail clearly if the checkpoint pack is not installed.
               </div>
               <div class="row">
                 <label class="meta">Config JSON/path (optional)</label>
@@ -2151,6 +2162,7 @@ function renderStemMidiTrackList() {
 
 async function inspectStemMidiFolder(folderPath: string): Promise<void> {
   try {
+    await waitForUiPaint();
     const inspection = await safeInvoke<RawSongFolderInspection>("inspect_raw_song_folder", { folderPath });
     stemMidiInspection = inspection;
     renderStemMidiSelection();
@@ -2181,6 +2193,7 @@ async function stemMidiCreateSongPack() {
   setStemMidiStatus("importing...");
   stemMidiImportBtn.disabled = true;
   try {
+    await waitForUiPaint();
     const res = await safeInvoke<ImportRawSongFolderResult>("import_raw_song_folder", {
       req: {
         folder_path: stemMidiFolderPath,
@@ -2285,6 +2298,7 @@ async function runIngestImport() {
   debugIngestConsole("invoke ingest_import", req);
   ingestRunBtn.disabled = true;
   try {
+    await waitForUiPaint();
     const res = await ingestImport(req);
     debugIngestConsole("ingest finished", {
       ok: res.ok,
@@ -2415,6 +2429,7 @@ async function ghwtScanDlc() {
   renderGhwtSongs();
 
   try {
+    await waitForUiPaint();
     ghwtSongs = await safeInvoke<GhwtSongEntry[]>("ghwt_scan_dlc", { dataRoot });
     setGhwtStatus(`found ${ghwtSongs.length} DLC songs`);
   } catch (e) {
@@ -2443,6 +2458,7 @@ async function ghwtImportAll() {
   ghwtImportAllBtn.disabled = true;
 
   try {
+    await waitForUiPaint();
     const res = await safeInvoke<GhwtImportAllResult[]>("ghwt_import_all", {
       dataRoot,
       vgmstreamCliPath: vgm || null,
@@ -2475,6 +2491,7 @@ async function ghwtImportSong(checksum: string) {
   setGhwtStatus(`Importing ${checksum}…`);
 
   try {
+    await waitForUiPaint();
     const res = await safeInvoke<GhwtImportResult>("ghwt_import_preview", {
       checksum,
       dataRoot,

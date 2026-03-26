@@ -247,15 +247,15 @@ def test_import_uses_explicit_drum_stem_for_drum_transcription(
 
     def fake_transcribe_drums(
         stem_path: Path,
-        requested_filter: str | None,
+        requested_engine: str | None,
         algorithm_registry: dict[str, object],
         logger: object = None,
     ) -> DrumTranscriptionResult:
         seen["stem_path"] = Path(stem_path)
         return DrumTranscriptionResult(
             events=[DrumEvent(time=0.0, note=36, velocity=90)],
-            used_algorithm=requested_filter or "combined_filter",
-            attempted_algorithms=[requested_filter or "combined_filter"],
+            used_algorithm=requested_engine or "combined_filter",
+            attempted_algorithms=[requested_engine or "combined_filter"],
             warnings=[],
         )
 
@@ -267,7 +267,7 @@ def test_import_uses_explicit_drum_stem_for_drum_transcription(
             warnings=[],
         )
 
-    monkeypatch.setattr(cli, "transcribe_drums_dsp", fake_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_drums", fake_transcribe_drums)
     monkeypatch.setattr(cli, "transcribe_melodic", fake_transcribe_melodic)
 
     args = type("Args", (), {})()
@@ -345,15 +345,15 @@ def test_import_uses_demucs_separated_drums_and_guitar_when_available(
 
     def fake_transcribe_drums(
         stem_path: Path,
-        requested_filter: str | None,
+        requested_engine: str | None,
         algorithm_registry: dict[str, object],
         logger: object = None,
     ) -> DrumTranscriptionResult:
         seen["drum_source"] = Path(stem_path)
         return DrumTranscriptionResult(
             events=[DrumEvent(time=0.0, note=36, velocity=90)],
-            used_algorithm=requested_filter or "combined_filter",
-            attempted_algorithms=[requested_filter or "combined_filter"],
+            used_algorithm=requested_engine or "combined_filter",
+            attempted_algorithms=[requested_engine or "combined_filter"],
             warnings=[],
         )
 
@@ -366,7 +366,7 @@ def test_import_uses_demucs_separated_drums_and_guitar_when_available(
         )
 
     monkeypatch.setattr(cli, "_separate_stems_with_demucs", fake_separate)
-    monkeypatch.setattr(cli, "transcribe_drums_dsp", fake_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_drums", fake_transcribe_drums)
     monkeypatch.setattr(cli, "transcribe_melodic", fake_transcribe_melodic)
 
     args = type("Args", (), {})()
@@ -397,6 +397,39 @@ def test_import_uses_demucs_separated_drums_and_guitar_when_available(
     assert manifest["assets"]["audio"]["stems"]["guitar_path"] == "audio/stems/guitar.wav"
     assert manifest["recognition"]["drums"]["source_kind"] == "separated_drums"
     assert manifest["recognition"]["drums"]["source_path"] == "audio/stems/drums.wav"
+
+
+def test_import_rejects_mt3_engine_when_only_mix_fallback_is_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src_mix = tmp_path / "mix.wav"
+    _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
+    out = tmp_path / "Mt3MissingStem.songpack"
+
+    from aural_ingest import cli
+
+    monkeypatch.setattr(
+        cli,
+        "_separate_stems_with_demucs",
+        lambda *_args, **_kwargs: {"ok": False, "reason": "demucs unavailable"},
+    )
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(src_mix)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = "{}"
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "mr_mt3_drums"
+    args.drum_stem_path = None
+    args.melodic_method = "auto"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import(args) == 4
 
 
 def test_demucs_modelpack_auto_discovery_supports_portable_layout(
@@ -587,7 +620,7 @@ def test_import_persists_transcription_options_into_manifest(tmp_path: Path) -> 
     assert recognition["melodic"]["used_engine"] in {"basic_pitch", "pyin"}
 
 
-def test_import_unknown_drum_filter_falls_back_to_combined_and_records_warning(tmp_path: Path) -> None:
+def test_import_unknown_drum_filter_falls_back_to_default_engine_and_records_warning(tmp_path: Path) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
     out = tmp_path / "UnknownFilter.songpack"
@@ -610,12 +643,12 @@ def test_import_unknown_drum_filter_falls_back_to_combined_and_records_warning(t
     assert cmd_import(args) == 0
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     tr = manifest["pipeline"]["transcription"]
-    assert tr["drum_filter"] == "combined_filter"
+    assert tr["drum_filter"] == "adaptive_beat_grid"
     assert tr["drum_filter_requested"] == "legacy_unknown_filter"
-    assert tr["drum_filter_used"] == "combined_filter"
+    assert tr["drum_filter_used"] == "adaptive_beat_grid"
     assert tr["warnings"]
     assert manifest["recognition"]["drums"]["requested_engine"] == "legacy_unknown_filter"
-    assert manifest["recognition"]["drums"]["used_engine"] == "combined_filter"
+    assert manifest["recognition"]["drums"]["used_engine"] == "adaptive_beat_grid"
 
 
 def test_import_auto_melodic_no_longer_requires_external_basic_pitch_model(tmp_path: Path) -> None:

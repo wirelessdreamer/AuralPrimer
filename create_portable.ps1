@@ -323,6 +323,8 @@ if (-not (Test-Path -LiteralPath $sidecarBuiltManifest -PathType Leaf)) {
 $portableSidecarDir = Join-Path $portableRootAbs "sidecar"
 $portableModelPacksDir = Join-Path $portableRootAbs "modelpacks"
 $portableDataDir = Join-Path $portableRootAbs "data"
+$portableAssetsDir = Join-Path $portableDataDir "assets"
+$portableAssetsModelsDir = Join-Path $portableAssetsDir "models"
 $portableConfigDir = Join-Path $portableDataDir "config"
 $portableSongsDir = Join-Path $portableDataDir "songs"
 $portableVisualizersDir = Join-Path $portableDataDir "visualizers"
@@ -332,6 +334,8 @@ New-Item -ItemType Directory -Path $portableRootAbs -Force | Out-Null
 New-Item -ItemType Directory -Path $portableSidecarDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableModelPacksDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableDataDir -Force | Out-Null
+New-Item -ItemType Directory -Path $portableAssetsDir -Force | Out-Null
+New-Item -ItemType Directory -Path $portableAssetsModelsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableConfigDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableSongsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableVisualizersDir -Force | Out-Null
@@ -347,6 +351,43 @@ Copy-Item -LiteralPath $studioExeAbs -Destination $portableStudioExe -Force
 Copy-Item -LiteralPath $sidecarBuiltExe -Destination $portableSidecarExe -Force
 Copy-Item -LiteralPath $sidecarBuiltManifest -Destination $portableSidecarManifest -Force
 Copy-Item -LiteralPath $demucs6ZipAbs -Destination $portableDemucs6ModelPackZip -Force
+
+$mt3ModelpackIds = @("mr_mt3", "yourmt3")
+$portableMt3Modelpacks = @()
+foreach ($modelpackId in $mt3ModelpackIds) {
+  $sourceModelpackDir = Join-Path $repoRootAbs ("assets/models/" + $modelpackId)
+  if (-not (Test-Path -LiteralPath $sourceModelpackDir -PathType Container)) {
+    continue
+  }
+
+  $portableModelpackDir = Join-Path $portableAssetsModelsDir $modelpackId
+  if (Test-Path -LiteralPath $portableModelpackDir) {
+    Remove-Item -LiteralPath $portableModelpackDir -Recurse -Force
+  }
+  Copy-Item -LiteralPath $sourceModelpackDir -Destination $portableAssetsModelsDir -Recurse -Force
+
+  $versionDirs = @(
+    Get-ChildItem -LiteralPath $portableModelpackDir -Directory -ErrorAction SilentlyContinue |
+      Sort-Object Name
+  )
+  $versionManifests = @()
+  foreach ($versionDir in $versionDirs) {
+    $manifestPath = Join-Path $versionDir.FullName "modelpack.json"
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+      $versionManifests += [ordered]@{
+        version = $versionDir.Name
+        manifest_path = $manifestPath
+      }
+    }
+  }
+
+  $portableMt3Modelpacks += [ordered]@{
+    id = $modelpackId
+    source_path = $sourceModelpackDir
+    portable_path = $portableModelpackDir
+    versions = $versionManifests
+  }
+}
 
 # Freshness guard: copied portable sidecar must exactly match freshly built sidecar.
 $portableSidecarHash = Get-Sha256Lower $portableSidecarExe
@@ -502,7 +543,7 @@ $portableManifest = [ordered]@{
       portable_path = $portableDemucs6ModelPackZip
       portable_sha256 = $demucs6PortableSha256
     }
-  )
+  ) + $portableMt3Modelpacks
 }
 $portableManifest | ConvertTo-Json -Depth 8 | Set-Content -Path $portableManifestPath -Encoding UTF8
 

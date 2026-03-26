@@ -1,0 +1,7 @@
+{
+  "corpus_id": "real_curated_holdout",
+  "title": "Curated Real Drum Stem Holdout",
+  "reference_trust": "curated_real",
+  "description": "Populate this manifest only with manually audited drum-stem audio and trustworthy references. Promotion decisions remain blocked until this corpus has at least five reviewed songs.",
+  "cases": []
+}

@@ -92,6 +92,10 @@ def test_write_suite_outputs_emits_required_static_artifacts(tmp_path: Path) -> 
         "generated_at_utc": "2026-03-10T10:00:00Z",
         "fixtures_dir": "fixtures",
         "algorithms": ["combined_filter", "adaptive_beat_grid"],
+        "algorithm_metadata": {
+            "combined_filter": {"backend": "heuristic", "description": "Baseline heuristic"},
+            "adaptive_beat_grid": {"backend": "heuristic", "description": "Adaptive beat-grid heuristic"},
+        },
         "tolerance_ms": 60.0,
         "class_order": [],
         "manifest_format": "auralprimer_drum_benchmark_manifest_v1",
@@ -184,3 +188,5 @@ def test_write_suite_outputs_emits_required_static_artifacts(tmp_path: Path) -> 
     assert summary["summary"]["algorithm_summaries"][0]["mean_kick_f1"] == 0.88
     assert "snare_confusion_heatmap.svg" in (out_dir / "report.md").read_text("utf-8")
     assert "hi_hat_confusion_heatmap.svg" in (out_dir / "report.md").read_text("utf-8")
+    assert "Engine Notes" in (out_dir / "report.md").read_text("utf-8")
+    assert "Baseline heuristic" in (out_dir / "report.html").read_text("utf-8")

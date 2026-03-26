@@ -269,6 +269,16 @@ fn save_settings(paths: &SongsFolderPaths, settings: &Settings) -> Result<(), St
     Ok(())
 }
 
+async fn run_blocking_command<T, F>(label: &'static str, task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|e| format!("{label} task failed: {e}"))?
+}
+
 fn parse_manifest_json(raw: &str) -> Result<ManifestSummary, String> {
     let v: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))?;
@@ -1018,16 +1028,16 @@ fn get_ghwt_vgmstream_path(app: &AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-fn ghwt_scan_dlc(
+async fn ghwt_scan_dlc(
     app: AppHandle,
     data_root: Option<String>,
 ) -> Result<Vec<ghwt::GhwtSongEntry>, String> {
     let root = data_root.unwrap_or(get_ghwt_data_root(&app)?);
-    ghwt::scan_dlc(Path::new(&root))
+    run_blocking_command("ghwt scan", move || ghwt::scan_dlc(Path::new(&root))).await
 }
 
 #[tauri::command]
-fn ghwt_import_preview(
+async fn ghwt_import_preview(
     app: AppHandle,
     checksum: String,
     data_root: Option<String>,
@@ -1039,11 +1049,14 @@ fn ghwt_import_preview(
     } else {
         get_ghwt_vgmstream_path(&app)?
     };
-    ghwt::import_preview_to_songpack(&app, Path::new(&root), &checksum, vgm)
+    run_blocking_command("ghwt import preview", move || {
+        ghwt::import_preview_to_songpack(&app, Path::new(&root), &checksum, vgm)
+    })
+    .await
 }
 
 #[tauri::command]
-fn ghwt_import_all(
+async fn ghwt_import_all(
     app: AppHandle,
     data_root: Option<String>,
     vgmstream_cli_path: Option<String>,
@@ -1055,7 +1068,10 @@ fn ghwt_import_all(
         get_ghwt_vgmstream_path(&app)?
     };
     let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
-    ghwt::import_all_to_folder(Some(&app), Path::new(&root), &songs_folder, vgm)
+    run_blocking_command("ghwt import all", move || {
+        ghwt::import_all_to_folder(Some(&app), Path::new(&root), &songs_folder, vgm)
+    })
+    .await
 }
 
 // -----------------
@@ -1063,18 +1079,24 @@ fn ghwt_import_all(
 // -----------------
 
 #[tauri::command]
-fn midi_list_tracks(path: String) -> Result<Vec<stem_midi::MidiTrackInfo>, String> {
-    let midi_bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
-    stem_midi::list_midi_tracks(&midi_bytes)
+async fn midi_list_tracks(path: String) -> Result<Vec<stem_midi::MidiTrackInfo>, String> {
+    run_blocking_command("midi track scan", move || {
+        let midi_bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+        stem_midi::list_midi_tracks(&midi_bytes)
+    })
+    .await
 }
 
 #[tauri::command]
-fn stem_midi_create_songpack(
+async fn stem_midi_create_songpack(
     app: AppHandle,
     req: stem_midi::StemMidiCreateRequest,
 ) -> Result<stem_midi::StemMidiCreateResult, String> {
     let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
-    stem_midi::create_songpack(req, &songs_folder)
+    run_blocking_command("stem+midi import", move || {
+        stem_midi::create_songpack(req, &songs_folder)
+    })
+    .await
 }
 
 fn sanitize_songpack_component(raw: &str) -> String {
@@ -1126,7 +1148,7 @@ fn default_ingest_out_songpack_path(app: &AppHandle, source_path: &str) -> Resul
 }
 
 #[tauri::command]
-fn ingest_import(
+async fn ingest_import(
     app: AppHandle,
     mut req: ingest_sidecar::IngestImportRequest,
 ) -> Result<ingest_sidecar::IngestImportResult, String> {
@@ -1139,23 +1161,32 @@ fn ingest_import(
         req.out_songpack_path = Some(default_ingest_out_songpack_path(&app, &req.source_path)?);
     }
 
-    ingest_sidecar::run_ingest_import_with_progress(req, Some(&app))
+    run_blocking_command("analysis import", move || {
+        ingest_sidecar::run_ingest_import_with_progress(req, Some(&app))
+    })
+    .await
 }
 
 #[tauri::command]
-fn inspect_raw_song_folder(
+async fn inspect_raw_song_folder(
     folder_path: String,
 ) -> Result<raw_song::RawSongFolderInspection, String> {
-    raw_song::inspect_raw_song_folder(Path::new(&folder_path))
+    run_blocking_command("raw song folder inspection", move || {
+        raw_song::inspect_raw_song_folder(Path::new(&folder_path))
+    })
+    .await
 }
 
 #[tauri::command]
-fn import_raw_song_folder(
+async fn import_raw_song_folder(
     app: AppHandle,
     req: raw_song::ImportRawSongFolderRequest,
 ) -> Result<raw_song::ImportRawSongFolderResult, String> {
     let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
-    raw_song::import_raw_song_folder(req, &songs_folder)
+    run_blocking_command("raw song folder import", move || {
+        raw_song::import_raw_song_folder(req, &songs_folder)
+    })
+    .await
 }
 
 #[tauri::command]

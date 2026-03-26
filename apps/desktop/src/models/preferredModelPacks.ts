@@ -20,6 +20,16 @@ export const PREFERRED_MODEL_PACKS: PreferredModelPack[] = [
     description: "6-stem separation (keys, drums, guitar, bass, vocals)",
   },
   {
+    id: "mr_mt3",
+    version: "0.0.0",
+    description: "MR-MT3 local checkpoint pack for drum benchmark evaluation",
+  },
+  {
+    id: "yourmt3",
+    version: "0.0.0",
+    description: "YourMT3 local checkpoint pack for drum benchmark evaluation",
+  },
+  {
     id: "basic-transcription",
     version: "0.0.0",
     description: "Baseline transcription model pack",

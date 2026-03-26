@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "corpora": [
+    {
+      "id": "trusted_synthetic_rendered",
+      "kind": "benchmark_suite",
+      "reference_trust": "trusted",
+      "gating": true,
+      "manifest_path": "D:/AuralPrimer/assets/test_fixtures/drum_benchmark_midis/manifest.json",
+      "notes": "Rendered drum-stem fixtures with known-good authored MIDI. This is the primary gating corpus."
+    },
+    {
+      "id": "real_curated_holdout",
+      "kind": "manual_corpus",
+      "reference_trust": "curated_real",
+      "gating": true,
+      "manifest_path": "D:/AuralPrimer/benchmarks/drums/real_curated_holdout.template.json",
+      "notes": "Scaffold only until manually audited real drum-stem references are populated."
+    },
+    {
+      "id": "suno_suspect_diagnostics",
+      "kind": "manual_corpus",
+      "reference_trust": "suspect",
+      "gating": false,
+      "manifest_path": "D:/AuralPrimer/benchmarks/drums/suno_suspect_diagnostics.json",
+      "notes": "Diagnostic-only Suno export corpus. Excluded from default-selection logic."
+    }
+  ]
+}

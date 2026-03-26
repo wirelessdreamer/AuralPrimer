@@ -1,0 +1,57 @@
+{
+  "corpus_id": "suno_suspect_diagnostics",
+  "title": "Suno Suspect Drum Stem Diagnostics",
+  "reference_trust": "suspect",
+  "description": "Diagnostic-only Psalms/Suno drum stems with suspect exported MIDI references. Use for distortion analysis, never for model selection.",
+  "cases": [
+    {
+      "id": "psalm_1",
+      "title": "Psalm 1",
+      "wav_path": "D:/Psalms/Psalm 1/Psalm1_Stems/Psalm 1 (Drums).wav",
+      "reference_path": "D:/Psalms/Psalm 1/Psalm1_Stems/Psalm 1 (Drums).mid",
+      "summary": "Suno exported drum stem paired with suspect MIDI."
+    },
+    {
+      "id": "psalm_2_king_in_zion",
+      "title": "Book of Psalms - Psalm 2 - King in Zion",
+      "wav_path": "D:/Psalms/Psalm 2/Book of Psalms - Psalm 2 - King in Zion Stems/Book of Psalms - Psalm 2 - King in Zion (Drums).wav",
+      "reference_path": "D:/Psalms/Psalm 2/Book of Psalms - Psalm 2 - King in Zion Stems/Book of Psalms - Psalm 2 - King in Zion (Drums).mid",
+      "summary": "Known suspect Suno export; keep only for diagnostic distortion tracking."
+    },
+    {
+      "id": "psalm_3",
+      "title": "Book of Psalms - Psalm 3 - Shield Me On All Sides",
+      "wav_path": "D:/Psalms/Psalm 3/Book of Psalms - Psalms 3 - Shield Me On All Sides (Drums).wav",
+      "reference_path": "D:/Psalms/Psalm 3/Book of Psalms - Psalms 3 - Shield Me On All Sides (Drums).mid",
+      "summary": "Suno exported drum stem paired with suspect MIDI."
+    },
+    {
+      "id": "psalm_4",
+      "title": "Book of Psalms - Psalm 4 - Trouble Again",
+      "wav_path": "D:/Psalms/Psalm 4/Book of Psalms - Psalm 4 - Trouble Again Stems/Book of Psalms - Psalm 4 - Trouble Again (Drums).wav",
+      "reference_path": "D:/Psalms/Psalm 4/Book of Psalms - Psalm 4 - Trouble Again Stems/Book of Psalms - Psalm 4 - Trouble Again (Drums).mid",
+      "summary": "Suno exported drum stem paired with suspect MIDI."
+    },
+    {
+      "id": "psalm_5",
+      "title": "Book of Psalms - Psalm 5 - Every Morning",
+      "wav_path": "D:/Psalms/Psalm 5/Book of Psalms - Psalm 5 - Every Morning Stems/Book of Psalms - Psalm 5 - Every Morning (Drums).wav",
+      "reference_path": "D:/Psalms/Psalm 5/Book of Psalms - Psalm 5 - Every Morning Stems/Book of Psalms - Psalm 5 - Every Morning (Drums).mid",
+      "summary": "Suno exported drum stem paired with suspect MIDI."
+    },
+    {
+      "id": "psalm_6",
+      "title": "Book of Psalms - Psalm 6 - Break In",
+      "wav_path": "D:/Psalms/Psalm 6/Book of Psalms - Psalm 6 - Break In Stems/Book of Psalms - Psalm 6 - Break In (Drums).wav",
+      "reference_path": "D:/Psalms/Psalm 6/Book of Psalms - Psalm 6 - Break In Stems/Book of Psalms - Psalm 6 - Break In (Drums).mid",
+      "summary": "Suno exported drum stem paired with suspect MIDI."
+    },
+    {
+      "id": "psalm_7",
+      "title": "Psalm 7 - The Chase (Edit)",
+      "wav_path": "D:/Psalms/Psalm 7/Psalm 7 - The Chase (Edit) Stems/Psalm 7 - The Chase (Edit) (Drums).wav",
+      "reference_path": "D:/Psalms/Psalm 7/Psalm 7 - The Chase (Edit) Stems/Psalm 7 - The Chase (Edit) (Drums).mid",
+      "summary": "Suno exported drum stem paired with suspect MIDI."
+    }
+  ]
+}
