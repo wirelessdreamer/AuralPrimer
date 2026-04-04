@@ -220,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn import_raw_song_folder_keeps_source_midis_as_reference_material() {
+    fn import_raw_song_folder_generates_notes_mid_from_source_midis() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
@@ -268,20 +268,17 @@ mod tests {
         assert_eq!(written_timing.tempo_segments[1].tick, 480);
         assert_eq!(written_timing.tempo_segments[1].us_per_quarter, 1_000_000);
 
-        assert!(
-            !out_dir.join("features").join("notes.mid").exists(),
-            "Suno source MIDI should not be promoted to features/notes.mid"
-        );
+        let notes_mid = fs::read(out_dir.join("features").join("notes.mid")).expect("read notes.mid");
+        let reparsed = midi_bytes_to_timed_notes(&notes_mid).expect("parse notes.mid");
+        assert_eq!(reparsed.len(), 1);
+        assert!((reparsed[0].t_on - 1.0).abs() < 1e-6, "unexpected normalized t_on: {}", reparsed[0].t_on);
+        assert!((reparsed[0].t_off - 1.5).abs() < 1e-6, "unexpected normalized t_off: {}", reparsed[0].t_off);
 
         let events_json: serde_json::Value = serde_json::from_slice(
             &fs::read(out_dir.join("features").join("events.json")).expect("read events.json"),
         )
         .expect("parse events.json");
-        assert_eq!(
-            events_json["notes"].as_array().map(|items| items.len()).unwrap_or_default(),
-            0,
-            "reference-only Suno import should not emit authoritative note timings"
-        );
+        assert_eq!(events_json["notes"].as_array().map(|items| items.len()).unwrap_or_default(), 1);
 
         let manifest: serde_json::Value = serde_json::from_slice(
             &fs::read(out_dir.join("manifest.json")).expect("read manifest"),
@@ -289,14 +286,18 @@ mod tests {
         .expect("parse manifest");
         assert_eq!(
             manifest["timing"]["midi_timing_trust"].as_str(),
-            Some("advisory")
+            Some("normalized_source")
         );
+        assert_eq!(manifest["timing"]["chart_timing_status"].as_str(), Some("normalized_from_source_midi"));
+        assert_eq!(manifest["assets"]["midi"]["timing_authority"].as_str(), Some("normalized_source"));
+        assert_eq!(manifest["assets"]["midi"]["notes_path"].as_str(), Some("features/notes.mid"));
+        assert!(result.midi_chart_included, "expected notes.mid to be reported in the import result");
 
         fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn import_raw_song_folder_does_not_benchmark_suno_midi_timing_against_audio() {
+    fn import_raw_song_folder_normalizes_source_midi_start_offset() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
@@ -314,6 +315,12 @@ mod tests {
             build_single_note_test_midi(864, 96),
         )
         .expect("write midi");
+        let midi_bytes = fs::read(source_dir.join("Offset Test (Drums).mid")).expect("read midi");
+        let expected_audio_start = first_active_segment_start_sec(&wav).expect("audio onset");
+        let expected_midi_start = first_midi_note_start_sec(&midi_bytes)
+            .expect("first midi note parse")
+            .expect("first midi note");
+        let expected_offset = quantize(expected_midi_start - expected_audio_start, 1e-6);
 
         let result = import_raw_song_folder(
             ImportRawSongFolderRequest {
@@ -334,8 +341,8 @@ mod tests {
             .as_f64()
             .expect("source_audio_start_offset_sec");
         assert!(
-            source_offset.abs() < 1e-9,
-            "expected source_audio_start_offset_sec to remain unset, got {source_offset}"
+            (source_offset - expected_offset).abs() < 1e-6,
+            "expected source_audio_start_offset_sec to capture the measured offset, got {source_offset}"
         );
         let runtime_offset = manifest["timing"]["audio_start_offset_sec"]
             .as_f64()
@@ -352,23 +359,69 @@ mod tests {
         assert!(
             events_json["notes"]
                 .as_array()
-                .map(|items| items.is_empty())
+                .map(|items| !items.is_empty())
                 .unwrap_or(false),
-            "expected Suno source MIDI timings to stay out of authoritative events.json"
+            "expected normalized Suno source MIDI timings to be written into authoritative events.json"
         );
 
+        let notes_mid = fs::read(out_dir.join("features").join("notes.mid")).expect("read notes.mid");
+        let notes = midi_bytes_to_timed_notes(&notes_mid).expect("parse notes.mid");
+        assert_eq!(notes.len(), 1);
         assert!(
-            !out_dir.join("features").join("notes.mid").exists(),
-            "expected no authoritative notes.mid to be generated from Suno source MIDI"
+            (notes[0].t_on - expected_audio_start).abs() < 0.02,
+            "expected normalized note start near the detected audio onset, got {} vs {}",
+            notes[0].t_on,
+            expected_audio_start
         );
 
         assert!(
             result
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("reference only")),
-            "expected import warning explaining Suno MIDI is reference only"
+                .any(|warning| warning.contains("Applied")),
+            "expected import warning explaining the normalized Suno offset, got {:?}",
+            result.warnings
         );
+        assert_eq!(result.source_midi_offset_sec, Some(expected_offset));
+        assert_eq!(result.source_midi_offset_pair_count, 1);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn inspect_raw_song_folder_warns_when_source_midi_and_audio_are_out_of_sync() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("auralprimer_raw_song_scan_{unique}"));
+        fs::create_dir_all(&root).expect("create source dir");
+
+        let wav = build_onset_test_wav(48_000, 1, 2.0, 0.40, 0.24, 12_000);
+        write_wav_pcm16(&root.join("Offset Test (Drums).wav"), &wav).expect("write wav");
+        fs::write(
+            root.join("Offset Test (Drums).mid"),
+            build_single_note_test_midi(864, 96),
+        )
+        .expect("write midi");
+        let midi_bytes = fs::read(root.join("Offset Test (Drums).mid")).expect("read midi");
+        let expected_audio_start = first_active_segment_start_sec(&wav).expect("audio onset");
+        let expected_midi_start = first_midi_note_start_sec(&midi_bytes)
+            .expect("first midi note parse")
+            .expect("first midi note");
+        let expected_offset = quantize(expected_midi_start - expected_audio_start, 1e-6);
+
+        let inspection = inspect_raw_song_folder(&root).expect("inspect raw song folder");
+        assert!(
+            inspection
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("Studio can normalize this during import")),
+            "expected source sync warning, got {:?}",
+            inspection.warnings
+        );
+        assert_eq!(inspection.source_midi_offset_sec, Some(expected_offset));
+        assert_eq!(inspection.source_midi_offset_pair_count, 1);
 
         fs::remove_dir_all(&root).ok();
     }
@@ -380,7 +433,10 @@ pub struct ImportRawSongFolderResult {
     pub stems_count: usize,
     pub midi_files_count: usize,
     pub lyrics_included: bool,
+    pub midi_chart_included: bool,
     pub mapped_game_roles: Vec<String>,
+    pub source_midi_offset_sec: Option<f64>,
+    pub source_midi_offset_pair_count: usize,
     pub warnings: Vec<String>,
 }
 
@@ -404,6 +460,9 @@ pub struct RawSongFolderInspection {
     pub vocal_stem_path: Option<String>,
     pub mix_wav_path: Option<String>,
     pub mapped_game_roles: Vec<String>,
+    pub midi_chart_ready: bool,
+    pub source_midi_offset_sec: Option<f64>,
+    pub source_midi_offset_pair_count: usize,
     pub warnings: Vec<String>,
 }
 
@@ -427,6 +486,9 @@ struct RawSongFolderScan {
     vocal_stem: Option<PathBuf>,
     mix_wav: Option<PathBuf>,
     mapped_game_roles: Vec<String>,
+    midi_chart_ready: bool,
+    source_midi_offset_sec: Option<f64>,
+    source_midi_offset_pair_count: usize,
     warnings: Vec<String>,
 }
 
@@ -1783,6 +1845,29 @@ fn best_part_for_game_role<'a>(
         })
 }
 
+fn observed_audio_midi_start_delta_sec(
+    scan: &RawSongFolderScan,
+    role: &str,
+) -> Result<Option<f64>, String> {
+    let Some(stem_part) = best_part_for_game_role(&scan.stem_parts, role) else {
+        return Ok(None);
+    };
+    let Some(midi_part) = best_part_for_game_role(&scan.midi_parts, role) else {
+        return Ok(None);
+    };
+
+    let wav = read_wav_pcm16(&stem_part.path)?;
+    let Some(audio_start_sec) = first_active_segment_start_sec(&wav) else {
+        return Ok(None);
+    };
+    let midi_bytes = fs::read(&midi_part.path)
+        .map_err(|e| format!("read midi {}: {e}", midi_part.path.display()))?;
+    let Some(midi_start_sec) = first_midi_note_start_sec(&midi_bytes)? else {
+        return Ok(None);
+    };
+    Ok(Some(quantize(midi_start_sec - audio_start_sec, 1e-6)))
+}
+
 fn median(values: &mut [f64]) -> Option<f64> {
     if values.is_empty() {
         return None;
@@ -1798,6 +1883,24 @@ fn median(values: &mut [f64]) -> Option<f64> {
 
 fn estimate_audio_start_offset_sec(scan: &RawSongFolderScan) -> Result<Option<(f64, usize)>, String> {
     let mut candidates: Vec<f64> = vec![];
+    for role in ["drums", "bass", "lead_guitar", "rhythm_guitar", "keys", "vocals"] {
+        let Some(delta) = observed_audio_midi_start_delta_sec(scan, role)? else {
+            continue;
+        };
+        if (0.05..=2.0).contains(&delta.abs()) {
+            candidates.push(delta);
+        }
+    }
+
+    let candidate_count = candidates.len();
+    let Some(offset_sec) = median(&mut candidates) else {
+        return Ok(None);
+    };
+    Ok(Some((quantize(offset_sec, 1e-6), candidate_count)))
+}
+
+fn collect_source_midi_audio_sync_warnings(scan: &RawSongFolderScan) -> Result<Vec<String>, String> {
+    let mut warnings: Vec<String> = vec![];
     for role in ["drums", "bass", "lead_guitar", "rhythm_guitar", "keys", "vocals"] {
         let Some(stem_part) = best_part_for_game_role(&scan.stem_parts, role) else {
             continue;
@@ -1815,17 +1918,25 @@ fn estimate_audio_start_offset_sec(scan: &RawSongFolderScan) -> Result<Option<(f
         let Some(midi_start_sec) = first_midi_note_start_sec(&midi_bytes)? else {
             continue;
         };
-        let delta = midi_start_sec - audio_start_sec;
-        if (0.05..=2.0).contains(&delta) {
-            candidates.push(delta);
-        }
-    }
 
-    let candidate_count = candidates.len();
-    let Some(offset_sec) = median(&mut candidates) else {
-        return Ok(None);
-    };
-    Ok(Some((quantize(offset_sec, 1e-6), candidate_count)))
+        let delta_sec = quantize(midi_start_sec - audio_start_sec, 1e-6);
+        if delta_sec.abs() < 0.150 {
+            continue;
+        }
+
+        let direction = if delta_sec > 0.0 { "later" } else { "earlier" };
+        warnings.push(format!(
+            "{} source MIDI starts {:.3}s {} than its audio stem: {} first audio onset at {:.3}s, {} first MIDI note at {:.3}s. Studio can normalize this during import.",
+            gameplay_role_label(role),
+            delta_sec.abs(),
+            direction,
+            path_display_name(&stem_part.path),
+            audio_start_sec,
+            path_display_name(&midi_part.path),
+            midi_start_sec,
+        ));
+    }
+    Ok(warnings)
 }
 
 fn timing_priority(timing: &MidiTimingMap) -> (usize, usize) {
@@ -2200,13 +2311,7 @@ fn scan_raw_song_folder(root: &Path) -> Result<RawSongFolderScan, String> {
         );
     }
 
-    if !midis.is_empty() {
-        warnings.push(
-            "Suno-exported MIDI is treated as reference only; it is copied into the SongPack for review, not used as authoritative gameplay timing."
-                .to_string(),
-        );
-    }
-
+    let midi_chart_ready = midi_parts.iter().any(|part| part.game_role.is_some());
     let mut scan = RawSongFolderScan {
         folder_path: root.to_path_buf(),
         title_guess,
@@ -2219,9 +2324,17 @@ fn scan_raw_song_folder(root: &Path) -> Result<RawSongFolderScan, String> {
         vocal_stem,
         mix_wav,
         mapped_game_roles: vec![],
+        midi_chart_ready,
+        source_midi_offset_sec: None,
+        source_midi_offset_pair_count: 0,
         warnings,
     };
+    scan.warnings.extend(collect_source_midi_audio_sync_warnings(&scan)?);
     scan.mapped_game_roles = unique_gameplay_roles_from_parts(&scan);
+    if let Some((offset_sec, pair_count)) = estimate_audio_start_offset_sec(&scan)? {
+        scan.source_midi_offset_sec = Some(offset_sec);
+        scan.source_midi_offset_pair_count = pair_count;
+    }
     Ok(scan)
 }
 
@@ -2259,6 +2372,9 @@ pub fn inspect_raw_song_folder(folder_path: &Path) -> Result<RawSongFolderInspec
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
         mapped_game_roles: scan.mapped_game_roles,
+        midi_chart_ready: scan.midi_chart_ready,
+        source_midi_offset_sec: scan.source_midi_offset_sec,
+        source_midi_offset_pair_count: scan.source_midi_offset_pair_count,
         warnings: scan.warnings,
     })
 }
@@ -2335,14 +2451,15 @@ pub fn import_raw_song_folder(
     write_wav_pcm16(&mix_path, &mixed)?;
 
     let mut warnings = scan.warnings.clone();
-    warnings.push(
-        "Playable note timing was not derived from the bundled Suno MIDI. Run Perform analysis import or author charts manually if you want gameplay-accurate timing."
-            .to_string(),
-    );
+    let duration_sec = wav_duration_sec_from_pcm(&mixed);
+    let (source_tracks, canonical_timing) = build_combined_gameplay_tracks(&scan)?;
+    let source_audio_start_offset_sec = scan.source_midi_offset_sec.unwrap_or(0.0);
+    let source_audio_start_offset_pair_count = scan.source_midi_offset_pair_count;
+    let audio_start_offset_sec = 0.0;
 
     // Copy all source MIDI files into features/midi for provenance/debugging.
-    let tracks_out: Vec<serde_json::Value> = vec![];
-    let notes_out: Vec<serde_json::Value> = vec![];
+    let mut tracks_out: Vec<serde_json::Value> = vec![];
+    let mut notes_out: Vec<serde_json::Value> = vec![];
     let mut midi_shas: Vec<String> = vec![];
     let mut midi_reference_paths: Vec<String> = vec![];
     let mut copied_names: BTreeMap<String, usize> = BTreeMap::new();
@@ -2374,6 +2491,126 @@ pub fn import_raw_song_folder(
         midi_reference_paths.push(format!("features/midi/{copy_id}.mid"));
     }
 
+    let mut lyrics_included = false;
+    let mut midi_chart_included = false;
+    let mut midi_timing_trust = "advisory";
+    let mut chart_timing_status = "authoring_required";
+    let mut timing_authority = "advisory";
+    let (beats, tempo, sections) = if let Some(timing) = canonical_timing.as_ref() {
+        if source_tracks.is_empty() {
+            warnings.push(
+                "No mapped gameplay MIDI notes were found in the Suno export; copied the source MIDI for reference only."
+                    .to_string(),
+            );
+            let fallback_timing = default_midi_timing_map();
+            let beats = generate_beats_from_timing(duration_sec, &fallback_timing);
+            let tempo = generate_tempo_map_from_timing(&fallback_timing);
+            let sections = generate_sections_from_beats(duration_sec, &beats, 8);
+            warnings.push(
+                "Beat and tempo scaffolding uses a neutral fallback grid until you run Perform analysis import or author timing manually."
+                    .to_string(),
+            );
+            (beats, tempo, sections)
+        } else {
+            let mut normalized_tracks: Vec<GameplayTrackNotes> = vec![];
+            for track in &source_tracks {
+                let role_offset_sec = match observed_audio_midi_start_delta_sec(&scan, &track.role)? {
+                    Some(delta_sec) if delta_sec.abs() > 2.0 => {
+                        warnings.push(format!(
+                            "{} source MIDI timing differed by {:.3}s from its audio stem and was excluded from the auto-normalized gameplay chart.",
+                            gameplay_role_label(&track.role),
+                            delta_sec.abs()
+                        ));
+                        continue;
+                    }
+                    Some(delta_sec) if delta_sec.abs() >= 0.05 => delta_sec,
+                    Some(_) => 0.0,
+                    None if source_audio_start_offset_pair_count > 0 => source_audio_start_offset_sec,
+                    None => 0.0,
+                };
+                let mut normalized_track = track.clone();
+                normalized_track.notes = shift_timed_notes(&track.notes, role_offset_sec);
+                normalized_tracks.push(normalized_track);
+            }
+            if normalized_tracks.is_empty() {
+                warnings.push(
+                    "Source MIDI timing could not be normalized safely; copied the source MIDI for reference only."
+                        .to_string(),
+                );
+                let fallback_timing = default_midi_timing_map();
+                let beats = generate_beats_from_timing(duration_sec, &fallback_timing);
+                let tempo = generate_tempo_map_from_timing(&fallback_timing);
+                let sections = generate_sections_from_beats(duration_sec, &beats, 8);
+                warnings.push(
+                    "Beat and tempo scaffolding uses a neutral fallback grid until you run Perform analysis import or author timing manually."
+                        .to_string(),
+                );
+                (beats, tempo, sections)
+            } else {
+            write_combined_gameplay_midi(
+                &out_dir.join("features").join("notes.mid"),
+                &normalized_tracks,
+                timing,
+            )?;
+            for track in &normalized_tracks {
+                tracks_out.push(serde_json::json!({
+                    "track_id": track.track_id,
+                    "role": track.role,
+                    "name": track.name,
+                    "channel": track.channel,
+                    "source": "suno_source_midi_normalized",
+                }));
+                notes_out.extend(timed_notes_to_json(
+                    &track.notes,
+                    &track.track_id,
+                    "suno_source_midi_normalized",
+                ));
+            }
+            midi_chart_included = true;
+            midi_timing_trust = "normalized_source";
+            chart_timing_status = "normalized_from_source_midi";
+            timing_authority = "normalized_source";
+            if source_audio_start_offset_pair_count > 0 && source_audio_start_offset_sec.abs() >= 1e-6 {
+                let direction = if source_audio_start_offset_sec > 0.0 { "earlier" } else { "later" };
+                warnings.push(format!(
+                    "Applied source MIDI start normalization using {} matched audio/MIDI pair(s); median correction {:.3}s {}.",
+                    source_audio_start_offset_pair_count,
+                    source_audio_start_offset_sec.abs(),
+                    direction,
+                ));
+            } else if source_audio_start_offset_pair_count > 0 {
+                warnings.push(
+                    "Source MIDI and audio stem starts already matched closely; imported source MIDI timing directly."
+                        .to_string(),
+                );
+            } else {
+                warnings.push(
+                    "No stable audio/MIDI start offset was detected; imported source MIDI timing directly."
+                        .to_string(),
+                );
+            }
+            let beats = generate_beats_from_timing(duration_sec, timing);
+            let tempo = generate_tempo_map_from_timing(timing);
+            let sections = generate_sections_from_beats(duration_sec, &beats, 8);
+            (beats, tempo, sections)
+            }
+        }
+    } else {
+        warnings.push(
+            "Source MIDI timing could not be resolved; copied the source MIDI for reference only."
+                .to_string(),
+        );
+        let fallback_timing = default_midi_timing_map();
+        let beats = generate_beats_from_timing(duration_sec, &fallback_timing);
+        let tempo = generate_tempo_map_from_timing(&fallback_timing);
+        let sections = generate_sections_from_beats(duration_sec, &beats, 8);
+        warnings.push(
+            "Beat and tempo scaffolding uses a neutral fallback grid until you run Perform analysis import or author timing manually."
+                .to_string(),
+        );
+        (beats, tempo, sections)
+    };
+
     let events_json = serde_json::json!({
         "events_version": "1.0.0",
         "tracks": tracks_out,
@@ -2384,22 +2621,6 @@ pub fn import_raw_song_folder(
         serde_json::to_string_pretty(&events_json).map_err(|e| format!("events json: {e}"))?,
     )
     .map_err(|e| format!("write events.json: {e}"))?;
-
-    let mut lyrics_included = false;
-
-    // Preserve the mixed audio as the only authoritative timebase for raw Suno imports.
-    let duration_sec = wav_duration_sec_from_pcm(&mixed);
-    let timing = default_midi_timing_map();
-    let beats = generate_beats_from_timing(duration_sec, &timing);
-    let tempo = generate_tempo_map_from_timing(&timing);
-    let audio_start_offset_sec = 0.0;
-    let source_audio_start_offset_sec = 0.0;
-    let sections = generate_sections_from_beats(duration_sec, &beats, 8);
-
-    warnings.push(
-        "Beat and tempo scaffolding uses a neutral fallback grid until you run Perform analysis import or author timing manually."
-            .to_string(),
-    );
 
     fs::write(
         out_dir.join("features").join("beats.json"),
@@ -2438,8 +2659,9 @@ pub fn import_raw_song_folder(
             "audio_sample_rate_hz": mixed.sample_rate,
             "audio_start_offset_sec": audio_start_offset_sec,
             "source_audio_start_offset_sec": source_audio_start_offset_sec,
-            "midi_timing_trust": "advisory",
-            "chart_timing_status": "authoring_required",
+            "source_audio_start_offset_pair_count": source_audio_start_offset_pair_count,
+            "midi_timing_trust": midi_timing_trust,
+            "chart_timing_status": chart_timing_status,
         },
         "source": {
             "kind": "raw_song_data",
@@ -2469,7 +2691,8 @@ pub fn import_raw_song_folder(
             "audio": {"mix_path": "audio/mix.wav"},
             "midi": {
                 "reference_paths": midi_reference_paths,
-                "timing_authority": "advisory",
+                "notes_path": if midi_chart_included { Some("features/notes.mid") } else { None::<&str> },
+                "timing_authority": timing_authority,
             }
         }
     });
@@ -2539,7 +2762,10 @@ pub fn import_raw_song_folder(
         stems_count: scan.stem_wavs.len(),
         midi_files_count: scan.midi_files.len(),
         lyrics_included,
+        midi_chart_included,
         mapped_game_roles: scan.mapped_game_roles.clone(),
+        source_midi_offset_sec: scan.source_midi_offset_sec,
+        source_midi_offset_pair_count: scan.source_midi_offset_pair_count,
         warnings,
     })
 }

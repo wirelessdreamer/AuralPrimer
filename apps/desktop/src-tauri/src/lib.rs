@@ -1168,6 +1168,16 @@ async fn ingest_import(
 }
 
 #[tauri::command]
+async fn ingest_runtime_check(
+    app: AppHandle,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("ingest runtime check", move || {
+        ingest_sidecar::run_ingest_runtime_check(Default::default(), Some(&app))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn inspect_raw_song_folder(
     folder_path: String,
 ) -> Result<raw_song::RawSongFolderInspection, String> {
@@ -1903,6 +1913,7 @@ pub fn run() {
             midi_list_tracks,
             stem_midi_create_songpack,
             ingest_import,
+            ingest_runtime_check,
             inspect_raw_song_folder,
             import_raw_song_folder,
             scan_songpacks,

@@ -75,6 +75,22 @@ pub struct IngestImportResult {
     pub stderr: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct IngestRuntimeCheckRequest {
+    #[serde(default)]
+    pub ingest_binary_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IngestRuntimeCheckResult {
+    pub ok: bool,
+    pub exit_code: i32,
+    pub command: Vec<String>,
+    pub stdout: String,
+    pub stderr: String,
+    pub payload: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IngestProgressEvent {
     pub stream: String,
@@ -330,6 +346,47 @@ pub fn run_ingest_import_with_progress(
         command,
         stdout,
         stderr,
+    })
+}
+
+pub fn run_ingest_runtime_check(
+    req: IngestRuntimeCheckRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let import_req = IngestImportRequest {
+        ingest_binary_path: req.ingest_binary_path,
+        ..Default::default()
+    };
+    let (binary, searched_paths) = resolve_ingest_binary(&import_req, app);
+    let args = vec!["runtime-check".to_string()];
+
+    let output = Command::new(&binary).args(&args).output().map_err(|e| {
+        if searched_paths.is_empty() {
+            format!("failed to start {binary}: {e}")
+        } else {
+            format!(
+                "failed to start {binary}: {e}; searched default locations: {}",
+                searched_paths.join("; ")
+            )
+        }
+    })?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let payload = serde_json::from_str::<serde_json::Value>(&stdout).ok();
+
+    Ok(IngestRuntimeCheckResult {
+        ok: output.status.success(),
+        exit_code,
+        command: {
+            let mut command = vec![binary];
+            command.extend(args);
+            command
+        },
+        stdout,
+        stderr,
+        payload,
     })
 }
 

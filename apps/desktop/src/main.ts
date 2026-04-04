@@ -139,6 +139,41 @@ type LyricsFile = {
   }>;
 };
 
+type IngestRuntimeDependencyStatus = {
+  ok: boolean;
+  version?: string;
+  error?: string;
+};
+
+type IngestRuntimeEngineStatus = {
+  ok: boolean;
+  loadable?: boolean;
+  transcribe_smoke_ok?: boolean;
+  version?: string;
+  description?: string;
+  modelpack_version?: string;
+  modelpack_root?: string;
+  checkpoint_path?: string;
+  error?: string;
+};
+
+type IngestRuntimeCheckPayload = {
+  ok: boolean;
+  dependencies?: Record<string, IngestRuntimeDependencyStatus>;
+  drum_engines?: Record<string, IngestRuntimeEngineStatus>;
+};
+
+type IngestRuntimeCheckResult = {
+  ok: boolean;
+  exit_code: number;
+  command: string[];
+  stdout: string;
+  stderr: string;
+  payload?: IngestRuntimeCheckPayload;
+};
+
+type IngestSummaryState = "idle" | "running" | "success" | "error";
+
 type AudioBlob = {
   mime: string;
   bytes: number[];
@@ -240,6 +275,9 @@ type RawSongFolderInspection = {
   vocal_stem_path?: string | null;
   mix_wav_path?: string | null;
   mapped_game_roles: string[];
+  midi_chart_ready: boolean;
+  source_midi_offset_sec?: number | null;
+  source_midi_offset_pair_count: number;
   warnings: string[];
 };
 
@@ -254,7 +292,10 @@ type ImportRawSongFolderResult = {
   stems_count: number;
   midi_files_count: number;
   lyrics_included: boolean;
+  midi_chart_included: boolean;
   mapped_game_roles: string[];
+  source_midi_offset_sec?: number | null;
+  source_midi_offset_pair_count: number;
   warnings: string[];
 };
 
@@ -422,7 +463,14 @@ root.innerHTML = `
                 </select>
               </div>
               <div class="meta importStageNote">
-                MT3 drum engines are benchmark-first research options. They require local <code>mr_mt3</code> or <code>yourmt3</code> modelpacks and will fail clearly if the checkpoint pack is not installed.
+                MT3 drum engines are benchmark-first research options. Studio checks the packaged sidecar and local modelpacks below so you can see whether the requirements are actually met.
+              </div>
+              <div class="mt3RuntimePanel">
+                <div class="row mt3RuntimeHeader">
+                  <div class="meta"><strong>MT3 availability</strong></div>
+                  <button id="ingestRuntimeRefresh" type="button">Refresh status</button>
+                </div>
+                <div id="ingestRuntimeStatus" class="mt3RuntimeStatus meta">Checking MT3 runtime…</div>
               </div>
               <div class="row">
                 <label class="meta">Config JSON/path (optional)</label>
@@ -435,7 +483,24 @@ root.innerHTML = `
                 <input id="ingestArtist" class="grow" type="text" placeholder="Optional artist override" />
                 <button id="ingestRun">Run import</button>
               </div>
-              <pre id="ingestStatus" class="meta">(not started)</pre>
+              <div id="ingestSummary" class="ingestSummary ingestSummary--idle">
+                <div class="row ingestSummaryHeader">
+                  <div class="grow">
+                    <div id="ingestSummaryBadge" class="ingestSummaryBadge ingestSummaryBadge--idle">Ready</div>
+                    <div id="ingestSummaryTitle" class="ingestSummaryTitle">Ready to import</div>
+                  </div>
+                  <div id="ingestSummaryProgressText" class="meta ingestSummaryProgressText">0%</div>
+                </div>
+                <progress id="ingestSummaryProgress" class="ingestSummaryProgress" max="100" value="0"></progress>
+                <div id="ingestSummaryDetail" class="meta ingestSummaryDetail">Choose a source, then run import.</div>
+                <div class="row ingestSummaryActions">
+                  <button id="ingestOpenCleanup" type="button" disabled>Review in Cleanup &amp; Edit</button>
+                </div>
+              </div>
+              <details id="ingestLogPanel" class="ingestLogPanel">
+                <summary>Import log</summary>
+                <pre id="ingestStatus" class="meta">(not started)</pre>
+              </details>
             </section>
 
             <section class="panel">
@@ -817,7 +882,17 @@ const ingestConfigInput = document.getElementById("ingestConfig") as HTMLInputEl
 const ingestTitleInput = document.getElementById("ingestTitle") as HTMLInputElement;
 const ingestArtistInput = document.getElementById("ingestArtist") as HTMLInputElement;
 const ingestRunBtn = document.getElementById("ingestRun") as HTMLButtonElement;
+const ingestSummaryEl = document.getElementById("ingestSummary") as HTMLDivElement;
+const ingestSummaryBadgeEl = document.getElementById("ingestSummaryBadge") as HTMLDivElement;
+const ingestSummaryTitleEl = document.getElementById("ingestSummaryTitle") as HTMLDivElement;
+const ingestSummaryProgressTextEl = document.getElementById("ingestSummaryProgressText") as HTMLDivElement;
+const ingestSummaryProgressEl = document.getElementById("ingestSummaryProgress") as HTMLProgressElement;
+const ingestSummaryDetailEl = document.getElementById("ingestSummaryDetail") as HTMLDivElement;
+const ingestOpenCleanupBtn = document.getElementById("ingestOpenCleanup") as HTMLButtonElement;
+const ingestLogPanelEl = document.getElementById("ingestLogPanel") as HTMLDetailsElement;
 const ingestStatusEl = document.getElementById("ingestStatus") as HTMLPreElement;
+const ingestRuntimeRefreshBtn = document.getElementById("ingestRuntimeRefresh") as HTMLButtonElement;
+const ingestRuntimeStatusEl = document.getElementById("ingestRuntimeStatus") as HTMLDivElement;
 
 const stemMidiPickFolderBtn = document.getElementById("stemMidiPickFolderMake") as HTMLButtonElement;
 const stemMidiImportBtn = document.getElementById("stemMidiImportMake") as HTMLButtonElement;
@@ -852,6 +927,7 @@ if (!haveTauri()) {
 
   ingestBrowseSourceBtn.disabled = true;
   ingestRunBtn.disabled = true;
+  ingestRuntimeRefreshBtn.disabled = true;
 
   midiInPortSelect.disabled = true;
   midiInRefreshBtn.disabled = true;
@@ -937,6 +1013,136 @@ function escapeHtml(s: string): string {
 
 function yesNo(v: boolean): string {
   return v ? "yes" : "no";
+}
+
+const MT3_ENGINE_LABELS: Record<string, string> = {
+  mr_mt3_drums: "MR-MT3",
+  yourmt3_drums: "YourMT3"
+};
+
+function runtimeBadge(label: string, found: boolean): string {
+  const cls = found ? "importAuditStatus importAuditStatus--found" : "importAuditStatus importAuditStatus--missing";
+  return `<span class="${cls}">${escapeHtml(label)}</span>`;
+}
+
+function setMt3EngineOptionStatus(engineId: string, status: "checking" | "detected" | "missing", detail = "") {
+  const option = ingestDrumFilterSelect.querySelector(`option[value="${engineId}"]`) as HTMLOptionElement | null;
+  if (!option) return;
+  const baseLabel = MT3_ENGINE_LABELS[engineId] ?? engineId;
+  if (status === "checking") {
+    option.disabled = true;
+    option.textContent = `${baseLabel} (checking…)`;
+    return;
+  }
+  option.disabled = status === "missing";
+  const suffix = status === "detected" ? "Detected" : detail || "Missing";
+  option.textContent = `${baseLabel} (${suffix})`;
+}
+
+function renderMt3RuntimeState(
+  result: IngestRuntimeCheckResult | null,
+  options: { loading?: boolean; error?: string } = {}
+) {
+  if (!haveTauri()) {
+    ingestRuntimeStatusEl.innerHTML = `<div class="meta">MT3 availability can only be checked in the desktop app.</div>`;
+    setMt3EngineOptionStatus("mr_mt3_drums", "missing", "desktop app required");
+    setMt3EngineOptionStatus("yourmt3_drums", "missing", "desktop app required");
+    return;
+  }
+
+  if (options.loading) {
+    ingestRuntimeStatusEl.innerHTML = `<div class="meta">Checking packaged sidecar runtime and local modelpacks…</div>`;
+    setMt3EngineOptionStatus("mr_mt3_drums", "checking");
+    setMt3EngineOptionStatus("yourmt3_drums", "checking");
+    return;
+  }
+
+  if (options.error) {
+    ingestRuntimeStatusEl.innerHTML = `<pre class="error">${escapeHtml(options.error)}</pre>`;
+    setMt3EngineOptionStatus("mr_mt3_drums", "missing", "runtime check failed");
+    setMt3EngineOptionStatus("yourmt3_drums", "missing", "runtime check failed");
+    return;
+  }
+
+  const payload = result?.payload;
+  const dependencyEntries = Object.entries(payload?.dependencies ?? {});
+  const engineEntries = Object.entries(payload?.drum_engines ?? {});
+  const runtimeOk = Boolean(result?.ok && payload?.ok);
+
+  for (const engineId of Object.keys(MT3_ENGINE_LABELS)) {
+    setMt3EngineOptionStatus(engineId, "missing", "missing");
+  }
+
+  const depsHtml = dependencyEntries.length
+    ? dependencyEntries
+        .map(([name, dep]) => {
+          const note = dep.version ? `v${dep.version}` : dep.error ? dep.error : "";
+          return `
+            <div class="mt3RuntimeRow">
+              <div class="mt3RuntimeLabel">${escapeHtml(name)}</div>
+              <div>${runtimeBadge(dep.ok ? "Detected" : "Missing", dep.ok)}</div>
+              <div class="meta">${escapeHtml(note)}</div>
+            </div>
+          `;
+        })
+        .join("\n")
+    : `<div class="meta">No dependency information returned.</div>`;
+
+  const enginesHtml = engineEntries.length
+    ? engineEntries
+        .map(([engineId, engine]) => {
+          const detected = Boolean(engine.ok && engine.loadable && engine.transcribe_smoke_ok);
+          const notes = [
+            engine.modelpack_version ? `pack ${engine.modelpack_version}` : "",
+            engine.error ? engine.error : ""
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          setMt3EngineOptionStatus(engineId, detected ? "detected" : "missing", detected ? "" : "missing");
+          return `
+            <div class="mt3RuntimeRow">
+              <div class="mt3RuntimeLabel">${escapeHtml(MT3_ENGINE_LABELS[engineId] ?? engineId)}</div>
+              <div>${runtimeBadge(detected ? "Detected" : "Missing", detected)}</div>
+              <div class="meta">${escapeHtml(notes || "runtime ready")}</div>
+            </div>
+          `;
+        })
+        .join("\n")
+    : `<div class="meta">No MT3 engines were reported.</div>`;
+
+  ingestRuntimeStatusEl.innerHTML = `
+    <div class="mt3RuntimeGrid">
+      <div class="mt3RuntimeCard">
+        <div class="meta mt3RuntimeTitle">Dependencies</div>
+        ${depsHtml}
+      </div>
+      <div class="mt3RuntimeCard">
+        <div class="meta mt3RuntimeTitle">Drum engines</div>
+        ${enginesHtml}
+      </div>
+    </div>
+    <div class="meta mt3RuntimeFootnote">
+      ${runtimeOk ? "Status checked against the packaged sidecar runtime." : "Runtime check did not report a fully healthy MT3 setup."}
+    </div>
+  `;
+}
+
+async function refreshIngestRuntimeStatus() {
+  renderMt3RuntimeState(null, { loading: true });
+  ingestRuntimeRefreshBtn.disabled = true;
+  try {
+    const result = await safeInvoke<IngestRuntimeCheckResult>("ingest_runtime_check");
+    if (!result.ok || !result.payload?.ok) {
+      const message = result.stderr || result.stdout || `runtime-check failed with exit code ${result.exit_code}`;
+      renderMt3RuntimeState(result, { error: message });
+      return;
+    }
+    renderMt3RuntimeState(result);
+  } catch (e) {
+    renderMt3RuntimeState(null, { error: String(e) });
+  } finally {
+    ingestRuntimeRefreshBtn.disabled = false;
+  }
 }
 
 function setHudKeyMode(manifestRaw: unknown) {
@@ -1848,6 +2054,44 @@ function setIngestStatus(msg: string) {
   logConsole("ingest", msg);
 }
 
+function setIngestSummary(
+  state: IngestSummaryState,
+  title: string,
+  detail: string,
+  options: {
+    progressPct?: number;
+    badge?: string;
+    canReview?: boolean;
+    showLog?: boolean;
+  } = {}
+) {
+  const clampedProgress = Math.max(0, Math.min(100, Math.round(options.progressPct ?? 0)));
+  const badgeLabel =
+    options.badge ??
+    (state === "running"
+      ? "Importing"
+      : state === "success"
+        ? "Done"
+        : state === "error"
+          ? "Failed"
+          : "Ready");
+
+  ingestSummaryEl.className = `ingestSummary ingestSummary--${state}`;
+  ingestSummaryBadgeEl.className = `ingestSummaryBadge ingestSummaryBadge--${state}`;
+  ingestSummaryBadgeEl.textContent = badgeLabel;
+  ingestSummaryTitleEl.textContent = title;
+  ingestSummaryDetailEl.textContent = detail;
+  ingestSummaryProgressEl.value = clampedProgress;
+  ingestSummaryProgressTextEl.textContent =
+    state === "success"
+      ? "100%"
+      : state === "error"
+        ? `${clampedProgress}%`
+        : `${clampedProgress}%`;
+  ingestOpenCleanupBtn.disabled = !options.canReview;
+  ingestLogPanelEl.open = options.showLog ?? state !== "success";
+}
+
 function setSongpackEditorStatus(msg: string) {
   songpackEditorStatusEl.textContent = msg;
 }
@@ -1858,6 +2102,7 @@ function debugIngestConsole(message: string, details?: unknown) {
 
 let ingestInFlight = false;
 let ingestLogLines: string[] = [];
+let ingestProgressPct = 0;
 
 function resetIngestStatusLog(firstLine: string) {
   ingestLogLines = [firstLine];
@@ -1893,6 +2138,29 @@ function formatIngestProgressEvent(ev: IngestImportProgressEvent): string {
   }
 
   return ev.line;
+}
+
+function formatIngestStageLabel(rawId: string): string {
+  const cleaned = rawId.replace(/[_-]+/g, " ").trim();
+  if (!cleaned) return "Import";
+  return cleaned.replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function parseIngestProgressEvent(
+  ev: IngestImportProgressEvent
+): { progressPct: number; title: string; detail: string } | null {
+  if (ev.stream !== "stdout") return null;
+  const parsed = ev.parsed;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const obj = parsed as Record<string, unknown>;
+  const rawId = typeof obj.id === "string" ? obj.id : "progress";
+  const progress = typeof obj.progress === "number" ? Math.round(obj.progress * 100) : 0;
+  const message = typeof obj.message === "string" && obj.message.trim() ? obj.message.trim() : "working";
+  return {
+    progressPct: progress,
+    title: `Import running: ${formatIngestStageLabel(rawId)}`,
+    detail: `${formatIngestStageLabel(rawId)} · ${message}`
+  };
 }
 
 function inferIngestOutPathFromCommand(command: string[]): string | undefined {
@@ -1955,6 +2223,21 @@ function formatGameRoleLabel(role?: string | null): string {
     default:
       return "Unmapped";
   }
+}
+
+function describeSourceMidiOffset(offsetSec?: number | null, pairCount = 0): string {
+  if (offsetSec === null || typeof offsetSec === "undefined" || !Number.isFinite(offsetSec)) {
+    return "source MIDI timing will be used as-is";
+  }
+  const abs = Math.abs(offsetSec);
+  if (abs < 0.001) {
+    return pairCount > 0
+      ? `source MIDI already matches the audio stem starts (${pairCount} matched pair${pairCount === 1 ? "" : "s"})`
+      : "source MIDI timing will be used as-is";
+  }
+  const direction = offsetSec > 0 ? "earlier" : "later";
+  const pairNote = pairCount > 0 ? ` using ${pairCount} matched pair${pairCount === 1 ? "" : "s"}` : "";
+  return `source MIDI will shift ${direction} by ${abs.toFixed(3)}s${pairNote}`;
 }
 
 function renderDetectedPartList(parts: RawSongDetectedPart[]): string {
@@ -2121,6 +2404,9 @@ function renderStemMidiSelection() {
       stemMidiInspection.mapped_game_roles.length
         ? stemMidiInspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")
         : "no mapped roles",
+      stemMidiInspection.midi_chart_ready
+        ? describeSourceMidiOffset(stemMidiInspection.source_midi_offset_sec, stemMidiInspection.source_midi_offset_pair_count)
+        : "no playable chart mapping yet",
       stemMidiInspection.karaoke_json_path
         ? "karaoke JSON"
         : stemMidiInspection.vocal_stem_path
@@ -2153,6 +2439,11 @@ function renderStemMidiTrackList() {
     <div class="meta">default title: ${escapeHtml(stemMidiInspection.title_guess)}</div>
     <div class="meta">game mapping: ${escapeHtml(stemMidiInspection.mapped_game_roles.length ? stemMidiInspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ") : "none")}</div>
     <div class="meta">mix audio: ${escapeHtml(stemMidiInspection.mix_wav_path ? stemMidiBaseName(stemMidiInspection.mix_wav_path) : "sum the detected stems")}</div>
+    <div class="meta">chart timing: ${escapeHtml(
+      stemMidiInspection.midi_chart_ready
+        ? describeSourceMidiOffset(stemMidiInspection.source_midi_offset_sec, stemMidiInspection.source_midi_offset_pair_count)
+        : "recognized gameplay MIDI was not found; import will keep the source files but may not generate a playable chart"
+    )}</div>
     <div class="meta">lyrics: ${lyricSource}</div>
     <div class="meta" style="margin-top:8px;font-weight:600">Track detection</div>
     ${renderStemMidiAuditTable(stemMidiInspection)}
@@ -2171,7 +2462,10 @@ async function inspectStemMidiFolder(folderPath: string): Promise<void> {
     const mappedSuffix = inspection.mapped_game_roles.length
       ? ` | mapped: ${inspection.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")}`
       : "";
-    setStemMidiStatus(`validated: ${inspection.stem_wav_paths.length} WAV(s), ${inspection.midi_paths.length} MIDI file(s)${warningSuffix}${mappedSuffix}`);
+    const timingSuffix = inspection.midi_chart_ready
+      ? ` | chart: ${describeSourceMidiOffset(inspection.source_midi_offset_sec, inspection.source_midi_offset_pair_count)}`
+      : " | chart: no playable source MIDI mapping";
+    setStemMidiStatus(`validated: ${inspection.stem_wav_paths.length} WAV(s), ${inspection.midi_paths.length} MIDI file(s)${warningSuffix}${mappedSuffix}${timingSuffix}`);
   } catch (e) {
     stemMidiInspection = null;
     renderStemMidiSelection();
@@ -2203,6 +2497,15 @@ async function stemMidiCreateSongPack() {
       `imported: ${res.songpack_path}`,
       `detected ${res.stems_count} WAV stem(s), ${res.midi_files_count} MIDI file(s)${res.lyrics_included ? " | lyrics ready" : ""}`,
     ];
+    if (res.midi_chart_included) {
+      lines.push(
+        `playable chart: source MIDI imported${res.source_midi_offset_sec !== null && typeof res.source_midi_offset_sec !== "undefined"
+          ? ` | ${describeSourceMidiOffset(res.source_midi_offset_sec, res.source_midi_offset_pair_count)}`
+          : ""}`
+      );
+    } else {
+      lines.push("playable chart: source MIDI could not be promoted automatically");
+    }
     if (res.mapped_game_roles.length) {
       lines.push(`game roles: ${res.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")}`);
     }
@@ -2290,13 +2593,21 @@ async function runIngestImport() {
     });
   } catch (e) {
     setIngestStatus(String(e));
+    setIngestSummary("error", "Import setup failed", String(e), { progressPct: 0, showLog: true });
     return;
   }
 
   ingestInFlight = true;
+  ingestProgressPct = 0;
   resetIngestStatusLog("running ingest sidecar...");
   debugIngestConsole("invoke ingest_import", req);
+  setIngestSummary("running", "Import running", "Preparing ingest sidecar and validating inputs.", {
+    progressPct: 0,
+    canReview: false,
+    showLog: true
+  });
   ingestRunBtn.disabled = true;
+  ingestRunBtn.textContent = "Importing...";
   try {
     await waitForUiPaint();
     const res = await ingestImport(req);
@@ -2315,20 +2626,48 @@ async function runIngestImport() {
       const outPath = inferIngestOutPathFromCommand(res.command);
       if (outPath) {
         appendIngestStatusLine(`output: ${outPath}`);
+        setIngestSummary(
+          "success",
+          "Import complete",
+          `SongPack created at ${outPath}. Review it in Cleanup & Edit.`,
+          {
+            progressPct: 100,
+            canReview: true,
+            showLog: false
+          }
+        );
+      } else {
+        setIngestSummary("success", "Import complete", "SongPack created. Review it in Cleanup & Edit.", {
+          progressPct: 100,
+          canReview: true,
+          showLog: false
+        });
       }
       appendIngestStatusLine(`import complete (exit ${res.exit_code})`);
       void refresh();
     } else {
       const stderr = res.stderr.trim() || "(no stderr)";
+      const firstErrorLine = stderr.split(/\r?\n/, 1)[0] || "Ingest failed.";
+      setIngestSummary("error", "Import failed", firstErrorLine, {
+        progressPct: ingestProgressPct,
+        canReview: false,
+        showLog: true
+      });
       appendIngestStatusLine(`import failed (exit ${res.exit_code})`);
       appendIngestStatusLine(stderr);
     }
   } catch (e) {
     errorConsole("ingest", "invoke ingest_import failed", e);
+    setIngestSummary("error", "Import failed", String(e), {
+      progressPct: ingestProgressPct,
+      canReview: false,
+      showLog: true
+    });
     appendIngestStatusLine(String(e));
   } finally {
     ingestInFlight = false;
     ingestRunBtn.disabled = false;
+    ingestRunBtn.textContent = "Run import";
   }
 }
 
@@ -2915,6 +3254,15 @@ void listen<GhwtImportProgressEvent>("ghwt_import_progress", (ev) => {
 void listen<IngestImportProgressEvent>("ingest_import_progress", (ev) => {
   if (!ingestInFlight) return;
   appendIngestStatusLine(formatIngestProgressEvent(ev.payload));
+  const parsed = parseIngestProgressEvent(ev.payload);
+  if (parsed) {
+    ingestProgressPct = parsed.progressPct;
+    setIngestSummary("running", parsed.title, parsed.detail, {
+      progressPct: parsed.progressPct,
+      canReview: false,
+      showLog: true
+    });
+  }
 });
 
 // Audio controls
@@ -3001,7 +3349,7 @@ function renderPreferredModelPacks() {
       const pack = PREFERRED_MODEL_PACKS.find((p) => p.id === id);
       if (!pack) return;
       void installModelPackFromUrl(pack)
-        .then(() => refreshModels())
+        .then(() => Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]))
         .catch((e) => {
           modelsStatusEl.textContent = String(e);
         });
@@ -3020,22 +3368,30 @@ async function refreshModels() {
 }
 
 modelsRefreshBtn.addEventListener("click", () => {
-  void refreshModels();
+  void Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]);
 });
 
 modelpackImportBtn.addEventListener("click", () => {
   const p = modelpackPathInput.value;
   void installModelPackFromPath(p)
-    .then(() => refreshModels())
+    .then(() => Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]))
     .catch((e) => {
       modelsStatusEl.textContent = String(e);
     });
 });
 
+ingestRuntimeRefreshBtn.addEventListener("click", () => {
+  void refreshIngestRuntimeStatus();
+});
+
+ingestOpenCleanupBtn.addEventListener("click", () => {
+  setRoute("home");
+});
+
 // Initialize sizing for first paint.
 resizeVizCanvas();
 renderPreferredModelPacks();
-void refreshModels();
+void Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]);
 
 async function refresh() {
   statusEl.textContent = "Loading…";

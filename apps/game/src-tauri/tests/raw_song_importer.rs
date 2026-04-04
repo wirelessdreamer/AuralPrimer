@@ -83,10 +83,11 @@ fn raw_song_importer_writes_songpack_artifacts() {
     assert!(sp.join("features").join("beats.json").is_file());
     assert!(sp.join("features").join("tempo_map.json").is_file());
     assert!(sp.join("features").join("sections.json").is_file());
-    assert!(sp.join("charts").join("easy.json").is_file());
+    assert!(sp.join("features").join("midi").is_dir());
     assert!(sp.join("features").join("lyrics.json").is_file());
 
     assert_eq!(res.stems_count, 2);
     assert_eq!(res.midi_files_count, 2);
     assert!(res.lyrics_included);
+    assert!(res.midi_chart_included);
 }
