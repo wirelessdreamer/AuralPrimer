@@ -83,8 +83,10 @@ Each command runs `tauri dev`, which starts Vite and the Rust backend.
 
 ## 5) Build release artifacts
 
-### Important (Windows users): do not run `tauri build` from WSL
-If you run the build inside WSL/Linux, you are building a Linux binary and it will require Linux GTK/WebKit deps.
+### WSL + Windows
+The repo now routes `npm run ...tauri...`, `npm run portable:sidecar`, and `npm run portable:build` through thin launchers so the same commands work from native Windows or from WSL against the Windows checkout.
+
+If you intentionally want a Linux Tauri build, run the Linux toolchain directly instead of the wrapper scripts.
 
 From repo root:
 
@@ -106,7 +108,7 @@ npm run studio:build:frontend
 
 ## 6) Build portable folder (with sidecar freshness guard)
 
-From repo root (PowerShell):
+From repo root (PowerShell or WSL):
 
 ```powershell
 npm run portable:build
@@ -134,6 +136,9 @@ What this does:
 Useful flags:
 
 ```powershell
+# Native Windows/manual invocation examples.
+# From WSL, prefer `npm run portable:build` so the wrapper selects the right host.
+
 # Reuse existing app binaries + existing sidecar
 powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -SkipDesktopBuild -SkipSidecarBuild -GameExePath C:\path\to\AuralPrimer.exe -StudioExePath C:\path\to\AuralStudio.exe -SidecarSourceExePath C:\path\to\aural_ingest.exe
 
