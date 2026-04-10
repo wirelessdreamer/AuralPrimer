@@ -10,6 +10,7 @@ SRC_DIR = ROOT / "src"
 
 COLLECT_PACKAGES = [
     "aural_ingest",
+    "basic_pitch",
     "beartype",
     "demucs",
     "ema_pytorch",
@@ -36,6 +37,7 @@ COLLECT_PACKAGES = [
 
 SUBMODULE_PACKAGES = [
     "aural_ingest",
+    "basic_pitch",
     "beartype",
     "demucs",
     "ema_pytorch",

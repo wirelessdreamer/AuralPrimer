@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::ShellExt;
+
+const INGEST_SIDECAR_NAME: &str = "aural_ingest";
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -104,83 +107,14 @@ fn non_empty_opt(s: &Option<String>) -> Option<String> {
         .filter(|x| !x.is_empty())
 }
 
-#[cfg(target_os = "windows")]
-const INGEST_BINARY_FILENAME: &str = "aural_ingest.exe";
-#[cfg(not(target_os = "windows"))]
-const INGEST_BINARY_FILENAME: &str = "aural_ingest";
-const INGEST_BINARY_FALLBACK_CMD: &str = "aural_ingest";
-
-fn push_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
-    if !candidates.iter().any(|p| p == &candidate) {
-        candidates.push(candidate);
-    }
-}
-
-fn append_candidate_dir(candidates: &mut Vec<PathBuf>, dir: &Path) {
-    push_candidate(
-        candidates,
-        dir.join("sidecar").join(INGEST_BINARY_FILENAME),
-    );
-    push_candidate(candidates, dir.join(INGEST_BINARY_FILENAME));
-    push_candidate(
-        candidates,
-        dir.join("dist")
-            .join("sidecar")
-            .join(INGEST_BINARY_FILENAME),
-    );
-}
-
-fn default_ingest_binary_candidates(app: Option<&AppHandle>) -> Vec<PathBuf> {
-    let mut candidates: Vec<PathBuf> = vec![];
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            append_candidate_dir(&mut candidates, exe_dir);
-        }
-    }
-
-    if let Some(app) = app {
-        if let Ok(resource_dir) = app.path().resource_dir() {
-            append_candidate_dir(&mut candidates, &resource_dir);
-        }
-    }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        append_candidate_dir(&mut candidates, &cwd);
-    }
-
-    candidates
-}
-
-fn pick_first_existing_binary(candidates: &[PathBuf]) -> Option<String> {
-    candidates
-        .iter()
-        .find(|p| p.is_file())
-        .map(|p| p.to_string_lossy().to_string())
-}
-
-fn resolve_ingest_binary(req: &IngestImportRequest, app: Option<&AppHandle>) -> (String, Vec<String>) {
-    if let Some(explicit_binary) = non_empty_opt(&req.ingest_binary_path) {
-        return (explicit_binary, vec![]);
-    }
-
-    let candidates = default_ingest_binary_candidates(app);
-    let searched = candidates
-        .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-
-    if let Some(found) = pick_first_existing_binary(&candidates) {
-        return (found, searched);
-    }
-
-    (INGEST_BINARY_FALLBACK_CMD.to_string(), searched)
-}
-
 fn emit_progress(app: Option<&AppHandle>, ev: IngestProgressEvent) {
     if let Some(app) = app {
         let _ = app.emit("ingest_import_progress", ev);
     }
+}
+
+fn explicit_binary(req: &IngestImportRequest) -> Option<String> {
+    non_empty_opt(&req.ingest_binary_path)
 }
 
 pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, String> {
@@ -245,38 +179,24 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
     Ok(args)
 }
 
-pub fn run_ingest_import(req: IngestImportRequest) -> Result<IngestImportResult, String> {
-    run_ingest_import_with_progress(req, None)
+#[derive(Clone, Copy)]
+enum StreamKind {
+    Stdout,
+    Stderr,
 }
 
-pub fn run_ingest_import_with_progress(
-    req: IngestImportRequest,
+fn run_explicit_binary_with_progress(
+    binary: &str,
+    args: &[String],
     app: Option<&AppHandle>,
 ) -> Result<IngestImportResult, String> {
-    let args = build_ingest_args(&req)?;
-    let (binary, searched_paths) = resolve_ingest_binary(&req, app);
-
-    let mut child = Command::new(&binary)
-        .args(&args)
+    let mut child = Command::new(binary)
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            if searched_paths.is_empty() {
-                format!("failed to start {binary}: {e}")
-            } else {
-                format!(
-                    "failed to start {binary}: {e}; searched default locations: {}",
-                    searched_paths.join("; ")
-                )
-            }
-        })?;
+        .map_err(|e| format!("failed to start {binary}: {e}"))?;
 
-    #[derive(Clone, Copy)]
-    enum StreamKind {
-        Stdout,
-        Stderr,
-    }
     let (tx, rx) = mpsc::channel::<(StreamKind, String)>();
 
     if let Some(stdout) = child.stdout.take() {
@@ -334,42 +254,97 @@ pub fn run_ingest_import_with_progress(
         .wait()
         .map_err(|e| format!("failed waiting for {binary}: {e}"))?;
     let exit_code = status.code().unwrap_or(-1);
-    let stdout = stdout_lines.join("\n");
-    let stderr = stderr_lines.join("\n");
-
-    let mut command = vec![binary];
-    command.extend(args);
 
     Ok(IngestImportResult {
         ok: status.success(),
         exit_code,
-        command,
-        stdout,
-        stderr,
+        command: {
+            let mut command = vec![binary.to_string()];
+            command.extend(args.to_vec());
+            command
+        },
+        stdout: stdout_lines.join("\n"),
+        stderr: stderr_lines.join("\n"),
     })
 }
 
-pub fn run_ingest_runtime_check(
-    req: IngestRuntimeCheckRequest,
-    app: Option<&AppHandle>,
-) -> Result<IngestRuntimeCheckResult, String> {
-    let import_req = IngestImportRequest {
-        ingest_binary_path: req.ingest_binary_path,
-        ..Default::default()
-    };
-    let (binary, searched_paths) = resolve_ingest_binary(&import_req, app);
-    let args = vec!["runtime-check".to_string()];
+fn run_tauri_sidecar_with_progress(
+    app: &AppHandle,
+    args: &[String],
+) -> Result<IngestImportResult, String> {
+    let command = app
+        .shell()
+        .sidecar(INGEST_SIDECAR_NAME)
+        .map_err(|e| format!("failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?
+        .args(args.to_vec());
 
-    let output = Command::new(&binary).args(&args).output().map_err(|e| {
-        if searched_paths.is_empty() {
-            format!("failed to start {binary}: {e}")
-        } else {
-            format!(
-                "failed to start {binary}: {e}; searched default locations: {}",
-                searched_paths.join("; ")
-            )
+    let (mut rx, _child) = command
+        .spawn()
+        .map_err(|e| format!("failed to spawn Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?;
+
+    let mut stdout_lines: Vec<String> = vec![];
+    let mut stderr_lines: Vec<String> = vec![];
+    let mut exit_code = -1;
+
+    tauri::async_runtime::block_on(async {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes)
+                        .trim_end_matches(&['\r', '\n'][..])
+                        .to_string();
+                    let parsed = serde_json::from_str::<serde_json::Value>(&line).ok();
+                    emit_progress(
+                        Some(app),
+                        IngestProgressEvent {
+                            stream: "stdout".to_string(),
+                            line: line.clone(),
+                            parsed,
+                        },
+                    );
+                    stdout_lines.push(line);
+                }
+                CommandEvent::Stderr(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes)
+                        .trim_end_matches(&['\r', '\n'][..])
+                        .to_string();
+                    emit_progress(
+                        Some(app),
+                        IngestProgressEvent {
+                            stream: "stderr".to_string(),
+                            line: line.clone(),
+                            parsed: None,
+                        },
+                    );
+                    stderr_lines.push(line);
+                }
+                CommandEvent::Error(error) => stderr_lines.push(error),
+                CommandEvent::Terminated(payload) => {
+                    exit_code = payload.code.unwrap_or(-1);
+                }
+                _ => {}
+            }
         }
-    })?;
+    });
+
+    Ok(IngestImportResult {
+        ok: exit_code == 0,
+        exit_code,
+        command: {
+            let mut command = vec![INGEST_SIDECAR_NAME.to_string()];
+            command.extend(args.to_vec());
+            command
+        },
+        stdout: stdout_lines.join("\n"),
+        stderr: stderr_lines.join("\n"),
+    })
+}
+
+fn run_explicit_binary_capture(binary: &str, args: &[String]) -> Result<IngestRuntimeCheckResult, String> {
+    let output = Command::new(binary)
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to start {binary}: {e}"))?;
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -380,8 +355,8 @@ pub fn run_ingest_runtime_check(
         ok: output.status.success(),
         exit_code,
         command: {
-            let mut command = vec![binary];
-            command.extend(args);
+            let mut command = vec![binary.to_string()];
+            command.extend(args.to_vec());
             command
         },
         stdout,
@@ -390,12 +365,84 @@ pub fn run_ingest_runtime_check(
     })
 }
 
+fn run_tauri_sidecar_capture(app: &AppHandle, args: &[String]) -> Result<IngestRuntimeCheckResult, String> {
+    let command = app
+        .shell()
+        .sidecar(INGEST_SIDECAR_NAME)
+        .map_err(|e| format!("failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?
+        .args(args.to_vec());
+
+    let output = tauri::async_runtime::block_on(async move { command.output().await })
+        .map_err(|e| format!("failed to execute Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let payload = serde_json::from_str::<serde_json::Value>(&stdout).ok();
+
+    Ok(IngestRuntimeCheckResult {
+        ok: output.status.success(),
+        exit_code,
+        command: {
+            let mut command = vec![INGEST_SIDECAR_NAME.to_string()];
+            command.extend(args.to_vec());
+            command
+        },
+        stdout,
+        stderr,
+        payload,
+    })
+}
+
+pub fn run_ingest_import(req: IngestImportRequest) -> Result<IngestImportResult, String> {
+    run_ingest_import_with_progress(req, None)
+}
+
+pub fn run_ingest_import_with_progress(
+    req: IngestImportRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestImportResult, String> {
+    let args = build_ingest_args(&req)?;
+    if let Some(binary) = explicit_binary(&req) {
+        return run_explicit_binary_with_progress(&binary, &args, app);
+    }
+
+    let app = app.ok_or_else(|| {
+        format!(
+            "Tauri AppHandle required for sidecar execution; use ingest_binary_path to run {} explicitly in tests or tooling",
+            INGEST_SIDECAR_NAME
+        )
+    })?;
+    run_tauri_sidecar_with_progress(app, &args)
+}
+
+pub fn run_ingest_runtime_check(
+    req: IngestRuntimeCheckRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let explicit_binary = req
+        .ingest_binary_path
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let args = vec!["runtime-check".to_string()];
+
+    if let Some(binary) = explicit_binary {
+        return run_explicit_binary_capture(&binary, &args);
+    }
+
+    let app = app.ok_or_else(|| {
+        format!(
+            "Tauri AppHandle required for sidecar execution; use ingest_binary_path to run {} explicitly in tests or tooling",
+            INGEST_SIDECAR_NAME
+        )
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::{build_ingest_args, IngestImportRequest, IngestSubcommand};
+    use super::{build_ingest_args, explicit_binary, IngestImportRequest, IngestSubcommand};
 
     fn req_base() -> IngestImportRequest {
         IngestImportRequest {
@@ -463,35 +510,14 @@ mod tests {
     }
 
     #[test]
-    fn resolve_ingest_binary_honors_explicit_override() {
+    fn explicit_binary_honors_override() {
         let req = IngestImportRequest {
             ingest_binary_path: Some("C:/tools/custom_ingest.exe".to_string()),
             ..req_base()
         };
-        let (binary, searched) = super::resolve_ingest_binary(&req, None);
-        assert_eq!(binary, "C:/tools/custom_ingest.exe");
-        assert!(searched.is_empty());
-    }
-
-    #[test]
-    fn pick_first_existing_binary_prefers_earliest_candidate() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("aural_ingest_candidates_{nonce}"));
-        fs::create_dir_all(&root).expect("mkdir temp");
-
-        let missing = root.join("missing.exe");
-        let first = root.join("first.exe");
-        let second = root.join("second.exe");
-        fs::write(&first, b"x").expect("write first");
-        fs::write(&second, b"x").expect("write second");
-
-        let picked = super::pick_first_existing_binary(&[missing, first.clone(), second])
-            .expect("pick existing binary");
-        assert_eq!(picked, first.to_string_lossy().to_string());
-
-        let _ = fs::remove_dir_all(root);
+        assert_eq!(
+            explicit_binary(&req).as_deref(),
+            Some("C:/tools/custom_ingest.exe")
+        );
     }
 }
