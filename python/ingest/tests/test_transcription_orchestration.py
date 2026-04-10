@@ -327,7 +327,7 @@ def test_resolve_mt3_modelpack_prefers_installed_modelpack_layout(tmp_path: Path
 
 
 def test_midi_to_drum_events_normalizes_note_classes_and_timing() -> None:
-    import mido
+    mido = pytest.importorskip("mido")
 
     from aural_ingest.transcription import _midi_to_drum_events
 
@@ -372,7 +372,7 @@ def test_transcribe_drums_mt3_engine_surfaces_model_meta(tmp_path: Path, monkeyp
 
 
 def test_transcribe_drums_mt3_uses_local_checkpoint_only(tmp_path: Path, monkeypatch) -> None:
-    import mido
+    mido = pytest.importorskip("mido")
     import numpy as np
     import sys
     import types
@@ -438,7 +438,7 @@ def test_transcribe_drums_mt3_uses_local_checkpoint_only(tmp_path: Path, monkeyp
 
 
 def test_transcribe_drums_mt3_suppresses_known_runtime_warnings(tmp_path: Path, monkeypatch) -> None:
-    import mido
+    mido = pytest.importorskip("mido")
     import numpy as np
     import sys
     import types

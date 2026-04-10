@@ -94,6 +94,10 @@ def _count_note_on(midi_bytes: bytes, status: int, notes: set[int] | None = None
     return out
 
 
+def _count_note_on_statuses(midi_bytes: bytes, statuses: set[int], notes: set[int] | None = None) -> int:
+    return sum(_count_note_on(midi_bytes, status, notes) for status in statuses)
+
+
 @pytest.mark.parametrize("bpm", [90.0, 120.0])
 def test_import_generates_valid_songpack(tmp_path: Path, bpm: float) -> None:
     # Arrange
@@ -121,12 +125,18 @@ def test_import_generates_valid_songpack(tmp_path: Path, bpm: float) -> None:
     assert (out / "manifest.json").is_file()
     assert (out / "audio/mix.wav").is_file()
     assert (out / "features/notes.mid").is_file()
+    assert (out / "features/beats.json").is_file()
+    assert (out / "features/tempo_map.json").is_file()
+    assert (out / "features/sections.json").is_file()
     assert (out / "audio/stems/lead_guitar.wav").is_file()
     assert (out / "audio/stems/rhythm_guitar.wav").is_file()
 
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     assert manifest["assets"]["audio"]["mix_path"] == "audio/mix.wav"
     assert manifest["assets"]["midi"]["notes_path"] == "features/notes.mid"
+    assert manifest["assets"]["features"]["beats_path"] == "features/beats.json"
+    assert manifest["assets"]["features"]["tempo_map_path"] == "features/tempo_map.json"
+    assert manifest["assets"]["features"]["sections_path"] == "features/sections.json"
     assert manifest["timing"]["audio_sample_rate_hz"] == 48_000
     assert manifest["duration_sec"] == pytest.approx(8.0, abs=1e-6)
     assert manifest["source"]["ingest_timestamp"] == "2000-01-01T00:00:00Z"
@@ -142,8 +152,8 @@ def test_import_generates_valid_songpack(tmp_path: Path, bpm: float) -> None:
     assert structure_beat_notes > 0
     # Drums: channel 10 note-on status (0x99)
     assert _count_note_on(notes_mid, 0x99) > 0
-    # Melodic: channel 1 note-on status (0x90)
-    assert _count_note_on(notes_mid, 0x90) > 0
+    # Melodic: legacy fallback is channel 1, instrument stems use channels 1-5.
+    assert _count_note_on_statuses(notes_mid, {0x90, 0x91, 0x92, 0x93, 0x94}) > 0
 
 
 def test_import_guitar_split_preserves_shape_and_reconstructs_source(tmp_path: Path) -> None:
@@ -600,6 +610,9 @@ def test_import_persists_transcription_options_into_manifest(tmp_path: Path) -> 
     args.duration_sec = None
     args.drum_filter = "dsp_spectral_flux"
     args.melodic_method = "basic_pitch"
+    args.beat_analysis_mode = "high_accuracy"
+    args.stem_separation_provider = "none"
+    args.stem_separation_provider_path = None
     args.shifts = 2
     args.multi_filter = True
 
@@ -612,6 +625,8 @@ def test_import_persists_transcription_options_into_manifest(tmp_path: Path) -> 
     assert tr["drum_filter_used"] == "dsp_spectral_flux"
     assert tr["melodic_method"] == "basic_pitch"
     assert tr["melodic_method_used"] in {"basic_pitch", "pyin"}
+    assert tr["beat_analysis_mode"] == "high_accuracy"
+    assert tr["stem_separation_provider"] == "none"
     assert tr["shifts"] == 2
     assert tr["multi_filter"] is True
     assert recognition["drums"]["requested_engine"] == "dsp_spectral_flux"
@@ -676,6 +691,114 @@ def test_import_auto_melodic_no_longer_requires_external_basic_pitch_model(tmp_p
     tr = manifest["pipeline"]["transcription"]
     assert tr["melodic_method_used"] == "basic_pitch"
     assert not any("model path unavailable" in w for w in tr.get("warnings", []))
+
+
+def test_import_high_accuracy_beat_mode_falls_back_to_standard_without_librosa(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src = tmp_path / "src.wav"
+    _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
+    out = tmp_path / "HighAccuracy.songpack"
+
+    from aural_ingest import cli
+
+    real_import = __import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
+        if name == "librosa":
+            raise ImportError("blocked for test")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(src)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = "{}"
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.melodic_method = "auto"
+    args.beat_analysis_mode = "high_accuracy"
+    args.stem_separation_provider = "none"
+    args.stem_separation_provider_path = None
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import(args) == 0
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    beats_meta = manifest["pipeline"]["beats_tempo"]
+    assert beats_meta["mode"] == "high_accuracy"
+    assert beats_meta["degraded_to"] == "standard"
+
+
+def test_import_uses_external_stem_separation_provider_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src_mix = tmp_path / "mix.wav"
+    _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
+    out = tmp_path / "ExternalProvider.songpack"
+    provider_module = tmp_path / "fake_provider.py"
+    provider_module.write_text(
+        "\n".join(
+            [
+                "import wave",
+                "",
+                "def separate(mix_wav, stems_dir, *, mix_sha256, shifts, config):",
+                "    with wave.open(str(mix_wav), 'rb') as src:",
+                "        raw = src.readframes(src.getnframes())",
+                "        params = (src.getnchannels(), src.getsampwidth(), src.getframerate())",
+                "    stem_path = stems_dir / 'drums.wav'",
+                "    with wave.open(str(stem_path), 'wb') as dst:",
+                "        dst.setnchannels(params[0])",
+                "        dst.setsampwidth(params[1])",
+                "        dst.setframerate(params[2])",
+                "        dst.writeframes(raw)",
+                "    return {",
+                "        'ok': True,",
+                "        'status': 'fresh',",
+                "        'provider': 'external',",
+                "        'provider_path': 'fake_provider:separate',",
+                "        'stem_paths': {'drums': 'audio/stems/drums.wav'},",
+                "        'cache_hit': False,",
+                "        'shifts': shifts,",
+                "    }",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    from aural_ingest.cli import cmd_import
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(src_mix)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = "{}"
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.melodic_method = "auto"
+    args.beat_analysis_mode = "standard"
+    args.stem_separation_provider = "external"
+    args.stem_separation_provider_path = "fake_provider:separate"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cmd_import(args) == 0
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    sep_meta = manifest["pipeline"]["stem_separation"]
+    assert sep_meta["provider"] == "external"
+    assert sep_meta["provider_path"] == "fake_provider:separate"
+    assert manifest["assets"]["audio"]["stems"]["drums_path"] == "audio/stems/drums.wav"
 
 
 def test_import_fallback_chain_uses_next_algorithm_when_requested_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

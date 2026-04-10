@@ -127,6 +127,10 @@ def test_build_parser_knows_core_commands() -> None:
             "combined_filter",
             "--melodic-method",
             "pyin",
+            "--beat-analysis-mode",
+            "high_accuracy",
+            "--stem-separation-provider",
+            "none",
             "--shifts",
             "2",
             "--multi-filter",
@@ -134,6 +138,8 @@ def test_build_parser_knows_core_commands() -> None:
     )
     assert parsed.drum_filter == "combined_filter"
     assert parsed.melodic_method == "pyin"
+    assert parsed.beat_analysis_mode == "high_accuracy"
+    assert parsed.stem_separation_provider == "none"
     assert parsed.shifts == 2
     assert parsed.multi_filter is True
 
@@ -503,6 +509,9 @@ def test_cmd_import_handles_unknown_drum_filter_and_rejects_other_invalid_transc
     args.duration_sec = None
     args.drum_filter = "not_valid"
     args.melodic_method = "auto"
+    args.beat_analysis_mode = "standard"
+    args.stem_separation_provider = "auto"
+    args.stem_separation_provider_path = None
     args.shifts = 1
     args.multi_filter = False
 
@@ -521,6 +530,10 @@ def test_cmd_import_handles_unknown_drum_filter_and_rejects_other_invalid_transc
     args.shifts = 0
     assert cli.cmd_import(args) == 2
 
+    args.shifts = 1
+    args.beat_analysis_mode = "broken"
+    assert cli.cmd_import(args) == 2
+
 
 def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypatch) -> None:
     from aural_ingest import cli
@@ -535,6 +548,9 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
     def fake_cmd_import(args):
         seen["drum_filter"] = args.drum_filter
         seen["melodic_method"] = args.melodic_method
+        seen["beat_analysis_mode"] = args.beat_analysis_mode
+        seen["stem_separation_provider"] = args.stem_separation_provider
+        seen["stem_separation_provider_path"] = args.stem_separation_provider_path
         seen["shifts"] = args.shifts
         seen["multi_filter"] = args.multi_filter
         return 0
@@ -551,6 +567,9 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
     args.duration_sec = None
     args.drum_filter = "dsp_bandpass_improved"
     args.melodic_method = "basic_pitch"
+    args.beat_analysis_mode = "high_accuracy"
+    args.stem_separation_provider = "none"
+    args.stem_separation_provider_path = None
     args.shifts = 3
     args.multi_filter = True
 
@@ -558,6 +577,9 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
     assert seen == {
         "drum_filter": "dsp_bandpass_improved",
         "melodic_method": "basic_pitch",
+        "beat_analysis_mode": "high_accuracy",
+        "stem_separation_provider": "none",
+        "stem_separation_provider_path": None,
         "shifts": 3,
         "multi_filter": True,
     }
