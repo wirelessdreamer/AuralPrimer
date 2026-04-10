@@ -47,7 +47,7 @@ def test_unknown_drum_filter_does_not_default_to_adaptive() -> None:
     from aural_ingest.transcription import resolve_drum_filter
 
     normalized, warnings = resolve_drum_filter("legacy_unknown")
-    assert normalized == "adaptive_beat_grid"
+    assert normalized == "combined_filter"
     assert warnings
     assert "legacy_unknown" in warnings[0]
 
@@ -188,8 +188,8 @@ def test_transcribe_melodic_requested_basic_pitch_can_fallback_to_pyin(tmp_path:
 def test_resolve_drum_filter_accepts_none_and_auto() -> None:
     from aural_ingest.transcription import resolve_drum_filter
 
-    assert resolve_drum_filter(None) == ("adaptive_beat_grid", [])
-    assert resolve_drum_filter(" auto ") == ("adaptive_beat_grid", [])
+    assert resolve_drum_filter(None) == ("combined_filter", [])
+    assert resolve_drum_filter(" auto ") == ("combined_filter", [])
 
 
 def test_validate_melodic_method_accepts_none_and_blank() -> None:

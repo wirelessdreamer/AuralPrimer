@@ -643,12 +643,12 @@ def test_import_unknown_drum_filter_falls_back_to_default_engine_and_records_war
     assert cmd_import(args) == 0
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     tr = manifest["pipeline"]["transcription"]
-    assert tr["drum_filter"] == "adaptive_beat_grid"
+    assert tr["drum_filter"] == "combined_filter"
     assert tr["drum_filter_requested"] == "legacy_unknown_filter"
-    assert tr["drum_filter_used"] == "adaptive_beat_grid"
+    assert tr["drum_filter_used"] == "combined_filter"
     assert tr["warnings"]
     assert manifest["recognition"]["drums"]["requested_engine"] == "legacy_unknown_filter"
-    assert manifest["recognition"]["drums"]["used_engine"] == "adaptive_beat_grid"
+    assert manifest["recognition"]["drums"]["used_engine"] == "combined_filter"
 
 
 def test_import_auto_melodic_no_longer_requires_external_basic_pitch_model(tmp_path: Path) -> None:
