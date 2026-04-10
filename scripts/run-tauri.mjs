@@ -33,6 +33,10 @@ function toWindowsPath(inputPath) {
   return result.stdout.trim();
 }
 
+function escapeCmdArg(value) {
+  return value.replaceAll('"', '""');
+}
+
 const args = process.argv.slice(2);
 if (args.length === 0) {
   console.error("usage: node scripts/run-tauri.mjs <dev|build> [args...]");
@@ -45,8 +49,11 @@ if (isWsl()) {
     : "cmd.exe";
   const winCwd = toWindowsPath(process.cwd());
   const winTauriCmd = toWindowsPath(path.join(repoRoot, "node_modules", ".bin", "tauri.cmd"));
-  const escapedArgs = args.map((value) => `"${value.replaceAll('"', '\\"')}"`).join(" ");
-  const command = `cd /d "${winCwd}" && "${winTauriCmd}" ${escapedArgs}`.trim();
+  const escapedArgs = args.map((value) => `"${escapeCmdArg(value)}"`).join(" ");
+  const isUnc = winCwd.startsWith("\\\\");
+  const changeDir = isUnc ? `pushd "${winCwd}"` : `cd /d "${winCwd}"`;
+  const restoreDir = isUnc ? " & set TAURI_EXIT=%ERRORLEVEL% & popd & exit /b %TAURI_EXIT%" : "";
+  const command = `${changeDir} && "${winTauriCmd}" ${escapedArgs}${restoreDir}`.trim();
   const result = spawnSync(cmdHost, ["/d", "/s", "/c", command], {
     stdio: "inherit",
   });

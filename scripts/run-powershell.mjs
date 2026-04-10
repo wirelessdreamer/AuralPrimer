@@ -53,6 +53,39 @@ function toWindowsPath(inputPath) {
   return result.stdout.trim();
 }
 
+function escapePowerShellSingleQuoted(value) {
+  return value.replaceAll("'", "''");
+}
+
+function resolveWindowsArch() {
+  const cmdHost = fileExists("/mnt/c/Windows/System32/cmd.exe")
+    ? "/mnt/c/Windows/System32/cmd.exe"
+    : "cmd.exe";
+  const probe = spawnSync(
+    cmdHost,
+    ["/d", "/s", "/c", "echo %PROCESSOR_ARCHITECTURE%|%PROCESSOR_ARCHITEW6432%"],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  if (probe.status !== 0) {
+    return "";
+  }
+  return probe.stdout.trim().toUpperCase();
+}
+
+function resolveWindowsTargetTriple() {
+  const arch = resolveWindowsArch();
+  if (arch.includes("ARM64")) {
+    return "aarch64-pc-windows-msvc";
+  }
+  if (arch.includes("AMD64") || arch.includes("X86_64")) {
+    return "x86_64-pc-windows-msvc";
+  }
+  return "";
+}
+
 const argv = process.argv.slice(2);
 if (argv.length === 0) {
   console.error("usage: node scripts/run-powershell.mjs <script.ps1> [args...]");
@@ -65,18 +98,36 @@ const scriptPath = path.isAbsolute(scriptArg) ? scriptArg : path.resolve(repoRoo
 const trailingArgs = argv.slice(1);
 
 let fileArg = scriptPath;
+let commandArgs = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fileArg, ...trailingArgs];
+const env = { ...process.env };
 if (isWsl() && host.toLowerCase().endsWith(".exe")) {
+  const windowsCwd = toWindowsPath(process.cwd());
   fileArg = toWindowsPath(scriptPath);
+  const renderedArgs = trailingArgs
+    .map((value) => `'${escapePowerShellSingleQuoted(value)}'`)
+    .join(", ");
+  const invokeArgs = renderedArgs ? `@(${renderedArgs})` : "@()";
+  const command = [
+    `$ErrorActionPreference = 'Stop'`,
+    `Set-Location -LiteralPath '${escapePowerShellSingleQuoted(windowsCwd)}'`,
+    `$scriptArgs = ${invokeArgs}`,
+    `& '${escapePowerShellSingleQuoted(fileArg)}' @scriptArgs`,
+  ].join("; ");
+  commandArgs = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command];
+
+  if (!env.TAURI_ENV_TARGET_TRIPLE && !env.CARGO_BUILD_TARGET && !env.TARGET) {
+    const targetTriple = resolveWindowsTargetTriple();
+    if (targetTriple) {
+      env.TAURI_ENV_TARGET_TRIPLE = targetTriple;
+    }
+  }
 }
 
-const result = spawnSync(
-  host,
-  ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fileArg, ...trailingArgs],
-  {
-    cwd: process.cwd(),
-    stdio: "inherit",
-  },
-);
+const result = spawnSync(host, commandArgs, {
+  cwd: process.cwd(),
+  env,
+  stdio: "inherit",
+});
 
 if (result.error) {
   console.error(result.error.message);
