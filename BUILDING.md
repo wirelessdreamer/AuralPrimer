@@ -86,6 +86,8 @@ Each command runs `tauri dev`, which starts Vite and the Rust backend.
 ### WSL + Windows
 The repo now routes `npm run ...tauri...`, `npm run portable:sidecar`, and `npm run portable:build` through thin launchers so the same commands work from native Windows or from WSL against the Windows checkout.
 
+This also covers WSL-hosted task worktrees under `/home/...`: the launchers translate the WSL path to a Windows-accessible UNC path and invoke the Windows toolchain from there.
+
 If you intentionally want a Linux Tauri build, run the Linux toolchain directly instead of the wrapper scripts.
 
 From repo root:
