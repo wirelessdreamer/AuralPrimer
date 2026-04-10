@@ -14,7 +14,7 @@ import tempfile
 import time
 import warnings
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -48,10 +48,19 @@ from aural_ingest.transcription import (
 
 
 @dataclass(frozen=True)
+class StageModelRequirement:
+    model_id: str
+    modelpack_id: str
+    version: str | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class Stage:
     id: str
     version: str
     outputs: list[str]
+    required_models: list[StageModelRequirement] = field(default_factory=list)
 
 
 PIPELINE_ID = "aural_ingest"
@@ -81,6 +90,13 @@ STAGES: list[Stage] = [
             "audio/stems/vocals.wav",
             "audio/stems/other.wav",
         ],
+        required_models=[
+            StageModelRequirement(
+                model_id=DEMUCS_MODELPACK_ID,
+                modelpack_id=DEMUCS_MODELPACK_ID,
+                reason="Demucs stem separation weights",
+            )
+        ],
     ),
     Stage(
         id="split_guitar_stems",
@@ -90,6 +106,123 @@ STAGES: list[Stage] = [
     Stage(id="transcribe_drums", version="0.2.0", outputs=["features/notes.mid"]),
     Stage(id="midi_finalize", version="0.1.0", outputs=["features/notes.mid"]),
 ]
+
+
+def _serialize_declared_requirement(req: StageModelRequirement) -> dict[str, Any]:
+    return {
+        "model_id": req.model_id,
+        "modelpack_id": req.modelpack_id,
+        "version": req.version,
+        "reason": req.reason,
+    }
+
+
+def _declared_mt3_stage_variants() -> dict[str, dict[str, Any]]:
+    variants: dict[str, dict[str, Any]] = {}
+    for engine_id in KNOWN_MT3_DRUM_ENGINES:
+        info = drum_engine_metadata(engine_id)
+        variants[engine_id] = {
+            "engine": engine_id,
+            "backend": info.get("backend"),
+            "description": info.get("description"),
+            "required_models": [
+                {
+                    "model_id": info.get("model_id"),
+                    "modelpack_id": info.get("modelpack_id"),
+                    "version": None,
+                    "reason": info.get("description"),
+                }
+            ],
+        }
+    return variants
+
+
+def _serialize_stage_declaration(stage: Stage) -> dict[str, Any]:
+    payload = {
+        "id": stage.id,
+        "version": stage.version,
+        "outputs": stage.outputs,
+    }
+    if stage.required_models:
+        payload["required_models"] = [_serialize_declared_requirement(req) for req in stage.required_models]
+    if stage.id == "transcribe_drums":
+        payload["variants"] = _declared_mt3_stage_variants()
+    return payload
+
+
+def _resolved_demucs_stage_requirement(
+    modelpack_path: Path | None,
+    modelpack_manifest: dict[str, Any] | None,
+    modelpack_error: str | None,
+) -> dict[str, Any]:
+    return {
+        "model_id": DEMUCS_MODELPACK_ID,
+        "modelpack_id": DEMUCS_MODELPACK_ID,
+        "version": (
+            str(modelpack_manifest.get("version", "")).strip() or None
+            if isinstance(modelpack_manifest, dict)
+            else None
+        ),
+        "resolved_path": str(modelpack_path) if modelpack_path is not None else None,
+        "installed": modelpack_path is not None and modelpack_manifest is not None,
+        "reason": "Demucs stem separation weights",
+        "error": modelpack_error,
+    }
+
+
+def _resolved_mt3_stage_variants(drum_engines: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    variants: dict[str, dict[str, Any]] = {}
+    for engine_id in KNOWN_MT3_DRUM_ENGINES:
+        info = drum_engine_metadata(engine_id)
+        engine_info = drum_engines.get(engine_id, {})
+        enabled = bool(engine_info.get("ok"))
+        if "loadable" in engine_info or "transcribe_smoke_ok" in engine_info:
+            enabled = enabled and bool(engine_info.get("loadable")) and bool(engine_info.get("transcribe_smoke_ok"))
+        variants[engine_id] = {
+            "engine": engine_id,
+            "backend": info.get("backend"),
+            "description": info.get("description"),
+            "enabled": enabled,
+            "required_models": [
+                {
+                    "model_id": engine_info.get("model_id", info.get("model_id")),
+                    "modelpack_id": engine_info.get("modelpack_id", info.get("modelpack_id")),
+                    "version": engine_info.get("modelpack_version"),
+                    "resolved_path": engine_info.get("modelpack_root"),
+                    "installed": bool(engine_info.get("ok")),
+                    "reason": info.get("description"),
+                    "error": engine_info.get("error"),
+                }
+            ],
+        }
+    return variants
+
+
+def _runtime_stage_snapshot(
+    drum_engines: dict[str, dict[str, Any]],
+    demucs_modelpack_path: Path | None,
+    demucs_modelpack_manifest: dict[str, Any] | None,
+    demucs_modelpack_error: str | None,
+) -> dict[str, dict[str, Any]]:
+    stages: dict[str, dict[str, Any]] = {}
+    for stage in STAGES:
+        payload = _serialize_stage_declaration(stage)
+        if stage.id == "separate_stems":
+            payload["required_models"] = [
+                _resolved_demucs_stage_requirement(
+                    demucs_modelpack_path,
+                    demucs_modelpack_manifest,
+                    demucs_modelpack_error,
+                )
+            ]
+            payload["enabled"] = payload["required_models"][0]["installed"]
+        elif stage.id == "transcribe_drums":
+            payload["variants"] = _resolved_mt3_stage_variants(drum_engines)
+            payload["enabled"] = True
+        else:
+            payload["enabled"] = True
+        stages[stage.id] = payload
+    return stages
 
 
 def _parse_config_arg(raw: str | None) -> dict[str, Any]:
@@ -1317,7 +1450,7 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
 def cmd_stages(_args: argparse.Namespace) -> int:
     # Keep output stable + simple.
     for st in STAGES:
-        print(json.dumps({"id": st.id, "version": st.version, "outputs": st.outputs}, sort_keys=True))
+        print(json.dumps(_serialize_stage_declaration(st), sort_keys=True))
     return 0
 
 
@@ -1508,6 +1641,12 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
             ),
         },
     }
+    payload["stages"] = _runtime_stage_snapshot(
+        payload["drum_engines"],
+        demucs_modelpack_path,
+        demucs_modelpack_manifest,
+        demucs_modelpack_error,
+    )
     if demucs_modelpack_manifest is not None:
         payload["assets"]["demucs_modelpack"]["manifest"] = {
             "id": demucs_modelpack_manifest.get("id"),
@@ -1564,6 +1703,13 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
                 engine_info["transcribe_smoke_ok"] = False
                 engine_info["error"] = str(exc)
                 payload["ok"] = False
+
+    payload["stages"] = _runtime_stage_snapshot(
+        payload["drum_engines"],
+        demucs_modelpack_path,
+        demucs_modelpack_manifest,
+        demucs_modelpack_error,
+    )
 
     mt3_assets: dict[str, dict[str, Any]] = {}
     for engine_id, engine_info in payload["drum_engines"].items():

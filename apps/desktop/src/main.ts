@@ -15,7 +15,12 @@ import { extractKeyModeFromManifest } from "./hud";
 import { ingestImport, type IngestImportRequest, type IngestSubcommand } from "./ingestClient";
 import { buildIngestRequestFromForm, inferIngestTitleArtistFromSourcePath } from "./ingestUi";
 import { PREFERRED_MODEL_PACKS } from "./models/preferredModelPacks";
-import { installModelPackFromPath, installModelPackFromUrl, listInstalledModelPacks } from "./models/modelManager";
+import {
+  installModelPackFromPath,
+  installModelPackFromUrl,
+  listInstalledModelPacks,
+  type InstalledModelPack
+} from "./models/modelManager";
 import { BUILTIN_PLUGINS, type PluginDescriptor, loadPlugin, scanBundledPlugins, scanUserPlugins } from "./plugins";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -1013,6 +1018,34 @@ function escapeHtml(s: string): string {
 
 function yesNo(v: boolean): string {
   return v ? "yes" : "no";
+}
+
+function formatModelPackLicense(pack: InstalledModelPack): string {
+  if (typeof pack.license === "string") return pack.license;
+  if (pack.license && typeof pack.license === "object") {
+    const record = pack.license as Record<string, unknown>;
+    for (const key of ["name", "id", "spdx", "text"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  return "not declared";
+}
+
+function formatInstalledModelPacks(installed: InstalledModelPack[]): string {
+  if (!installed.length) return "(no model packs installed)";
+  return installed
+    .map((pack) => {
+      const lines = [
+        `${pack.id}@${pack.version}${pack.ok ? "" : " [invalid]"}`,
+        `  root: ${pack.root_dir}`,
+        `  license: ${formatModelPackLicense(pack)}`
+      ];
+      if (pack.license_path) lines.push(`  license_path: ${pack.license_path}`);
+      if (pack.error) lines.push(`  error: ${pack.error}`);
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
 
 const MT3_ENGINE_LABELS: Record<string, string> = {
@@ -3361,7 +3394,7 @@ async function refreshModels() {
   modelsStatusEl.textContent = "Loading…";
   try {
     const installed = await listInstalledModelPacks();
-    modelsStatusEl.textContent = JSON.stringify(installed, null, 2);
+    modelsStatusEl.textContent = formatInstalledModelPacks(installed);
   } catch (e) {
     modelsStatusEl.textContent = String(e);
   }
