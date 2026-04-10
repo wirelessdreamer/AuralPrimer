@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
+import importlib
 import io
 import inspect
 import json
@@ -69,6 +70,9 @@ SCHEMA_VERSION = "1.0.0"
 DEMUCS_MODELPACK_ID = "demucs_6"
 DEMUCS_MODELPACK_FILENAME = "demucs_6.zip"
 DEMUCS_PROVIDER = "demucs"
+DEFAULT_STEM_SEPARATION_PROVIDER = "auto"
+DEFAULT_BEAT_ANALYSIS_MODE = "standard"
+KNOWN_BEAT_ANALYSIS_MODES: tuple[str, ...] = ("standard", "high_accuracy")
 DEMUCS_STEM_ROLE_ALIASES: dict[str, str] = {"piano": "keys"}
 DEMUCS_PRIMARY_STEM_ROLES: tuple[str, ...] = ("drums", "bass", "guitar", "keys", "vocals")
 
@@ -77,8 +81,8 @@ STAGES: list[Stage] = [
     Stage(id="init_songpack", version="0.1.0", outputs=["manifest.json"]),
     # We always produce mix.wav. Compressed assets are optional (only produced when ffmpeg is available).
     Stage(id="decode_audio", version="0.2.0", outputs=["audio/mix.wav", "audio/mix.mp3", "audio/mix.ogg"]),
-    Stage(id="beats_tempo", version="0.2.0", outputs=["features/notes.mid"]),
-    Stage(id="sections", version="0.2.0", outputs=["features/notes.mid"]),
+    Stage(id="beats_tempo", version="0.3.0", outputs=["features/beats.json", "features/tempo_map.json"]),
+    Stage(id="sections", version="0.3.0", outputs=["features/sections.json"]),
     Stage(
         id="separate_stems",
         version="0.1.0",
@@ -479,6 +483,233 @@ def _generate_sections(duration_sec: float, bpm: float, *, bars_per_section: int
     return sections
 
 
+def _generate_tempo_map(
+    duration_sec: float,
+    bpm: float,
+    *,
+    time_signature: str = "4/4",
+) -> dict[str, Any]:
+    bpm_safe = float(round(bpm if bpm > 0 else 120.0, 3))
+    return {
+        "tempo_version": "1.0.0",
+        "segments": [
+            {
+                "t0": 0.0,
+                "t1": _quantize(max(0.0, duration_sec)),
+                "bpm": bpm_safe,
+                "time_signature": time_signature,
+            }
+        ],
+    }
+
+
+def _coerce_scalar_float(value: Any, default: float) -> float:
+    try:
+        if hasattr(value, "item"):
+            return float(value.item())
+        if isinstance(value, (list, tuple)):
+            if not value:
+                return float(default)
+            return float(value[0])
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _refine_beat_times_with_onsets(
+    beat_times: list[float],
+    onset_times: list[float],
+    *,
+    max_adjust_sec: float,
+) -> list[float]:
+    if not beat_times or not onset_times:
+        return beat_times[:]
+
+    out: list[float] = []
+    onset_idx = 0
+    for beat in beat_times:
+        best = beat
+        best_delta = max_adjust_sec + 1e-9
+        while onset_idx < len(onset_times) and onset_times[onset_idx] < beat - max_adjust_sec:
+            onset_idx += 1
+        probe = onset_idx
+        while probe < len(onset_times):
+            delta = onset_times[probe] - beat
+            if delta > max_adjust_sec:
+                break
+            abs_delta = abs(delta)
+            if abs_delta < best_delta:
+                best = onset_times[probe]
+                best_delta = abs_delta
+            probe += 1
+        out.append(best)
+    return out
+
+
+def _assign_bar_positions(beat_times: list[float], *, beats_per_bar: int = 4) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    bar = 0
+    beat_in_bar = 0
+    for beat_time in beat_times:
+        out.append(
+            {
+                "t": _quantize(max(0.0, beat_time)),
+                "bar": int(bar),
+                "beat": int(beat_in_bar),
+                "strength": 1.0 if beat_in_bar == 0 else 0.5,
+            }
+        )
+        beat_in_bar += 1
+        if beat_in_bar >= beats_per_bar:
+            beat_in_bar = 0
+            bar += 1
+    return out
+
+
+def _analyze_beats_tempo_standard(
+    wav_path: Path,
+    *,
+    duration_sec: float,
+    bpm_hint: float | None,
+) -> tuple[float, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    if bpm_hint is not None and bpm_hint > 0:
+        bpm = float(round(bpm_hint, 3))
+        source = "hint"
+    else:
+        bpm = _estimate_bpm_from_wav(wav_path)
+        source = "energy_autocorrelation"
+    beats = {"beats_version": "1.0.0", "beats": _generate_beats(duration_sec, bpm)}
+    tempo_map = _generate_tempo_map(duration_sec, bpm)
+    meta = {
+        "mode": "standard",
+        "tempo_source": source,
+        "beat_source": "uniform_grid",
+        "estimated_bpm": bpm,
+    }
+    return bpm, beats, tempo_map, meta
+
+
+def _analyze_beats_tempo_high_accuracy(
+    wav_path: Path,
+    *,
+    duration_sec: float,
+    bpm_hint: float | None,
+) -> tuple[float, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    try:
+        import numpy as np
+        import librosa
+    except Exception:
+        bpm, beats, tempo_map, meta = _analyze_beats_tempo_standard(
+            wav_path,
+            duration_sec=duration_sec,
+            bpm_hint=bpm_hint,
+        )
+        meta["mode"] = "high_accuracy"
+        meta["fallback_reason"] = "librosa runtime unavailable"
+        meta["degraded_to"] = "standard"
+        return bpm, beats, tempo_map, meta
+
+    try:
+        audio, sr = librosa.load(str(wav_path), sr=None, mono=True)
+    except Exception as exc:
+        bpm, beats, tempo_map, meta = _analyze_beats_tempo_standard(
+            wav_path,
+            duration_sec=duration_sec,
+            bpm_hint=bpm_hint,
+        )
+        meta["mode"] = "high_accuracy"
+        meta["fallback_reason"] = f"audio decode failed: {exc}"
+        meta["degraded_to"] = "standard"
+        return bpm, beats, tempo_map, meta
+
+    if sr <= 0 or len(audio) == 0:
+        bpm, beats, tempo_map, meta = _analyze_beats_tempo_standard(
+            wav_path,
+            duration_sec=duration_sec,
+            bpm_hint=bpm_hint,
+        )
+        meta["mode"] = "high_accuracy"
+        meta["fallback_reason"] = "empty audio"
+        meta["degraded_to"] = "standard"
+        return bpm, beats, tempo_map, meta
+
+    onset_env = librosa.onset.onset_strength(y=np.asarray(audio, dtype=np.float32), sr=int(sr))
+    beat_track_kwargs: dict[str, Any] = {
+        "y": np.asarray(audio, dtype=np.float32),
+        "sr": int(sr),
+        "trim": False,
+        "units": "time",
+    }
+    if bpm_hint is not None and bpm_hint > 0:
+        beat_track_kwargs["start_bpm"] = float(bpm_hint)
+
+    tempo_estimate, beat_times_raw = librosa.beat.beat_track(**beat_track_kwargs)
+    bpm = float(round(_coerce_scalar_float(tempo_estimate, bpm_hint or 120.0), 3))
+    beat_times = sorted(float(t) for t in beat_times_raw.tolist()) if hasattr(beat_times_raw, "tolist") else []
+    onset_times = librosa.onset.onset_detect(
+        onset_envelope=onset_env,
+        sr=int(sr),
+        units="time",
+        backtrack=True,
+    )
+    onset_times_list = sorted(float(t) for t in onset_times.tolist()) if hasattr(onset_times, "tolist") else []
+
+    if not beat_times:
+        if bpm <= 0:
+            bpm = float(round(bpm_hint if bpm_hint and bpm_hint > 0 else 120.0, 3))
+        beat_times = [float(item["t"]) for item in _generate_beats(duration_sec, bpm)]
+        beat_source = "uniform_grid_fallback"
+    else:
+        max_adjust_sec = min(0.08, max(0.025, (60.0 / max(bpm, 1.0)) * 0.18))
+        beat_times = _refine_beat_times_with_onsets(beat_times, onset_times_list, max_adjust_sec=max_adjust_sec)
+        if beat_times[0] > 0.125:
+            beat_times.insert(0, 0.0)
+        if beat_times[-1] < duration_sec - 0.25:
+            period = 60.0 / max(bpm, 1.0)
+            t = beat_times[-1] + period
+            while t <= duration_sec + 1e-9:
+                beat_times.append(t)
+                t += period
+        beat_source = "librosa_beat_track"
+
+    beat_times = sorted({round(max(0.0, min(duration_sec, t)), 6) for t in beat_times if t <= duration_sec + 1e-9})
+    if not beat_times:
+        beat_times = [0.0]
+
+    beats = {"beats_version": "1.0.0", "beats": _assign_bar_positions(beat_times)}
+    tempo_map = _generate_tempo_map(duration_sec, bpm)
+    meta = {
+        "mode": "high_accuracy",
+        "tempo_source": "librosa.beat_track",
+        "beat_source": beat_source,
+        "estimated_bpm": bpm,
+        "onset_refinement": True,
+        "detected_beat_count": len(beat_times),
+    }
+    return bpm, beats, tempo_map, meta
+
+
+def _analyze_beats_tempo(
+    wav_path: Path,
+    *,
+    duration_sec: float,
+    config: dict[str, Any],
+    beat_analysis_mode: str,
+) -> tuple[float, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    bpm_hint = float(config.get("bpm_hint")) if "bpm_hint" in config else None
+    if beat_analysis_mode == "high_accuracy":
+        return _analyze_beats_tempo_high_accuracy(
+            wav_path,
+            duration_sec=duration_sec,
+            bpm_hint=bpm_hint,
+        )
+    return _analyze_beats_tempo_standard(
+        wav_path,
+        duration_sec=duration_sec,
+        bpm_hint=bpm_hint,
+    )
+
+
 def _sha256_file(p: Path) -> str:
     h = hashlib.sha256()
     with p.open("rb") as f:
@@ -656,6 +887,58 @@ def _resolve_demucs_modelpack(
     if last_error:
         return None, None, last_error
     return None, None, f"{DEMUCS_MODELPACK_FILENAME} not found in default search locations"
+
+
+def build_default_stem_separation_provider_registry() -> dict[str, Any]:
+    return {DEMUCS_PROVIDER: _separate_stems_with_demucs}
+
+
+def _load_stem_separation_provider_path(provider_path: str) -> Any:
+    module_name, sep, attr_name = provider_path.partition(":")
+    if not sep or not module_name.strip() or not attr_name.strip():
+        raise RuntimeError(
+            f"invalid stem separation provider path '{provider_path}'; expected module.submodule:function"
+        )
+    module = importlib.import_module(module_name.strip())
+    provider = getattr(module, attr_name.strip(), None)
+    if provider is None or not callable(provider):
+        raise RuntimeError(f"stem separation provider '{provider_path}' is not callable")
+    return provider
+
+
+def _run_stem_separation(
+    mix_wav: Path,
+    stems_dir: Path,
+    *,
+    mix_sha256: str,
+    shifts: int,
+    config: dict[str, Any],
+    provider_name: str,
+    provider_path: str | None,
+) -> dict[str, Any]:
+    if provider_name == "none":
+        return {"ok": False, "status": "skipped", "reason": "stem separation disabled by config", "provider": "none"}
+
+    if provider_path:
+        provider_fn = _load_stem_separation_provider_path(provider_path)
+    else:
+        provider_fn = build_default_stem_separation_provider_registry().get(provider_name)
+        if provider_fn is None:
+            raise RuntimeError(f"unknown stem separation provider '{provider_name}'")
+
+    result = provider_fn(
+        mix_wav,
+        stems_dir,
+        mix_sha256=mix_sha256,
+        shifts=shifts,
+        config=config,
+    )
+    if isinstance(result, dict):
+        result.setdefault("provider", provider_name)
+        if provider_path:
+            result.setdefault("provider_path", provider_path)
+        return result
+    raise RuntimeError(f"stem separation provider '{provider_name}' returned unsupported payload type")
 
 
 def _prepare_demucs_weight_file(
@@ -1263,6 +1546,37 @@ def _resolve_transcription_options(
         return None, f"invalid --shifts '{shifts_raw}': must be integer >= 1"
 
     multi_filter = bool(getattr(args, "multi_filter", False))
+    raw_beat_analysis_mode = (
+        getattr(args, "beat_analysis_mode", None)
+        or config.get("beat_analysis_mode")
+        or DEFAULT_BEAT_ANALYSIS_MODE
+    )
+    beat_analysis_mode = str(raw_beat_analysis_mode).strip().lower()
+    if beat_analysis_mode not in KNOWN_BEAT_ANALYSIS_MODES:
+        return None, (
+            f"invalid beat analysis mode '{raw_beat_analysis_mode}'. "
+            f"supported: {', '.join(KNOWN_BEAT_ANALYSIS_MODES)}"
+        )
+
+    raw_provider = (
+        getattr(args, "stem_separation_provider", None)
+        or config.get("stem_separation_provider")
+        or DEFAULT_STEM_SEPARATION_PROVIDER
+    )
+    provider_path = (
+        getattr(args, "stem_separation_provider_path", None)
+        or config.get("stem_separation_provider_path")
+    )
+    provider_name = str(raw_provider).strip().lower()
+    if provider_name in {"", "auto"}:
+        if provider_path:
+            provider_name = "external"
+        else:
+            provider_name = DEMUCS_PROVIDER if _resolve_demucs_modelpack(config)[0] is not None else "none"
+    elif provider_name not in {DEMUCS_PROVIDER, "none"} and not provider_path:
+        provider_path = str(raw_provider).strip()
+        provider_name = "external"
+
     requested_drum_stem, requested_drum_stem_kind = _resolve_requested_drum_stem_path(args, config)
     modelpack_zip, modelpack_manifest, _modelpack_err = _resolve_demucs_modelpack(config)
 
@@ -1274,7 +1588,8 @@ def _resolve_transcription_options(
         "drum_source_kind": requested_drum_stem_kind,
         "drum_source_path": str(requested_drum_stem) if requested_drum_stem is not None else None,
         "drum_source_sha256": _sha256_file(requested_drum_stem) if requested_drum_stem is not None else None,
-        "stem_separation_provider": DEMUCS_PROVIDER if modelpack_zip is not None else None,
+        "stem_separation_provider": provider_name,
+        "stem_separation_provider_path": provider_path,
         "stem_separation_modelpack_id": (
             str(modelpack_manifest.get("id")) if isinstance(modelpack_manifest, dict) else None
         ),
@@ -1283,6 +1598,7 @@ def _resolve_transcription_options(
         ),
         "warnings": warnings,
         "melodic_method": melodic_method,
+        "beat_analysis_mode": beat_analysis_mode,
         "shifts": shifts,
         "multi_filter": multi_filter,
     }, None
@@ -1292,6 +1608,9 @@ def _add_transcription_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--drum-filter", "--drum-engine", dest="drum_filter", default=DEFAULT_DRUM_FILTER)
     p.add_argument("--drum-stem-path")
     p.add_argument("--melodic-method", default=DEFAULT_MELODIC_METHOD)
+    p.add_argument("--beat-analysis-mode", default=DEFAULT_BEAT_ANALYSIS_MODE)
+    p.add_argument("--stem-separation-provider", default=DEFAULT_STEM_SEPARATION_PROVIDER)
+    p.add_argument("--stem-separation-provider-path")
     p.add_argument("--shifts", type=int, default=1)
     p.add_argument("--multi-filter", action="store_true")
 
@@ -1825,22 +2144,35 @@ def cmd_import(args: argparse.Namespace) -> int:
     _write_json(out / "manifest.json", manifest)
     emit(ProgressEvent(type="stage_done", id="decode_audio", progress=0.3, artifact="audio/mix.wav"))
 
-    # Stage 2: beats_tempo (simple analysis)
+    # Stage 2: beats_tempo
     emit(ProgressEvent(type="stage_start", id="beats_tempo", progress=0.3))
-    bpm_hint = float(config.get("bpm_hint")) if "bpm_hint" in config else None
-    if bpm_hint is not None and bpm_hint > 0:
-        bpm = float(round(bpm_hint, 3))
-    else:
-        emit(ProgressEvent(type="stage_progress", id="beats_tempo", progress=0.35, message="estimating bpm"))
-        bpm = _estimate_bpm_from_wav(dst_wav)
-
-    beats = {"beats_version": "1.0.0", "beats": _generate_beats(duration_sec, bpm)}
+    emit(
+        ProgressEvent(
+            type="stage_progress",
+            id="beats_tempo",
+            progress=0.35,
+            message=f"analyzing tempo ({tr_opts['beat_analysis_mode']})",
+        )
+    )
+    bpm, beats, tempo_map, beat_tempo_meta = _analyze_beats_tempo(
+        dst_wav,
+        duration_sec=duration_sec,
+        config=config,
+        beat_analysis_mode=str(tr_opts["beat_analysis_mode"]),
+    )
+    _write_json(out / "features" / "beats.json", beats)
+    _write_json(out / "features" / "tempo_map.json", tempo_map)
+    manifest.setdefault("assets", {}).setdefault("features", {})["beats_path"] = "features/beats.json"
+    manifest["assets"]["features"]["tempo_map_path"] = "features/tempo_map.json"
+    manifest.setdefault("pipeline", {})["beats_tempo"] = beat_tempo_meta
+    _write_json(out / "manifest.json", manifest)
     emit(
         ProgressEvent(
             type="stage_done",
             id="beats_tempo",
             progress=0.55,
             message="tempo/beat structure captured for MIDI export",
+            artifact="features/beats.json",
         )
     )
 
@@ -1848,12 +2180,16 @@ def cmd_import(args: argparse.Namespace) -> int:
     emit(ProgressEvent(type="stage_start", id="sections", progress=0.55))
     emit(ProgressEvent(type="stage_progress", id="sections", progress=0.6, message="segmenting"))
     sections = {"sections_version": "1.0.0", "sections": _generate_sections(duration_sec, bpm)}
+    _write_json(out / "features" / "sections.json", sections)
+    manifest.setdefault("assets", {}).setdefault("features", {})["sections_path"] = "features/sections.json"
+    _write_json(out / "manifest.json", manifest)
     emit(
         ProgressEvent(
             type="stage_done",
             id="sections",
             progress=0.7,
             message="sections captured for MIDI export",
+            artifact="features/sections.json",
         )
     )
 
@@ -1871,13 +2207,28 @@ def cmd_import(args: argparse.Namespace) -> int:
             message="separating stems with htdemucs_6s",
         )
     )
-    separation_summary = _separate_stems_with_demucs(
-        dst_wav,
-        stems_dir,
-        mix_sha256=mix_sha256,
-        shifts=int(tr_opts.get("shifts", 1) or 1),
-        config=config,
-    )
+    try:
+        separation_summary = _run_stem_separation(
+            dst_wav,
+            stems_dir,
+            mix_sha256=mix_sha256,
+            shifts=int(tr_opts.get("shifts", 1) or 1),
+            config=config,
+            provider_name=str(tr_opts.get("stem_separation_provider") or "none"),
+            provider_path=(
+                str(tr_opts.get("stem_separation_provider_path"))
+                if tr_opts.get("stem_separation_provider_path")
+                else None
+            ),
+        )
+    except Exception as exc:
+        separation_summary = {
+            "ok": False,
+            "status": "skipped",
+            "reason": f"stem separation provider failed: {exc}",
+            "provider": tr_opts.get("stem_separation_provider"),
+            "provider_path": tr_opts.get("stem_separation_provider_path"),
+        }
     if separation_summary.get("ok"):
         audio_assets = manifest.setdefault("assets", {}).setdefault("audio", {})
         stems_assets = audio_assets.setdefault("stems", {})
@@ -1888,6 +2239,7 @@ def cmd_import(args: argparse.Namespace) -> int:
 
         manifest.setdefault("pipeline", {})["stem_separation"] = {
             "provider": separation_summary.get("provider"),
+            "provider_path": separation_summary.get("provider_path"),
             "modelpack_id": separation_summary.get("modelpack_id"),
             "modelpack_version": separation_summary.get("modelpack_version"),
             "architecture": separation_summary.get("architecture"),
@@ -1915,7 +2267,8 @@ def cmd_import(args: argparse.Namespace) -> int:
         log(msg)
         tr_opts["warnings"] = [*tr_opts.get("warnings", []), msg]
         manifest.setdefault("pipeline", {})["stem_separation"] = {
-            "provider": DEMUCS_PROVIDER,
+            "provider": separation_summary.get("provider"),
+            "provider_path": separation_summary.get("provider_path"),
             "status": "skipped",
             "reason": msg,
             "source_path": "audio/mix.wav",
@@ -2176,6 +2529,9 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
         drum_filter=getattr(args, "drum_filter", DEFAULT_DRUM_FILTER),
         drum_stem_path=getattr(args, "drum_stem_path", None),
         melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
+        beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
+        stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),
+        stem_separation_provider_path=getattr(args, "stem_separation_provider_path", None),
         shifts=getattr(args, "shifts", 1),
         multi_filter=bool(getattr(args, "multi_filter", False)),
     )
@@ -2205,6 +2561,9 @@ def cmd_import_dtx(args: argparse.Namespace) -> int:
         drum_filter=getattr(args, "drum_filter", DEFAULT_DRUM_FILTER),
         drum_stem_path=getattr(args, "drum_stem_path", None),
         melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
+        beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
+        stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),
+        stem_separation_provider_path=getattr(args, "stem_separation_provider_path", None),
         shifts=getattr(args, "shifts", 1),
         multi_filter=bool(getattr(args, "multi_filter", False)),
     )
