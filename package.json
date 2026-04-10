@@ -25,8 +25,8 @@
     "desktop:build": "npm run studio:build",
     "desktop:build:asio": "npm run studio:build:asio",
     "desktop:build:frontend": "npm run studio:build:frontend",
-    "portable:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File ./build_sidecar.ps1",
-    "portable:build": "powershell -NoProfile -ExecutionPolicy Bypass -File ./create_portable.ps1"
+    "portable:sidecar": "node ./scripts/run-powershell.mjs ./build_sidecar.ps1",
+    "portable:build": "node ./scripts/run-powershell.mjs ./create_portable.ps1"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.16",
