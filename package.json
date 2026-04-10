@@ -8,6 +8,7 @@
     "visualizers/*"
   ],
   "scripts": {
+    "ci:verify:transcription-recovery": "node ./scripts/verify-transcription-recovery.mjs",
     "lint": "echo 'lint not configured yet'",
     "test": "vitest run",
     "test:coverage:playback": "vitest run apps/game/tests/nativeAudioTimebase.test.ts apps/desktop/tests/nativeAudioTimebase.test.ts --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.include=apps/game/src/nativeAudioTimebase.ts --coverage.include=apps/desktop/src/nativeAudioTimebase.ts --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.statements=100 --coverage.thresholds.branches=100",

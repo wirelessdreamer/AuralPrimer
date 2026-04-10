@@ -137,7 +137,7 @@ def test_build_reference_shootout_payload_computes_ranks_and_deltas() -> None:
     assert rows["algo_a"]["delta_suspect_minus_trusted"]["mean_overall_f1"] == -0.5
     assert rows["algo_a"]["delta_suspect_minus_trusted"]["mean_timing_mae_ms"] == 13.0
     assert payload["selection_policy"]["diagnostic_only_corpora"] == ["suno_suspect_diagnostics"]
-    assert payload["recommendation"]["current_default"] == "adaptive_beat_grid"
+    assert payload["recommendation"]["current_default"] == "combined_filter"
 
     assert rows["algo_b"]["trusted_rank"] == 2
     assert rows["algo_b"]["suspect_rank"] == 1

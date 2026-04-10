@@ -26,6 +26,9 @@ jobs:
             echo "No package-lock.json yet; skipping npm ci"
           fi
 
+      - name: Transcription Recovery Guard
+        run: npm run ci:verify:transcription-recovery --if-present
+
       - name: TS lint
         run: npm run lint --if-present
 

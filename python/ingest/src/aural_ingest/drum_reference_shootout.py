@@ -184,7 +184,7 @@ def _build_recommendation(trusted_summary: Mapping[str, Any]) -> dict[str, Any]:
     trusted_algorithms = trusted_summary.get("algorithm_summaries", [])
     best_heuristic = _pick_best_algorithm(trusted_algorithms, backend_filter="heuristic")
     best_learned = _pick_best_algorithm(trusted_algorithms, backend_filter="mt3")
-    current_default = "adaptive_beat_grid"
+    current_default = "combined_filter"
 
     if best_heuristic is None:
         return {

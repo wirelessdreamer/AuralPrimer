@@ -66,7 +66,7 @@ INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
     "melodic": (45.0, 1700.0),       # legacy default
 }
 
-DEFAULT_DRUM_ENGINE = "adaptive_beat_grid"
+DEFAULT_DRUM_ENGINE = "combined_filter"
 DEFAULT_DRUM_FILTER = DEFAULT_DRUM_ENGINE
 DEFAULT_MELODIC_METHOD = "auto"
 
