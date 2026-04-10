@@ -48,13 +48,26 @@ describe("modelManager", () => {
     vi.doMock("@tauri-apps/api/core", () => ({
       invoke: vi.fn(async (cmd: string) => {
         expect(cmd).toBe("list_installed_modelpacks");
-        return [{ id: "m", version: "1", root_dir: "r", manifest_path: "m", ok: true }];
+        return [
+          {
+            id: "m",
+            version: "1",
+            root_dir: "r",
+            manifest_path: "m",
+            ok: true,
+            manifest: { id: "m", version: "1" },
+            license: { id: "mit" },
+            license_path: "r/license.json"
+          }
+        ];
       }),
     }));
 
     const packs = await listInstalledModelPacks();
     expect(packs).toHaveLength(1);
     expect(packs[0].id).toBe("m");
+    expect(packs[0].manifest?.id).toBe("m");
+    expect((packs[0].license as any)?.id).toBe("mit");
   });
 
   it("installModelPackFromPath validates path and invokes backend command", async () => {

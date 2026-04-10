@@ -31,6 +31,11 @@ def test_cmd_stages_emits_all_stage_ids(capsys) -> None:
     payloads = [json.loads(line) for line in out]
     ids = [p["id"] for p in payloads]
     assert ids == [s.id for s in cli.STAGES]
+    transcribe_stage = next(p for p in payloads if p["id"] == "transcribe_drums")
+    assert "mr_mt3_drums" in transcribe_stage["variants"]
+    assert transcribe_stage["variants"]["mr_mt3_drums"]["required_models"][0]["modelpack_id"] == "mr_mt3"
+    separate_stage = next(p for p in payloads if p["id"] == "separate_stems")
+    assert separate_stage["required_models"][0]["modelpack_id"] == "demucs_6"
 
 
 def test_cmd_info_missing_manifest_returns_error(tmp_path: Path, capsys) -> None:
@@ -207,6 +212,7 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(
     mt3_checkpoint.write_bytes(b"mt3")
 
     fake_modules = {
+        "numpy": "2.2.0",
         "torch": "2.11.0",
         "torchaudio": "2.11.0",
         "mt3_infer": "0.1.3",
@@ -217,6 +223,8 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(
         module.__version__ = version
         module.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
         monkeypatch.setitem(sys.modules, name, module)
+    sys.modules["numpy"].float32 = "float32"
+    sys.modules["numpy"].zeros = lambda size, dtype=None: [0.0] * size
     class _FakeMidi:
         tracks = []
 
@@ -265,6 +273,11 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(
     assert payload["assets"]["basic_pitch_model"]["sha256"]
     assert payload["assets"]["demucs_modelpack"]["manifest"]["id"] == "demucs_6"
     assert payload["assets"]["mt3_checkpoints"]["mr_mt3_drums"]["sha256"]
+    assert payload["stages"]["separate_stems"]["enabled"] is True
+    assert payload["stages"]["separate_stems"]["required_models"][0]["version"] == "test"
+    assert payload["stages"]["transcribe_drums"]["variants"]["mr_mt3_drums"]["enabled"] is True
+    assert payload["stages"]["transcribe_drums"]["variants"]["mr_mt3_drums"]["required_models"][0]["version"] == "0.0.1"
+    assert payload["stages"]["transcribe_drums"]["variants"]["yourmt3_drums"]["enabled"] is False
 
 
 def test_main_runs_stages_command(capsys) -> None:
@@ -273,6 +286,35 @@ def test_main_runs_stages_command(capsys) -> None:
     rc = cli.main(["stages"])
     assert rc == 0
     assert '"id"' in capsys.readouterr().out
+
+
+def test_runtime_stage_snapshot_disables_model_variants_when_packs_missing() -> None:
+    from aural_ingest import cli
+
+    stages = cli._runtime_stage_snapshot(
+        {
+            "mr_mt3_drums": {
+                "ok": False,
+                "model_id": "mr_mt3",
+                "modelpack_id": "mr_mt3",
+                "error": "missing modelpack",
+            },
+            "yourmt3_drums": {
+                "ok": False,
+                "model_id": "yourmt3",
+                "modelpack_id": "yourmt3",
+                "error": "missing modelpack",
+            },
+        },
+        None,
+        None,
+        "missing demucs pack",
+    )
+
+    assert stages["separate_stems"]["enabled"] is False
+    assert stages["separate_stems"]["required_models"][0]["installed"] is False
+    assert stages["transcribe_drums"]["variants"]["mr_mt3_drums"]["enabled"] is False
+    assert stages["transcribe_drums"]["variants"]["mr_mt3_drums"]["required_models"][0]["installed"] is False
 
 
 def test_generation_helpers_cover_edge_cases() -> None:

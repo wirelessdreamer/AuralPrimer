@@ -12,6 +12,9 @@ pub struct InstalledModelPack {
     pub manifest_path: String,
     pub ok: bool,
     pub error: Option<String>,
+    pub manifest: Option<serde_json::Value>,
+    pub license: Option<serde_json::Value>,
+    pub license_path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -39,6 +42,24 @@ fn list_dirs(p: &Path) -> Vec<PathBuf> {
     out
 }
 
+fn parse_manifest(manifest_path: &Path) -> Result<serde_json::Value, String> {
+    let raw = fs::read_to_string(manifest_path)
+        .map_err(|e| format!("read {}: {e}", manifest_path.display()))?;
+    serde_json::from_str(&raw).map_err(|e| format!("invalid modelpack.json: {e}"))
+}
+
+fn read_optional_jsonish(path: &Path) -> Option<serde_json::Value> {
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok().or_else(|| {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::String(trimmed.to_string()))
+        }
+    })
+}
+
 pub fn list_installed_modelpacks(app_data_dir: &Path) -> Vec<InstalledModelPack> {
     let root = models_root_dir(app_data_dir);
 
@@ -64,12 +85,58 @@ pub fn list_installed_modelpacks(app_data_dir: &Path) -> Vec<InstalledModelPack>
             }
 
             let manifest_path = ver_dir.join("modelpack.json");
-            let ok = manifest_path.is_file();
-            let err = if ok {
+            let mut ok = manifest_path.is_file();
+            let mut err = if ok {
                 None
             } else {
                 Some("missing modelpack.json".to_string())
             };
+            let mut manifest = None;
+            let mut license = None;
+
+            if ok {
+                match parse_manifest(&manifest_path) {
+                    Ok(parsed) => {
+                        let manifest_id = parsed
+                            .get("id")
+                            .and_then(|x| x.as_str())
+                            .map(|x| x.trim())
+                            .filter(|x| !x.is_empty());
+                        let manifest_version = parsed
+                            .get("version")
+                            .and_then(|x| x.as_str())
+                            .map(|x| x.trim())
+                            .filter(|x| !x.is_empty());
+
+                        if manifest_id != Some(id.as_str()) || manifest_version != Some(version.as_str()) {
+                            ok = false;
+                            err = Some(format!(
+                                "modelpack.json id/version mismatch (expected {}/{}, got {}/{})",
+                                id,
+                                version,
+                                manifest_id.unwrap_or(""),
+                                manifest_version.unwrap_or("")
+                            ));
+                        }
+
+                        license = parsed.get("license").cloned();
+                        manifest = Some(parsed);
+                    }
+                    Err(e) => {
+                        ok = false;
+                        err = Some(e);
+                    }
+                }
+            }
+
+            let license_file = [ver_dir.join("license.json"), ver_dir.join("files").join("license.json")]
+                .into_iter()
+                .find(|path| path.is_file());
+            if license.is_none() {
+                if let Some(path) = license_file.as_ref() {
+                    license = read_optional_jsonish(path);
+                }
+            }
 
             out.push(InstalledModelPack {
                 id: id.clone(),
@@ -78,6 +145,9 @@ pub fn list_installed_modelpacks(app_data_dir: &Path) -> Vec<InstalledModelPack>
                 manifest_path: manifest_path.to_string_lossy().to_string(),
                 ok,
                 error: err,
+                manifest,
+                license,
+                license_path: license_file.map(|path| path.to_string_lossy().to_string()),
             });
         }
     }
@@ -99,6 +169,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Expected layout inside zip:
 /// - modelpack.json
 /// - files/**
+/// - license.json (optional)
 fn extract_modelpack_zip(bytes: &[u8], dest_root: &Path) -> Result<(), String> {
     let reader = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(reader).map_err(|e| format!("zip open: {e}"))?;
@@ -158,8 +229,8 @@ fn extract_modelpack_zip(bytes: &[u8], dest_root: &Path) -> Result<(), String> {
             continue;
         }
 
-        // Only allow files under files/.
-        if !name.starts_with("files/") {
+        // Only allow files under files/ plus optional top-level license.json.
+        if !name.starts_with("files/") && name != "license.json" {
             continue;
         }
 
@@ -264,6 +335,14 @@ mod tests {
         assert_eq!(packs[0].id, "basic_pitch");
         assert_eq!(packs[0].version, "0.1.0");
         assert!(packs[0].ok);
+        assert_eq!(
+            packs[0]
+                .manifest
+                .as_ref()
+                .and_then(|m| m.get("id"))
+                .and_then(|v| v.as_str()),
+            Some("basic_pitch")
+        );
     }
 
     #[test]
@@ -328,5 +407,82 @@ mod tests {
         assert_eq!(packs.len(), 1);
         assert!(!packs[0].ok);
         assert_eq!(packs[0].error.as_deref(), Some("missing modelpack.json"));
+    }
+
+    #[test]
+    fn install_and_list_surface_license_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cursor = std::io::Cursor::new(Vec::<u8>::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        zip.start_file("modelpack.json", opts).unwrap();
+        zip.write_all(
+            serde_json::json!({
+                "id": "mr_mt3",
+                "version": "0.0.1",
+                "license": {
+                    "id": "cc-by-nc-4.0",
+                    "name": "CC BY-NC 4.0"
+                }
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+        zip.start_file("license.json", opts).unwrap();
+        zip.write_all(br#"{"text":"Local evaluation only"}"#).unwrap();
+        zip.start_file("files/checkpoints/mr_mt3/mt3.pth", opts).unwrap();
+        zip.write_all(b"x").unwrap();
+        let zip_bytes = zip.finish().unwrap().into_inner();
+
+        install_modelpack_zip_bytes(
+            tmp.path(),
+            InstallModelPackZipRequest {
+                zip_bytes,
+                expected_zip_sha256: None,
+            },
+        )
+        .unwrap();
+
+        let packs = list_installed_modelpacks(tmp.path());
+        assert_eq!(packs.len(), 1);
+        assert_eq!(
+            packs[0]
+                .license
+                .as_ref()
+                .and_then(|value| value.get("id"))
+                .and_then(|value| value.as_str()),
+            Some("cc-by-nc-4.0")
+        );
+        assert_eq!(
+            packs[0]
+                .license_path
+                .as_deref()
+                .map(|path| path.ends_with("license.json")),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn list_marks_manifest_id_version_mismatch_as_not_ok() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_root = models_root_dir(tmp.path()).join("mr_mt3").join("0.0.1");
+        fs::create_dir_all(&model_root).unwrap();
+        fs::write(
+            model_root.join("modelpack.json"),
+            serde_json::json!({
+                "id": "wrong",
+                "version": "0.0.9"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let packs = list_installed_modelpacks(tmp.path());
+        assert_eq!(packs.len(), 1);
+        assert!(!packs[0].ok);
+        assert!(packs[0].error.as_deref().unwrap_or("").contains("mismatch"));
     }
 }

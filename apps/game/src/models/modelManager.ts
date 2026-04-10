@@ -9,6 +9,9 @@ export type InstalledModelPack = {
   manifest_path: string;
   ok: boolean;
   error?: string;
+  manifest?: Record<string, unknown>;
+  license?: unknown;
+  license_path?: string;
 };
 
 export type InstallZipRequest = {
