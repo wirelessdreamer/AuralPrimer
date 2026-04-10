@@ -32,12 +32,14 @@ from aural_ingest.transcription import (
     DEFAULT_MELODIC_METHOD,
     KNOWN_DRUM_FILTERS,
     KNOWN_MT3_DRUM_ENGINES,
+    _default_basic_pitch_model_roots,
     available_mt3_modelpacks,
     build_default_drum_algorithm_registry,
     build_default_melodic_algorithm_registry,
     drum_engine_metadata,
     is_mt3_drum_engine,
     resolve_drum_engine,
+    resolve_basic_pitch_model_path,
     transcribe_all_melodic_stems,
     transcribe_melodic,
     transcribe_drums,
@@ -1434,11 +1436,85 @@ def cmd_benchmark_drums(args: argparse.Namespace) -> int:
 def _mt3_runtime_snapshot() -> dict[str, Any]:
     import numpy as np
 
+    def sha256_path(path: Path) -> str:
+        hasher = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def sha256_tree(root: Path) -> str:
+        hasher = hashlib.sha256()
+        for child in sorted((p for p in root.rglob("*") if p.is_file()), key=lambda p: p.as_posix()):
+            rel = child.relative_to(root).as_posix().encode("utf-8")
+            hasher.update(rel)
+            hasher.update(b"\0")
+            hasher.update(sha256_path(child).encode("ascii"))
+            hasher.update(b"\0")
+        return hasher.hexdigest()
+
+    def asset_payload(path_value: Path | str | None, *, kind: str, required: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "kind": kind,
+            "required": required,
+        }
+        if path_value is None:
+            payload["ok"] = False
+            payload["error"] = "missing"
+            return payload
+
+        path = Path(path_value)
+        payload["path"] = str(path)
+        payload["exists"] = path.exists()
+        if not path.exists():
+            payload["ok"] = False
+            payload["error"] = "missing"
+            return payload
+
+        if path.is_file():
+            payload["type"] = "file"
+            payload["size_bytes"] = path.stat().st_size
+            payload["sha256"] = sha256_path(path)
+        elif path.is_dir():
+            payload["type"] = "dir"
+            payload["sha256_tree"] = sha256_tree(path)
+        else:
+            payload["ok"] = False
+            payload["error"] = "unsupported-path-type"
+            return payload
+
+        payload["ok"] = True
+        return payload
+
+    basic_pitch_model = resolve_basic_pitch_model_path(_default_basic_pitch_model_roots())
+    ffmpeg_path = _resolve_ffmpeg_path()
+    demucs_modelpack_path, demucs_modelpack_manifest, demucs_modelpack_error = _resolve_demucs_modelpack({})
+
     payload = {
         "ok": True,
         "dependencies": {},
         "drum_engines": available_mt3_modelpacks(),
+        "assets": {
+            "basic_pitch_model": asset_payload(
+                basic_pitch_model,
+                kind="basic-pitch-model",
+                required=True,
+            ),
+            "ffmpeg": asset_payload(ffmpeg_path, kind="ffmpeg", required=False),
+            "demucs_modelpack": asset_payload(
+                demucs_modelpack_path,
+                kind="demucs-modelpack",
+                required=False,
+            ),
+        },
     }
+    if demucs_modelpack_manifest is not None:
+        payload["assets"]["demucs_modelpack"]["manifest"] = {
+            "id": demucs_modelpack_manifest.get("id"),
+            "version": demucs_modelpack_manifest.get("version"),
+        }
+    if demucs_modelpack_error:
+        payload["assets"]["demucs_modelpack"]["error"] = demucs_modelpack_error
 
     for module_name in ("torch", "torchaudio", "mt3_infer", "demucs"):
         try:
@@ -1488,6 +1564,24 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
                 engine_info["transcribe_smoke_ok"] = False
                 engine_info["error"] = str(exc)
                 payload["ok"] = False
+
+    mt3_assets: dict[str, dict[str, Any]] = {}
+    for engine_id, engine_info in payload["drum_engines"].items():
+        checkpoint_path = str(engine_info.get("checkpoint_path", "")).strip()
+        asset = asset_payload(
+            checkpoint_path or None,
+            kind="mt3-checkpoint",
+            required=bool(engine_info.get("ok")),
+        )
+        if engine_info.get("ok"):
+            asset["engine"] = engine_id
+            asset["modelpack_id"] = engine_info.get("modelpack_id")
+            asset["modelpack_version"] = engine_info.get("modelpack_version")
+        mt3_assets[engine_id] = asset
+    payload["assets"]["mt3_checkpoints"] = mt3_assets
+
+    if not payload["assets"]["basic_pitch_model"].get("ok"):
+        payload["ok"] = False
 
     if not any(item.get("ok") for item in payload["drum_engines"].values()):
         payload["warnings"] = [

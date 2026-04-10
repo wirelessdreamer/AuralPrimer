@@ -8,10 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "tauri:dev": "tauri dev",
-    "tauri:dev:asio": "tauri dev --features asio",
-    "tauri:build": "tauri build",
-    "tauri:build:asio": "tauri build --features asio"
+    "tauri:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../build_sidecar.ps1 -RepoRoot ../.. -SyncTauriBinaries -TauriAppRoots apps/desktop/src-tauri apps/game/src-tauri",
+    "tauri:dev": "npm run tauri:sidecar && tauri dev",
+    "tauri:dev:asio": "npm run tauri:sidecar && tauri dev --features asio",
+    "tauri:build": "npm run tauri:sidecar && tauri build",
+    "tauri:build:asio": "npm run tauri:sidecar && tauri build --features asio"
   },
   "dependencies": {
     "@auralprimer/viz-beats": "*",

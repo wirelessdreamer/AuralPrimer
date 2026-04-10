@@ -399,6 +399,7 @@ $portableSidecarManifestObj = Get-Content -LiteralPath $portableSidecarManifest 
 if ([string]$portableSidecarManifestObj.sha256 -ne $portableSidecarHash) {
   throw "Portable sidecar manifest hash mismatch: manifest=$($portableSidecarManifestObj.sha256) file=$portableSidecarHash"
 }
+$portableSidecarManifestHash = Get-Sha256Lower $portableSidecarManifest
 
 $sourceLastWriteUtc = [DateTime]::Parse([string]$sidecarInfo.source_last_write_utc).ToUniversalTime()
 $portableLastWriteUtc = (Get-Item -LiteralPath $portableSidecarExe).LastWriteTimeUtc
@@ -518,9 +519,14 @@ $portableManifest = [ordered]@{
     source_path = [string]$sidecarInfo.source_path
     source_last_write_utc = [string]$sidecarInfo.source_last_write_utc
     source_sha256 = $sidecarBuiltHash
+    build_manifest_path = $portableSidecarManifest
+    build_manifest_sha256 = $portableSidecarManifestHash
+    tauri_target_triple = [string]$portableSidecarManifestObj.tauri_target_triple
+    tauri_external_bin = [string]$portableSidecarManifestObj.tauri_external_bin
     portable_path = $portableSidecarExe
     portable_last_write_utc = $portableLastWriteUtc.ToString("o")
     portable_sha256 = $portableSidecarHash
+    model_assets = $portableSidecarManifestObj.model_assets
     freshness_guard = @{
       hash_match = $true
       timestamp_check = "portable_last_write_utc>=source_last_write_utc"

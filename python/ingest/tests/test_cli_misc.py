@@ -190,8 +190,21 @@ def test_cmd_benchmark_drums_emits_json_payload(tmp_path: Path, monkeypatch, cap
     ]
 
 
-def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(monkeypatch, capsys) -> None:
+def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
     from aural_ingest import cli
+
+    basic_pitch_model = tmp_path / "basic_pitch" / "saved_models" / "icassp_2022" / "nmp.onnx"
+    basic_pitch_model.parent.mkdir(parents=True, exist_ok=True)
+    basic_pitch_model.write_bytes(b"basic-pitch")
+    ffmpeg_path = tmp_path / "ffmpeg.exe"
+    ffmpeg_path.write_bytes(b"ffmpeg")
+    demucs_zip = tmp_path / "demucs_6.zip"
+    demucs_zip.write_bytes(b"demucs")
+    mt3_checkpoint = tmp_path / "mr_mt3" / "mt3.pth"
+    mt3_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    mt3_checkpoint.write_bytes(b"mt3")
 
     fake_modules = {
         "torch": "2.11.0",
@@ -214,6 +227,14 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(monkeypatch, 
 
     sys.modules["mt3_infer"].load_model = lambda *args, **kwargs: FakeAdapter()
     monkeypatch.setattr(cli, "ensure_mt3_transformers_compat", lambda: None)
+    monkeypatch.setattr(cli, "resolve_basic_pitch_model_path", lambda _roots: basic_pitch_model)
+    monkeypatch.setattr(cli, "_default_basic_pitch_model_roots", lambda: [tmp_path])
+    monkeypatch.setattr(cli, "_resolve_ffmpeg_path", lambda: str(ffmpeg_path))
+    monkeypatch.setattr(
+        cli,
+        "_resolve_demucs_modelpack",
+        lambda _config: (demucs_zip, {"id": "demucs_6", "version": "test"}, None),
+    )
 
     monkeypatch.setattr(
         cli,
@@ -224,8 +245,8 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(monkeypatch, 
                     "model_id": "mr_mt3",
                     "modelpack_id": "mr_mt3",
                     "modelpack_version": "0.0.1",
-                    "checkpoint_path": "D:/models/mr_mt3/mt3.pth",
-                    "modelpack_root": "D:/models/mr_mt3",
+                    "checkpoint_path": str(mt3_checkpoint),
+                    "modelpack_root": str(mt3_checkpoint.parent),
                 },
             "yourmt3_drums": {"ok": False, "error": "missing modelpack"},
         },
@@ -240,6 +261,10 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(monkeypatch, 
     assert payload["drum_engines"]["mr_mt3_drums"]["loadable"] is True
     assert payload["drum_engines"]["mr_mt3_drums"]["adapter_class"] == "FakeAdapter"
     assert payload["drum_engines"]["mr_mt3_drums"]["transcribe_smoke_ok"] is True
+    assert payload["assets"]["basic_pitch_model"]["ok"] is True
+    assert payload["assets"]["basic_pitch_model"]["sha256"]
+    assert payload["assets"]["demucs_modelpack"]["manifest"]["id"] == "demucs_6"
+    assert payload["assets"]["mt3_checkpoints"]["mr_mt3_drums"]["sha256"]
 
 
 def test_main_runs_stages_command(capsys) -> None:

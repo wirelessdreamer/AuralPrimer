@@ -1765,6 +1765,7 @@ pub fn run() {
         .manage(MidiClockInputState::default())
         .manage(NativeAudioState::default())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Restore persisted MIDI clock output selection (best-effort).
             let handle = app.handle();
