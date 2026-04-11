@@ -5,6 +5,8 @@ import { unzipSync, strFromU8 } from "fflate";
 import { validateManifest } from "./validateManifest";
 import { validateBeats, validateEvents, validateLyrics, validateSections, validateTempoMap } from "./validateFeatures";
 import { validateChart } from "./validateCharts";
+import type { SongPackManifest } from "./manifest";
+import { validateManifestSemantics, validateTimedJsonBounds } from "./semanticValidation";
 
 export type SongPackContainerKind = "directory" | "zip";
 
@@ -126,8 +128,16 @@ function validateKnownJson(relPath: string, json: unknown): SongPackValidationIs
   return issues;
 }
 
+function validateTimedFeatureOrChart(relPath: string, json: unknown, manifest: SongPackManifest | null): SongPackValidationIssue[] {
+  if (!manifest) return [];
+  if (typeof manifest.duration_sec !== "number" || !Number.isFinite(manifest.duration_sec)) return [];
+  if (relPath === "manifest.json") return [];
+  return validateTimedJsonBounds(relPath, json, manifest.duration_sec);
+}
+
 export async function validateSongPack(songPackPath: string): Promise<SongPackValidationResult> {
   const issues: SongPackValidationIssue[] = [];
+  let manifest: SongPackManifest | null = null;
 
   // decide container kind
   let containerKind: SongPackContainerKind;
@@ -152,7 +162,12 @@ export async function validateSongPack(songPackPath: string): Promise<SongPackVa
     if (await fileExists(manifestAbs)) {
       try {
         const json = await readJsonFile(manifestAbs);
-        issues.push(...validateKnownJson("manifest.json", json));
+        const manifestIssues = validateKnownJson("manifest.json", json);
+        issues.push(...manifestIssues);
+        if (manifestIssues.length === 0) {
+          manifest = json as SongPackManifest;
+          issues.push(...(await validateManifestSemantics(manifest, (relPath) => fileExists(path.join(songPackPath, relPath)))));
+        }
       } catch {
         issues.push({ code: "invalid_json", path: "manifest.json", message: "invalid JSON" });
       }
@@ -165,6 +180,7 @@ export async function validateSongPack(songPackPath: string): Promise<SongPackVa
       try {
         const json = await readJsonFile(abs);
         issues.push(...validateKnownJson(rel, json));
+        issues.push(...validateTimedFeatureOrChart(rel, json, manifest));
       } catch {
         issues.push({ code: "invalid_json", path: rel, message: "invalid JSON" });
       }
@@ -183,6 +199,7 @@ export async function validateSongPack(songPackPath: string): Promise<SongPackVa
           try {
             const json = await readJsonFile(abs);
             issues.push(...validateKnownJson(rel, json));
+            issues.push(...validateTimedFeatureOrChart(rel, json, manifest));
           } catch {
             issues.push({ code: "invalid_json", path: rel, message: "invalid JSON" });
           }
@@ -211,7 +228,12 @@ export async function validateSongPack(songPackPath: string): Promise<SongPackVa
     if (files["manifest.json"]) {
       try {
         const json = readZipJson(files, "manifest.json");
-        issues.push(...validateKnownJson("manifest.json", json));
+        const manifestIssues = validateKnownJson("manifest.json", json);
+        issues.push(...manifestIssues);
+        if (manifestIssues.length === 0) {
+          manifest = json as SongPackManifest;
+          issues.push(...(await validateManifestSemantics(manifest, (relPath) => files[relPath] != null)));
+        }
       } catch {
         issues.push({ code: "invalid_json", path: "manifest.json", message: "invalid JSON" });
       }
@@ -223,6 +245,7 @@ export async function validateSongPack(songPackPath: string): Promise<SongPackVa
       try {
         const json = readZipJson(files, rel);
         issues.push(...validateKnownJson(rel, json));
+        issues.push(...validateTimedFeatureOrChart(rel, json, manifest));
       } catch {
         issues.push({ code: "invalid_json", path: rel, message: "invalid JSON" });
       }
@@ -234,6 +257,7 @@ export async function validateSongPack(songPackPath: string): Promise<SongPackVa
       try {
         const json = readZipJson(files, rel);
         issues.push(...validateKnownJson(rel, json));
+        issues.push(...validateTimedFeatureOrChart(rel, json, manifest));
       } catch {
         issues.push({ code: "invalid_json", path: rel, message: "invalid JSON" });
       }
