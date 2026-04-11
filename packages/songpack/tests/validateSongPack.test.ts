@@ -41,6 +41,31 @@ describe("validateSongPack", () => {
     expect(res.issues.some((i) => i.path === "manifest.json" && i.code === "missing_required_file")).toBe(true);
   });
 
+  it("reports missing manifest-declared asset files", async () => {
+    dir = tmpDir();
+    const sp = path.join(dir, "MissingAsset.songpack");
+    mkdirSync(sp);
+    writeFileSync(
+      path.join(sp, "manifest.json"),
+      JSON.stringify({
+        schema_version: "1.0.0",
+        song_id: "a",
+        title: "t",
+        artist: "r",
+        duration_sec: 1,
+        assets: {
+          audio: {
+            mix_path: "audio/mix.wav"
+          }
+        }
+      })
+    );
+
+    const res = await validateSongPack(sp);
+    expect(res.ok).toBe(false);
+    expect(res.issues.some((i) => i.path === "audio/mix.wav" && i.code === "missing_required_file")).toBe(true);
+  });
+
   it("validates a minimal zip SongPack with manifest.json", async () => {
     dir = tmpDir();
     const zipBytes = zipSync({
@@ -67,6 +92,34 @@ describe("validateSongPack", () => {
     expect(res.issues.some((i) => i.code === "schema_invalid" && i.path === "manifest.json")).toBe(true);
   });
 
+  it("reports schema_invalid when schema_version is not semver", async () => {
+    dir = tmpDir();
+    const sp = path.join(dir, "InvalidVersion.songpack");
+    mkdirSync(sp);
+    writeFileSync(
+      path.join(sp, "manifest.json"),
+      JSON.stringify({ schema_version: "v1", song_id: "a", title: "t", artist: "r", duration_sec: 1 })
+    );
+
+    const res = await validateSongPack(sp);
+    expect(res.ok).toBe(false);
+    expect(res.issues.some((i) => i.code === "schema_invalid" && i.path === "manifest.json#/schema_version")).toBe(true);
+  });
+
+  it("reports unsupported when schema_version is not supported", async () => {
+    dir = tmpDir();
+    const sp = path.join(dir, "UnsupportedVersion.songpack");
+    mkdirSync(sp);
+    writeFileSync(
+      path.join(sp, "manifest.json"),
+      JSON.stringify({ schema_version: "2.0.0", song_id: "a", title: "t", artist: "r", duration_sec: 1 })
+    );
+
+    const res = await validateSongPack(sp);
+    expect(res.ok).toBe(false);
+    expect(res.issues.some((i) => i.code === "unsupported" && i.path === "manifest.json#/schema_version")).toBe(true);
+  });
+
   it("validates optional features if present", async () => {
     dir = tmpDir();
     const sp = path.join(dir, "Feat.songpack");
@@ -83,6 +136,28 @@ describe("validateSongPack", () => {
 
     const res = await validateSongPack(sp);
     expect(res.ok).toBe(true);
+  });
+
+  it("reports out-of-range event times", async () => {
+    dir = tmpDir();
+    const sp = path.join(dir, "BadEvents.songpack");
+    mkdirSync(path.join(sp, "features"), { recursive: true });
+
+    writeFileSync(
+      path.join(sp, "manifest.json"),
+      JSON.stringify({ schema_version: "1.0.0", song_id: "a", title: "t", artist: "r", duration_sec: 10 })
+    );
+    writeFileSync(
+      path.join(sp, "features", "events.json"),
+      JSON.stringify({
+        events_version: "1.0.0",
+        notes: [{ track_id: "guitar", t_on: 1, t_off: 12 }]
+      })
+    );
+
+    const res = await validateSongPack(sp);
+    expect(res.ok).toBe(false);
+    expect(res.issues.some((i) => i.path === "features/events.json#/notes/0/t_off" && i.code === "schema_invalid")).toBe(true);
   });
 
   it("validates charts/*.json if present", async () => {

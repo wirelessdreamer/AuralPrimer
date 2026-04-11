@@ -2,9 +2,11 @@ import { validateManifest } from "./validateManifest";
 import { validateBeats, validateEvents, validateLyrics, validateSections, validateTempoMap } from "./validateFeatures";
 import { validateChart } from "./validateCharts";
 import type { LoadedSongPack } from "./loadSongPack";
+import type { SongPackManifest } from "./manifest";
+import { validateManifestSemantics, validateTimedJsonBounds } from "./semanticValidation";
 
 export interface LoadedSongPackValidationIssue {
-  code: "missing_required_file" | "invalid_json" | "schema_invalid";
+  code: "missing_required_file" | "invalid_json" | "schema_invalid" | "unsupported";
   path: string;
   message: string;
 }
@@ -20,6 +22,7 @@ function safeJsonParse(raw: string): unknown {
 
 export async function validateLoadedSongPack(pack: LoadedSongPack): Promise<LoadedSongPackValidationResult> {
   const issues: LoadedSongPackValidationIssue[] = [];
+  let manifest: SongPackManifest | null = null;
 
   // Required: manifest.json
   if (!pack.manifest) {
@@ -32,6 +35,10 @@ export async function validateLoadedSongPack(pack: LoadedSongPack): Promise<Load
         path: "manifest.json",
         message: `manifest.json failed schema validation (${v.errors?.length ?? 0} errors)`
       });
+    } else {
+      manifest = v.value!;
+      const presentFiles = new Set(pack.listFiles());
+      issues.push(...(await validateManifestSemantics(manifest, (relPath) => presentFiles.has(relPath))));
     }
   }
 
@@ -39,32 +46,38 @@ export async function validateLoadedSongPack(pack: LoadedSongPack): Promise<Load
   if (pack.features.beats !== undefined) {
     const v = validateBeats(pack.features.beats);
     if (!v.ok) issues.push({ code: "schema_invalid", path: "features/beats.json", message: "beats.json failed schema validation" });
+    else if (manifest) issues.push(...validateTimedJsonBounds("features/beats.json", pack.features.beats, manifest.duration_sec));
   }
 
   if (pack.features.tempo_map !== undefined) {
     const v = validateTempoMap(pack.features.tempo_map);
     if (!v.ok) issues.push({ code: "schema_invalid", path: "features/tempo_map.json", message: "tempo_map.json failed schema validation" });
+    else if (manifest) issues.push(...validateTimedJsonBounds("features/tempo_map.json", pack.features.tempo_map, manifest.duration_sec));
   }
 
   if (pack.features.sections !== undefined) {
     const v = validateSections(pack.features.sections);
     if (!v.ok) issues.push({ code: "schema_invalid", path: "features/sections.json", message: "sections.json failed schema validation" });
+    else if (manifest) issues.push(...validateTimedJsonBounds("features/sections.json", pack.features.sections, manifest.duration_sec));
   }
 
   if (pack.features.events !== undefined) {
     const v = validateEvents(pack.features.events);
     if (!v.ok) issues.push({ code: "schema_invalid", path: "features/events.json", message: "events.json failed schema validation" });
+    else if (manifest) issues.push(...validateTimedJsonBounds("features/events.json", pack.features.events, manifest.duration_sec));
   }
 
   if (pack.features.lyrics !== undefined) {
     const v = validateLyrics(pack.features.lyrics);
     if (!v.ok) issues.push({ code: "schema_invalid", path: "features/lyrics.json", message: "lyrics.json failed schema validation" });
+    else if (manifest) issues.push(...validateTimedJsonBounds("features/lyrics.json", pack.features.lyrics, manifest.duration_sec));
   }
 
   // Charts
   for (const [rel, json] of Object.entries(pack.charts)) {
     const v = validateChart(json);
     if (!v.ok) issues.push({ code: "schema_invalid", path: rel, message: "chart json failed schema validation" });
+    else if (manifest) issues.push(...validateTimedJsonBounds(rel, json, manifest.duration_sec));
   }
 
   // Also validate any other JSON files in the pack best-effort (catch invalid_json)

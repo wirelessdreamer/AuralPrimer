@@ -72,4 +72,39 @@ describe("validateLoadedSongPack", () => {
     expect(res.issues.some((i) => i.path === "charts/easy.json" && i.code === "schema_invalid")).toBe(true);
     expect(res.issues.some((i) => i.path === "meta/bad.json" && i.code === "invalid_json")).toBe(true);
   });
+
+  it("reports unsupported versions, missing declared assets, and out-of-range times", async () => {
+    const files: Record<string, string> = {
+      "manifest.json": JSON.stringify({
+        schema_version: "2.0.0",
+        song_id: "x",
+        title: "t",
+        artist: "a",
+        duration_sec: 10,
+        assets: {
+          audio: {
+            mix_path: "audio/mix.wav"
+          }
+        }
+      })
+    };
+
+    const pack = makeLoadedPack({
+      manifest: JSON.parse(files["manifest.json"]),
+      listFiles: () => Object.keys(files),
+      readText: async (rel) => files[rel] ?? null,
+      features: {
+        events: {
+          events_version: "1.0.0",
+          notes: [{ track_id: "guitar", t_on: 1, t_off: 12 }]
+        }
+      }
+    });
+
+    const res = await validateLoadedSongPack(pack);
+    expect(res.ok).toBe(false);
+    expect(res.issues.some((i) => i.path === "manifest.json#/schema_version" && i.code === "unsupported")).toBe(true);
+    expect(res.issues.some((i) => i.path === "audio/mix.wav" && i.code === "missing_required_file")).toBe(true);
+    expect(res.issues.some((i) => i.path === "features/events.json#/notes/0/t_off" && i.code === "schema_invalid")).toBe(true);
+  });
 });
