@@ -2390,6 +2390,12 @@ function findSavedMidiPortMatch(
     ?? ports.find((p) => p.name === saved.name);
 }
 
+function midiPortNamesPreview(ports: MidiPortInfo[], maxPorts = 4): string {
+  const names = ports.slice(0, maxPorts).map((p) => p.name.trim()).filter(Boolean);
+  const suffix = ports.length > names.length ? `, +${ports.length - names.length} more` : "";
+  return names.length ? `${names.join(", ")}${suffix}` : "(unnamed ports)";
+}
+
 async function refreshMidiInputPorts() {
   const previousDisabled = midiInRefreshBtn.disabled;
   try {
@@ -2398,13 +2404,18 @@ async function refreshMidiInputPorts() {
     const ports = await invoke<MidiPortInfo[]>("list_midi_input_ports");
     midiInPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI inputs found");
 
-    const saved = await invoke<MidiInputSavedSettings>("midi_clock_input_get_saved_settings");
-    midiTempoScaleInput.value = String(saved.tempo_scale ?? 1);
-    midiInSysexEnabledInput.checked = Boolean(saved.allow_sysex);
+    let savedWarning = "";
+    try {
+      const saved = await invoke<MidiInputSavedSettings>("midi_clock_input_get_saved_settings");
+      midiTempoScaleInput.value = String(saved.tempo_scale ?? 1);
+      midiInSysexEnabledInput.checked = Boolean(saved.allow_sysex);
 
-    const match = findSavedMidiPortMatch(ports, saved.port);
-    if (match) {
-      midiInPortSelect.value = String(match.id);
+      const match = findSavedMidiPortMatch(ports, saved.port);
+      if (match) {
+        midiInPortSelect.value = String(match.id);
+      }
+    } catch (settingsError) {
+      savedWarning = `; saved settings ignored: ${String(settingsError)}`;
     }
 
     if (!ports.length) {
@@ -2418,7 +2429,7 @@ async function refreshMidiInputPorts() {
     const backend = midiPortBackendLabel(ports);
     const selectedName = midiInPortSelect.selectedOptions[0]?.textContent?.trim();
     setMidiStatus(
-      `midi input: ${ports.length} port(s) found via ${backend}${selectedName ? `; selected ${selectedName}` : ""}`
+      `midi input: ${ports.length} port(s) found via ${backend}: ${midiPortNamesPreview(ports)}${selectedName ? `; selected ${selectedName}` : ""}${savedWarning}`
     );
   } catch (e) {
     midiInPortSelect.innerHTML = renderMidiPortOptions([], "MIDI input refresh failed");
