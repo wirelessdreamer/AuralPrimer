@@ -178,6 +178,8 @@ type IngestRuntimeCheckResult = {
 };
 
 type IngestSummaryState = "idle" | "running" | "success" | "error";
+type DesktopAnalysisImportMode = IngestSubcommand | "stem-dir";
+type InputStemRole = "drums" | "bass" | "guitar" | "lead_guitar" | "rhythm_guitar" | "keys" | "vocals" | "other";
 
 type AudioBlob = {
   mime: string;
@@ -236,6 +238,32 @@ type IngestImportProgressEvent = {
   line: string;
   parsed?: unknown;
 };
+
+const MELODIC_METHOD_OPTIONS = [
+  ["auto", "auto"],
+  ["piano_auto", "piano_auto (piano-focused cleanup)"],
+  ["piano_polyphonic_clean", "piano_polyphonic_clean (heuristic)"],
+  ["piano_polyphonic", "piano_polyphonic (heuristic raw)"],
+  ["piano_transkun_clean", "piano_transkun_clean (research)"],
+  ["piano_pti_clean", "piano_pti_clean (research)"],
+  ["piano_transkun", "piano_transkun (research raw)"],
+  ["piano_pti", "piano_pti (research raw)"],
+  ["piano_hft_clean", "piano_hft_clean (research)"],
+  ["piano_hft", "piano_hft (research raw)"],
+  ["basic_pitch", "basic_pitch"],
+  ["pyin", "pyin"],
+  ["melodic_combined", "melodic_combined"],
+  ["melodic_octave_fix", "melodic_octave_fix"],
+  ["melodic_yin_octave_hps_fix", "melodic_yin_octave_hps_fix"],
+  ["melodic_adaptive", "melodic_adaptive"],
+  ["melodic_yin_bass80", "melodic_yin_bass80"],
+  ["melodic_hpss_combined", "melodic_hpss_combined"],
+  ["melodic_template_multipass", "melodic_template_multipass"],
+] as const;
+
+const melodicMethodOptionsHtml = MELODIC_METHOD_OPTIONS.map(
+  ([value, label]) => `<option value="${value}">${label}</option>`
+).join("");
 
 type MidiTrackInfo = {
   index: number;
@@ -417,8 +445,8 @@ root.innerHTML = `
                 <div class="meta">beat analysis + stem split + transcription</div>
               </div>
               <p class="meta">
-                Run the Python ingest sidecar on a file, folder, or DTX chart. This path performs beat/tempo analysis,
-                stem separation, guitar lead/rhythm stem split, and chart transcription.
+                Run the Python ingest sidecar on a file, folder, pre-split stems folder, or DTX chart. This path performs
+                beat/tempo analysis, stem separation, guitar lead/rhythm stem split, and chart transcription.
               </p>
               <div class="meta importStageNote">
                 Stages: decode audio -> analyze beats/tempo -> separate stems -> split guitar stems -> transcribe drums/melodic parts.
@@ -428,6 +456,7 @@ root.innerHTML = `
                 <select id="ingestMode">
                   <option value="import">perform analysis import (single audio file)</option>
                   <option value="import-dir">perform analysis import (scan folder)</option>
+                  <option value="stem-dir">perform analysis import (pre-split stems folder)</option>
                   <option value="import-dtx">perform analysis import (DTX chart)</option>
                 </select>
               </div>
@@ -462,9 +491,7 @@ root.innerHTML = `
                 </select>
                 <label class="meta">Melodic</label>
                 <select id="ingestMelodicMethod">
-                  <option value="auto">auto</option>
-                  <option value="basic_pitch">basic_pitch</option>
-                  <option value="pyin">pyin</option>
+                  ${melodicMethodOptionsHtml}
                 </select>
               </div>
               <div class="meta importStageNote">
@@ -1130,7 +1157,7 @@ function renderMt3RuntimeState(
             engine.error ? engine.error : ""
           ]
             .filter(Boolean)
-            .join(" · ");
+            .join(" | ");
           setMt3EngineOptionStatus(engineId, detected ? "detected" : "missing", detected ? "" : "missing");
           return `
             <div class="mt3RuntimeRow">
@@ -1191,7 +1218,7 @@ function renderDetails(details: SongPackDetails) {
 
   detailsEl.innerHTML = `
     <h3>Details</h3>
-    <div class="meta">${escapeHtml(details.kind)} · ${escapeHtml(details.container_path)}</div>
+    <div class="meta">${escapeHtml(details.kind)} | ${escapeHtml(details.container_path)}</div>
 
     <h4>${escapeHtml(title)} ${escapeHtml(artist)}</h4>
 
@@ -1548,10 +1575,15 @@ rerenderPlayersAndApplyAvailability();
 
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
 
-type MidiPortInfo = { id: number; name: string };
+type MidiPortInfo = {
+  id: number;
+  name: string;
+  stable_id?: string;
+  backend?: string;
+};
 
-type MidiOutputSelection = { id: number; name: string };
-type MidiInputSelection = { id: number; name: string };
+type MidiOutputSelection = { id: number; name: string; stable_id?: string | null };
+type MidiInputSelection = { id: number; name: string; stable_id?: string | null };
 
 type MidiInputSavedSettings = {
   port: MidiInputSelection | null;
@@ -1707,35 +1739,82 @@ function setMidiOutStatus(msg: string) {
   midiOutStatusEl.textContent = msg;
 }
 
+function midiPortBackendLabel(ports: MidiPortInfo[]): string {
+  return ports.find((p) => p.backend?.trim())?.backend?.trim() || "native";
+}
+
+function renderMidiPortOptions(ports: MidiPortInfo[], emptyLabel: string): string {
+  if (!ports.length) {
+    return `<option value="" selected>${escapeHtml(emptyLabel)}</option>`;
+  }
+  return ports
+    .map((p) => {
+      const titleParts = [
+        p.backend ? `backend=${p.backend}` : "",
+        p.stable_id ? `id=${p.stable_id}` : "",
+      ].filter(Boolean);
+      const title = titleParts.length ? ` title="${escapeHtml(titleParts.join(" "))}"` : "";
+      return `<option value="${p.id}"${title}>${escapeHtml(p.name)}</option>`;
+    })
+    .join("\n");
+}
+
+function findSavedMidiPortMatch(
+  ports: MidiPortInfo[],
+  saved: MidiInputSelection | MidiOutputSelection | null
+): MidiPortInfo | undefined {
+  if (!saved) return undefined;
+  if (saved.stable_id?.trim()) {
+    const stableMatch = ports.find((p) => p.stable_id === saved.stable_id);
+    if (stableMatch) return stableMatch;
+  }
+  return ports.find((p) => p.id === saved.id && p.name === saved.name)
+    ?? ports.find((p) => p.name === saved.name);
+}
+
 async function refreshMidiInputPorts() {
+  const previousDisabled = midiInRefreshBtn.disabled;
   try {
+    midiInRefreshBtn.disabled = true;
+    setMidiStatus("midi input: refreshing ports...");
     const ports = await invoke<MidiPortInfo[]>("list_midi_input_ports");
-    midiInPortSelect.innerHTML = ports
-      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
-      .join("\n");
+    midiInPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI inputs found");
 
     const saved = await invoke<MidiInputSavedSettings>("midi_clock_input_get_saved_settings");
     midiTempoScaleInput.value = String(saved.tempo_scale ?? 1);
     midiInSysexEnabledInput.checked = Boolean(saved.allow_sysex);
 
-    const selected = saved.port;
-    if (selected) {
-      const match = ports.find((p) => p.name === selected.name || p.id === selected.id);
-      if (match) {
-        midiInPortSelect.value = String(match.id);
-      }
+    const match = findSavedMidiPortMatch(ports, saved.port);
+    if (match) {
+      midiInPortSelect.value = String(match.id);
     }
+
+    if (!ports.length) {
+      midiInPortSelect.value = "";
+      setMidiStatus(
+        "midi input: 0 ports found via native MIDI backend. Windows uses WinRT; macOS uses CoreMIDI; Linux uses ALSA. If another app sees the keyboard, close apps that may hold the port, replug the keyboard, then refresh."
+      );
+      return;
+    }
+
+    const backend = midiPortBackendLabel(ports);
+    const selectedName = midiInPortSelect.selectedOptions[0]?.textContent?.trim();
+    setMidiStatus(
+      `midi input: ${ports.length} port(s) found via ${backend}${selectedName ? `; selected ${selectedName}` : ""}`
+    );
   } catch (e) {
+    midiInPortSelect.innerHTML = renderMidiPortOptions([], "MIDI input refresh failed");
+    midiInPortSelect.value = "";
     setMidiStatus(`midi input ports error: ${String(e)}`);
+  } finally {
+    midiInRefreshBtn.disabled = previousDisabled;
   }
 }
 
 async function refreshMidiOutputPorts() {
   try {
     const ports = await invoke<MidiPortInfo[]>("list_midi_output_ports");
-    midiOutPortSelect.innerHTML = ports
-      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
-      .join("\n");
+    midiOutPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI outputs found");
 
     // Best-effort: apply saved selection.
     const [saved, savedSysex] = await Promise.all([
@@ -1745,18 +1824,23 @@ async function refreshMidiOutputPorts() {
     midiOutSysexEnabled = Boolean(savedSysex);
     midiOutSysexEnabledInput.checked = midiOutSysexEnabled;
 
-    if (saved) {
-      const match = ports.find((p) => p.name === saved.name || p.id === saved.id);
-      if (match) midiOutPortSelect.value = String(match.id);
+    const match = findSavedMidiPortMatch(ports, saved);
+    if (match) {
+      midiOutPortSelect.value = String(match.id);
     }
   } catch (e) {
+    midiOutPortSelect.innerHTML = renderMidiPortOptions([], "MIDI output refresh failed");
+    midiOutPortSelect.value = "";
     setMidiOutStatus(`midi output ports error: ${String(e)}`);
   }
 }
 
 async function selectMidiOutputPortAndPersist() {
   const portId = Number(midiOutPortSelect.value);
-  if (!Number.isFinite(portId)) return;
+  if (!Number.isFinite(portId)) {
+    setMidiOutStatus("midi output: no port selected");
+    return;
+  }
   await invoke("midi_clock_output_select_port_and_persist", { portId });
   await invoke("midi_output_set_allow_sysex_and_persist", { enabled: midiOutSysexEnabled });
   setMidiOutStatus(`midi output: selected port=${portId} sysex=${midiOutSysexEnabled ? "on" : "off"}`);
@@ -1869,10 +1953,14 @@ async function connectMidiClockInput() {
   const portId = Number(midiInPortSelect.value);
   const tempoScale = Number(midiTempoScaleInput.value);
   const allowSysex = midiInSysexEnabledInput.checked;
-  if (!Number.isFinite(portId)) return;
+  if (!Number.isFinite(portId)) {
+    setMidiStatus("midi input: no port selected; refresh after connecting the keyboard");
+    return;
+  }
   await invoke("midi_clock_input_start_and_persist", { portId, tempoScale, allowSysex });
   midiConnected = true;
-  setMidiStatus(`midi input connected: port=${portId} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
+  const portName = midiInPortSelect.selectedOptions[0]?.textContent?.trim() || `port ${portId}`;
+  setMidiStatus(`midi input connected: ${portName} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
 }
 
 async function disconnectMidiClockInput() {
@@ -2136,6 +2224,7 @@ function debugIngestConsole(message: string, details?: unknown) {
 let ingestInFlight = false;
 let ingestLogLines: string[] = [];
 let ingestProgressPct = 0;
+let ingestStemInspection: RawSongFolderInspection | null = null;
 
 function resetIngestStatusLog(firstLine: string) {
   ingestLogLines = [firstLine];
@@ -2166,7 +2255,7 @@ function formatIngestProgressEvent(ev: IngestImportProgressEvent): string {
     const progress = typeof obj.progress === "number" ? `${Math.round(obj.progress * 100)}%` : "";
     const msg = typeof obj.message === "string" ? obj.message : "";
     const pct = progress ? `${progress} ` : "";
-    const suffix = msg ? ` · ${msg}` : "";
+    const suffix = msg ? ` | ${msg}` : "";
     return `${pct}${id}${suffix}`.trim();
   }
 
@@ -2192,7 +2281,7 @@ function parseIngestProgressEvent(
   return {
     progressPct: progress,
     title: `Import running: ${formatIngestStageLabel(rawId)}`,
-    detail: `${formatIngestStageLabel(rawId)} · ${message}`
+    detail: `${formatIngestStageLabel(rawId)} | ${message}`
   };
 }
 
@@ -2556,7 +2645,20 @@ function ingestSourceExtensions(mode: IngestSubcommand): string[] {
   return ["wav", "mp3", "ogg", "flac", "m4a"];
 }
 
-function setIngestSourcePlaceholder(mode: IngestSubcommand) {
+function currentIngestMode(): DesktopAnalysisImportMode {
+  const mode = ingestModeSelect.value;
+  if (mode === "import-dir" || mode === "import-dtx" || mode === "stem-dir") {
+    return mode;
+  }
+  return "import";
+}
+
+function setIngestSourcePlaceholder(mode: DesktopAnalysisImportMode) {
+  ingestBrowseSourceBtn.textContent = mode === "import" || mode === "import-dtx" ? "Browse..." : "Pick folder...";
+  if (mode === "stem-dir") {
+    ingestSourcePathInput.placeholder = "C:\\music\\split-stems-folder";
+    return;
+  }
   if (mode === "import-dir") {
     ingestSourcePathInput.placeholder = "C:\\music\\folder";
   } else if (mode === "import-dtx") {
@@ -2590,8 +2692,107 @@ function inferIngestMetadataFromSelectedSource() {
   }
 }
 
+function normalizeInputStemRole(role: string | null | undefined): InputStemRole | null {
+  const key = (role ?? "").trim().toLowerCase();
+  switch (key) {
+    case "drums":
+    case "bass":
+    case "guitar":
+    case "lead_guitar":
+    case "rhythm_guitar":
+    case "keys":
+    case "vocals":
+    case "other":
+      return key;
+    default:
+      return null;
+  }
+}
+
+function buildIngestInputStemPaths(inspection: RawSongFolderInspection): Partial<Record<InputStemRole, string>> {
+  const paths: Partial<Record<InputStemRole, string>> = {};
+  const assign = (role: InputStemRole | null, path: string) => {
+    if (!role || paths[role]) return;
+    paths[role] = path;
+  };
+
+  for (const part of inspection.stem_parts) {
+    assign(normalizeInputStemRole(part.detected_role), part.path);
+  }
+  for (const part of inspection.stem_parts) {
+    assign(normalizeInputStemRole(part.game_role), part.path);
+  }
+
+  return paths;
+}
+
+async function parseIngestConfigObject(configValue: string): Promise<Record<string, unknown>> {
+  const trimmed = configValue.trim();
+  if (!trimmed) return {};
+
+  const raw = trimmed.startsWith("{") ? trimmed : await safeInvoke<string>("read_text_file", { path: trimmed });
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`invalid config JSON: ${String(error)}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("config JSON must be an object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function buildStemDirConfig(
+  configValue: string,
+  inputStemPaths: Partial<Record<InputStemRole, string>>
+): Promise<string> {
+  const baseConfig = await parseIngestConfigObject(configValue);
+  const existingStemPaths =
+    baseConfig.input_stem_paths && typeof baseConfig.input_stem_paths === "object" && !Array.isArray(baseConfig.input_stem_paths)
+      ? (baseConfig.input_stem_paths as Record<string, unknown>)
+      : {};
+
+  return JSON.stringify({
+    ...baseConfig,
+    disable_stem_separation: true,
+    input_stem_paths: {
+      ...existingStemPaths,
+      ...inputStemPaths
+    }
+  });
+}
+
+async function inspectIngestStemFolder(folderPath: string): Promise<RawSongFolderInspection> {
+  const inspection = await safeInvoke<RawSongFolderInspection>("inspect_raw_song_folder", { folderPath });
+  ingestStemInspection = inspection;
+  if (!ingestTitleInput.value.trim() && inspection.title_guess) {
+    ingestTitleInput.value = inspection.title_guess;
+  }
+
+  const inputStemPaths = buildIngestInputStemPaths(inspection);
+  const availableRoles = Object.keys(inputStemPaths);
+  const warnings = inspection.warnings.length;
+  const mixLabel = inspection.mix_wav_path ? "mix found" : "mix will be synthesized from stems";
+  const rolesLabel = availableRoles.length ? availableRoles.join(", ") : "no reusable stem roles detected";
+  const warningLabel = warnings ? ` | ${warnings} warning${warnings === 1 ? "" : "s"}` : "";
+  setIngestStatus(
+    `validated stem folder: ${inspection.stem_wav_paths.length} WAV(s) | ${mixLabel} | roles: ${rolesLabel}${warningLabel}`
+  );
+  return inspection;
+}
+
 async function ingestBrowseSource() {
-  const mode = ingestModeSelect.value as IngestSubcommand;
+  const mode = currentIngestMode();
+  if (mode === "stem-dir") {
+    const dir = await pickFolder();
+    if (!dir) return;
+    ingestSourcePathInput.value = dir;
+    await inspectIngestStemFolder(dir);
+    return;
+  }
+
   if (mode === "import-dir") {
     const dir = await pickFolder();
     if (!dir) return;
@@ -2607,23 +2808,67 @@ async function ingestBrowseSource() {
 }
 
 async function runIngestImport() {
-  inferIngestMetadataFromSelectedSource();
+  const mode = currentIngestMode();
+  if (mode === "stem-dir") {
+    const folderPath = ingestSourcePathInput.value.trim();
+    if (!folderPath) {
+      setIngestStatus("pick a pre-split stems folder first");
+      setIngestSummary("error", "Import setup failed", "Pick a pre-split stems folder first.", {
+        progressPct: 0,
+        showLog: true
+      });
+      return;
+    }
+  } else {
+    inferIngestMetadataFromSelectedSource();
+  }
 
   let req: IngestImportRequest;
   try {
-    req = buildIngestRequestFromForm({
-      sourcePath: ingestSourcePathInput.value,
-      mode: ingestModeSelect.value as IngestSubcommand,
-      outSongpackPath: ingestOutPathInput.value,
-      profile: ingestProfileInput.value,
-      config: ingestConfigInput.value,
-      title: ingestTitleInput.value,
-      artist: ingestArtistInput.value,
-      drumFilter: ingestDrumFilterSelect.value,
-      melodicMethod: ingestMelodicMethodSelect.value,
-      shiftsText: ingestShiftsInput.value,
-      multiFilter: ingestMultiFilterInput.checked
-    });
+    if (mode === "stem-dir") {
+      const folderPath = ingestSourcePathInput.value.trim();
+      const inspection =
+        ingestStemInspection?.folder_path === folderPath
+          ? ingestStemInspection
+          : await inspectIngestStemFolder(folderPath);
+      const inputStemPaths = buildIngestInputStemPaths(inspection);
+      if (!Object.keys(inputStemPaths).length) {
+        setIngestStatus("no reusable stems were detected in that folder");
+        setIngestSummary("error", "Import setup failed", "No reusable stems were detected in that folder.", {
+          progressPct: 0,
+          showLog: true
+        });
+        return;
+      }
+
+      req = buildIngestRequestFromForm({
+        sourcePath: folderPath,
+        mode: "import-dir",
+        outSongpackPath: ingestOutPathInput.value,
+        profile: ingestProfileInput.value,
+        config: await buildStemDirConfig(ingestConfigInput.value, inputStemPaths),
+        title: ingestTitleInput.value,
+        artist: ingestArtistInput.value,
+        drumFilter: ingestDrumFilterSelect.value,
+        melodicMethod: ingestMelodicMethodSelect.value,
+        shiftsText: ingestShiftsInput.value,
+        multiFilter: ingestMultiFilterInput.checked
+      });
+    } else {
+      req = buildIngestRequestFromForm({
+        sourcePath: ingestSourcePathInput.value,
+        mode,
+        outSongpackPath: ingestOutPathInput.value,
+        profile: ingestProfileInput.value,
+        config: ingestConfigInput.value,
+        title: ingestTitleInput.value,
+        artist: ingestArtistInput.value,
+        drumFilter: ingestDrumFilterSelect.value,
+        melodicMethod: ingestMelodicMethodSelect.value,
+        shiftsText: ingestShiftsInput.value,
+        multiFilter: ingestMultiFilterInput.checked
+      });
+    }
   } catch (e) {
     setIngestStatus(String(e));
     setIngestSummary("error", "Import setup failed", String(e), { progressPct: 0, showLog: true });
@@ -2632,7 +2877,7 @@ async function runIngestImport() {
 
   ingestInFlight = true;
   ingestProgressPct = 0;
-  resetIngestStatusLog("running ingest sidecar...");
+  resetIngestStatusLog(mode === "stem-dir" ? "running ingest sidecar from provided stems..." : "running ingest sidecar...");
   debugIngestConsole("invoke ingest_import", req);
   setIngestSummary("running", "Import running", "Preparing ingest sidecar and validating inputs.", {
     progressPct: 0,
@@ -2726,7 +2971,7 @@ function renderGhwtSongs() {
               <div class="row">
                 <div class="grow">
                   <strong>${escapeHtml(title)}</strong> ${escapeHtml(artist)}
-                  <div class="meta">${escapeHtml(s.checksum)} · ${escapeHtml(audioHint)} · ${escapeHtml(s.preview_fsb_path)}</div>
+                  <div class="meta">${escapeHtml(s.checksum)} | ${escapeHtml(audioHint)} | ${escapeHtml(s.preview_fsb_path)}</div>
                 </div>
                 <button class="ghwtImportBtn" data-checksum="${escapeHtml(s.checksum)}">Import</button>
               </div>
@@ -3280,8 +3525,8 @@ void listen<MidiInputMessageEvent>("midi_input_message", (ev) => {
 void listen<GhwtImportProgressEvent>("ghwt_import_progress", (ev) => {
   const p = ev.payload;
   const pct = Math.round((p.progress ?? 0) * 100);
-  const msg = p.message ? ` · ${p.message}` : "";
-  setGhwtStatus(`${p.song}: ${pct}% · ${p.id}${msg}`);
+  const msg = p.message ? ` | ${p.message}` : "";
+  setGhwtStatus(`${p.song}: ${pct}% | ${p.id}${msg}`);
 });
 
 void listen<IngestImportProgressEvent>("ingest_import_progress", (ev) => {
@@ -3463,7 +3708,7 @@ async function refresh() {
                 <div class="row">
                   <div class="grow">
                     <strong>${escapeHtml(title)}</strong> ${escapeHtml(artist)}
-                    <div class="meta">${escapeHtml(ok)} · ${escapeHtml(e.kind)} · ${escapeHtml(e.container_path)}</div>
+                    <div class="meta">${escapeHtml(ok)} | ${escapeHtml(e.kind)} | ${escapeHtml(e.container_path)}</div>
                   </div>
                   <button class="detailsBtn" data-path="${escapeHtml(e.container_path)}" ${disabled}>Details</button>
                 </div>
@@ -3558,10 +3803,18 @@ ghwtBrowseBtn.addEventListener("click", () => {
 });
 
 ingestModeSelect.addEventListener("change", () => {
-  const mode = ingestModeSelect.value as IngestSubcommand;
+  ingestStemInspection = null;
+  const mode = currentIngestMode();
   setIngestSourcePlaceholder(mode);
 });
 ingestSourcePathInput.addEventListener("change", () => {
+  if (currentIngestMode() === "stem-dir") {
+    ingestStemInspection = null;
+    const folderPath = ingestSourcePathInput.value.trim();
+    if (!folderPath) return;
+    void inspectIngestStemFolder(folderPath).catch((e) => setIngestStatus(String(e)));
+    return;
+  }
   inferIngestMetadataFromSelectedSource();
 });
 
@@ -3591,7 +3844,7 @@ stemMidiImportBtn.addEventListener("click", () => {
 // Load GHWT settings.
 void ghwtLoadSettings();
 
-setIngestSourcePlaceholder(ingestModeSelect.value as IngestSubcommand);
+setIngestSourcePlaceholder(currentIngestMode());
 
 renderStemMidiSelection();
 setStemMidiStatus("(not imported)");

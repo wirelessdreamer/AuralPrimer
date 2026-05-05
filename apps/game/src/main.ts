@@ -28,6 +28,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { generateLyricsJsonFromPlainText } from "./lyricsGenerator";
 import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
 import { TabRenderer } from "./tabRenderer";
+import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
@@ -252,6 +253,8 @@ type ImportRawSongFolderRequest = {
   folder_path: string;
   title?: string;
   artist?: string;
+  chart_source?: "source_midi" | "analysis_melodic";
+  melodic_method?: string;
 };
 
 type ImportRawSongFolderResult = {
@@ -259,9 +262,40 @@ type ImportRawSongFolderResult = {
   stems_count: number;
   midi_files_count: number;
   lyrics_included: boolean;
+  midi_chart_included?: boolean;
+  chart_source_used?: "source_midi" | "analysis_melodic";
+  melodic_method_used?: string | null;
   mapped_game_roles: string[];
   warnings: string[];
 };
+
+type AnalysisImportMode = "import" | "import-dir" | "stem-dir";
+
+const MELODIC_METHOD_OPTIONS = [
+  ["auto", "auto"],
+  ["piano_auto", "piano_auto (piano-focused cleanup)"],
+  ["piano_polyphonic_clean", "piano_polyphonic_clean (heuristic)"],
+  ["piano_polyphonic", "piano_polyphonic (heuristic raw)"],
+  ["piano_transkun_clean", "piano_transkun_clean (research)"],
+  ["piano_pti_clean", "piano_pti_clean (research)"],
+  ["piano_transkun", "piano_transkun (research raw)"],
+  ["piano_pti", "piano_pti (research raw)"],
+  ["piano_hft_clean", "piano_hft_clean (research)"],
+  ["piano_hft", "piano_hft (research raw)"],
+  ["basic_pitch", "basic_pitch"],
+  ["pyin", "pyin"],
+  ["melodic_combined", "melodic_combined"],
+  ["melodic_octave_fix", "melodic_octave_fix"],
+  ["melodic_yin_octave_hps_fix", "melodic_yin_octave_hps_fix"],
+  ["melodic_adaptive", "melodic_adaptive"],
+  ["melodic_yin_bass80", "melodic_yin_bass80"],
+  ["melodic_hpss_combined", "melodic_hpss_combined"],
+  ["melodic_template_multipass", "melodic_template_multipass"],
+] as const;
+
+const melodicMethodOptionsHtml = MELODIC_METHOD_OPTIONS.map(
+  ([value, label]) => `<option value="${value}">${label}</option>`
+).join("");
 
 const root = document.getElementById("app");
 if (!root) throw new Error("missing #app");
@@ -525,9 +559,55 @@ root.innerHTML = `
             <pre id="ghwtStatus" class="meta">(not scanned)</pre>
             <div id="ghwtList"></div>
 
-            <h3>Ingest Audio (sidecar)</h3>
+            <h3>Import Audio (analysis)</h3>
             <p class="meta">
-              Run the Python ingest sidecar directly to create SongPacks from audio files, folders, or DTX charts.
+              Pick one song file or one song folder. This flow runs full analysis extraction:
+              stems, beats, tempo, sections, drum chart, melodic tracks, and lyrics alignment when available.
+            </p>
+            <div class="row">
+              <label class="meta">Mode</label>
+              <select id="analysisImportMode">
+                <option value="import">single audio file</option>
+                <option value="import-dir">song folder</option>
+                <option value="stem-dir">pre-split stems folder</option>
+              </select>
+            </div>
+            <div class="row">
+              <label class="meta">Source</label>
+              <input id="analysisImportSourcePath" class="grow" type="text" placeholder="C:\\music\\song.wav" />
+              <button id="analysisImportBrowseSource">Pick song...</button>
+            </div>
+            <div class="row">
+              <label class="meta">Title</label>
+              <input id="analysisImportTitle" class="grow" type="text" placeholder="Optional title override" />
+              <label class="meta">Artist</label>
+              <input id="analysisImportArtist" class="grow" type="text" placeholder="Optional artist override" />
+            </div>
+            <div class="row">
+              <label class="meta">Drum filter</label>
+              <select id="analysisImportDrumFilter">
+                <option value="combined_filter">combined_filter</option>
+                <option value="dsp_bandpass_improved">dsp_bandpass_improved</option>
+                <option value="dsp_spectral_flux">dsp_spectral_flux</option>
+                <option value="adaptive_beat_grid">adaptive_beat_grid</option>
+                <option value="aural_onset">aural_onset</option>
+                <option value="dsp_bandpass">dsp_bandpass</option>
+                <option value="librosa_superflux">librosa_superflux</option>
+              </select>
+              <label class="meta">Melodic</label>
+              <select id="analysisImportMelodicMethod">
+                ${melodicMethodOptionsHtml}
+              </select>
+              <label><input id="analysisImportMultiFilter" type="checkbox" /> multi-filter drums</label>
+            </div>
+            <div class="row">
+              <button id="analysisImportRun">Analyze and Import</button>
+            </div>
+            <pre id="analysisImportStatus" class="meta">(not started)</pre>
+
+            <h3>Advanced ingest (sidecar)</h3>
+            <p class="meta">
+              Manual access to the Python ingest sidecar for import, folder scan, DTX, custom config JSON, and explicit output path control.
             </p>
             <div class="row">
               <label class="meta">Mode</label>
@@ -566,9 +646,7 @@ root.innerHTML = `
               </select>
               <label class="meta">Melodic</label>
               <select id="ingestMelodicMethod">
-                <option value="auto">auto</option>
-                <option value="basic_pitch">basic_pitch</option>
-                <option value="pyin">pyin</option>
+                ${melodicMethodOptionsHtml}
               </select>
             </div>
             <div class="row">
@@ -619,7 +697,7 @@ root.innerHTML = `
               <div class="meta">Clock + full I/O</div>
             </div>
 
-            <h3>MIDI Sync (clock follow)</h3>
+            <h3>MIDI Input (keyboard + clock follow)</h3>
             <div class="row">
               <label><input id="midiFollowEnabled" type="checkbox" checked /> follow external clock</label>
             </div>
@@ -638,7 +716,12 @@ root.innerHTML = `
             <div class="row">
               <label><input id="midiInSysexEnabled" type="checkbox" /> allow SysEx input</label>
             </div>
-            <pre id="midiStatus" class="meta">(midi clock: not connected)</pre>
+            <div class="row">
+              <button id="midiInPanic">Clear active notes</button>
+              <span class="meta">Use this if a keyboard disconnect leaves a held note in the monitor.</span>
+            </div>
+            <pre id="midiStatus" class="meta">(midi input: not connected)</pre>
+            <pre id="midiInActiveNotes" class="meta">(no active notes)</pre>
             <pre id="midiInEvents" class="meta">(midi input events)</pre>
 
             <h3>MIDI Sync (clock out)</h3>
@@ -822,6 +905,8 @@ function setRoute(route: Route) {
     }
   }
 
+  syncPlaySurfaceMode();
+
   // Always scroll to top of content on navigation.
   document.documentElement.scrollTop = 0;
   logConsole("gamestate", `route -> ${route}`);
@@ -861,6 +946,9 @@ const playLyricsEl = document.getElementById("playLyrics") as HTMLDivElement;
 const playLyricsCurrentEl = document.getElementById("playLyricsCurrent") as HTMLDivElement;
 const playLyricsNextEl = document.getElementById("playLyricsNext") as HTMLDivElement;
 const vizStatusEl = document.getElementById("vizStatus") as HTMLPreElement;
+const instrumentSelectorEl = document.getElementById("instrumentSelector") as HTMLDivElement;
+const tabContainerEl = document.getElementById("tabContainer") as HTMLDivElement;
+const appMainEl = document.querySelector(".appMain") as HTMLDivElement;
 const pluginSelect = document.getElementById("pluginSelect") as HTMLSelectElement;
 const pluginRefreshBtn = document.getElementById("pluginRefresh") as HTMLButtonElement;
 const vizStartBtn = document.getElementById("vizStart") as HTMLButtonElement;
@@ -876,6 +964,12 @@ capsEl.id = "songCaps";
 capsEl.className = "caps";
 // Insert just above the viz canvas.
 vizCanvas.insertAdjacentElement("beforebegin", capsEl);
+
+const playSurfaceEl = document.createElement("div");
+playSurfaceEl.id = "playSurface";
+playSurfaceEl.className = "playSurface";
+vizCanvas.insertAdjacentElement("beforebegin", playSurfaceEl);
+playSurfaceEl.append(vizCanvas, playLyricsEl, vizStatusEl, instrumentSelectorEl, tabContainerEl);
 
 const audioLoadBtn = document.getElementById("audioLoad") as HTMLButtonElement;
 const audioPlayBtn = document.getElementById("audioPlay") as HTMLButtonElement;
@@ -907,7 +1001,9 @@ const midiInConnectBtn = document.getElementById("midiInConnect") as HTMLButtonE
 const midiInDisconnectBtn = document.getElementById("midiInDisconnect") as HTMLButtonElement;
 const midiTempoScaleInput = document.getElementById("midiTempoScale") as HTMLInputElement;
 const midiInSysexEnabledInput = document.getElementById("midiInSysexEnabled") as HTMLInputElement;
+const midiInPanicBtn = document.getElementById("midiInPanic") as HTMLButtonElement;
 const midiStatusEl = document.getElementById("midiStatus") as HTMLPreElement;
+const midiInActiveNotesEl = document.getElementById("midiInActiveNotes") as HTMLPreElement;
 const midiInEventsEl = document.getElementById("midiInEvents") as HTMLPreElement;
 
 const midiOutEnabledInput = document.getElementById("midiOutEnabled") as HTMLInputElement;
@@ -961,6 +1057,17 @@ const ingestArtistInput = document.getElementById("ingestArtist") as HTMLInputEl
 const ingestRunBtn = document.getElementById("ingestRun") as HTMLButtonElement;
 const ingestStatusEl = document.getElementById("ingestStatus") as HTMLPreElement;
 
+const analysisImportModeSelect = document.getElementById("analysisImportMode") as HTMLSelectElement;
+const analysisImportSourcePathInput = document.getElementById("analysisImportSourcePath") as HTMLInputElement;
+const analysisImportBrowseSourceBtn = document.getElementById("analysisImportBrowseSource") as HTMLButtonElement;
+const analysisImportTitleInput = document.getElementById("analysisImportTitle") as HTMLInputElement;
+const analysisImportArtistInput = document.getElementById("analysisImportArtist") as HTMLInputElement;
+const analysisImportDrumFilterSelect = document.getElementById("analysisImportDrumFilter") as HTMLSelectElement;
+const analysisImportMelodicMethodSelect = document.getElementById("analysisImportMelodicMethod") as HTMLSelectElement;
+const analysisImportMultiFilterInput = document.getElementById("analysisImportMultiFilter") as HTMLInputElement;
+const analysisImportRunBtn = document.getElementById("analysisImportRun") as HTMLButtonElement;
+const analysisImportStatusEl = document.getElementById("analysisImportStatus") as HTMLPreElement;
+
 const stemMidiTitleInput = document.getElementById("stemMidiTitle") as HTMLInputElement;
 const stemMidiArtistInput = document.getElementById("stemMidiArtist") as HTMLInputElement;
 const stemMidiPickStemsBtn = document.getElementById("stemMidiPickStems") as HTMLButtonElement;
@@ -1006,6 +1113,9 @@ if (!haveTauri()) {
   stemMidiPickMidiBtn.disabled = true;
   stemMidiCreateBtn.disabled = true;
 
+  analysisImportBrowseSourceBtn.disabled = true;
+  analysisImportRunBtn.disabled = true;
+
   ingestBrowseSourceBtn.disabled = true;
   ingestRunBtn.disabled = true;
   playStartBtn.disabled = true;
@@ -1016,6 +1126,7 @@ if (!haveTauri()) {
   midiInDisconnectBtn.disabled = true;
   midiTempoScaleInput.disabled = true;
   midiInSysexEnabledInput.disabled = true;
+  midiInPanicBtn.disabled = true;
 
   midiOutEnabledInput.disabled = true;
   midiOutPortSelect.disabled = true;
@@ -1506,6 +1617,7 @@ function showSongLibraryStep() {
   logConsole("gamestate", "show song library step");
   playLayoutEl.classList.add("isLibraryOnly");
   setPlayFocusMode(false);
+  syncPlaySurfaceMode();
   try {
     stopVisualizer();
     transportController.pause();
@@ -1523,6 +1635,7 @@ function showBandSetupStep() {
   logConsole("gamestate", "show band setup step");
   playLayoutEl.classList.remove("isLibraryOnly");
   setPlayFocusMode(true);
+  syncPlaySurfaceMode();
 }
 
 toggleFocusBtn.addEventListener("click", () => {
@@ -1807,6 +1920,7 @@ function applyInstrumentAvailability(
 ) {
   const caps = computeSongCapabilities(details, drumSelection, chartsByPath);
   for (const chip of Array.from(playersEl.querySelectorAll<HTMLElement>(".playerChip"))) {
+    const chipId = chip.getAttribute("data-player-id");
     const sel = chip.querySelector<HTMLSelectElement>("select.playerInstrument");
     if (!sel) continue;
     for (const opt of Array.from(sel.options)) {
@@ -1821,7 +1935,12 @@ function applyInstrumentAvailability(
     // If current selection is now disabled, pick first enabled.
     if (sel.selectedOptions.length && sel.selectedOptions[0].disabled) {
       const firstEnabled = Array.from(sel.options).find((o) => !o.disabled);
-      if (firstEnabled) sel.value = firstEnabled.value;
+      if (firstEnabled) {
+        sel.value = firstEnabled.value;
+        if (chipId) {
+          players = players.map((p) => (p.id === chipId ? { ...p, instrument: firstEnabled.value as Instrument } : p));
+        }
+      }
     }
   }
 }
@@ -1917,6 +2036,68 @@ function renderPluginsWithAvailability(details: SongPackDetails | null) {
 type Player = { id: string; name: string; instrument: Instrument };
 let players: Player[] = [{ id: "p1", name: "Player 1", instrument: "drums" }];
 
+function primaryPlayerInstrument(): Instrument | null {
+  return players[0]?.instrument ?? null;
+}
+
+function preferredMelodicRoleForPlayers(): InstrumentRole | null {
+  switch (primaryPlayerInstrument()) {
+    case "bass":
+      return "bass";
+    case "rhythm_guitar":
+      return "rhythm_guitar";
+    case "lead_guitar":
+      return "lead_guitar";
+    case "keys":
+      return "keys";
+    case "vocals":
+      return "melodic";
+    default:
+      return null;
+  }
+}
+
+function findMelodicTrack(role: InstrumentRole | null): MelodicTrackSelection | null {
+  if (!role) return null;
+  return selectedMelodicTracks.find((track) => track.role === role) ?? null;
+}
+
+function shouldPromoteMelodicSurface(): boolean {
+  return primaryPlayerInstrument() === "keys" && Boolean(findMelodicTrack("keys"));
+}
+
+function shouldUseWideSoloKeysLayout(): boolean {
+  return currentRoute === "play"
+    && !playLayoutEl.classList.contains("isLibraryOnly")
+    && players.length === 1
+    && shouldPromoteMelodicSurface();
+}
+
+function syncPlaySurfaceMode(): void {
+  const pianoPrimary = shouldPromoteMelodicSurface();
+  const wideSoloKeys = shouldUseWideSoloKeysLayout();
+  playSurfaceEl.classList.toggle("isPianoPrimary", pianoPrimary);
+  playLayoutEl.classList.toggle("isWideSoloKeys", wideSoloKeys);
+  appMainEl.classList.toggle("isWideSoloKeys", wideSoloKeys);
+}
+
+function syncMelodicTrackSelectionFromPlayers(): void {
+  if (selectedMelodicTracks.length === 0) {
+    syncPlaySurfaceMode();
+    return;
+  }
+
+  const preferredTrack = findMelodicTrack(preferredMelodicRoleForPlayers());
+  const activeTrack = findMelodicTrack(activeTabInstrument);
+  const nextTrack = preferredTrack ?? activeTrack ?? selectedMelodicTracks[0] ?? null;
+  if (!nextTrack) {
+    syncPlaySurfaceMode();
+    return;
+  }
+
+  selectInstrumentTrack(nextTrack.role);
+}
+
 function selectedPluginId(): string | null {
   const idx = pluginSelect.selectedIndex;
   if (idx < 0 || idx >= availablePlugins.length) return null;
@@ -1981,6 +2162,7 @@ function renderPlayers(): void {
       const inst = sel.value as Instrument;
       pluginSelectionMode = "auto";
       players = players.map((p) => (p.id === id ? { ...p, instrument: inst } : p));
+      syncMelodicTrackSelectionFromPlayers();
       const pluginChanged = syncPreferredPluginSelection();
       if (pluginChanged) {
         restartVisualizerForPluginSelection();
@@ -2010,6 +2192,7 @@ function rerenderPlayersAndApplyAvailability() {
   renderPlayers();
   applyInstrumentAvailability(selectedSongPackDetails, selectedDrumChartSelection, selectedSongPackCharts);
   syncPreferredPluginSelection();
+  syncMelodicTrackSelectionFromPlayers();
 }
 
 addPlayerBtn.addEventListener("click", () => {
@@ -2025,10 +2208,15 @@ rerenderPlayersAndApplyAvailability();
 
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
 
-type MidiPortInfo = { id: number; name: string };
+type MidiPortInfo = {
+  id: number;
+  name: string;
+  stable_id?: string;
+  backend?: string;
+};
 
-type MidiOutputSelection = { id: number; name: string };
-type MidiInputSelection = { id: number; name: string };
+type MidiOutputSelection = { id: number; name: string; stable_id?: string | null };
+type MidiInputSelection = { id: number; name: string; stable_id?: string | null };
 
 type MidiInputSavedSettings = {
   port: MidiInputSelection | null;
@@ -2036,24 +2224,17 @@ type MidiInputSavedSettings = {
   allow_sysex: boolean;
 };
 
-type MidiInputMessageEvent = {
-  timestamp_us: number;
-  message_type: string;
-  status: number;
-  channel?: number | null;
-  data1?: number | null;
-  data2?: number | null;
-  value14?: number | null;
-  value_signed?: number | null;
-  bytes: number[];
-};
-
 let midiConnected = false;
 let midiOutSysexEnabled = false;
+const midiInputTracker = new MidiInputStateTracker();
 let midiInputEventLines: string[] = [];
 
 function setMidiStatus(msg: string) {
   midiStatusEl.textContent = msg;
+}
+
+function setMidiInputActiveNotesStatus(msg: string) {
+  midiInActiveNotesEl.textContent = msg;
 }
 
 function setMidiInputEventsStatus(msg: string) {
@@ -2068,15 +2249,6 @@ function appendMidiInputEventLine(line: string) {
     midiInputEventLines = midiInputEventLines.slice(-14);
   }
   setMidiInputEventsStatus(midiInputEventLines.join("\n"));
-}
-
-function formatMidiInputMessage(ev: MidiInputMessageEvent): string {
-  const ch = typeof ev.channel === "number" ? ` ch${ev.channel + 1}` : "";
-  const d1 = typeof ev.data1 === "number" ? ` d1=${ev.data1}` : "";
-  const d2 = typeof ev.data2 === "number" ? ` d2=${ev.data2}` : "";
-  const bend = typeof ev.value_signed === "number" ? ` bend=${ev.value_signed}` : "";
-  const hex = ev.bytes.map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
-  return `${ev.message_type}${ch}${d1}${d2}${bend} [${hex}]`;
 }
 
 function midiUiChannelToZeroBased(channelFromUi: number): number {
@@ -2185,35 +2357,82 @@ function setMidiOutStatus(msg: string) {
   midiOutStatusEl.textContent = msg;
 }
 
+function midiPortBackendLabel(ports: MidiPortInfo[]): string {
+  return ports.find((p) => p.backend?.trim())?.backend?.trim() || "native";
+}
+
+function renderMidiPortOptions(ports: MidiPortInfo[], emptyLabel: string): string {
+  if (!ports.length) {
+    return `<option value="" selected>${escapeHtml(emptyLabel)}</option>`;
+  }
+  return ports
+    .map((p) => {
+      const titleParts = [
+        p.backend ? `backend=${p.backend}` : "",
+        p.stable_id ? `id=${p.stable_id}` : "",
+      ].filter(Boolean);
+      const title = titleParts.length ? ` title="${escapeHtml(titleParts.join(" "))}"` : "";
+      return `<option value="${p.id}"${title}>${escapeHtml(p.name)}</option>`;
+    })
+    .join("\n");
+}
+
+function findSavedMidiPortMatch(
+  ports: MidiPortInfo[],
+  saved: MidiInputSelection | MidiOutputSelection | null
+): MidiPortInfo | undefined {
+  if (!saved) return undefined;
+  if (saved.stable_id?.trim()) {
+    const stableMatch = ports.find((p) => p.stable_id === saved.stable_id);
+    if (stableMatch) return stableMatch;
+  }
+  return ports.find((p) => p.id === saved.id && p.name === saved.name)
+    ?? ports.find((p) => p.name === saved.name);
+}
+
 async function refreshMidiInputPorts() {
+  const previousDisabled = midiInRefreshBtn.disabled;
   try {
+    midiInRefreshBtn.disabled = true;
+    setMidiStatus("midi input: refreshing ports...");
     const ports = await invoke<MidiPortInfo[]>("list_midi_input_ports");
-    midiInPortSelect.innerHTML = ports
-      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
-      .join("\n");
+    midiInPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI inputs found");
 
     const saved = await invoke<MidiInputSavedSettings>("midi_clock_input_get_saved_settings");
     midiTempoScaleInput.value = String(saved.tempo_scale ?? 1);
     midiInSysexEnabledInput.checked = Boolean(saved.allow_sysex);
 
-    const selected = saved.port;
-    if (selected) {
-      const match = ports.find((p) => p.name === selected.name || p.id === selected.id);
-      if (match) {
-        midiInPortSelect.value = String(match.id);
-      }
+    const match = findSavedMidiPortMatch(ports, saved.port);
+    if (match) {
+      midiInPortSelect.value = String(match.id);
     }
+
+    if (!ports.length) {
+      midiInPortSelect.value = "";
+      setMidiStatus(
+        "midi input: 0 ports found via native MIDI backend. Windows uses WinRT; macOS uses CoreMIDI; Linux uses ALSA. If another app sees the keyboard, close apps that may hold the port, replug the keyboard, then refresh."
+      );
+      return;
+    }
+
+    const backend = midiPortBackendLabel(ports);
+    const selectedName = midiInPortSelect.selectedOptions[0]?.textContent?.trim();
+    setMidiStatus(
+      `midi input: ${ports.length} port(s) found via ${backend}${selectedName ? `; selected ${selectedName}` : ""}`
+    );
   } catch (e) {
+    midiInPortSelect.innerHTML = renderMidiPortOptions([], "MIDI input refresh failed");
+    midiInPortSelect.value = "";
     setMidiStatus(`midi input ports error: ${String(e)}`);
+  } finally {
+    midiInRefreshBtn.disabled = previousDisabled;
   }
 }
 
 async function refreshMidiOutputPorts() {
   try {
     const ports = await invoke<MidiPortInfo[]>("list_midi_output_ports");
-    midiOutPortSelect.innerHTML = ports
-      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
-      .join("\n");
+    midiOutPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI outputs found");
 
     // Best-effort: apply saved selection.
     const [saved, savedSysex] = await Promise.all([
@@ -2223,18 +2442,23 @@ async function refreshMidiOutputPorts() {
     midiOutSysexEnabled = Boolean(savedSysex);
     midiOutSysexEnabledInput.checked = midiOutSysexEnabled;
 
-    if (saved) {
-      const match = ports.find((p) => p.name === saved.name || p.id === saved.id);
-      if (match) midiOutPortSelect.value = String(match.id);
+    const match = findSavedMidiPortMatch(ports, saved);
+    if (match) {
+      midiOutPortSelect.value = String(match.id);
     }
   } catch (e) {
+    midiOutPortSelect.innerHTML = renderMidiPortOptions([], "MIDI output refresh failed");
+    midiOutPortSelect.value = "";
     setMidiOutStatus(`midi output ports error: ${String(e)}`);
   }
 }
 
 async function selectMidiOutputPortAndPersist() {
   const portId = Number(midiOutPortSelect.value);
-  if (!Number.isFinite(portId)) return;
+  if (!Number.isFinite(portId)) {
+    setMidiOutStatus("midi output: no port selected");
+    return;
+  }
   await invoke("midi_clock_output_select_port_and_persist", { portId });
   await invoke("midi_output_set_allow_sysex_and_persist", { enabled: midiOutSysexEnabled });
   setMidiOutStatus(`midi output: selected port=${portId} sysex=${midiOutSysexEnabled ? "on" : "off"}`);
@@ -2347,17 +2571,23 @@ async function connectMidiClockInput() {
   const portId = Number(midiInPortSelect.value);
   const tempoScale = Number(midiTempoScaleInput.value);
   const allowSysex = midiInSysexEnabledInput.checked;
-  if (!Number.isFinite(portId)) return;
+  if (!Number.isFinite(portId)) {
+    setMidiStatus("midi input: no port selected; refresh after connecting the keyboard");
+    return;
+  }
   await invoke("midi_clock_input_start_and_persist", { portId, tempoScale, allowSysex });
   midiConnected = true;
-  setMidiStatus(`midi input connected: port=${portId} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
+  const portName = midiInPortSelect.selectedOptions[0]?.textContent?.trim() || `port ${portId}`;
+  setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.clear()));
+  setMidiStatus(`midi input connected: ${portName} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
 }
 
 async function disconnectMidiClockInput() {
   await invoke("midi_clock_input_stop");
   midiConnected = false;
   transportController.setExternalClockRunning(false);
-  setMidiStatus("midi clock input disconnected");
+  setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.clear()));
+  setMidiStatus("midi input disconnected");
 }
 
 async function shutdownMidiOutputService() {
@@ -2560,33 +2790,55 @@ function setStemMidiStatus(msg: string) {
   stemMidiStatusEl.textContent = msg;
 }
 
+function setAnalysisImportStatus(msg: string) {
+  analysisImportStatusEl.textContent = msg;
+  logConsole("ingest", msg);
+}
+
 function setIngestStatus(msg: string) {
   ingestStatusEl.textContent = msg;
   logConsole("ingest", msg);
 }
 
-function debugIngestConsole(message: string, details?: unknown) {
+type IngestStatusTarget = "analysis" | "advanced";
+type InputStemRole = "drums" | "bass" | "guitar" | "lead_guitar" | "rhythm_guitar" | "keys" | "vocals" | "other";
+
+function setIngestStatusForTarget(target: IngestStatusTarget, msg: string) {
+  if (target === "analysis") {
+    setAnalysisImportStatus(msg);
+    return;
+  }
+  setIngestStatus(msg);
+}
+
+function debugIngestConsole(target: IngestStatusTarget, message: string, details?: unknown) {
   logConsole("ingest", message, details);
 }
 
 let ingestInFlight = false;
-let ingestLogLines: string[] = [];
+let activeIngestStatusTarget: IngestStatusTarget | null = null;
+const ingestLogLinesByTarget: Record<IngestStatusTarget, string[]> = {
+  analysis: [],
+  advanced: [],
+};
 
-function resetIngestStatusLog(firstLine: string) {
-  ingestLogLines = [firstLine];
-  setIngestStatus(ingestLogLines.join("\n"));
-  debugIngestConsole(firstLine);
+let analysisStemInspection: RawSongFolderInspection | null = null;
+
+function resetIngestStatusLog(target: IngestStatusTarget, firstLine: string) {
+  ingestLogLinesByTarget[target] = [firstLine];
+  setIngestStatusForTarget(target, ingestLogLinesByTarget[target].join("\n"));
+  debugIngestConsole(target, firstLine);
 }
 
-function appendIngestStatusLine(line: string) {
+function appendIngestStatusLine(target: IngestStatusTarget, line: string) {
   const s = line.trim();
   if (!s) return;
-  ingestLogLines.push(s);
-  if (ingestLogLines.length > 14) {
-    ingestLogLines = ingestLogLines.slice(-14);
+  ingestLogLinesByTarget[target].push(s);
+  if (ingestLogLinesByTarget[target].length > 14) {
+    ingestLogLinesByTarget[target] = ingestLogLinesByTarget[target].slice(-14);
   }
-  setIngestStatus(ingestLogLines.join("\n"));
-  debugIngestConsole(s);
+  setIngestStatusForTarget(target, ingestLogLinesByTarget[target].join("\n"));
+  debugIngestConsole(target, s);
 }
 
 function formatIngestProgressEvent(ev: IngestImportProgressEvent): string {
@@ -2907,7 +3159,7 @@ async function stemMidiCreateSongPack() {
   const title = stemMidiTitleInput.value.trim();
   const artist = stemMidiArtistInput.value.trim();
 
-  setStemMidiStatus("importing...");
+  setStemMidiStatus("importing Suno source MIDI...");
   stemMidiCreateBtn.disabled = true;
   try {
     const res = await safeInvoke<ImportRawSongFolderResult>("import_raw_song_folder", {
@@ -2915,12 +3167,16 @@ async function stemMidiCreateSongPack() {
         folder_path: stemMidiFolderPath,
         title: title || undefined,
         artist: artist || undefined,
+        chart_source: "source_midi",
       } satisfies ImportRawSongFolderRequest,
     });
     const lines = [
       `imported: ${res.songpack_path}`,
       `detected ${res.stems_count} WAV stem(s), ${res.midi_files_count} MIDI file(s)${res.lyrics_included ? " · lyrics ready" : ""}`,
     ];
+    if (typeof res.midi_chart_included === "boolean") {
+      lines.push(`gameplay chart: ${res.midi_chart_included ? "written" : "not written"}`);
+    }
     if (res.mapped_game_roles.length) {
       lines.push(`game roles: ${res.mapped_game_roles.map((role) => formatGameRoleLabel(role)).join(", ")}`);
     }
@@ -2938,33 +3194,49 @@ function ingestSourceExtensions(mode: IngestSubcommand): string[] {
   return ["wav", "mp3", "ogg", "flac", "m4a"];
 }
 
-function setIngestSourcePlaceholder(mode: IngestSubcommand) {
-  if (mode === "import-dir") {
-    ingestSourcePathInput.placeholder = "C:\\music\\folder";
-  } else if (mode === "import-dtx") {
-    ingestSourcePathInput.placeholder = "C:\\charts\\song.dtx";
-  } else {
-    ingestSourcePathInput.placeholder = "C:\\music\\song.wav";
-  }
+function sourcePlaceholderForIngestMode(mode: IngestSubcommand): string {
+  if (mode === "import-dir") return "C:\\music\\folder";
+  if (mode === "import-dtx") return "C:\\charts\\song.dtx";
+  return "C:\\music\\song.wav";
 }
 
-function inferIngestMetadataFromSelectedSource() {
-  const sourcePath = ingestSourcePathInput.value.trim();
+function currentAnalysisImportMode(): AnalysisImportMode {
+  const mode = analysisImportModeSelect.value;
+  return mode === "stem-dir" ? "stem-dir" : mode === "import-dir" ? "import-dir" : "import";
+}
+
+function setIngestSourcePlaceholder(mode: IngestSubcommand) {
+  ingestSourcePathInput.placeholder = sourcePlaceholderForIngestMode(mode);
+}
+
+function setAnalysisImportSourcePlaceholder() {
+  const mode = currentAnalysisImportMode();
+  analysisImportSourcePathInput.placeholder =
+    mode === "stem-dir" ? "C:\\music\\split-stems-folder" : sourcePlaceholderForIngestMode(mode);
+  analysisImportBrowseSourceBtn.textContent = mode === "import" ? "Pick song..." : "Pick folder...";
+}
+
+function inferMetadataFromSourcePath(
+  sourcePath: string,
+  titleInput: HTMLInputElement,
+  artistInput: HTMLInputElement,
+  target: IngestStatusTarget
+) {
   if (!sourcePath) return;
 
   const guessed = inferIngestTitleArtistFromSourcePath(sourcePath);
   let applied = false;
-  if (!ingestTitleInput.value.trim() && guessed.title) {
-    ingestTitleInput.value = guessed.title;
+  if (!titleInput.value.trim() && guessed.title) {
+    titleInput.value = guessed.title;
     applied = true;
   }
-  if (!ingestArtistInput.value.trim() && guessed.artist) {
-    ingestArtistInput.value = guessed.artist;
+  if (!artistInput.value.trim() && guessed.artist) {
+    artistInput.value = guessed.artist;
     applied = true;
   }
 
   if (guessed.title || guessed.artist) {
-    debugIngestConsole("metadata guess", {
+    debugIngestConsole(target, "metadata guess", {
       sourcePath,
       guessed,
       applied
@@ -2972,20 +3244,205 @@ function inferIngestMetadataFromSelectedSource() {
   }
 }
 
-async function ingestBrowseSource() {
-  const mode = ingestModeSelect.value as IngestSubcommand;
+function inferIngestMetadataFromSelectedSource() {
+  inferMetadataFromSourcePath(
+    ingestSourcePathInput.value.trim(),
+    ingestTitleInput,
+    ingestArtistInput,
+    "advanced"
+  );
+}
+
+function inferAnalysisImportMetadataFromSelectedSource() {
+  inferMetadataFromSourcePath(
+    analysisImportSourcePathInput.value.trim(),
+    analysisImportTitleInput,
+    analysisImportArtistInput,
+    "analysis"
+  );
+}
+
+function normalizeInputStemRole(role: string | null | undefined): InputStemRole | null {
+  const key = (role ?? "").trim().toLowerCase();
+  switch (key) {
+    case "drums":
+    case "bass":
+    case "guitar":
+    case "lead_guitar":
+    case "rhythm_guitar":
+    case "keys":
+    case "vocals":
+    case "other":
+      return key;
+    default:
+      return null;
+  }
+}
+
+function buildAnalysisInputStemPaths(inspection: RawSongFolderInspection): Partial<Record<InputStemRole, string>> {
+  const paths: Partial<Record<InputStemRole, string>> = {};
+  const assign = (role: InputStemRole | null, path: string) => {
+    if (!role || paths[role]) return;
+    paths[role] = path;
+  };
+
+  for (const part of inspection.stem_parts) {
+    assign(normalizeInputStemRole(part.detected_role), part.path);
+  }
+  for (const part of inspection.stem_parts) {
+    assign(normalizeInputStemRole(part.game_role), part.path);
+  }
+
+  return paths;
+}
+
+async function inspectAnalysisStemFolder(folderPath: string): Promise<RawSongFolderInspection> {
+  const inspection = await safeInvoke<RawSongFolderInspection>("inspect_raw_song_folder", { folderPath });
+  analysisStemInspection = inspection;
+  if (!analysisImportTitleInput.value.trim() && inspection.title_guess) {
+    analysisImportTitleInput.value = inspection.title_guess;
+  }
+
+  const inputStemPaths = buildAnalysisInputStemPaths(inspection);
+  const availableRoles = Object.keys(inputStemPaths);
+  const warnings = inspection.warnings.length;
+  const mixLabel = inspection.mix_wav_path ? "mix found" : "mix will be synthesized from stems";
+  const rolesLabel = availableRoles.length ? availableRoles.join(", ") : "no reusable stem roles detected";
+  const warningLabel = warnings ? ` · ${warnings} warning${warnings === 1 ? "" : "s"}` : "";
+  setAnalysisImportStatus(
+    `validated stem folder: ${inspection.stem_wav_paths.length} WAV(s) · ${mixLabel} · roles: ${rolesLabel}${warningLabel}`
+  );
+  return inspection;
+}
+
+async function pickIngestSourceForMode(mode: IngestSubcommand): Promise<string | null> {
   if (mode === "import-dir") {
     const dir = await pickFolder();
-    if (!dir) return;
-    ingestSourcePathInput.value = dir;
-    inferIngestMetadataFromSelectedSource();
-    return;
+    return dir ?? null;
   }
 
   const files = await pickFiles(ingestSourceExtensions(mode), false);
-  if (!files.length) return;
-  ingestSourcePathInput.value = files[0];
+  return files[0] ?? null;
+}
+
+async function ingestBrowseSource() {
+  const mode = ingestModeSelect.value as IngestSubcommand;
+  const source = await pickIngestSourceForMode(mode);
+  if (!source) return;
+  ingestSourcePathInput.value = source;
   inferIngestMetadataFromSelectedSource();
+}
+
+async function runConfiguredIngestImport(
+  req: IngestImportRequest,
+  target: IngestStatusTarget,
+  runButton: HTMLButtonElement,
+  startLine: string
+) {
+  ingestInFlight = true;
+  activeIngestStatusTarget = target;
+  resetIngestStatusLog(target, startLine);
+  debugIngestConsole(target, "invoke ingest_import", req);
+  runButton.disabled = true;
+  try {
+    const res = await ingestImport(req);
+    debugIngestConsole(target, "ingest finished", {
+      ok: res.ok,
+      exitCode: res.exit_code,
+      command: res.command
+    });
+    if (res.stdout.trim()) {
+      debugIngestConsole(target, "stdout", res.stdout);
+    }
+    if (res.stderr.trim()) {
+      debugIngestConsole(target, "stderr", res.stderr);
+    }
+    if (res.ok) {
+      const outPath = inferIngestOutPathFromCommand(res.command);
+      if (outPath) {
+        appendIngestStatusLine(target, `output: ${outPath}`);
+      }
+      appendIngestStatusLine(target, `import complete (exit ${res.exit_code})`);
+      void refresh();
+    } else {
+      const stderr = res.stderr.trim() || "(no stderr)";
+      appendIngestStatusLine(target, `import failed (exit ${res.exit_code})`);
+      appendIngestStatusLine(target, stderr);
+    }
+  } catch (e) {
+    errorConsole("ingest", "invoke ingest_import failed", e);
+    appendIngestStatusLine(target, String(e));
+  } finally {
+    ingestInFlight = false;
+    activeIngestStatusTarget = null;
+    runButton.disabled = false;
+  }
+}
+
+async function runAnalysisImport() {
+  const mode = currentAnalysisImportMode();
+  if (mode === "stem-dir") {
+    const folderPath = analysisImportSourcePathInput.value.trim();
+    if (!folderPath) {
+      setAnalysisImportStatus("pick a pre-split stems folder first");
+      return;
+    }
+  } else {
+    inferAnalysisImportMetadataFromSelectedSource();
+  }
+
+  let req: IngestImportRequest;
+  try {
+    if (mode === "stem-dir") {
+      const folderPath = analysisImportSourcePathInput.value.trim();
+      const inspection =
+        analysisStemInspection?.folder_path === folderPath
+          ? analysisStemInspection
+          : await inspectAnalysisStemFolder(folderPath);
+      const inputStemPaths = buildAnalysisInputStemPaths(inspection);
+      if (!Object.keys(inputStemPaths).length) {
+        setAnalysisImportStatus("no reusable stems were detected in that folder");
+        return;
+      }
+
+      req = buildIngestRequestFromForm({
+        sourcePath: folderPath,
+        mode: "import-dir",
+        profile: "full",
+        config: JSON.stringify({
+          disable_stem_separation: true,
+          input_stem_paths: inputStemPaths,
+        }),
+        title: analysisImportTitleInput.value,
+        artist: analysisImportArtistInput.value,
+        drumFilter: analysisImportDrumFilterSelect.value,
+        melodicMethod: analysisImportMelodicMethodSelect.value,
+        shiftsText: "1",
+        multiFilter: analysisImportMultiFilterInput.checked
+      });
+    } else {
+      req = buildIngestRequestFromForm({
+        sourcePath: analysisImportSourcePathInput.value,
+        mode,
+        profile: "full",
+        title: analysisImportTitleInput.value,
+        artist: analysisImportArtistInput.value,
+        drumFilter: analysisImportDrumFilterSelect.value,
+        melodicMethod: analysisImportMelodicMethodSelect.value,
+        shiftsText: "1",
+        multiFilter: analysisImportMultiFilterInput.checked
+      });
+    }
+  } catch (e) {
+    setAnalysisImportStatus(String(e));
+    return;
+  }
+
+  const startLine =
+    mode === "stem-dir"
+      ? "running analysis import from provided stems..."
+      : "running analysis import...";
+  await runConfiguredIngestImport(req, "analysis", analysisImportRunBtn, startLine);
 }
 
 async function runIngestImport() {
@@ -3011,42 +3468,7 @@ async function runIngestImport() {
     return;
   }
 
-  ingestInFlight = true;
-  resetIngestStatusLog("running ingest sidecar...");
-  debugIngestConsole("invoke ingest_import", req);
-  ingestRunBtn.disabled = true;
-  try {
-    const res = await ingestImport(req);
-    debugIngestConsole("ingest finished", {
-      ok: res.ok,
-      exitCode: res.exit_code,
-      command: res.command
-    });
-    if (res.stdout.trim()) {
-      debugIngestConsole("stdout", res.stdout);
-    }
-    if (res.stderr.trim()) {
-      debugIngestConsole("stderr", res.stderr);
-    }
-    if (res.ok) {
-      const outPath = inferIngestOutPathFromCommand(res.command);
-      if (outPath) {
-        appendIngestStatusLine(`output: ${outPath}`);
-      }
-      appendIngestStatusLine(`import complete (exit ${res.exit_code})`);
-      void refresh();
-    } else {
-      const stderr = res.stderr.trim() || "(no stderr)";
-      appendIngestStatusLine(`import failed (exit ${res.exit_code})`);
-      appendIngestStatusLine(stderr);
-    }
-  } catch (e) {
-    errorConsole("ingest", "invoke ingest_import failed", e);
-    appendIngestStatusLine(String(e));
-  } finally {
-    ingestInFlight = false;
-    ingestRunBtn.disabled = false;
-  }
+  await runConfiguredIngestImport(req, "advanced", ingestRunBtn, "running advanced ingest...");
 }
 
 let ghwtSongs: GhwtSongEntry[] = [];
@@ -3276,10 +3698,6 @@ const INSTRUMENT_ROLE_LABELS: Record<string, string> = {
 };
 
 function updateInstrumentSelector(): void {
-  const selectorEl = document.getElementById("instrumentSelector") as HTMLDivElement | null;
-  const containerEl = document.getElementById("tabContainer") as HTMLDivElement | null;
-  if (!selectorEl || !containerEl) return;
-
   // Clean up old tab renderer.
   if (tabRenderer) {
     tabRenderer.dispose();
@@ -3288,17 +3706,18 @@ function updateInstrumentSelector(): void {
   activeTabInstrument = null;
 
   // Clear old buttons (keep the label span).
-  const buttons = selectorEl.querySelectorAll("button");
+  const buttons = instrumentSelectorEl.querySelectorAll("button");
   buttons.forEach((b) => b.remove());
 
   if (selectedMelodicTracks.length === 0) {
-    selectorEl.style.display = "none";
-    containerEl.style.display = "none";
+    instrumentSelectorEl.style.display = "none";
+    tabContainerEl.style.display = "none";
+    syncPlaySurfaceMode();
     return;
   }
 
-  selectorEl.style.display = "flex";
-  containerEl.style.display = "block";
+  instrumentSelectorEl.style.display = "flex";
+  tabContainerEl.style.display = "block";
 
   for (const track of selectedMelodicTracks) {
     const btn = document.createElement("button");
@@ -3308,37 +3727,29 @@ function updateInstrumentSelector(): void {
     btn.addEventListener("click", () => {
       selectInstrumentTrack(track.role);
     });
-    selectorEl.appendChild(btn);
+    instrumentSelectorEl.appendChild(btn);
   }
 
-  // Auto-select the first instrument.
-  if (selectedMelodicTracks.length > 0) {
-    selectInstrumentTrack(selectedMelodicTracks[0].role);
-  }
+  syncMelodicTrackSelectionFromPlayers();
 }
 
 function selectInstrumentTrack(role: InstrumentRole): void {
-  const containerEl = document.getElementById("tabContainer") as HTMLDivElement | null;
-  const selectorEl = document.getElementById("instrumentSelector") as HTMLDivElement | null;
-  if (!containerEl) return;
-
   const track = selectedMelodicTracks.find((t) => t.role === role);
   if (!track) return;
 
   // Update button states.
-  if (selectorEl) {
-    for (const btn of Array.from(selectorEl.querySelectorAll<HTMLButtonElement>("button.instrumentBtn"))) {
-      btn.classList.toggle("isActive", btn.dataset.role === role);
-    }
+  for (const btn of Array.from(instrumentSelectorEl.querySelectorAll<HTMLButtonElement>("button.instrumentBtn"))) {
+    btn.classList.toggle("isActive", btn.dataset.role === role);
   }
 
   // Create or update tab renderer.
   if (!tabRenderer) {
-    containerEl.innerHTML = "";
-    tabRenderer = new TabRenderer(containerEl);
+    tabContainerEl.innerHTML = "";
+    tabRenderer = new TabRenderer(tabContainerEl);
   }
   tabRenderer.setTrack(track);
   activeTabInstrument = role;
+  syncPlaySurfaceMode();
 
   logConsole("play", `selected instrument: ${role} (${track.notes.length} notes)`);
 }
@@ -3595,7 +4006,11 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
 
     // Render the melodic instrument tab/piano-roll below the main visualizer.
     if (tabRenderer && transport.t !== undefined) {
-      tabRenderer.render(transport.t);
+      tabRenderer.render(transport.t, {
+        bpm: transport.bpm,
+        timeSignature: transport.timeSignature,
+        liveInputNotes: midiInputTracker.snapshot().activeNotes
+      });
     }
 
     vizRaf = requestAnimationFrame(tick);
@@ -3699,6 +4114,11 @@ midiInSysexEnabledInput.addEventListener("change", () => {
   }
 });
 
+midiInPanicBtn.addEventListener("click", () => {
+  setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.clear()));
+  appendMidiInputEventLine("input monitor cleared");
+});
+
 midiOutEnabledInput.addEventListener("change", () => {
   midiOutEnabled = midiOutEnabledInput.checked;
   if (midiOutEnabled) {
@@ -3795,6 +4215,8 @@ void listen<{ t_sec: number }>("midi_clock_seek", (ev) => {
 
 void listen<MidiInputMessageEvent>("midi_input_message", (ev) => {
   if (ev.payload.message_type !== "clock") {
+    const snapshot = midiInputTracker.apply(ev.payload);
+    setMidiInputActiveNotesStatus(formatMidiActiveNotes(snapshot));
     appendMidiInputEventLine(formatMidiInputMessage(ev.payload));
   }
 
@@ -3814,8 +4236,8 @@ void listen<GhwtImportProgressEvent>("ghwt_import_progress", (ev) => {
 });
 
 void listen<IngestImportProgressEvent>("ingest_import_progress", (ev) => {
-  if (!ingestInFlight) return;
-  appendIngestStatusLine(formatIngestProgressEvent(ev.payload));
+  if (!ingestInFlight || !activeIngestStatusTarget) return;
+  appendIngestStatusLine(activeIngestStatusTarget, formatIngestProgressEvent(ev.payload));
 });
 
 // Audio controls
@@ -4101,6 +4523,43 @@ ingestRunBtn.addEventListener("click", () => {
   void runIngestImport();
 });
 
+analysisImportModeSelect.addEventListener("change", () => {
+  analysisStemInspection = null;
+  setAnalysisImportSourcePlaceholder();
+});
+
+analysisImportSourcePathInput.addEventListener("change", () => {
+  if (currentAnalysisImportMode() === "stem-dir") {
+    analysisStemInspection = null;
+    const folderPath = analysisImportSourcePathInput.value.trim();
+    if (!folderPath) return;
+    void inspectAnalysisStemFolder(folderPath).catch((e) => setAnalysisImportStatus(String(e)));
+    return;
+  }
+  inferAnalysisImportMetadataFromSelectedSource();
+});
+
+analysisImportBrowseSourceBtn.addEventListener("click", () => {
+  void (async () => {
+    const mode = currentAnalysisImportMode();
+    const source =
+      mode === "stem-dir"
+        ? await pickFolder()
+        : await pickIngestSourceForMode(mode);
+    if (!source) return;
+    analysisImportSourcePathInput.value = source;
+    if (mode === "stem-dir") {
+      await inspectAnalysisStemFolder(source);
+    } else {
+      inferAnalysisImportMetadataFromSelectedSource();
+    }
+  })().catch((e) => setAnalysisImportStatus(String(e)));
+});
+
+analysisImportRunBtn.addEventListener("click", () => {
+  void runAnalysisImport();
+});
+
 stemMidiPickStemsBtn.addEventListener("click", () => {
   void (async () => {
     const folder = await pickFolder();
@@ -4133,9 +4592,12 @@ void refreshPlugins();
 void ghwtLoadSettings();
 
 setIngestSourcePlaceholder(ingestModeSelect.value as IngestSubcommand);
+setAnalysisImportSourcePlaceholder();
 
 renderStemMidiSelection();
+setAnalysisImportStatus("(not started)");
 setStemMidiStatus("(not imported)");
+setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.snapshot()));
 
 // Populate MIDI ports.
 void refreshMidiInputPorts();

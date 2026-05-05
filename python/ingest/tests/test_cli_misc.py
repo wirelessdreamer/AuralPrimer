@@ -36,6 +36,10 @@ def test_cmd_stages_emits_all_stage_ids(capsys) -> None:
     assert transcribe_stage["variants"]["mr_mt3_drums"]["required_models"][0]["modelpack_id"] == "mr_mt3"
     separate_stage = next(p for p in payloads if p["id"] == "separate_stems")
     assert separate_stage["required_models"][0]["modelpack_id"] == "demucs_6"
+    assert separate_stage["policy"]["demucs_support_status"] == "optional_experimental"
+    beats_stage = next(p for p in payloads if p["id"] == "beats_tempo")
+    assert beats_stage["policy"]["production_default"] == "librosa_first"
+    assert beats_stage["policy"]["fallback_mode"] == "standard"
 
 
 def test_cmd_info_missing_manifest_returns_error(tmp_path: Path, capsys) -> None:
@@ -113,6 +117,7 @@ def test_build_parser_knows_core_commands() -> None:
     assert p.parse_args(["info", "x"]).cmd == "info"
     assert p.parse_args(["runtime-check"]).cmd == "runtime-check"
     assert p.parse_args(["benchmark-drums", "stem.wav", "reference.json"]).cmd == "benchmark-drums"
+    assert p.parse_args(["refine-piano", "--audio", "keys.wav", "--source-midi", "suno.mid"]).cmd == "refine-piano"
     assert p.parse_args(["import", "in.wav", "--out", "o.songpack"]).cmd == "import"
     assert p.parse_args(["import-dir", "in_dir", "--out", "o.songpack"]).cmd == "import-dir"
     assert p.parse_args(["import-dtx", "chart.dtx", "--out", "o.songpack"]).cmd == "import-dtx"
@@ -154,6 +159,49 @@ def test_build_parser_knows_core_commands() -> None:
         ]
     )
     assert parsed_engine.drum_filter == "mr_mt3_drums"
+
+
+def test_research_decision_defaults_are_quality_first_and_fail_safe() -> None:
+    from aural_ingest import cli
+
+    assert cli.DEFAULT_BEAT_ANALYSIS_MODE == "high_accuracy"
+    assert cli.BEAT_TEMPO_PRODUCTION_POLICY["production_default"] == "librosa_first"
+    assert cli.BEAT_TEMPO_PRODUCTION_POLICY["essentia_status"] == "research_candidate_not_default"
+    assert cli.STEM_SEPARATION_PROVIDER_POLICY["demucs_support_status"] == "optional_experimental"
+    assert (
+        cli.STEM_SEPARATION_PROVIDER_POLICY["absence_behavior"]
+        == "skip_separation_and_continue_with_mix_or_provided_stems"
+    )
+    assert cli.BENCHMARK_THRESHOLD_POLICY["mode"] == "warn"
+    assert cli.BENCHMARK_THRESHOLD_POLICY["strict_pr_blocking"] is False
+
+
+def test_cmd_refine_piano_returns_2_for_missing_audio(tmp_path: Path) -> None:
+    from aural_ingest import cli
+    from aural_ingest.piano_benchmark import write_melodic_notes_midi
+    from aural_ingest.transcription import MelodicNote
+
+    source = tmp_path / "source.mid"
+    write_melodic_notes_midi(
+        [MelodicNote(t_on=0.0, t_off=0.25, pitch=60, velocity=80, instrument="keys")],
+        source,
+    )
+
+    args = type("Args", (), {})()
+    args.audio = str(tmp_path / "missing.wav")
+    args.source_midi = str(source)
+    args.reference_midi = None
+    args.method = ["source_midi"]
+    args.out_root = str(tmp_path / "runs")
+    args.label = "unit"
+    args.tolerance_ms = 60.0
+    args.offset_tolerance_ms = 120.0
+    args.velocity_tolerance = 20
+    args.source_offset_sec = 0.0
+    args.reference_offset_sec = 0.0
+    args.bpm = 120.0
+
+    assert cli.cmd_refine_piano(args) == 2
 
 
 def test_cmd_benchmark_drums_emits_json_payload(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -218,6 +266,7 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(
     mt3_checkpoint.write_bytes(b"mt3")
 
     fake_modules = {
+        "librosa": "0.11.0",
         "numpy": "2.2.0",
         "torch": "2.11.0",
         "torchaudio": "2.11.0",
@@ -270,6 +319,9 @@ def test_cmd_runtime_check_emits_dependency_and_modelpack_snapshot(
     assert rc == 0
     payload = json.loads(capsys.readouterr().out.strip())
     assert payload["ok"] is True
+    assert payload["policies"]["beat_tempo"]["production_default"] == "librosa_first"
+    assert payload["policies"]["stem_separation"]["demucs_support_status"] == "optional_experimental"
+    assert payload["dependencies"]["librosa"]["required"] is False
     assert payload["dependencies"]["torch"]["version"] == "2.11.0"
     assert payload["drum_engines"]["mr_mt3_drums"]["ok"] is True
     assert payload["drum_engines"]["mr_mt3_drums"]["loadable"] is True
@@ -425,6 +477,54 @@ def test_cmd_import_dir_forwards_selected_source_to_cmd_import(tmp_path: Path, m
     assert seen["input_audio_path"] == str(src)
     assert seen["out"] == str(tmp_path / "x.songpack")
     assert seen["profile"] == "full"
+
+
+def test_cmd_import_dir_synthesizes_mix_from_configured_input_stems(tmp_path: Path, monkeypatch) -> None:
+    from aural_ingest import cli
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    drums = src_dir / "drums.wav"
+    bass = src_dir / "bass.wav"
+    drums.write_bytes(b"drums")
+    bass.write_bytes(b"bass")
+
+    seen = {}
+
+    def fake_cmd_import(args):
+        seen["input_audio_path"] = args.input_audio_path
+        seen["config"] = args.config
+        assert Path(args.input_audio_path).name == "mix.wav"
+        assert Path(args.input_audio_path).is_file()
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_import", fake_cmd_import)
+    monkeypatch.setattr(
+        cli,
+        "_synthesize_mix_wav_from_input_stems",
+        lambda dst, _config: (dst.write_bytes(b"mix"), (1.0, 48_000))[1],
+    )
+
+    args = type("Args", (), {})()
+    args.input_dir_path = str(src_dir)
+    args.out = str(tmp_path / "x.songpack")
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "disable_stem_separation": True,
+            "input_stem_paths": {
+                "drums": str(drums),
+                "bass": str(bass),
+            },
+        }
+    )
+    args.title = "t"
+    args.artist = "a"
+    args.duration_sec = None
+
+    assert cli.cmd_import_dir(args) == 0
+    assert Path(seen["input_audio_path"]).name == "mix.wav"
+    assert seen["config"] == args.config
 
 
 def test_cmd_import_dtx_returns_2_for_missing_dtx_file(tmp_path: Path) -> None:

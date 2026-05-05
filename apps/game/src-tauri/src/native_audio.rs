@@ -756,7 +756,13 @@ fn choose_stream_config(
                     if *best_default_rank < default_rank
                         || (*best_default_rank == default_rank && *best_rank <= rank) => {}
                 _ => {
-                    best = Some((default_rank, rank, selected, sample_format, preferred_buffer));
+                    best = Some((
+                        default_rank,
+                        rank,
+                        selected,
+                        sample_format,
+                        preferred_buffer,
+                    ));
                 }
             }
         }
@@ -979,7 +985,12 @@ fn process_audio_callback_f32(
     sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);
 
-    update_callback_telemetry(snapshot, callback_t0, out.len() / engine_channels, sample_rate_hz);
+    update_callback_telemetry(
+        snapshot,
+        callback_t0,
+        out.len() / engine_channels,
+        sample_rate_hz,
+    );
 }
 
 fn run_output_stream_thread(

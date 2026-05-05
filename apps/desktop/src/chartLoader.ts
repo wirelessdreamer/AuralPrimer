@@ -33,7 +33,7 @@ export type DrumChartSelection = {
   relaxedUniqueLanes: DrumLane[];
 };
 
-const DRUM_TRACK_NAME_RE = /(drum|kit|percussion|rhythm)/i;
+const DRUM_TRACK_NAME_RE = /\b(drums?|kit|percussion)\b/i;
 
 function mapMidiToLane(midi: number): DrumLane | null {
   if (midi === 35 || midi === 36) return "BD";

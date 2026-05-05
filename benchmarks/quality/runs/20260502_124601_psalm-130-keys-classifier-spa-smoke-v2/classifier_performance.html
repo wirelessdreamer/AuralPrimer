@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classifier Performance Explorer</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #08111d;
+  --panel: #101b2a;
+  --panel-2: #142338;
+  --line: #263955;
+  --text: #edf5ff;
+  --muted: #9fb1c7;
+  --accent: #47d7ac;
+  --warn: #f3c663;
+  --bad: #ff6b7d;
+  --good: #74e39a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(71, 215, 172, 0.17), transparent 34rem),
+    radial-gradient(circle at 78% 12%, rgba(75, 119, 255, 0.12), transparent 26rem),
+    var(--bg);
+  color: var(--text);
+  font-family: "Aptos", "Segoe UI", sans-serif;
+}
+header {
+  padding: 28px 34px 18px;
+  border-bottom: 1px solid var(--line);
+}
+h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 48px); letter-spacing: -0.04em; }
+h2 { margin: 0 0 14px; font-size: 18px; }
+h3 { margin: 18px 0 10px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.subhead { margin: 0; color: var(--muted); max-width: 960px; }
+.run-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+.pill { border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; background: rgba(255,255,255,0.04); }
+main { padding: 22px 34px 36px; display: grid; grid-template-columns: minmax(420px, 1.1fr) minmax(360px, 0.9fr); gap: 18px; }
+section, .panel {
+  background: rgba(16, 27, 42, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.28);
+}
+section { padding: 18px; }
+.controls { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; }
+select, input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #07111f;
+  color: var(--text);
+  padding: 9px 10px;
+  font: inherit;
+}
+.cards { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.card strong { display: block; font-size: 24px; }
+.card span { color: var(--muted); font-size: 12px; }
+.table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,0.07); text-align: left; white-space: nowrap; }
+th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; background: rgba(255,255,255,0.03); }
+tr[data-row] { cursor: pointer; }
+tr[data-row]:hover, tr.selected { background: rgba(71, 215, 172, 0.09); }
+.score { font-family: "Cascadia Mono", "Consolas", monospace; }
+.risk { color: var(--bad); }
+.ok { color: var(--good); }
+.muted { color: var(--muted); }
+.heatmap {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) repeat(var(--cols), minmax(72px, 1fr));
+  gap: 4px;
+  align-items: stretch;
+  margin: 12px 0 16px;
+}
+.heat-cell, .heat-label {
+  min-height: 32px;
+  border-radius: 9px;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  font-size: 12px;
+}
+.heat-label { background: rgba(255,255,255,0.04); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heat-cell { font-family: "Cascadia Mono", "Consolas", monospace; text-align: center; }
+.detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.detail-stat { border: 1px solid var(--line); background: rgba(255,255,255,0.04); border-radius: 14px; padding: 12px; }
+.detail-stat strong { display: block; font-size: 22px; }
+.confusion-list { display: grid; gap: 7px; }
+.confusion-row { display: flex; justify-content: space-between; gap: 8px; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 8px 10px; background: rgba(255,255,255,0.03); }
+.timeline { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; height: 72px; align-items: end; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: #07111f; }
+.bar { min-height: 2px; border-radius: 5px 5px 0 0; background: linear-gradient(to top, var(--bad) 0 33%, var(--warn) 33% 66%, var(--good) 66% 100%); }
+.empty { color: var(--muted); padding: 20px; border: 1px dashed var(--line); border-radius: 14px; }
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr; padding: 18px; }
+  header { padding: 22px 18px 14px; }
+  .controls, .cards { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+}
+@media (max-width: 640px) {
+  .controls, .cards, .detail-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Classifier Performance Explorer</h1>
+  <p class="subhead">Single-file report for inspecting transcription classifier behavior across drums, melodic roles, and piano. It shows per-class precision/recall/F1, confusions, timing buckets, gameplay flags, and promotion-gate context without requiring a server.</p>
+  <div class="run-meta" id="run-meta"></div>
+</header>
+<main>
+  <section>
+    <h2>Coverage</h2>
+    <div class="controls">
+      <label>Role<select id="role-filter"></select></label>
+      <label>Algorithm<select id="algorithm-filter"></select></label>
+      <label>Risk<select id="risk-filter"><option value="all">All</option><option value="flagged">Flagged only</option><option value="clean">Clean only</option></select></label>
+      <label>Search<input id="search-filter" type="search" placeholder="case, method, role"></label>
+    </div>
+    <div class="cards" id="overview-cards"></div>
+    <h3>F1 Heatmap</h3>
+    <div id="heatmap"></div>
+    <h3>Runs</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Case</th><th>Role</th><th>Method</th><th>F1</th><th>Refs</th><th>Pred</th><th>Risk</th></tr></thead>
+      <tbody id="row-table"></tbody>
+    </table></div>
+  </section>
+  <section>
+    <h2>Classifier Detail</h2>
+    <div id="detail"></div>
+  </section>
+</main>
+<script id="classifier-data" type="application/json">{"run":{"generated_at_utc":"2026-05-02T16:46:01Z","suite_version":"0.3.0","profile":"gameplay_default","tolerance_ms":60.0},"summary":{"algorithm_summaries":[{"algorithm":"piano_auto","mean_f1":0.0082,"case_count":1}],"promotion_candidates":[{"role":"keys","algorithm":"piano_auto","mean_f1":0.0082,"case_count":1,"flagged_case_count":1,"benchmark_winner":true,"promotion_status":"blocked_by_gameplay_flags","can_promote_without_review":false,"review_required":true}],"worst_failures":[{"case_id":"e7a87286c29ac243b523e00932ec1303-keys","role":"keys","algorithm":"piano_auto","f1":0.0082,"note_count":2013,"error":false,"gameplay_flags":{"error":false,"density":true,"sync_quarantine":false,"duplicates":false}}]},"model_backends":{"mt3":{"ok":true,"engines":{"mr_mt3_drums":{"ok":true,"backend":"mt3","engine":"mr_mt3_drums","model_id":"mr_mt3","modelpack_id":"mr_mt3","modelpack_version":"hf-main-20260325","checkpoint_path":"D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325\\files\\checkpoints\\mr_mt3\\mt3.pth","modelpack_root":"D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325","size_mb":176.0,"speed_x_realtime":57.0,"description":"MR-MT3 drum transcription baseline"},"yourmt3_drums":{"ok":true,"backend":"mt3","engine":"yourmt3_drums","model_id":"yourmt3","modelpack_id":"yourmt3","modelpack_version":"hf-main-20260325","checkpoint_path":"D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325\\files\\checkpoints\\yourmt3\\mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops\\last.ckpt","modelpack_root":"D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325","size_mb":536.0,"speed_x_realtime":15.0,"description":"YourMT3 drum transcription research candidate"}},"methods":["mr_mt3_drums","yourmt3_drums"],"roles":["drums"],"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear FileNotFoundError/RuntimeError, no portable requirement"},"basic_pitch":{"ok":true,"display_name":"Basic Pitch","module":"basic_pitch","module_candidates":["basic_pitch"],"module_available":true,"roles":["bass","lead_guitar","rhythm_guitar","keys"],"methods":["basic_pitch"],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"event_decode","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"portable-safe fallback through melodic fallback chain"},"piano_transkun":{"ok":false,"display_name":"Transkun","module":null,"module_candidates":["transkun"],"module_available":false,"roles":["keys"],"methods":["piano_transkun","piano_transkun_clean"],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError, then melodic fallback when used through import"},"piano_pti":{"ok":false,"display_name":"piano_transcription_inference","module":null,"module_candidates":["piano_transcription_inference"],"module_available":false,"roles":["keys"],"methods":["piano_pti","piano_pti_clean"],"env_files":{"AURAL_PIANO_PTI_CHECKPOINT":{"configured":false,"path":null,"exists":false}},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError unless checkpoint or explicit download opt-in is configured"},"piano_hft":{"ok":false,"display_name":"hFT-Transformer","module":null,"module_candidates":[],"module_available":false,"roles":["keys"],"methods":["piano_hft","piano_hft_clean"],"env_files":{"AURAL_PIANO_HFT_CHECKPOINT":{"configured":false,"path":null,"exists":false}},"env_values":{"AURAL_PIANO_HFT_COMMAND":{"configured":false,"value":null}},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError unless checkpoint and command adapter are configured"},"torchcrepe":{"ok":true,"display_name":"torchcrepe","module":"torchcrepe","module_candidates":["torchcrepe","torch"],"module_available":true,"roles":["bass","lead_guitar","rhythm_guitar"],"methods":["torchcrepe"],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"frame_f0_decode","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError, then melodic fallback when used through import"},"beatnet":{"ok":false,"display_name":"BeatNet","module":null,"module_candidates":["BeatNet","beatnet"],"module_available":false,"roles":["tempo","drums"],"methods":[],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"beat_downbeat_priors","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"availability-only until wired as a beat/downbeat prior"},"omnizart":{"ok":false,"display_name":"Omnizart","module":null,"module_candidates":["omnizart"],"module_available":false,"roles":["research"],"methods":[],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"research_comparator","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"availability-only research comparator; never required for portable import"}},"cases":[{"case_id":"e7a87286c29ac243b523e00932ec1303-keys","name":"psalm 130 - 5 Stems - keys","role":"keys","family":"piano","reference_count":426,"reference_path":"D:\\AuralPrimer\\AuralPrimerPortable\\data\\songs\\ingest_psalm_130_5_stems.songpack\\features\\notes.mid","results":[{"algorithm":"piano_auto","overall":{"tp":10,"fp":2003,"fn":416,"f1":0.0082,"precision":0.005,"recall":0.0235,"onset_only_f1":0.1902,"pitch_accuracy":0.0431,"offset_accuracy":0.2,"note_with_offset_f1":0.0016,"note_with_offset_velocity_f1":0.0008,"onset_timing_mae_ms":31.36,"offset_timing_mae_ms":620.26,"velocity_mae":8.8,"duplicate_rate":0.0},"note_count":2013,"event_count":null,"error":null,"gameplay":{"role":"keys","note_count":2013,"duration_sec":147.534,"notes_per_minute":818.659,"playable_density_flag":true,"duplicate_count":0,"duplicate_rate":0.0,"chatter_count":544,"polyphony_event_rate":0.991058,"max_polyphony":26,"pitch_min":29,"pitch_max":96,"mean_duration_sec":0.42645,"piano_left_hand_notes":722,"piano_right_hand_notes":1291},"sync":{"status":"ok","start_offset_sec":0.302375,"quarantine":false,"threshold_sec":2.0},"classifier":{"kind":"piano","primary_dimension":"pitch","dimensions":[{"name":"pitch","class_metrics":[{"label":"A#4","reference_count":22,"predicted_count":61,"tp":0,"fp":61,"fn":22,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#2","reference_count":10,"predicted_count":17,"tp":0,"fp":17,"fn":10,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D4","reference_count":8,"predicted_count":60,"tp":0,"fp":60,"fn":8,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C3","reference_count":4,"predicted_count":33,"tp":0,"fp":33,"fn":4,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D2","reference_count":4,"predicted_count":21,"tp":0,"fp":21,"fn":4,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#1","reference_count":3,"predicted_count":17,"tp":0,"fp":17,"fn":3,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G3","reference_count":3,"predicted_count":62,"tp":0,"fp":62,"fn":3,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B1","reference_count":2,"predicted_count":9,"tp":0,"fp":9,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C5","reference_count":2,"predicted_count":48,"tp":0,"fp":48,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D#4","reference_count":2,"predicted_count":33,"tp":0,"fp":33,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D3","reference_count":2,"predicted_count":29,"tp":0,"fp":29,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A3","reference_count":1,"predicted_count":38,"tp":0,"fp":38,"fn":1,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D#2","reference_count":1,"predicted_count":9,"tp":0,"fp":9,"fn":1,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D5","reference_count":1,"predicted_count":77,"tp":0,"fp":77,"fn":1,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G1","reference_count":1,"predicted_count":6,"tp":0,"fp":6,"fn":1,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#5","reference_count":0,"predicted_count":44,"tp":0,"fp":44,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#6","reference_count":0,"predicted_count":9,"tp":0,"fp":9,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A1","reference_count":0,"predicted_count":11,"tp":0,"fp":11,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A2","reference_count":0,"predicted_count":12,"tp":0,"fp":12,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A5","reference_count":0,"predicted_count":40,"tp":0,"fp":40,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A6","reference_count":0,"predicted_count":10,"tp":0,"fp":10,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B2","reference_count":0,"predicted_count":14,"tp":0,"fp":14,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B3","reference_count":0,"predicted_count":53,"tp":0,"fp":53,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B4","reference_count":0,"predicted_count":60,"tp":0,"fp":60,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B5","reference_count":0,"predicted_count":32,"tp":0,"fp":32,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B6","reference_count":0,"predicted_count":4,"tp":0,"fp":4,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C#3","reference_count":0,"predicted_count":17,"tp":0,"fp":17,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C#4","reference_count":0,"predicted_count":41,"tp":0,"fp":41,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C#5","reference_count":0,"predicted_count":32,"tp":0,"fp":32,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C#6","reference_count":0,"predicted_count":28,"tp":0,"fp":28,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C2","reference_count":0,"predicted_count":14,"tp":0,"fp":14,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C6","reference_count":0,"predicted_count":19,"tp":0,"fp":19,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C7","reference_count":0,"predicted_count":11,"tp":0,"fp":11,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D#5","reference_count":0,"predicted_count":47,"tp":0,"fp":47,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D#6","reference_count":0,"predicted_count":15,"tp":0,"fp":15,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D6","reference_count":0,"predicted_count":18,"tp":0,"fp":18,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E3","reference_count":0,"predicted_count":41,"tp":0,"fp":41,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E4","reference_count":0,"predicted_count":60,"tp":0,"fp":60,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E5","reference_count":0,"predicted_count":27,"tp":0,"fp":27,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E6","reference_count":0,"predicted_count":26,"tp":0,"fp":26,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#1","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#3","reference_count":0,"predicted_count":48,"tp":0,"fp":48,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#4","reference_count":0,"predicted_count":35,"tp":0,"fp":35,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#5","reference_count":0,"predicted_count":30,"tp":0,"fp":30,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#6","reference_count":0,"predicted_count":19,"tp":0,"fp":19,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F1","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F2","reference_count":0,"predicted_count":43,"tp":0,"fp":43,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F5","reference_count":0,"predicted_count":51,"tp":0,"fp":51,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F6","reference_count":0,"predicted_count":12,"tp":0,"fp":12,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#1","reference_count":0,"predicted_count":3,"tp":0,"fp":3,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#2","reference_count":0,"predicted_count":15,"tp":0,"fp":15,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#3","reference_count":0,"predicted_count":34,"tp":0,"fp":34,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#4","reference_count":0,"predicted_count":39,"tp":0,"fp":39,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#5","reference_count":0,"predicted_count":48,"tp":0,"fp":48,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#6","reference_count":0,"predicted_count":25,"tp":0,"fp":25,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G2","reference_count":0,"predicted_count":38,"tp":0,"fp":38,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G4","reference_count":0,"predicted_count":53,"tp":0,"fp":53,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G5","reference_count":0,"predicted_count":36,"tp":0,"fp":36,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G6","reference_count":0,"predicted_count":10,"tp":0,"fp":10,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#3","reference_count":100,"predicted_count":49,"tp":1,"fp":48,"fn":99,"precision":0.020408,"recall":0.01,"f1":0.013423},{"label":"A#2","reference_count":101,"predicted_count":30,"tp":1,"fp":29,"fn":100,"precision":0.033333,"recall":0.009901,"f1":0.015267},{"label":"F3","reference_count":39,"predicted_count":31,"tp":1,"fp":30,"fn":38,"precision":0.032258,"recall":0.025641,"f1":0.028571},{"label":"C4","reference_count":5,"predicted_count":47,"tp":1,"fp":46,"fn":4,"precision":0.021277,"recall":0.2,"f1":0.038462},{"label":"D#3","reference_count":33,"predicted_count":14,"tp":1,"fp":13,"fn":32,"precision":0.071429,"recall":0.030303,"f1":0.042553},{"label":"A4","reference_count":2,"predicted_count":45,"tp":1,"fp":44,"fn":1,"precision":0.022222,"recall":0.5,"f1":0.042553},{"label":"E2","reference_count":34,"predicted_count":7,"tp":1,"fp":6,"fn":33,"precision":0.142857,"recall":0.029412,"f1":0.048781},{"label":"F4","reference_count":32,"predicted_count":39,"tp":2,"fp":37,"fn":30,"precision":0.051282,"recall":0.0625,"f1":0.056338},{"label":"C#2","reference_count":14,"predicted_count":5,"tp":1,"fp":4,"fn":13,"precision":0.2,"recall":0.071429,"f1":0.105264}],"confusions":[{"reference_class":"A#2","predicted_class":"B3","count":6},{"reference_class":"A#3","predicted_class":"D5","count":4},{"reference_class":"A#2","predicted_class":"E4","count":4},{"reference_class":"F3","predicted_class":"A4","count":3},{"reference_class":"A#3","predicted_class":"G#3","count":3},{"reference_class":"A#3","predicted_class":"A4","count":3},{"reference_class":"A#3","predicted_class":"B3","count":3},{"reference_class":"A#3","predicted_class":"D6","count":3},{"reference_class":"A#2","predicted_class":"E6","count":3},{"reference_class":"A#2","predicted_class":"D#4","count":3},{"reference_class":"A#3","predicted_class":"G4","count":3},{"reference_class":"A#2","predicted_class":"C#4","count":3},{"reference_class":"A#3","predicted_class":"G#4","count":3},{"reference_class":"F4","predicted_class":"D5","count":3},{"reference_class":"A#3","predicted_class":"F3","count":2},{"reference_class":"A#3","predicted_class":"A#4","count":2},{"reference_class":"A#3","predicted_class":"F5","count":2},{"reference_class":"A#2","predicted_class":"C2","count":2},{"reference_class":"C#2","predicted_class":"G2","count":2},{"reference_class":"A#2","predicted_class":"A#1","count":2},{"reference_class":"E2","predicted_class":"F2","count":2},{"reference_class":"A#2","predicted_class":"F2","count":2},{"reference_class":"A#2","predicted_class":"A4","count":2},{"reference_class":"A#2","predicted_class":"C#5","count":2},{"reference_class":"A#2","predicted_class":"C5","count":2},{"reference_class":"E2","predicted_class":"A4","count":2},{"reference_class":"A#2","predicted_class":"D#5","count":2},{"reference_class":"F3","predicted_class":"C#4","count":2},{"reference_class":"A#3","predicted_class":"D4","count":2},{"reference_class":"F3","predicted_class":"D4","count":2},{"reference_class":"D#3","predicted_class":"D4","count":2},{"reference_class":"D#3","predicted_class":"C4","count":2},{"reference_class":"E2","predicted_class":"E4","count":2},{"reference_class":"A#3","predicted_class":"F4","count":2},{"reference_class":"D4","predicted_class":"G#5","count":2},{"reference_class":"F3","predicted_class":"G5","count":2},{"reference_class":"F3","predicted_class":"C4","count":2},{"reference_class":"D#3","predicted_class":"G#4","count":2},{"reference_class":"A#2","predicted_class":"C6","count":2},{"reference_class":"A#3","predicted_class":"G2","count":2},{"reference_class":"F4","predicted_class":"B5","count":2},{"reference_class":"F3","predicted_class":"A5","count":2},{"reference_class":"C4","predicted_class":"A5","count":2},{"reference_class":"A#3","predicted_class":"A#5","count":2},{"reference_class":"A#4","predicted_class":"F#3","count":1},{"reference_class":"F3","predicted_class":"F#5","count":1},{"reference_class":"F3","predicted_class":"A#4","count":1},{"reference_class":"A#4","predicted_class":"G#4","count":1},{"reference_class":"A#4","predicted_class":"F5","count":1},{"reference_class":"A#3","predicted_class":"B4","count":1},{"reference_class":"A#3","predicted_class":"C5","count":1},{"reference_class":"G3","predicted_class":"G4","count":1},{"reference_class":"A#3","predicted_class":"C#3","count":1},{"reference_class":"A#4","predicted_class":"D3","count":1},{"reference_class":"D#3","predicted_class":"D3","count":1},{"reference_class":"C#2","predicted_class":"E3","count":1},{"reference_class":"D3","predicted_class":"B2","count":1},{"reference_class":"D4","predicted_class":"E3","count":1},{"reference_class":"D3","predicted_class":"E3","count":1},{"reference_class":"A#1","predicted_class":"C2","count":1},{"reference_class":"E2","predicted_class":"A#2","count":1},{"reference_class":"C#2","predicted_class":"B3","count":1},{"reference_class":"A#2","predicted_class":"E3","count":1},{"reference_class":"A#2","predicted_class":"G#1","count":1},{"reference_class":"A#3","predicted_class":"F#2","count":1},{"reference_class":"A#2","predicted_class":"F3","count":1},{"reference_class":"E2","predicted_class":"B3","count":1},{"reference_class":"E2","predicted_class":"G#2","count":1},{"reference_class":"A#2","predicted_class":"A1","count":1},{"reference_class":"A#2","predicted_class":"F#3","count":1},{"reference_class":"D2","predicted_class":"A#4","count":1},{"reference_class":"C3","predicted_class":"A#3","count":1},{"reference_class":"G1","predicted_class":"D6","count":1},{"reference_class":"D#2","predicted_class":"A#3","count":1},{"reference_class":"E2","predicted_class":"G#6","count":1},{"reference_class":"D2","predicted_class":"F#3","count":1},{"reference_class":"A#2","predicted_class":"C4","count":1},{"reference_class":"A#3","predicted_class":"A3","count":1},{"reference_class":"A#2","predicted_class":"F6","count":1},{"reference_class":"A#2","predicted_class":"E5","count":1},{"reference_class":"A#3","predicted_class":"E4","count":1},{"reference_class":"A#2","predicted_class":"B2","count":1},{"reference_class":"C#2","predicted_class":"A4","count":1},{"reference_class":"A#2","predicted_class":"B1","count":1},{"reference_class":"A#2","predicted_class":"G2","count":1},{"reference_class":"A#2","predicted_class":"G#6","count":1},{"reference_class":"A#2","predicted_class":"A#3","count":1},{"reference_class":"A#2","predicted_class":"A#4","count":1},{"reference_class":"E2","predicted_class":"A2","count":1},{"reference_class":"F#2","predicted_class":"F2","count":1},{"reference_class":"F#2","predicted_class":"A3","count":1},{"reference_class":"A#2","predicted_class":"B4","count":1},{"reference_class":"A#3","predicted_class":"A#2","count":1},{"reference_class":"A#3","predicted_class":"F#3","count":1},{"reference_class":"A#2","predicted_class":"G6","count":1},{"reference_class":"A#3","predicted_class":"C#4","count":1},{"reference_class":"E2","predicted_class":"E6","count":1},{"reference_class":"A#3","predicted_class":"E6","count":1},{"reference_class":"A#2","predicted_class":"G#4","count":1},{"reference_class":"C5","predicted_class":"G#4","count":1},{"reference_class":"A#2","predicted_class":"G4","count":1},{"reference_class":"E2","predicted_class":"G6","count":1},{"reference_class":"C3","predicted_class":"G6","count":1},{"reference_class":"A4","predicted_class":"D4","count":1},{"reference_class":"D#3","predicted_class":"D5","count":1},{"reference_class":"A#3","predicted_class":"C3","count":1},{"reference_class":"D#4","predicted_class":"A4","count":1},{"reference_class":"D#4","predicted_class":"C4","count":1},{"reference_class":"A#3","predicted_class":"E5","count":1},{"reference_class":"D#3","predicted_class":"F4","count":1},{"reference_class":"A#2","predicted_class":"F#4","count":1},{"reference_class":"B1","predicted_class":"C6","count":1},{"reference_class":"A#2","predicted_class":"D2","count":1},{"reference_class":"F4","predicted_class":"F#5","count":1},{"reference_class":"A#4","predicted_class":"A6","count":1},{"reference_class":"A#3","predicted_class":"G#5","count":1},{"reference_class":"D5","predicted_class":"F4","count":1},{"reference_class":"C5","predicted_class":"C#4","count":1},{"reference_class":"E2","predicted_class":"C5","count":1},{"reference_class":"E2","predicted_class":"C4","count":1},{"reference_class":"F3","predicted_class":"G3","count":1},{"reference_class":"E2","predicted_class":"F6","count":1},{"reference_class":"E2","predicted_class":"G2","count":1},{"reference_class":"A#3","predicted_class":"G3","count":1},{"reference_class":"A#2","predicted_class":"G5","count":1},{"reference_class":"F4","predicted_class":"C#6","count":1},{"reference_class":"A#2","predicted_class":"F#5","count":1},{"reference_class":"A#2","predicted_class":"F#6","count":1},{"reference_class":"A3","predicted_class":"C5","count":1},{"reference_class":"C4","predicted_class":"C#5","count":1},{"reference_class":"F3","predicted_class":"A6","count":1},{"reference_class":"F#2","predicted_class":"B5","count":1},{"reference_class":"A#3","predicted_class":"G5","count":1},{"reference_class":"F#2","predicted_class":"G4","count":1},{"reference_class":"A#3","predicted_class":"F#5","count":1},{"reference_class":"E2","predicted_class":"D5","count":1},{"reference_class":"A#2","predicted_class":"G#3","count":1},{"reference_class":"D#3","predicted_class":"C#5","count":1},{"reference_class":"D#3","predicted_class":"B5","count":1},{"reference_class":"A#3","predicted_class":"C6","count":1},{"reference_class":"A#2","predicted_class":"D#6","count":1},{"reference_class":"F3","predicted_class":"D5","count":1},{"reference_class":"F3","predicted_class":"A#5","count":1},{"reference_class":"F4","predicted_class":"C#5","count":1},{"reference_class":"G3","predicted_class":"A#5","count":1},{"reference_class":"D4","predicted_class":"D#4","count":1},{"reference_class":"D#3","predicted_class":"F5","count":1},{"reference_class":"D#3","predicted_class":"A#5","count":1},{"reference_class":"A#3","predicted_class":"D#4","count":1},{"reference_class":"A#2","predicted_class":"D4","count":1},{"reference_class":"D#3","predicted_class":"A#4","count":1},{"reference_class":"F4","predicted_class":"B4","count":1},{"reference_class":"F4","predicted_class":"A#4","count":1},{"reference_class":"A#3","predicted_class":"C4","count":1},{"reference_class":"F4","predicted_class":"G3","count":1},{"reference_class":"F#2","predicted_class":"D5","count":1},{"reference_class":"A#4","predicted_class":"E5","count":1},{"reference_class":"F3","predicted_class":"F#2","count":1},{"reference_class":"F3","predicted_class":"E3","count":1}],"matched_tp":10,"matched_confusions":222,"unmatched_predictions":1781,"unmatched_references":194,"pitch_error_summary":{"semitone_near_confusions":11,"octave_confusions":13}},{"name":"pitch_class","class_metrics":[{"label":"B","reference_count":2,"predicted_count":172,"tp":0,"fp":172,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#","reference_count":0,"predicted_count":164,"tp":0,"fp":164,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D","reference_count":15,"predicted_count":205,"tp":1,"fp":204,"fn":14,"precision":0.004878,"recall":0.066667,"f1":0.009091},{"label":"G","reference_count":4,"predicted_count":205,"tp":1,"fp":204,"fn":3,"precision":0.004878,"recall":0.25,"f1":0.009569},{"label":"C","reference_count":11,"predicted_count":172,"tp":1,"fp":171,"fn":10,"precision":0.005814,"recall":0.090909,"f1":0.010929},{"label":"A","reference_count":3,"predicted_count":156,"tp":1,"fp":155,"fn":2,"precision":0.00641,"recall":0.333333,"f1":0.012578},{"label":"C#","reference_count":14,"predicted_count":123,"tp":1,"fp":122,"fn":13,"precision":0.00813,"recall":0.071429,"f1":0.014598},{"label":"F#","reference_count":10,"predicted_count":150,"tp":2,"fp":148,"fn":8,"precision":0.013333,"recall":0.2,"f1":0.024999},{"label":"D#","reference_count":36,"predicted_count":118,"tp":2,"fp":116,"fn":34,"precision":0.016949,"recall":0.055556,"f1":0.025974},{"label":"F","reference_count":71,"predicted_count":177,"tp":4,"fp":173,"fn":67,"precision":0.022599,"recall":0.056338,"f1":0.032258},{"label":"E","reference_count":34,"predicted_count":161,"tp":6,"fp":155,"fn":28,"precision":0.037267,"recall":0.176471,"f1":0.061538},{"label":"A#","reference_count":226,"predicted_count":210,"tp":24,"fp":186,"fn":202,"precision":0.114286,"recall":0.106195,"f1":0.110092}],"confusions":[{"reference_class":"A#","predicted_class":"G#","count":12},{"reference_class":"A#","predicted_class":"D","count":11},{"reference_class":"A#","predicted_class":"E","count":11},{"reference_class":"A#","predicted_class":"G","count":11},{"reference_class":"A#","predicted_class":"C","count":10},{"reference_class":"A#","predicted_class":"F","count":9},{"reference_class":"A#","predicted_class":"B","count":9},{"reference_class":"A#","predicted_class":"A","count":8},{"reference_class":"A#","predicted_class":"F#","count":7},{"reference_class":"A#","predicted_class":"C#","count":7},{"reference_class":"F","predicted_class":"A","count":6},{"reference_class":"A#","predicted_class":"D#","count":6},{"reference_class":"F","predicted_class":"D","count":6},{"reference_class":"D#","predicted_class":"D","count":4},{"reference_class":"F","predicted_class":"C#","count":4},{"reference_class":"F","predicted_class":"G","count":4},{"reference_class":"F","predicted_class":"F#","count":3},{"reference_class":"F","predicted_class":"A#","count":3},{"reference_class":"E","predicted_class":"F","count":3},{"reference_class":"D#","predicted_class":"A#","count":3},{"reference_class":"E","predicted_class":"A","count":3},{"reference_class":"D#","predicted_class":"C","count":3},{"reference_class":"F","predicted_class":"B","count":3},{"reference_class":"D","predicted_class":"E","count":2},{"reference_class":"C#","predicted_class":"G","count":2},{"reference_class":"E","predicted_class":"G#","count":2},{"reference_class":"E","predicted_class":"G","count":2},{"reference_class":"D#","predicted_class":"F","count":2},{"reference_class":"D","predicted_class":"G#","count":2},{"reference_class":"C","predicted_class":"C#","count":2},{"reference_class":"D#","predicted_class":"G#","count":2},{"reference_class":"C","predicted_class":"A","count":2},{"reference_class":"C#","predicted_class":"E","count":1},{"reference_class":"D","predicted_class":"B","count":1},{"reference_class":"C#","predicted_class":"B","count":1},{"reference_class":"E","predicted_class":"B","count":1},{"reference_class":"D","predicted_class":"A#","count":1},{"reference_class":"C","predicted_class":"A#","count":1},{"reference_class":"G","predicted_class":"D","count":1},{"reference_class":"D","predicted_class":"F#","count":1},{"reference_class":"C#","predicted_class":"A","count":1},{"reference_class":"F#","predicted_class":"A","count":1},{"reference_class":"C","predicted_class":"G#","count":1},{"reference_class":"C","predicted_class":"G","count":1},{"reference_class":"A","predicted_class":"D","count":1},{"reference_class":"D#","predicted_class":"A","count":1},{"reference_class":"B","predicted_class":"C","count":1},{"reference_class":"D","predicted_class":"F","count":1},{"reference_class":"E","predicted_class":"C","count":1},{"reference_class":"A","predicted_class":"C","count":1},{"reference_class":"F","predicted_class":"C","count":1},{"reference_class":"F#","predicted_class":"G","count":1},{"reference_class":"E","predicted_class":"D","count":1},{"reference_class":"D#","predicted_class":"C#","count":1},{"reference_class":"G","predicted_class":"A#","count":1},{"reference_class":"F#","predicted_class":"D","count":1},{"reference_class":"F","predicted_class":"E","count":1}],"matched_tp":43,"matched_confusions":189,"unmatched_predictions":1781,"unmatched_references":194,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"octave","class_metrics":[{"label":"octave 1","reference_count":6,"predicted_count":48,"tp":0,"fp":48,"fn":6,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 6","reference_count":0,"predicted_count":195,"tp":0,"fp":195,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 7","reference_count":0,"predicted_count":11,"tp":0,"fp":11,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 5","reference_count":3,"predicted_count":512,"tp":1,"fp":511,"fn":2,"precision":0.001953,"recall":0.333333,"f1":0.003883},{"label":"octave 4","reference_count":71,"predicted_count":573,"tp":19,"fp":554,"fn":52,"precision":0.033159,"recall":0.267606,"f1":0.059007},{"label":"octave 3","reference_count":182,"predicted_count":449,"tp":36,"fp":413,"fn":146,"precision":0.080178,"recall":0.197802,"f1":0.114104},{"label":"octave 2","reference_count":164,"predicted_count":225,"tp":26,"fp":199,"fn":138,"precision":0.115556,"recall":0.158537,"f1":0.133677}],"confusions":[{"reference_class":"octave 3","predicted_class":"octave 4","count":31},{"reference_class":"octave 2","predicted_class":"octave 4","count":26},{"reference_class":"octave 3","predicted_class":"octave 5","count":24},{"reference_class":"octave 2","predicted_class":"octave 3","count":14},{"reference_class":"octave 2","predicted_class":"octave 6","count":14},{"reference_class":"octave 2","predicted_class":"octave 5","count":13},{"reference_class":"octave 4","predicted_class":"octave 5","count":8},{"reference_class":"octave 3","predicted_class":"octave 6","count":7},{"reference_class":"octave 3","predicted_class":"octave 2","count":3},{"reference_class":"octave 4","predicted_class":"octave 3","count":2},{"reference_class":"octave 2","predicted_class":"octave 1","count":2},{"reference_class":"octave 1","predicted_class":"octave 6","count":2},{"reference_class":"octave 5","predicted_class":"octave 4","count":2},{"reference_class":"octave 4","predicted_class":"octave 6","count":2},{"reference_class":"octave 1","predicted_class":"octave 2","count":1}],"matched_tp":82,"matched_confusions":151,"unmatched_predictions":1780,"unmatched_references":193,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"hand_zone","class_metrics":[{"label":"high-right","reference_count":3,"predicted_count":718,"tp":1,"fp":717,"fn":2,"precision":0.001393,"recall":0.333333,"f1":0.002774},{"label":"right","reference_count":71,"predicted_count":573,"tp":19,"fp":554,"fn":52,"precision":0.033159,"recall":0.267606,"f1":0.059007},{"label":"left","reference_count":182,"predicted_count":449,"tp":36,"fp":413,"fn":146,"precision":0.080178,"recall":0.197802,"f1":0.114104},{"label":"low-left","reference_count":170,"predicted_count":273,"tp":32,"fp":241,"fn":138,"precision":0.117216,"recall":0.188235,"f1":0.144469}],"confusions":[{"reference_class":"left","predicted_class":"high-right","count":31},{"reference_class":"left","predicted_class":"right","count":31},{"reference_class":"low-left","predicted_class":"high-right","count":29},{"reference_class":"low-left","predicted_class":"right","count":24},{"reference_class":"low-left","predicted_class":"left","count":13},{"reference_class":"right","predicted_class":"high-right","count":10},{"reference_class":"left","predicted_class":"low-left","count":3},{"reference_class":"right","predicted_class":"left","count":2},{"reference_class":"high-right","predicted_class":"right","count":2}],"matched_tp":88,"matched_confusions":145,"unmatched_predictions":1780,"unmatched_references":193,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"sustain_bucket","class_metrics":[{"label":"long-sustain","reference_count":8,"predicted_count":60,"tp":1,"fp":59,"fn":7,"precision":0.016667,"recall":0.125,"f1":0.029412},{"label":"sustain","reference_count":48,"predicted_count":489,"tp":12,"fp":477,"fn":36,"precision":0.02454,"recall":0.25,"f1":0.044693},{"label":"staccato","reference_count":132,"predicted_count":618,"tp":34,"fp":584,"fn":98,"precision":0.055016,"recall":0.257576,"f1":0.090666},{"label":"short","reference_count":238,"predicted_count":846,"tp":86,"fp":760,"fn":152,"precision":0.101655,"recall":0.361345,"f1":0.158672}],"confusions":[{"reference_class":"short","predicted_class":"staccato","count":24},{"reference_class":"short","predicted_class":"sustain","count":22},{"reference_class":"staccato","predicted_class":"short","count":18},{"reference_class":"staccato","predicted_class":"sustain","count":16},{"reference_class":"sustain","predicted_class":"short","count":10},{"reference_class":"short","predicted_class":"long-sustain","count":4},{"reference_class":"long-sustain","predicted_class":"short","count":1},{"reference_class":"long-sustain","predicted_class":"sustain","count":1},{"reference_class":"long-sustain","predicted_class":"staccato","count":1},{"reference_class":"sustain","predicted_class":"staccato","count":1},{"reference_class":"staccato","predicted_class":"long-sustain","count":1}],"matched_tp":133,"matched_confusions":99,"unmatched_predictions":1781,"unmatched_references":194,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}}],"timeline":[{"start":0.0,"end":7.060764,"tp":0,"fp":55,"fn":5},{"start":7.060764,"end":14.121528,"tp":0,"fp":163,"fn":28},{"start":14.121528,"end":21.182292,"tp":0,"fp":32,"fn":14},{"start":21.182292,"end":28.243055,"tp":1,"fp":106,"fn":16},{"start":28.243055,"end":35.303819,"tp":1,"fp":36,"fn":21},{"start":35.303819,"end":42.364583,"tp":0,"fp":144,"fn":11},{"start":42.364583,"end":49.425347,"tp":3,"fp":101,"fn":11},{"start":49.425347,"end":56.486111,"tp":0,"fp":176,"fn":18},{"start":56.486111,"end":63.546875,"tp":0,"fp":119,"fn":26},{"start":63.546875,"end":70.607639,"tp":0,"fp":140,"fn":15},{"start":70.607639,"end":77.668403,"tp":0,"fp":171,"fn":27},{"start":77.668403,"end":84.729166,"tp":0,"fp":62,"fn":21},{"start":84.729166,"end":91.78993,"tp":2,"fp":144,"fn":18},{"start":91.78993,"end":98.850694,"tp":1,"fp":133,"fn":14},{"start":98.850694,"end":105.911458,"tp":1,"fp":97,"fn":27},{"start":105.911458,"end":112.972222,"tp":0,"fp":54,"fn":18},{"start":112.972222,"end":120.032986,"tp":0,"fp":90,"fn":21},{"start":120.032986,"end":127.09375,"tp":1,"fp":101,"fn":13},{"start":127.09375,"end":134.154514,"tp":0,"fp":45,"fn":7},{"start":134.154514,"end":141.215277,"tp":0,"fp":7,"fn":25},{"start":141.215277,"end":148.276041,"tp":0,"fp":27,"fn":32},{"start":148.276041,"end":155.336805,"tp":0,"fp":0,"fn":11},{"start":155.336805,"end":162.397569,"tp":0,"fp":0,"fn":10},{"start":162.397569,"end":169.458333,"tp":0,"fp":0,"fn":7}],"coverage":{"reference_events":426,"predicted_events":2013}}}]}]}</script>
+<script>
+const data = JSON.parse(document.getElementById("classifier-data").textContent);
+const state = { role: "all", algorithm: "all", risk: "all", query: "", selectedKey: "", dimension: "" };
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+function fmt(value, digits = 3) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "n/a";
+  return Number(value).toFixed(digits);
+}
+function allRows() {
+  const rows = [];
+  for (const c of data.cases || []) {
+    for (const r of c.results || []) {
+      rows.push({ key: `${c.case_id}::${r.algorithm}`, case: c, result: r });
+    }
+  }
+  return rows;
+}
+function classifierPrimary(result) {
+  const classifier = result.classifier || {};
+  const dims = classifier.dimensions || [];
+  return dims.find(d => d.name === classifier.primary_dimension) || dims[0] || {};
+}
+function predictedCount(row) {
+  const coverage = (row.result.classifier || {}).coverage || {};
+  return coverage.predicted_events ?? row.result.note_count ?? row.result.event_count ?? 0;
+}
+function isFlagged(row) {
+  const gameplay = row.result.gameplay || {};
+  const sync = row.result.sync || {};
+  return Boolean(row.result.error)
+    || Boolean(gameplay.playable_density_flag)
+    || Boolean(sync.quarantine)
+    || Number(gameplay.duplicate_rate || 0) > 0.08;
+}
+function riskLabel(row) {
+  const flags = [];
+  const gameplay = row.result.gameplay || {};
+  const sync = row.result.sync || {};
+  if (row.result.error) flags.push("error");
+  if (gameplay.playable_density_flag) flags.push("density");
+  if (Number(gameplay.duplicate_rate || 0) > 0.08) flags.push("duplicates");
+  if (sync.quarantine) flags.push("sync");
+  return flags.length ? flags.join(", ") : "clean";
+}
+function filteredRows() {
+  const q = state.query.trim().toLowerCase();
+  return allRows().filter(row => {
+    const haystack = `${row.case.case_id} ${row.case.name || ""} ${row.case.role} ${row.result.algorithm}`.toLowerCase();
+    if (state.role !== "all" && row.case.role !== state.role) return false;
+    if (state.algorithm !== "all" && row.result.algorithm !== state.algorithm) return false;
+    if (state.risk === "flagged" && !isFlagged(row)) return false;
+    if (state.risk === "clean" && isFlagged(row)) return false;
+    return !q || haystack.includes(q);
+  });
+}
+function populateFilters() {
+  const rows = allRows();
+  const roles = [...new Set(rows.map(row => row.case.role).filter(Boolean))].sort();
+  const algorithms = [...new Set(rows.map(row => row.result.algorithm).filter(Boolean))].sort();
+  const roleFilter = document.getElementById("role-filter");
+  const algorithmFilter = document.getElementById("algorithm-filter");
+  roleFilter.innerHTML = `<option value="all">All roles</option>${roles.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("")}`;
+  algorithmFilter.innerHTML = `<option value="all">All methods</option>${algorithms.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("")}`;
+}
+function renderMeta() {
+  const run = data.run || {};
+  document.getElementById("run-meta").innerHTML = [
+    `Generated ${esc(run.generated_at_utc || "unknown")}`,
+    `Suite ${esc(run.suite_version || "unknown")}`,
+    `Profile ${esc(run.profile || "unknown")}`,
+    `Tolerance ${fmt(run.tolerance_ms, 1)}ms`
+  ].map(text => `<span class="pill">${text}</span>`).join("");
+}
+function renderOverview(rows) {
+  const flagged = rows.filter(isFlagged).length;
+  const withF1 = rows.map(row => row.result.overall && row.result.overall.f1).filter(v => v !== null && v !== undefined);
+  const meanF1 = withF1.length ? withF1.reduce((a, b) => a + Number(b), 0) / withF1.length : null;
+  const classes = rows.reduce((acc, row) => acc + ((classifierPrimary(row.result).class_metrics || []).length), 0);
+  document.getElementById("overview-cards").innerHTML = [
+    ["Runs", rows.length],
+    ["Flagged", flagged],
+    ["Mean F1", fmt(meanF1)],
+    ["Class rows", classes]
+  ].map(([label, value]) => `<div class="card"><strong>${esc(value)}</strong><span>${esc(label)}</span></div>`).join("");
+}
+function colorFor(value, flagged) {
+  if (value === null || value === undefined) return flagged ? "#653143" : "#263955";
+  const v = Math.max(0, Math.min(1, Number(value)));
+  const r = Math.round(220 - (130 * v));
+  const g = Math.round(70 + (150 * v));
+  const b = Math.round(92 + (30 * v));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+function renderHeatmap(rows) {
+  const cases = [...new Map(rows.map(row => [row.case.case_id, row.case])).values()];
+  const algorithms = [...new Set(rows.map(row => row.result.algorithm).filter(Boolean))].sort();
+  if (!cases.length || !algorithms.length) {
+    document.getElementById("heatmap").innerHTML = `<div class="empty">No rows match the current filters.</div>`;
+    return;
+  }
+  const byKey = new Map(rows.map(row => [`${row.case.case_id}::${row.result.algorithm}`, row]));
+  const maxCols = Math.max(1, algorithms.length);
+  let html = `<div class="heatmap" style="--cols:${maxCols}"><div class="heat-label">Case / method</div>${algorithms.map(a => `<div class="heat-label">${esc(a)}</div>`).join("")}`;
+  for (const c of cases) {
+    html += `<div class="heat-label" title="${esc(c.name || c.case_id)}">${esc(c.case_id)}</div>`;
+    for (const a of algorithms) {
+      const row = byKey.get(`${c.case_id}::${a}`);
+      if (!row) {
+        html += `<div class="heat-cell muted">-</div>`;
+      } else {
+        const f1 = row.result.overall ? row.result.overall.f1 : null;
+        html += `<div class="heat-cell" style="background:${colorFor(f1, isFlagged(row))}" title="${esc(riskLabel(row))}">${fmt(f1, 2)}</div>`;
+      }
+    }
+  }
+  html += `</div>`;
+  document.getElementById("heatmap").innerHTML = html;
+}
+function renderRows(rows) {
+  const tbody = document.getElementById("row-table");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">No rows match the current filters.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((row, idx) => {
+    const f1 = row.result.overall ? row.result.overall.f1 : null;
+    const risk = riskLabel(row);
+    const selected = row.key === state.selectedKey ? " selected" : "";
+    return `<tr data-row="${idx}" class="${selected}">
+      <td>${esc(row.case.case_id)}</td>
+      <td>${esc(row.case.role)}</td>
+      <td>${esc(row.result.algorithm)}</td>
+      <td class="score">${fmt(f1)}</td>
+      <td class="score">${esc(row.case.reference_count ?? 0)}</td>
+      <td class="score">${esc(predictedCount(row))}</td>
+      <td class="${risk === "clean" ? "ok" : "risk"}">${esc(risk)}</td>
+    </tr>`;
+  }).join("");
+  tbody.querySelectorAll("tr[data-row]").forEach(tr => {
+    tr.addEventListener("click", () => {
+      const row = rows[Number(tr.dataset.row)];
+      state.selectedKey = row.key;
+      state.dimension = "";
+      render();
+    });
+  });
+}
+function selectedRow(rows) {
+  if (!rows.length) return null;
+  return rows.find(row => row.key === state.selectedKey) || rows[0];
+}
+function renderTimeline(timeline) {
+  if (!timeline || !timeline.length) return `<div class="empty">No timeline buckets available.</div>`;
+  const maxCount = Math.max(1, ...timeline.map(b => Number(b.tp || 0) + Number(b.fp || 0) + Number(b.fn || 0)));
+  return `<div class="timeline">${timeline.map(b => {
+    const total = Number(b.tp || 0) + Number(b.fp || 0) + Number(b.fn || 0);
+    const height = Math.max(3, Math.round((total / maxCount) * 100));
+    const title = `${fmt(b.start, 2)}-${fmt(b.end, 2)}s TP:${b.tp || 0} FP:${b.fp || 0} FN:${b.fn || 0}`;
+    return `<span class="bar" title="${esc(title)}" style="height:${height}%"></span>`;
+  }).join("")}</div>`;
+}
+function renderDetail(rows) {
+  const row = selectedRow(rows);
+  const detail = document.getElementById("detail");
+  if (!row) {
+    detail.innerHTML = `<div class="empty">Select a classifier run.</div>`;
+    return;
+  }
+  state.selectedKey = row.key;
+  const classifier = row.result.classifier || {};
+  const dimensions = classifier.dimensions || [];
+  const dimension = dimensions.find(d => d.name === state.dimension)
+    || dimensions.find(d => d.name === classifier.primary_dimension)
+    || dimensions[0]
+    || {};
+  state.dimension = dimension.name || "";
+  const metrics = dimension.class_metrics || [];
+  const confusions = dimension.confusions || [];
+  const pitch = dimension.pitch_error_summary || {};
+  const selector = dimensions.length
+    ? `<label>Dimension<select id="dimension-select">${dimensions.map(d => `<option value="${esc(d.name)}" ${d.name === state.dimension ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>`
+    : "";
+  const classRows = metrics.length
+    ? metrics.map(m => `<tr><td>${esc(m.label)}</td><td class="score">${esc(m.reference_count)}</td><td class="score">${esc(m.predicted_count)}</td><td class="score">${esc(m.tp)}</td><td class="score">${fmt(m.precision)}</td><td class="score">${fmt(m.recall)}</td><td class="score">${fmt(m.f1)}</td></tr>`).join("")
+    : `<tr><td colspan="7" class="muted">No per-class metrics available.</td></tr>`;
+  const confusionRows = confusions.length
+    ? confusions.slice(0, 16).map(c => `<div class="confusion-row"><span>${esc(c.reference_class)} -> ${esc(c.predicted_class)}</span><strong>${esc(c.count)}</strong></div>`).join("")
+    : `<div class="empty">No near-time class confusions found.</div>`;
+  detail.innerHTML = `
+    <div class="panel" style="padding:14px; margin-bottom:12px;">
+      <div class="muted">${esc(row.case.case_id)} / ${esc(row.case.role)}</div>
+      <h2 style="margin:4px 0 10px;">${esc(row.result.algorithm)}</h2>
+      ${selector}
+    </div>
+    <div class="detail-grid">
+      <div class="detail-stat"><strong>${esc(dimension.matched_tp ?? 0)}</strong><span class="muted">True positives</span></div>
+      <div class="detail-stat"><strong>${esc(dimension.matched_confusions ?? 0)}</strong><span class="muted">Near-time confusions</span></div>
+      <div class="detail-stat"><strong>${esc((dimension.unmatched_predictions ?? 0) + (dimension.unmatched_references ?? 0))}</strong><span class="muted">Unmatched events</span></div>
+    </div>
+    <h3>Per-Class Metrics</h3>
+    <div class="table-wrap"><table><thead><tr><th>Class</th><th>Refs</th><th>Pred</th><th>TP</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody>${classRows}</tbody></table></div>
+    <h3>Confusions</h3>
+    <div class="confusion-list">${confusionRows}</div>
+    <h3>Pitch Error Summary</h3>
+    <div class="cards">
+      <div class="card"><strong>${esc(pitch.semitone_near_confusions ?? "n/a")}</strong><span>semitone-near</span></div>
+      <div class="card"><strong>${esc(pitch.octave_confusions ?? "n/a")}</strong><span>octave errors</span></div>
+    </div>
+    <h3>TP/FP/FN Timeline</h3>
+    ${renderTimeline(classifier.timeline || [])}
+  `;
+  const dimSelect = document.getElementById("dimension-select");
+  if (dimSelect) {
+    dimSelect.addEventListener("change", event => {
+      state.dimension = event.target.value;
+      renderDetail(filteredRows());
+    });
+  }
+}
+function render() {
+  const rows = filteredRows();
+  renderOverview(rows);
+  renderHeatmap(rows);
+  renderRows(rows);
+  renderDetail(rows);
+}
+document.getElementById("role-filter").addEventListener("change", event => { state.role = event.target.value; state.selectedKey = ""; render(); });
+document.getElementById("algorithm-filter").addEventListener("change", event => { state.algorithm = event.target.value; state.selectedKey = ""; render(); });
+document.getElementById("risk-filter").addEventListener("change", event => { state.risk = event.target.value; state.selectedKey = ""; render(); });
+document.getElementById("search-filter").addEventListener("input", event => { state.query = event.target.value; state.selectedKey = ""; render(); });
+populateFilters();
+renderMeta();
+render();
+</script>
+</body>
+</html>

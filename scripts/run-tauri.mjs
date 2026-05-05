@@ -22,6 +22,19 @@ function fileExists(p) {
   }
 }
 
+function resolveWindowsCmdHost() {
+  if (process.platform === "win32") {
+    return process.env.ComSpec || "cmd.exe";
+  }
+
+  const candidates = [
+    "/mnt/c/Windows/System32/cmd.exe",
+    "/mnt/c/Windows/Sysnative/cmd.exe",
+    "cmd.exe",
+  ];
+  return candidates.find(fileExists) ?? "cmd.exe";
+}
+
 function toWindowsPath(inputPath) {
   const result = spawnSync("wslpath", ["-w", inputPath], {
     encoding: "utf8",
@@ -37,23 +50,44 @@ function escapeCmdArg(value) {
   return value.replaceAll('"', '""');
 }
 
+function renderWindowsCmdInvocation(cmdPath, cwdPath, commandArgs) {
+  const escapedArgs = commandArgs.map((value) => `"${escapeCmdArg(value)}"`).join(" ");
+  const isUnc = cwdPath.startsWith("\\\\");
+  const changeDir = isUnc ? `pushd "${cwdPath}"` : `cd /d "${cwdPath}"`;
+  const restoreDir = isUnc ? " & set TAURI_EXIT=%ERRORLEVEL% & popd & exit /b %TAURI_EXIT%" : "";
+  return `${changeDir} && "${cmdPath}" ${escapedArgs}${restoreDir}`.trim();
+}
+
 const args = process.argv.slice(2);
 if (args.length === 0) {
   console.error("usage: node scripts/run-tauri.mjs <dev|build> [args...]");
   process.exit(2);
 }
 
+if (process.platform === "win32") {
+  const cmdHost = resolveWindowsCmdHost();
+  const tauriBinDir = path.join(repoRoot, "node_modules", ".bin");
+  const env = {
+    ...process.env,
+    PATH: `${tauriBinDir};${process.env.PATH ?? ""}`,
+  };
+  const result = spawnSync(cmdHost, ["/d", "/s", "/c", "tauri.cmd", ...args], {
+    cwd: process.cwd(),
+    env,
+    stdio: "inherit",
+  });
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
+}
+
 if (isWsl()) {
-  const cmdHost = fileExists("/mnt/c/Windows/System32/cmd.exe")
-    ? "/mnt/c/Windows/System32/cmd.exe"
-    : "cmd.exe";
+  const cmdHost = resolveWindowsCmdHost();
   const winCwd = toWindowsPath(process.cwd());
   const winTauriCmd = toWindowsPath(path.join(repoRoot, "node_modules", ".bin", "tauri.cmd"));
-  const escapedArgs = args.map((value) => `"${escapeCmdArg(value)}"`).join(" ");
-  const isUnc = winCwd.startsWith("\\\\");
-  const changeDir = isUnc ? `pushd "${winCwd}"` : `cd /d "${winCwd}"`;
-  const restoreDir = isUnc ? " & set TAURI_EXIT=%ERRORLEVEL% & popd & exit /b %TAURI_EXIT%" : "";
-  const command = `${changeDir} && "${winTauriCmd}" ${escapedArgs}${restoreDir}`.trim();
+  const command = renderWindowsCmdInvocation(winTauriCmd, winCwd, args);
   const result = spawnSync(cmdHost, ["/d", "/s", "/c", command], {
     stdio: "inherit",
   });
@@ -64,10 +98,7 @@ if (isWsl()) {
   process.exit(result.status ?? 1);
 }
 
-const tauriBin =
-  process.platform === "win32"
-    ? path.join(repoRoot, "node_modules", ".bin", "tauri.cmd")
-    : path.join(repoRoot, "node_modules", ".bin", "tauri");
+const tauriBin = path.join(repoRoot, "node_modules", ".bin", "tauri");
 const result = spawnSync(tauriBin, args, {
   stdio: "inherit",
 });

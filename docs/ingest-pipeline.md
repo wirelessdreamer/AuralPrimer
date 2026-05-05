@@ -62,6 +62,13 @@ Output:
 - `features/beats.json`
 - `features/tempo_map.json`
 
+Production policy:
+- default mode is `high_accuracy`
+- `high_accuracy` uses `librosa.beat.beat_track` with onset refinement
+- missing/unusable `librosa` degrades to `standard`
+- `standard` remains the deterministic energy-autocorrelation/uniform-grid fallback
+- Essentia is a research candidate only until benchmark and packaging evidence justify adding it
+
 ### Stage 3: `sections`
 Input: wav + beats
 Output: `features/sections.json`
@@ -73,6 +80,12 @@ Input: wav
 Output: `audio/stems/*.wav`
 
 This is optional due to size/compute.
+
+Production policy:
+- default provider is `auto`
+- Demucs is optional experimental, not required for normal portable import
+- if the Demucs runtime/modelpack is unavailable, import continues with provided stems or mix fallback
+- GPU acceleration should be used when available, but CPU fallback and model-absence safety are required
 
 ### Stage 4b (optional): `split_guitar_stems`
 Input: `audio/stems/guitar.wav` when available, else `audio/mix.wav` fallback

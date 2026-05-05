@@ -328,8 +328,10 @@ $portableAssetsModelsDir = Join-Path $portableAssetsDir "models"
 $portableConfigDir = Join-Path $portableDataDir "config"
 $portableSongsDir = Join-Path $portableDataDir "songs"
 $portableVisualizersDir = Join-Path $portableDataDir "visualizers"
+$portableWebviewDir = Join-Path $portableDataDir "webview"
 # Non-destructive portable updates:
-# keep existing content (especially data/) and overwrite only build artifacts.
+# keep existing content (especially songs/config) and overwrite only build artifacts.
+# WebView cache is intentionally reset because stale browser state can pin an old app shell.
 New-Item -ItemType Directory -Path $portableRootAbs -Force | Out-Null
 New-Item -ItemType Directory -Path $portableSidecarDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableModelPacksDir -Force | Out-Null
@@ -339,15 +341,20 @@ New-Item -ItemType Directory -Path $portableAssetsModelsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableConfigDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableSongsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableVisualizersDir -Force | Out-Null
+if (Test-Path -LiteralPath $portableWebviewDir) {
+  Remove-Item -LiteralPath $portableWebviewDir -Recurse -Force
+}
 
 $portableGameExe = Join-Path $portableRootAbs "AuralPrimer.exe"
 $portableStudioExe = Join-Path $portableRootAbs "AuralStudio.exe"
+$portableRootSidecarExe = Join-Path $portableRootAbs "aural_ingest.exe"
 $portableSidecarExe = Join-Path $portableSidecarDir "aural_ingest.exe"
 $portableSidecarManifest = Join-Path $portableSidecarDir "build_manifest.json"
 $portableDemucs6ModelPackZip = Join-Path $portableModelPacksDir "demucs_6.zip"
 
 Copy-Item -LiteralPath $gameExeAbs -Destination $portableGameExe -Force
 Copy-Item -LiteralPath $studioExeAbs -Destination $portableStudioExe -Force
+Copy-Item -LiteralPath $sidecarBuiltExe -Destination $portableRootSidecarExe -Force
 Copy-Item -LiteralPath $sidecarBuiltExe -Destination $portableSidecarExe -Force
 Copy-Item -LiteralPath $sidecarBuiltManifest -Destination $portableSidecarManifest -Force
 Copy-Item -LiteralPath $demucs6ZipAbs -Destination $portableDemucs6ModelPackZip -Force
@@ -390,6 +397,12 @@ foreach ($modelpackId in $mt3ModelpackIds) {
 }
 
 # Freshness guard: copied portable sidecar must exactly match freshly built sidecar.
+$portableRootSidecarHash = Get-Sha256Lower $portableRootSidecarExe
+$portableRootSidecarItem = Get-Item -LiteralPath $portableRootSidecarExe
+$portableSidecarHash = Get-Sha256Lower $portableSidecarExe
+if ($portableRootSidecarHash -ne $sidecarBuiltHash) {
+  throw "Portable root sidecar hash mismatch: expected $sidecarBuiltHash got $portableRootSidecarHash"
+}
 $portableSidecarHash = Get-Sha256Lower $portableSidecarExe
 if ($portableSidecarHash -ne $sidecarBuiltHash) {
   throw "Portable sidecar hash mismatch: expected $sidecarBuiltHash got $portableSidecarHash"
@@ -402,7 +415,11 @@ if ([string]$portableSidecarManifestObj.sha256 -ne $portableSidecarHash) {
 $portableSidecarManifestHash = Get-Sha256Lower $portableSidecarManifest
 
 $sourceLastWriteUtc = [DateTime]::Parse([string]$sidecarInfo.source_last_write_utc).ToUniversalTime()
+$portableRootLastWriteUtc = $portableRootSidecarItem.LastWriteTimeUtc
 $portableLastWriteUtc = (Get-Item -LiteralPath $portableSidecarExe).LastWriteTimeUtc
+if ($portableRootLastWriteUtc -lt $sourceLastWriteUtc) {
+  throw "Portable root sidecar timestamp is older than source sidecar (source=$sourceLastWriteUtc portable=$portableRootLastWriteUtc)"
+}
 if ($portableLastWriteUtc -lt $sourceLastWriteUtc) {
   throw "Portable sidecar timestamp is older than source sidecar (source=$sourceLastWriteUtc portable=$portableLastWriteUtc)"
 }
@@ -487,10 +504,16 @@ if (-not $ffmpegSourceAbs) {
 }
 
 Assert-NotBlank $ffmpegSourceAbs "FfmpegExePath"
+$portableRootFfmpegExe = Join-Path $portableRootAbs "ffmpeg.exe"
 $portableFfmpegExe = Join-Path $portableSidecarDir "ffmpeg.exe"
+Copy-Item -LiteralPath $ffmpegSourceAbs -Destination $portableRootFfmpegExe -Force
 Copy-Item -LiteralPath $ffmpegSourceAbs -Destination $portableFfmpegExe -Force
 $ffmpegSourceSha256 = Get-Sha256Lower $ffmpegSourceAbs
+$ffmpegPortableRootSha256 = Get-Sha256Lower $portableRootFfmpegExe
 $ffmpegPortableSha256 = Get-Sha256Lower $portableFfmpegExe
+if ($ffmpegSourceSha256 -ne $ffmpegPortableRootSha256) {
+  throw "Portable root ffmpeg hash mismatch: expected $ffmpegSourceSha256 got $ffmpegPortableRootSha256"
+}
 if ($ffmpegSourceSha256 -ne $ffmpegPortableSha256) {
   throw "Portable ffmpeg hash mismatch: expected $ffmpegSourceSha256 got $ffmpegPortableSha256"
 }
@@ -523,18 +546,23 @@ $portableManifest = [ordered]@{
     build_manifest_sha256 = $portableSidecarManifestHash
     tauri_target_triple = [string]$portableSidecarManifestObj.tauri_target_triple
     tauri_external_bin = [string]$portableSidecarManifestObj.tauri_external_bin
+    tauri_runtime_path = $portableRootSidecarExe
+    tauri_runtime_sha256 = $portableRootSidecarHash
+    tauri_runtime_last_write_utc = $portableRootLastWriteUtc.ToString("o")
     portable_path = $portableSidecarExe
     portable_last_write_utc = $portableLastWriteUtc.ToString("o")
     portable_sha256 = $portableSidecarHash
     model_assets = $portableSidecarManifestObj.model_assets
     freshness_guard = @{
       hash_match = $true
-      timestamp_check = "portable_last_write_utc>=source_last_write_utc"
+      timestamp_check = "portable_last_write_utc>=source_last_write_utc and tauri_runtime_last_write_utc>=source_last_write_utc"
     }
   }
   ffmpeg = @{
     source_path = $ffmpegSourceAbs
     source_sha256 = $ffmpegSourceSha256
+    tauri_runtime_path = $portableRootFfmpegExe
+    tauri_runtime_sha256 = $ffmpegPortableRootSha256
     portable_path = $portableFfmpegExe
     portable_sha256 = $ffmpegPortableSha256
   }

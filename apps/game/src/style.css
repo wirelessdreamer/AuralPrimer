@@ -182,6 +182,10 @@ main {
   padding: 18px 18px 36px;
 }
 
+.appMain.isWideSoloKeys {
+  max-width: min(96vw, 1720px);
+}
+
 .route {
   display: none;
 }
@@ -474,6 +478,24 @@ label.meta {
   box-shadow: var(--shadow);
 }
 
+.playSurface {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.playSurface.isPianoPrimary #viz,
+.playSurface.isPianoPrimary .playLyrics,
+.playSurface.isPianoPrimary #vizStatus {
+  display: none;
+}
+
+.playSurface.isPianoPrimary .tabContainer {
+  margin-top: 0;
+  min-height: clamp(360px, 58vh, 620px);
+  height: clamp(360px, 58vh, 620px);
+}
+
 .playLyrics[hidden] {
   display: none !important;
 }
@@ -530,6 +552,11 @@ label.meta {
 }
 
 .playLayout.isFocus #viz {
+  height: min(70vh, 680px);
+}
+
+.playLayout.isFocus .playSurface.isPianoPrimary .tabContainer {
+  min-height: min(70vh, 680px);
   height: min(70vh, 680px);
 }
 
@@ -1054,10 +1081,16 @@ li {
   box-shadow: var(--shadow2);
   overflow: hidden;
   min-height: 160px;
+  height: 160px;
+}
+
+.tabContainer.isPianoMode {
+  min-height: clamp(290px, 44vw, 390px);
+  height: clamp(290px, 44vw, 390px);
 }
 
 .tabCanvas {
   display: block;
   width: 100%;
-  height: 160px;
+  height: 100%;
 }

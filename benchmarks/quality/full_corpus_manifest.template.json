@@ -1,0 +1,18 @@
+{
+  "format": "auralprimer_quality_manifest.v1",
+  "notes": [
+    "Replace placeholder paths with stems/reference files from the local corpus.",
+    "Use family=drums for drum references, family=piano for keys/piano references, and family=melodic for bass/guitar."
+  ],
+  "cases": [
+    {
+      "id": "example_keys",
+      "name": "Example Keys",
+      "family": "piano",
+      "role": "keys",
+      "wav": "D:/AuralPrimer/path/to/keys.wav",
+      "reference_midi": "D:/AuralPrimer/path/to/keys_reference.mid",
+      "offset_sec": 0.0
+    }
+  ]
+}

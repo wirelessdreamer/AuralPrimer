@@ -38,12 +38,38 @@ class MelodicBenchmarkEvent:
 # MIDI reference parsing
 # ---------------------------------------------------------------------------
 
+def _track_matches_role(track_name: str | None, channel: int, role: str | None) -> bool:
+    if not role:
+        return True
+    normalized_role = str(role).strip().lower()
+    name = (track_name or "").strip().lower().replace("_", " ")
+    if not name:
+        return False
+    if normalized_role in {"keys", "piano", "synth"}:
+        return any(token in name for token in ("key", "piano", "synth"))
+    if normalized_role == "bass":
+        return "bass" in name
+    if normalized_role == "lead_guitar":
+        return "lead" in name and ("guitar" in name or "gt" in name)
+    if normalized_role == "rhythm_guitar":
+        return ("rhythm" in name and ("guitar" in name or "gt" in name)) or name == "guitar"
+    if normalized_role == "vocals":
+        return "vocal" in name or "voice" in name
+    if normalized_role == "drums":
+        return channel == 9 or "drum" in name
+    return normalized_role.replace("_", " ") in name
+
+
 def parse_melodic_midi_reference(
     midi_path: Path,
     offset_sec: float = 0.0,
+    role: str | None = None,
 ) -> list[MelodicBenchmarkEvent]:
     """Extract note-on events from a MIDI file as benchmark reference."""
     note_ons, tempo_changes_raw, tpq = _parse_midi_note_ons(midi_path)
+    selected = [n for n in note_ons if _track_matches_role(n.track_name, n.channel, role)]
+    if selected:
+        note_ons = selected
     tempo_changes = _compress_tempo_changes(tempo_changes_raw)
     events = []
     for n in note_ons:
@@ -231,6 +257,16 @@ def benchmark_melodic_algorithms(
                 "note_count": len(predicted),
                 "elapsed_sec": round(elapsed, 2),
                 "overall": eval_result.to_dict(),
+                "predicted_notes": [
+                    {
+                        "t_on": round(float(note.t_on), 6),
+                        "t_off": round(float(note.t_off), 6),
+                        "pitch": int(note.pitch),
+                        "velocity": int(note.velocity),
+                        "instrument": str(note.instrument),
+                    }
+                    for note in predicted
+                ],
             })
         except Exception as exc:
             results.append({

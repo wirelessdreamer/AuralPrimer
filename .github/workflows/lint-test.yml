@@ -41,6 +41,17 @@ jobs:
       - name: TS tests + coverage
         run: npm run test:coverage --if-present
 
+      - name: Frontend runtime benchmark artifact
+        run: npm run bench:frontend:compare --if-present
+
+      - name: Upload frontend benchmark artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-runtime-benchmarks
+          path: benchmarks/frontend/*.json
+          if-no-files-found: ignore
+
       # Python (ingest pipeline)
       - uses: actions/setup-python@v5
         with:

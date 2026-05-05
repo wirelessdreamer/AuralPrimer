@@ -31,8 +31,11 @@ from aural_ingest.progress import ProgressEvent, emit, log
 from aural_ingest.transcription import (
     DEFAULT_DRUM_FILTER,
     DEFAULT_MELODIC_METHOD,
+    DEFAULT_TRANSCRIPTION_PROFILE,
     KNOWN_DRUM_FILTERS,
+    KNOWN_MELODIC_METHODS,
     KNOWN_MT3_DRUM_ENGINES,
+    KNOWN_TRANSCRIPTION_PROFILES,
     _default_basic_pitch_model_roots,
     available_mt3_modelpacks,
     build_default_drum_algorithm_registry,
@@ -45,6 +48,7 @@ from aural_ingest.transcription import (
     transcribe_melodic,
     transcribe_drums,
     validate_melodic_method,
+    validate_transcription_profile,
 )
 
 
@@ -71,10 +75,82 @@ DEMUCS_MODELPACK_ID = "demucs_6"
 DEMUCS_MODELPACK_FILENAME = "demucs_6.zip"
 DEMUCS_PROVIDER = "demucs"
 DEFAULT_STEM_SEPARATION_PROVIDER = "auto"
-DEFAULT_BEAT_ANALYSIS_MODE = "standard"
+DEFAULT_BEAT_ANALYSIS_MODE = "high_accuracy"
 KNOWN_BEAT_ANALYSIS_MODES: tuple[str, ...] = ("standard", "high_accuracy")
 DEMUCS_STEM_ROLE_ALIASES: dict[str, str] = {"piano": "keys"}
 DEMUCS_PRIMARY_STEM_ROLES: tuple[str, ...] = ("drums", "bass", "guitar", "keys", "vocals")
+BEAT_TEMPO_PRODUCTION_POLICY: dict[str, Any] = {
+    "default_mode": DEFAULT_BEAT_ANALYSIS_MODE,
+    "production_default": "librosa_first",
+    "preferred_backend": "librosa.beat_track",
+    "fallback_mode": "standard",
+    "fallback_backend": "energy_autocorrelation_uniform_grid",
+    "essentia_status": "research_candidate_not_default",
+    "reason": "best transcription/import quality is prioritized over fastest deterministic import throughput",
+}
+STEM_SEPARATION_PROVIDER_POLICY: dict[str, Any] = {
+    "default_provider": DEFAULT_STEM_SEPARATION_PROVIDER,
+    "demucs_support_status": "optional_experimental",
+    "absence_behavior": "skip_separation_and_continue_with_mix_or_provided_stems",
+    "portable_requirement": "normal import must not require Demucs runtime or modelpack",
+    "gpu_policy": "supported_when_available_with_cpu_fallback_required",
+}
+BENCHMARK_THRESHOLD_POLICY: dict[str, Any] = {
+    "mode": "warn",
+    "strict_pr_blocking": False,
+    "minimum_warn_only_period": "at least 14 days after representative baselines are frozen",
+    "strict_requires": [
+        "versioned baselines",
+        "role-specific thresholds",
+        "representative local hardware profile",
+        "reviewed synthetic/private quality fixtures",
+    ],
+}
+RUNTIME_DEPENDENCY_POLICIES: dict[str, dict[str, Any]] = {
+    "librosa": {
+        "required": False,
+        "role": "quality_default_beat_tempo",
+        "missing_behavior": "high_accuracy beat analysis degrades to standard",
+    },
+    "torch": {
+        "required": False,
+        "role": "optional_model_runtime",
+        "missing_behavior": "model-backed adapters are unavailable",
+    },
+    "torchaudio": {
+        "required": False,
+        "role": "optional_model_runtime",
+        "missing_behavior": "model-backed adapters are unavailable",
+    },
+    "mt3_infer": {
+        "required": False,
+        "role": "optional_learned_drum_runtime",
+        "missing_behavior": "MT3/YourMT3 engines are unavailable",
+    },
+    "demucs": {
+        "required": False,
+        "role": "optional_experimental_separator",
+        "missing_behavior": "Demucs separation is skipped",
+    },
+}
+INPUT_STEM_ROLE_ALIASES: dict[str, str] = {
+    "piano": "keys",
+    "keyboard": "keys",
+    "synth": "keys",
+    "lead": "lead_guitar",
+    "rhythm": "rhythm_guitar",
+    "voice": "vocals",
+}
+KNOWN_INPUT_STEM_ROLES: tuple[str, ...] = (
+    "drums",
+    "bass",
+    "guitar",
+    "lead_guitar",
+    "rhythm_guitar",
+    "keys",
+    "vocals",
+    "other",
+)
 
 
 STAGES: list[Stage] = [
@@ -147,6 +223,10 @@ def _serialize_stage_declaration(stage: Stage) -> dict[str, Any]:
         "version": stage.version,
         "outputs": stage.outputs,
     }
+    if stage.id == "beats_tempo":
+        payload["policy"] = BEAT_TEMPO_PRODUCTION_POLICY
+    if stage.id == "separate_stems":
+        payload["policy"] = STEM_SEPARATION_PROVIDER_POLICY
     if stage.required_models:
         payload["required_models"] = [_serialize_declared_requirement(req) for req in stage.required_models]
     if stage.id == "transcribe_drums":
@@ -732,6 +812,7 @@ def _stable_song_id(source_sha256: str, profile: str, transcription_options: dic
         "stem_separation_modelpack_id": transcription_options.get("stem_separation_modelpack_id"),
         "stem_separation_modelpack_version": transcription_options.get("stem_separation_modelpack_version"),
         "melodic_method": transcription_options.get("melodic_method"),
+        "transcription_profile": transcription_options.get("transcription_profile"),
         "shifts": transcription_options.get("shifts"),
         "multi_filter": bool(transcription_options.get("multi_filter", False)),
     }
@@ -770,6 +851,7 @@ def _recognition_manifest_block(tr_opts: dict[str, Any]) -> dict[str, Any]:
             "attempted_engines": [],
             "warnings": [],
         },
+        "profile": tr_opts.get("transcription_profile"),
     }
 
 
@@ -1060,6 +1142,112 @@ def _write_wav_tensor(path: Path, audio: Any, samplerate: int) -> None:
 def _normalize_demucs_stem_name(source_name: str) -> str:
     key = source_name.strip().lower().replace(" ", "_")
     return DEMUCS_STEM_ROLE_ALIASES.get(key, key)
+
+
+def _normalize_input_stem_role(role_name: str) -> str | None:
+    key = role_name.strip().lower().replace(" ", "_")
+    normalized = INPUT_STEM_ROLE_ALIASES.get(key, key)
+    if normalized not in KNOWN_INPUT_STEM_ROLES:
+        return None
+    return normalized
+
+
+def _resolved_input_stem_paths(config: dict[str, Any]) -> dict[str, Path]:
+    raw_paths = config.get("input_stem_paths")
+    if not isinstance(raw_paths, dict):
+        return {}
+
+    out: dict[str, Path] = {}
+    for role_name, raw_path in sorted(raw_paths.items(), key=lambda item: str(item[0])):
+        normalized_role = _normalize_input_stem_role(str(role_name))
+        if normalized_role is None:
+            continue
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            continue
+        src = Path(raw_path).expanduser()
+        if not src.is_file():
+            continue
+        out[normalized_role] = src
+    return out
+
+
+def _copy_input_stems_from_config(stems_dir: Path, config: dict[str, Any]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for normalized_role, src in _resolved_input_stem_paths(config).items():
+        dst = stems_dir / f"{normalized_role}.wav"
+        shutil.copyfile(src, dst)
+        out[normalized_role] = f"audio/stems/{dst.name}"
+    return out
+
+
+def _synthesize_mix_wav_from_input_stems(dst_wav: Path, config: dict[str, Any]) -> tuple[float, int] | None:
+    stem_paths = _resolved_input_stem_paths(config)
+    if not stem_paths:
+        return None
+
+    import numpy as np
+    import wave
+
+    mixed: np.ndarray | None = None
+    target_sr: int | None = None
+
+    for stem_path in stem_paths.values():
+        with wave.open(str(stem_path), "rb") as w:
+            channels = int(w.getnchannels())
+            sr = int(w.getframerate())
+            sampwidth = int(w.getsampwidth())
+            nframes = int(w.getnframes())
+            if channels <= 0 or sr <= 0 or nframes <= 0:
+                raise RuntimeError(f"invalid wav for synthesized mix: {stem_path}")
+            if sampwidth != 2:
+                raise RuntimeError(
+                    f"unsupported wav sample width for synthesized mix: {stem_path} ({sampwidth})"
+                )
+            raw = w.readframes(nframes)
+
+        audio = np.frombuffer(raw, dtype="<i2").astype(np.float32, copy=False)
+        frame_count = max(1, audio.size // channels)
+        audio = audio[: frame_count * channels].reshape(frame_count, channels)
+        if channels == 1:
+            audio = np.repeat(audio, 2, axis=1)
+        elif channels > 2:
+            audio = audio[:, :2]
+
+        audio = audio / 32768.0
+        if target_sr is None:
+            target_sr = sr
+        elif sr != target_sr:
+            raise RuntimeError(
+                f"configured input stems must share the same sample rate; got {sr} for {stem_path} vs {target_sr}"
+            )
+
+        if mixed is None:
+            mixed = audio.copy()
+        else:
+            if mixed.shape[0] < audio.shape[0]:
+                pad = np.zeros((audio.shape[0] - mixed.shape[0], mixed.shape[1]), dtype=np.float32)
+                mixed = np.vstack((mixed, pad))
+            elif audio.shape[0] < mixed.shape[0]:
+                pad = np.zeros((mixed.shape[0] - audio.shape[0], audio.shape[1]), dtype=np.float32)
+                audio = np.vstack((audio, pad))
+            mixed += audio
+
+    if mixed is None or target_sr is None:
+        return None
+
+    mixed /= max(1, len(stem_paths))
+    peak = float(np.max(np.abs(mixed))) if mixed.size else 0.0
+    if peak > 0.999:
+        mixed *= 0.98 / peak
+
+    pcm = (np.clip(mixed, -1.0, 1.0) * 32767.0).round().astype(np.int16, copy=False)
+    with wave.open(str(dst_wav), "wb") as w:
+        w.setnchannels(int(pcm.shape[1]) if pcm.ndim == 2 else 1)
+        w.setsampwidth(2)
+        w.setframerate(int(target_sr))
+        w.writeframes(pcm.tobytes())
+
+    return _wav_duration_sec(dst_wav)
 
 
 def _copy_cached_stems(cache_dir: Path, stems_dir: Path, stem_files: dict[str, str]) -> dict[str, str]:
@@ -1405,14 +1593,7 @@ def _build_notes_mid_bytes(
     return header + chunks
 
 
-def _find_audio_source_in_dir(src_dir: Path) -> Path | None:
-    """Find one audio source file in a folder deterministically.
-
-    Priority:
-    1) common mix file names in the directory root
-    2) first audio file by sorted relative path (recursive)
-    """
-
+def _find_preferred_mix_audio_in_dir(src_dir: Path) -> Path | None:
     preferred = [
         "mix.wav",
         "mix.mp3",
@@ -1423,6 +1604,20 @@ def _find_audio_source_in_dir(src_dir: Path) -> Path | None:
         p = src_dir / name
         if p.is_file():
             return p
+    return None
+
+
+def _find_audio_source_in_dir(src_dir: Path) -> Path | None:
+    """Find one audio source file in a folder deterministically.
+
+    Priority:
+    1) common mix file names in the directory root
+    2) first audio file by sorted relative path (recursive)
+    """
+
+    preferred_mix = _find_preferred_mix_audio_in_dir(src_dir)
+    if preferred_mix is not None:
+        return preferred_mix
 
     exts = {".wav", ".mp3", ".ogg", ".flac", ".m4a"}
     candidates = [p for p in src_dir.rglob("*") if p.is_file() and p.suffix.lower() in exts]
@@ -1534,7 +1729,19 @@ def _resolve_transcription_options(
     if melodic_method is None:
         return None, (
             f"invalid --melodic-method '{raw_melodic_method}'. "
-            "supported: auto, pyin, basic_pitch"
+            f"supported: {', '.join(KNOWN_MELODIC_METHODS)}"
+        )
+
+    raw_transcription_profile = (
+        getattr(args, "transcription_profile", None)
+        or config.get("transcription_profile")
+        or DEFAULT_TRANSCRIPTION_PROFILE
+    )
+    transcription_profile = validate_transcription_profile(raw_transcription_profile)
+    if transcription_profile is None:
+        return None, (
+            f"invalid transcription profile '{raw_transcription_profile}'. "
+            f"supported: {', '.join(KNOWN_TRANSCRIPTION_PROFILES)}"
         )
 
     shifts_raw = getattr(args, "shifts", 1)
@@ -1598,6 +1805,7 @@ def _resolve_transcription_options(
         ),
         "warnings": warnings,
         "melodic_method": melodic_method,
+        "transcription_profile": transcription_profile,
         "beat_analysis_mode": beat_analysis_mode,
         "shifts": shifts,
         "multi_filter": multi_filter,
@@ -1608,6 +1816,7 @@ def _add_transcription_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--drum-filter", "--drum-engine", dest="drum_filter", default=DEFAULT_DRUM_FILTER)
     p.add_argument("--drum-stem-path")
     p.add_argument("--melodic-method", default=DEFAULT_MELODIC_METHOD)
+    p.add_argument("--transcription-profile", default=DEFAULT_TRANSCRIPTION_PROFILE)
     p.add_argument("--beat-analysis-mode", default=DEFAULT_BEAT_ANALYSIS_MODE)
     p.add_argument("--stem-separation-provider", default=DEFAULT_STEM_SEPARATION_PROVIDER)
     p.add_argument("--stem-separation-provider-path")
@@ -1885,6 +2094,101 @@ def cmd_benchmark_drums(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def cmd_benchmark_quality(args: argparse.Namespace) -> int:
+    from aural_ingest.quality_benchmark import (
+        build_quality_manifest_from_scan,
+        filter_quality_cases,
+        load_quality_manifest,
+        run_quality_benchmark_suite,
+        scan_corpus,
+        write_quality_manifest_from_scan,
+        write_quality_outputs,
+    )
+
+    if getattr(args, "scan_root", None):
+        scan_root = Path(args.scan_root)
+        write_manifest = getattr(args, "write_manifest", None)
+        if write_manifest:
+            out_path = write_quality_manifest_from_scan(
+                scan_root,
+                Path(write_manifest),
+                include_unreferenced=not bool(getattr(args, "referenced_only", False)),
+            )
+            print(str(out_path))
+            return 0
+        payload = scan_corpus(scan_root)
+        if getattr(args, "manifest_json", False):
+            payload = build_quality_manifest_from_scan(
+                payload,
+                include_unreferenced=not bool(getattr(args, "referenced_only", False)),
+            )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    manifest = getattr(args, "manifest", None)
+    if not manifest:
+        log("benchmark-quality requires --manifest or --scan-root")
+        return 2
+
+    try:
+        cases = load_quality_manifest(Path(manifest))
+        cases = filter_quality_cases(
+            cases,
+            case_filters=getattr(args, "case_filter", None),
+            roles=getattr(args, "role", None),
+            max_cases=getattr(args, "max_cases", None),
+        )
+        if not cases:
+            log("quality benchmark has no cases after filtering")
+            return 2
+        payload = run_quality_benchmark_suite(
+            cases,
+            profile=getattr(args, "transcription_profile", DEFAULT_TRANSCRIPTION_PROFILE),
+            algorithms=getattr(args, "algorithm", None),
+            tolerance_ms=float(getattr(args, "tolerance_ms", 60.0)),
+        )
+        out_dir = write_quality_outputs(
+            payload,
+            output_root=Path(getattr(args, "out_root", "benchmarks/quality/runs")),
+            label=getattr(args, "label", "full-corpus-quality"),
+        )
+    except Exception as exc:
+        log(f"quality benchmark failed: {exc}")
+        return 1
+
+    print(str(out_dir))
+    return 0
+
+
+def cmd_refine_piano(args: argparse.Namespace) -> int:
+    from aural_ingest.piano_refinement import run_piano_refinement_workbench
+
+    try:
+        out_dir = run_piano_refinement_workbench(
+            audio_path=Path(args.audio),
+            source_midi_path=Path(args.source_midi),
+            reference_midi_path=Path(args.reference_midi) if args.reference_midi else None,
+            methods=getattr(args, "method", None),
+            output_root=Path(getattr(args, "out_root", "benchmarks/piano/refinement_runs")),
+            label=getattr(args, "label", "piano-refinement"),
+            tolerance_ms=float(getattr(args, "tolerance_ms", 60.0)),
+            offset_tolerance_ms=float(getattr(args, "offset_tolerance_ms", 120.0)),
+            velocity_tolerance=int(getattr(args, "velocity_tolerance", 20)),
+            source_offset_sec=float(getattr(args, "source_offset_sec", 0.0)),
+            reference_offset_sec=float(getattr(args, "reference_offset_sec", 0.0)),
+            bpm=float(getattr(args, "bpm", 120.0)),
+        )
+    except FileNotFoundError as exc:
+        log(str(exc))
+        return 2
+    except Exception as exc:
+        log(f"piano refinement failed: {exc}")
+        return 4
+
+    print(str(out_dir))
+    return 0
+
+
 def _mt3_runtime_snapshot() -> dict[str, Any]:
     import numpy as np
 
@@ -1944,6 +2248,11 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
 
     payload = {
         "ok": True,
+        "policies": {
+            "beat_tempo": BEAT_TEMPO_PRODUCTION_POLICY,
+            "stem_separation": STEM_SEPARATION_PROVIDER_POLICY,
+            "benchmark_thresholds": BENCHMARK_THRESHOLD_POLICY,
+        },
         "dependencies": {},
         "drum_engines": available_mt3_modelpacks(),
         "assets": {
@@ -1974,16 +2283,22 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
     if demucs_modelpack_error:
         payload["assets"]["demucs_modelpack"]["error"] = demucs_modelpack_error
 
-    for module_name in ("torch", "torchaudio", "mt3_infer", "demucs"):
+    for module_name, dependency_policy in RUNTIME_DEPENDENCY_POLICIES.items():
         try:
             module = __import__(module_name)
             payload["dependencies"][module_name] = {
                 "ok": True,
                 "version": getattr(module, "__version__", "unknown"),
+                **dependency_policy,
             }
         except Exception as exc:
-            payload["dependencies"][module_name] = {"ok": False, "error": str(exc)}
-            payload["ok"] = False
+            payload["dependencies"][module_name] = {
+                "ok": False,
+                "error": str(exc),
+                **dependency_policy,
+            }
+            if dependency_policy.get("required"):
+                payload["ok"] = False
 
     mt3_module = sys.modules.get("mt3_infer")
     mt3_load_model = getattr(mt3_module, "load_model", None) if mt3_module is not None else None
@@ -2198,6 +2513,18 @@ def cmd_import(args: argparse.Namespace) -> int:
     # Stage 4: separate_stems (Demucs htdemucs_6s)
     stems_dir = out / "audio" / "stems"
     _mkdir(stems_dir)
+    copied_input_stems = _copy_input_stems_from_config(stems_dir, config)
+    if copied_input_stems:
+        audio_assets = manifest.setdefault("assets", {}).setdefault("audio", {})
+        stems_assets = audio_assets.setdefault("stems", {})
+        for stem_name, stem_relpath in copied_input_stems.items():
+            stems_assets[f"{stem_name}_path"] = stem_relpath
+        manifest.setdefault("pipeline", {})["input_stems"] = {
+            "source": "config",
+            "roles": sorted(copied_input_stems.keys()),
+            "stem_paths": copied_input_stems,
+        }
+        _write_json(out / "manifest.json", manifest)
     emit(ProgressEvent(type="stage_start", id="separate_stems", progress=0.7))
     emit(
         ProgressEvent(
@@ -2292,28 +2619,18 @@ def cmd_import(args: argparse.Namespace) -> int:
     split_summary: dict[str, Any] | None = None
     split_source, split_source_kind = _resolve_guitar_split_source(out, dst_wav, config)
 
-    try:
-        emit(
-            ProgressEvent(
-                type="stage_progress",
-                id="split_guitar_stems",
-                progress=0.82,
-                message="splitting guitar lead/rhythm stems",
-            )
-        )
-        split_summary = split_lead_rhythm_guitar_stem(split_source, lead_stem, rhythm_stem)
-
+    if lead_stem.is_file() and rhythm_stem.is_file():
         audio_assets = manifest.setdefault("assets", {}).setdefault("audio", {})
         stems_assets = audio_assets.setdefault("stems", {})
         stems_assets["lead_guitar_path"] = "audio/stems/lead_guitar.wav"
         stems_assets["rhythm_guitar_path"] = "audio/stems/rhythm_guitar.wav"
-        stems_assets["guitar_split_source_path"] = _try_relpath(split_source, out)
-        stems_assets["guitar_split_source_kind"] = split_source_kind
+        stems_assets["guitar_split_source_path"] = stems_assets.get("guitar_path") or _try_relpath(split_source, out)
+        stems_assets["guitar_split_source_kind"] = "provided_split"
 
         manifest.setdefault("pipeline", {})["guitar_split"] = {
-            **split_summary,
-            "source_path": _try_relpath(split_source, out),
-            "source_kind": split_source_kind,
+            "status": "reused",
+            "source_path": stems_assets["guitar_split_source_path"],
+            "source_kind": "provided_split",
         }
         _write_json(out / "manifest.json", manifest)
         emit(
@@ -2322,21 +2639,55 @@ def cmd_import(args: argparse.Namespace) -> int:
                 id="split_guitar_stems",
                 progress=0.86,
                 artifact="audio/stems/lead_guitar.wav",
+                message="reused",
             )
         )
-    except Exception as e:
-        msg = f"guitar split failed: {e}"
-        log(msg)
-        tr_opts["warnings"] = [*tr_opts.get("warnings", []), msg]
-        emit(
-            ProgressEvent(
-                type="stage_done",
-                id="split_guitar_stems",
-                progress=0.86,
-                message="skipped",
-                artifact=None,
+    else:
+        try:
+            emit(
+                ProgressEvent(
+                    type="stage_progress",
+                    id="split_guitar_stems",
+                    progress=0.82,
+                    message="splitting guitar lead/rhythm stems",
+                )
             )
-        )
+            split_summary = split_lead_rhythm_guitar_stem(split_source, lead_stem, rhythm_stem)
+
+            audio_assets = manifest.setdefault("assets", {}).setdefault("audio", {})
+            stems_assets = audio_assets.setdefault("stems", {})
+            stems_assets["lead_guitar_path"] = "audio/stems/lead_guitar.wav"
+            stems_assets["rhythm_guitar_path"] = "audio/stems/rhythm_guitar.wav"
+            stems_assets["guitar_split_source_path"] = _try_relpath(split_source, out)
+            stems_assets["guitar_split_source_kind"] = split_source_kind
+
+            manifest.setdefault("pipeline", {})["guitar_split"] = {
+                **split_summary,
+                "source_path": _try_relpath(split_source, out),
+                "source_kind": split_source_kind,
+            }
+            _write_json(out / "manifest.json", manifest)
+            emit(
+                ProgressEvent(
+                    type="stage_done",
+                    id="split_guitar_stems",
+                    progress=0.86,
+                    artifact="audio/stems/lead_guitar.wav",
+                )
+            )
+        except Exception as e:
+            msg = f"guitar split failed: {e}"
+            log(msg)
+            tr_opts["warnings"] = [*tr_opts.get("warnings", []), msg]
+            emit(
+                ProgressEvent(
+                    type="stage_done",
+                    id="split_guitar_stems",
+                    progress=0.86,
+                    message="skipped",
+                    artifact=None,
+                )
+            )
 
     # Stage 6: transcribe_drums (recovery scaffold)
     emit(ProgressEvent(type="stage_start", id="transcribe_drums", progress=0.86))
@@ -2460,6 +2811,12 @@ def cmd_import(args: argparse.Namespace) -> int:
         for ir in instrument_results:
             all_warnings.extend(ir.warnings)
         tr_opts["instrument_stems_transcribed"] = [ir.instrument for ir in instrument_results]
+        tr_opts["instrument_melodic_methods_used"] = {
+            ir.instrument: ir.used_method for ir in instrument_results
+        }
+        tr_opts["instrument_melodic_attempted_methods"] = {
+            ir.instrument: ir.attempted_methods for ir in instrument_results
+        }
     tr_opts["warnings"] = list(dict.fromkeys(all_warnings))
 
     manifest["pipeline"]["transcription"] = tr_opts
@@ -2473,7 +2830,9 @@ def cmd_import(args: argparse.Namespace) -> int:
                 "requested_engine": tr_opts.get("melodic_method"),
                 "used_engine": tr_opts.get("melodic_method_used"),
             },
+            "profile": tr_opts.get("transcription_profile"),
         },
+        "profile": tr_opts.get("transcription_profile"),
         "drums": {
             "requested_engine": tr_opts.get("drum_filter_requested"),
             "normalized_engine": tr_opts.get("drum_filter"),
@@ -2489,6 +2848,8 @@ def cmd_import(args: argparse.Namespace) -> int:
             "attempted_engines": tr_opts.get("melodic_attempted_methods", []),
             "warnings": [*melodic_result.warnings],
             "instrument_stems": tr_opts.get("instrument_stems_transcribed", []),
+            "instrument_engines": tr_opts.get("instrument_melodic_methods_used", {}),
+            "instrument_attempted_engines": tr_opts.get("instrument_melodic_attempted_methods", {}),
         },
     }
     _write_json(out / "manifest.json", manifest)
@@ -2512,30 +2873,55 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
         log(f"input directory does not exist: {src_dir}")
         return 2
 
-    src_audio = _find_audio_source_in_dir(src_dir)
+    config = _parse_config_arg(args.config)
+    temp_mix_ctx: tempfile.TemporaryDirectory[str] | None = None
+    src_audio = _find_preferred_mix_audio_in_dir(src_dir)
+    if src_audio is None:
+        try:
+            input_stem_paths = _resolved_input_stem_paths(config)
+            if input_stem_paths:
+                temp_mix_ctx = tempfile.TemporaryDirectory(prefix="auralprimer_input_stems_mix_")
+                temp_mix_path = Path(temp_mix_ctx.name) / "mix.wav"
+                synth = _synthesize_mix_wav_from_input_stems(temp_mix_path, config)
+                if synth is not None:
+                    src_audio = temp_mix_path
+        except Exception as exc:
+            if temp_mix_ctx is not None:
+                temp_mix_ctx.cleanup()
+                temp_mix_ctx = None
+            log(f"failed to synthesize mix from configured input stems: {exc}")
+            return 2
+
+    if src_audio is None:
+        src_audio = _find_audio_source_in_dir(src_dir)
     if src_audio is None:
         log(f"no supported audio files found in directory: {src_dir}")
         return 2
 
-    # Reuse the main import pipeline by forwarding selected source.
-    import_args = argparse.Namespace(
-        input_audio_path=str(src_audio),
-        out=str(out),
-        profile=args.profile,
-        config=args.config,
-        title=args.title,
-        artist=args.artist,
-        duration_sec=args.duration_sec,
-        drum_filter=getattr(args, "drum_filter", DEFAULT_DRUM_FILTER),
-        drum_stem_path=getattr(args, "drum_stem_path", None),
-        melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
-        beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
-        stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),
-        stem_separation_provider_path=getattr(args, "stem_separation_provider_path", None),
-        shifts=getattr(args, "shifts", 1),
-        multi_filter=bool(getattr(args, "multi_filter", False)),
-    )
-    return cmd_import(import_args)
+    try:
+        # Reuse the main import pipeline by forwarding selected source.
+        import_args = argparse.Namespace(
+            input_audio_path=str(src_audio),
+            out=str(out),
+            profile=args.profile,
+            config=args.config,
+            title=args.title,
+            artist=args.artist,
+            duration_sec=args.duration_sec,
+            drum_filter=getattr(args, "drum_filter", DEFAULT_DRUM_FILTER),
+            drum_stem_path=getattr(args, "drum_stem_path", None),
+            melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
+            transcription_profile=getattr(args, "transcription_profile", DEFAULT_TRANSCRIPTION_PROFILE),
+            beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
+            stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),
+            stem_separation_provider_path=getattr(args, "stem_separation_provider_path", None),
+            shifts=getattr(args, "shifts", 1),
+            multi_filter=bool(getattr(args, "multi_filter", False)),
+        )
+        return cmd_import(import_args)
+    finally:
+        if temp_mix_ctx is not None:
+            temp_mix_ctx.cleanup()
 
 
 def cmd_import_dtx(args: argparse.Namespace) -> int:
@@ -2561,6 +2947,7 @@ def cmd_import_dtx(args: argparse.Namespace) -> int:
         drum_filter=getattr(args, "drum_filter", DEFAULT_DRUM_FILTER),
         drum_stem_path=getattr(args, "drum_stem_path", None),
         melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
+        transcription_profile=getattr(args, "transcription_profile", DEFAULT_TRANSCRIPTION_PROFILE),
         beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
         stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),
         stem_separation_provider_path=getattr(args, "stem_separation_provider_path", None),
@@ -2595,6 +2982,37 @@ def build_parser() -> argparse.ArgumentParser:
     s_benchmark.add_argument("--tolerance-ms", type=float, default=60.0, dest="tolerance_ms")
     s_benchmark.add_argument("--json", action="store_true", dest="json_output")
     s_benchmark.set_defaults(func=cmd_benchmark_drums)
+
+    s_quality = sub.add_parser("benchmark-quality")
+    s_quality.add_argument("--manifest")
+    s_quality.add_argument("--scan-root")
+    s_quality.add_argument("--write-manifest")
+    s_quality.add_argument("--manifest-json", action="store_true", dest="manifest_json")
+    s_quality.add_argument("--referenced-only", action="store_true", dest="referenced_only")
+    s_quality.add_argument("--case-filter", action="append", dest="case_filter")
+    s_quality.add_argument("--role", action="append")
+    s_quality.add_argument("--max-cases", type=int, dest="max_cases")
+    s_quality.add_argument("--algorithm", action="append")
+    s_quality.add_argument("--transcription-profile", default=DEFAULT_TRANSCRIPTION_PROFILE)
+    s_quality.add_argument("--tolerance-ms", type=float, default=60.0, dest="tolerance_ms")
+    s_quality.add_argument("--label", default="full-corpus-quality")
+    s_quality.add_argument("--out-root", default="benchmarks/quality/runs")
+    s_quality.set_defaults(func=cmd_benchmark_quality)
+
+    s_refine_piano = sub.add_parser("refine-piano")
+    s_refine_piano.add_argument("--audio", required=True)
+    s_refine_piano.add_argument("--source-midi", required=True)
+    s_refine_piano.add_argument("--reference-midi")
+    s_refine_piano.add_argument("--method", action="append")
+    s_refine_piano.add_argument("--tolerance-ms", type=float, default=60.0, dest="tolerance_ms")
+    s_refine_piano.add_argument("--offset-tolerance-ms", type=float, default=120.0, dest="offset_tolerance_ms")
+    s_refine_piano.add_argument("--velocity-tolerance", type=int, default=20, dest="velocity_tolerance")
+    s_refine_piano.add_argument("--source-offset-sec", type=float, default=0.0, dest="source_offset_sec")
+    s_refine_piano.add_argument("--reference-offset-sec", type=float, default=0.0, dest="reference_offset_sec")
+    s_refine_piano.add_argument("--bpm", type=float, default=120.0)
+    s_refine_piano.add_argument("--label", default="piano-refinement")
+    s_refine_piano.add_argument("--out-root", default="benchmarks/piano/refinement_runs")
+    s_refine_piano.set_defaults(func=cmd_refine_piano)
 
     s_import = sub.add_parser("import")
     s_import.add_argument("input_audio_path")

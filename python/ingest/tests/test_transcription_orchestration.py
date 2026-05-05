@@ -77,8 +77,17 @@ def test_validate_melodic_method_accepts_known_values() -> None:
     from aural_ingest.transcription import validate_melodic_method
 
     assert validate_melodic_method("auto") == "auto"
+    assert validate_melodic_method("piano_auto") == "piano_auto"
+    assert validate_melodic_method("piano_polyphonic_clean") == "piano_polyphonic_clean"
+    assert validate_melodic_method("piano_transkun_clean") == "piano_transkun_clean"
+    assert validate_melodic_method("piano_pti_clean") == "piano_pti_clean"
+    assert validate_melodic_method("piano_hft_clean") == "piano_hft_clean"
     assert validate_melodic_method("pyin") == "pyin"
     assert validate_melodic_method("basic_pitch") == "basic_pitch"
+    assert validate_melodic_method("melodic_adaptive") == "melodic_adaptive"
+    assert validate_melodic_method("melodic_yin_bass80") == "melodic_yin_bass80"
+    assert validate_melodic_method("melodic_hpss_combined") == "melodic_hpss_combined"
+    assert validate_melodic_method("melodic_template_multipass") == "melodic_template_multipass"
     assert validate_melodic_method("x") is None
 
 
@@ -128,6 +137,26 @@ def test_basic_pitch_model_resolution_prefers_onnx_then_tflite_then_savedmodel(t
 
     (model_dir / "nmp.onnx").write_bytes(b"x")
     assert resolve_basic_pitch_model_path([root]) == model_dir / "nmp.onnx"
+
+
+def test_default_basic_pitch_roots_include_dependency_package_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aural_ingest import transcription
+
+    package_dir = tmp_path / "site-packages" / "basic_pitch"
+    package_dir.mkdir(parents=True)
+    spec = importlib.machinery.ModuleSpec("basic_pitch", loader=None, is_package=True)
+    spec.submodule_search_locations = [str(package_dir)]
+
+    monkeypatch.setattr(
+        transcription.importlib.util,
+        "find_spec",
+        lambda name: spec if name == "basic_pitch" else None,
+    )
+
+    roots = transcription._default_basic_pitch_model_roots()
+    assert package_dir.parent in roots
 
 
 def test_transcribe_melodic_auto_falls_back_to_pyin_when_basic_pitch_unavailable(tmp_path: Path) -> None:
@@ -204,17 +233,154 @@ def test_melodic_fallback_chain_for_pyin_and_unknown() -> None:
 
     assert melodic_fallback_chain("pyin") == [
         "pyin",
+        "melodic_adaptive",
         "melodic_octave_fix",
         "melodic_yin_octave_hps_fix",
+        "melodic_hpss_combined",
         "melodic_combined",
         "basic_pitch",
     ]
-    assert melodic_fallback_chain("unknown_method") == [
+    assert melodic_fallback_chain("piano_auto", instrument="keys") == [
+        "piano_auto",
+        "piano_polyphonic_clean",
+        "melodic_hpss_combined",
         "melodic_octave_fix",
         "melodic_combined",
         "basic_pitch",
         "pyin",
     ]
+    assert melodic_fallback_chain("unknown_method") == [
+        "melodic_adaptive",
+        "melodic_octave_fix",
+        "melodic_combined",
+        "basic_pitch",
+        "pyin",
+    ]
+
+
+def test_melodic_fallback_chain_auto_prefers_bass_and_keys_specialists() -> None:
+    from aural_ingest.transcription import melodic_fallback_chain
+
+    assert melodic_fallback_chain("auto", instrument="bass")[:4] == [
+        "melodic_yin_octave_hps_fix",
+        "melodic_adaptive",
+        "melodic_yin_bass80",
+        "melodic_octave_fix",
+    ]
+    assert melodic_fallback_chain("auto", instrument="keys")[:4] == [
+        "piano_auto",
+        "piano_polyphonic_clean",
+        "melodic_octave_fix",
+        "melodic_hpss_combined",
+    ]
+
+
+def test_melodic_fallback_chain_for_piano_research_methods_prefers_piano_auto() -> None:
+    from aural_ingest.transcription import melodic_fallback_chain
+
+    assert melodic_fallback_chain("piano_polyphonic_clean", instrument="keys")[:4] == [
+        "piano_polyphonic_clean",
+        "piano_auto",
+        "melodic_hpss_combined",
+        "melodic_octave_fix",
+    ]
+    assert melodic_fallback_chain("piano_transkun_clean", instrument="keys")[:4] == [
+        "piano_transkun_clean",
+        "piano_auto",
+        "melodic_hpss_combined",
+        "melodic_octave_fix",
+    ]
+    assert melodic_fallback_chain("piano_pti", instrument="keys")[:4] == [
+        "piano_pti",
+        "piano_auto",
+        "melodic_hpss_combined",
+        "melodic_octave_fix",
+    ]
+
+
+def test_transcribe_melodic_piano_research_method_falls_back_to_piano_auto(tmp_path: Path) -> None:
+    from aural_ingest.transcription import MelodicNote, transcribe_melodic
+
+    stem = tmp_path / "stem.wav"
+    stem.write_bytes(b"x")
+
+    calls: list[str] = []
+
+    def piano_fail(_p: Path) -> list[MelodicNote]:
+        calls.append("piano_transkun_clean")
+        raise RuntimeError("missing piano model")
+
+    def piano_auto_ok(_p: Path) -> list[MelodicNote]:
+        calls.append("piano_auto")
+        return [MelodicNote(t_on=0.0, t_off=0.25, pitch=60, velocity=96, instrument="keys")]
+
+    result = transcribe_melodic(
+        stem,
+        requested_method="piano_transkun_clean",
+        instrument="keys",
+        algorithm_registry={
+            "piano_transkun_clean": piano_fail,
+            "piano_auto": piano_auto_ok,
+        },
+    )
+
+    assert calls == ["piano_transkun_clean", "piano_auto"]
+    assert result.used_method == "piano_auto"
+    assert len(result.notes) == 1
+
+
+def test_transcribe_melodic_auto_keys_prefers_polyphonic_piano_path(tmp_path: Path) -> None:
+    from aural_ingest.transcription import MelodicNote, transcribe_melodic
+
+    stem = tmp_path / "keys.wav"
+    stem.write_bytes(b"x")
+    calls: list[str] = []
+
+    def piano_auto_ok(_p: Path) -> list[MelodicNote]:
+        calls.append("piano_auto")
+        return [
+            MelodicNote(t_on=0.0, t_off=0.5, pitch=48, velocity=84, instrument="keys"),
+            MelodicNote(t_on=0.0, t_off=0.5, pitch=60, velocity=88, instrument="keys"),
+            MelodicNote(t_on=0.0, t_off=0.5, pitch=64, velocity=88, instrument="keys"),
+        ]
+
+    def monophonic_fail(_p: Path) -> list[MelodicNote]:
+        calls.append("melodic_adaptive")
+        return [MelodicNote(t_on=0.0, t_off=0.5, pitch=60, velocity=80, instrument="keys")]
+
+    result = transcribe_melodic(
+        stem,
+        requested_method="auto",
+        instrument="keys",
+        algorithm_registry={
+            "piano_auto": piano_auto_ok,
+            "melodic_adaptive": monophonic_fail,
+        },
+    )
+
+    assert calls == ["piano_auto"]
+    assert result.used_method == "piano_auto"
+    assert len(result.notes) == 3
+
+
+def test_role_playability_cleanup_caps_rhythm_guitar_chatter() -> None:
+    from aural_ingest.transcription import MelodicNote, apply_role_playability_cleanup
+
+    notes = [
+        MelodicNote(t_on=0.00, t_off=0.30, pitch=52, velocity=80, instrument="rhythm_guitar"),
+        MelodicNote(t_on=0.01, t_off=0.28, pitch=55, velocity=82, instrument="rhythm_guitar"),
+        MelodicNote(t_on=0.02, t_off=0.26, pitch=59, velocity=84, instrument="rhythm_guitar"),
+        MelodicNote(t_on=0.03, t_off=0.25, pitch=64, velocity=70, instrument="rhythm_guitar"),
+        MelodicNote(t_on=0.04, t_off=0.20, pitch=67, velocity=70, instrument="rhythm_guitar"),
+        MelodicNote(t_on=0.07, t_off=0.30, pitch=60, velocity=92, instrument="rhythm_guitar"),
+        MelodicNote(t_on=0.16, t_off=0.35, pitch=62, velocity=90, instrument="rhythm_guitar"),
+    ]
+
+    cleaned = apply_role_playability_cleanup(notes, "rhythm_guitar")
+
+    assert len([n for n in cleaned if n.t_on < 0.04]) == 3
+    assert all(n.t_on != 0.07 for n in cleaned)
+    assert any(n.t_on == 0.16 for n in cleaned)
 
 
 def test_transcribe_drums_reports_unavailable_algorithms_and_returns_empty(tmp_path: Path) -> None:
@@ -255,6 +421,7 @@ def test_transcribe_melodic_unknown_requested_method_and_missing_registry(tmp_pa
     assert result.used_method is None
     assert result.notes == []
     assert result.attempted_methods == [
+        "melodic_adaptive",
         "melodic_octave_fix",
         "melodic_combined",
         "basic_pitch",

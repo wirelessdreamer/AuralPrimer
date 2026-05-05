@@ -1,0 +1,1027 @@
+{
+  "payload": {
+    "suite_version": "0.4.0",
+    "generated_at_utc": "2026-05-03T19:48:06Z",
+    "profile": {
+      "description": "Prefer in-game recognizability, stable density, and fail-safe local defaults.",
+      "drum_engines": [
+        "beat_conditioned_multiband_decoder",
+        "spectral_flux_multiband",
+        "adaptive_beat_grid",
+        "combined_filter",
+        "dsp_bandpass_improved"
+      ],
+      "melodic_methods_by_instrument": {
+        "bass": [
+          "melodic_yin_octave_hps_fix",
+          "melodic_adaptive",
+          "melodic_yin_bass80",
+          "melodic_octave_fix"
+        ],
+        "keys": [
+          "piano_auto",
+          "piano_polyphonic_clean",
+          "melodic_octave_fix",
+          "melodic_hpss_combined"
+        ],
+        "lead_guitar": [
+          "melodic_adaptive",
+          "melodic_octave_fix",
+          "melodic_combined",
+          "basic_pitch"
+        ],
+        "rhythm_guitar": [
+          "melodic_hpss_combined",
+          "melodic_adaptive",
+          "melodic_octave_fix",
+          "melodic_combined"
+        ]
+      },
+      "profile": "gameplay_default",
+      "known_profiles": [
+        "gameplay_default",
+        "fidelity_midi",
+        "research_ab"
+      ]
+    },
+    "tolerance_ms": 60.0,
+    "quality_metric_backends": {
+      "mir_eval": {
+        "ok": true,
+        "display_name": "MIR Eval",
+        "module": "mir_eval",
+        "module_candidates": [
+          "mir_eval"
+        ],
+        "purpose": "note-event transcription metrics",
+        "protocols": [
+          "mir_eval.transcription"
+        ],
+        "failure_mode": "reference-backed MIR metrics omitted; native benchmark metrics still run"
+      },
+      "museval": {
+        "ok": false,
+        "display_name": "Museval",
+        "module": null,
+        "module_candidates": [
+          "museval"
+        ],
+        "purpose": "source-separation SDR protocol",
+        "protocols": [
+          "BSSEval v4 / museval.evaluate"
+        ],
+        "failure_mode": "separation SDR metrics omitted; transcription benchmarks still run"
+      }
+    },
+    "dataset_sources": {
+      "musdb18": {
+        "ok": false,
+        "display_name": "MUSDB18",
+        "purpose": "controlled source-separation evaluation",
+        "roles": [
+          "drums",
+          "bass",
+          "other",
+          "vocals",
+          "mixture"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_MUSDB18_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; do not ship dataset content or derived in-game content"
+      },
+      "musdb18_hq": {
+        "ok": false,
+        "display_name": "MUSDB18-HQ",
+        "purpose": "controlled high-quality source-separation evaluation",
+        "roles": [
+          "drums",
+          "bass",
+          "other",
+          "vocals",
+          "mixture"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_MUSDB18_HQ_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; do not ship dataset content or derived in-game content"
+      },
+      "enst_drums": {
+        "ok": false,
+        "display_name": "ENST-Drums",
+        "purpose": "drum transcription regression fixtures",
+        "roles": [
+          "drums"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_ENST_DRUMS_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; keep product fixtures synthetic/owned/cleared"
+      },
+      "idmt_smt_drums": {
+        "ok": false,
+        "display_name": "IDMT-SMT-Drums",
+        "purpose": "drum transcription regression fixtures",
+        "roles": [
+          "drums"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_IDMT_SMT_DRUMS_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; keep product fixtures synthetic/owned/cleared"
+      }
+    },
+    "model_backends": {
+      "mt3": {
+        "ok": true,
+        "engines": {
+          "mr_mt3_drums": {
+            "ok": true,
+            "backend": "mt3",
+            "engine": "mr_mt3_drums",
+            "model_id": "mr_mt3",
+            "modelpack_id": "mr_mt3",
+            "modelpack_version": "hf-main-20260325",
+            "checkpoint_path": "D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325\\files\\checkpoints\\mr_mt3\\mt3.pth",
+            "modelpack_root": "D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325",
+            "size_mb": 176.0,
+            "speed_x_realtime": 57.0,
+            "description": "MR-MT3 drum transcription baseline"
+          },
+          "yourmt3_drums": {
+            "ok": true,
+            "backend": "mt3",
+            "engine": "yourmt3_drums",
+            "model_id": "yourmt3",
+            "modelpack_id": "yourmt3",
+            "modelpack_version": "hf-main-20260325",
+            "checkpoint_path": "D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325\\files\\checkpoints\\yourmt3\\mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops\\last.ckpt",
+            "modelpack_root": "D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325",
+            "size_mb": 536.0,
+            "speed_x_realtime": 15.0,
+            "description": "YourMT3 drum transcription research candidate"
+          }
+        },
+        "methods": [
+          "mr_mt3_drums",
+          "yourmt3_drums"
+        ],
+        "roles": [
+          "drums"
+        ],
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear FileNotFoundError/RuntimeError, no portable requirement"
+      },
+      "basic_pitch": {
+        "ok": true,
+        "display_name": "Basic Pitch",
+        "module": "basic_pitch",
+        "module_candidates": [
+          "basic_pitch"
+        ],
+        "module_available": true,
+        "roles": [
+          "bass",
+          "lead_guitar",
+          "rhythm_guitar",
+          "keys"
+        ],
+        "methods": [
+          "basic_pitch"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "event_decode",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "portable-safe fallback through melodic fallback chain"
+      },
+      "piano_transkun": {
+        "ok": false,
+        "display_name": "Transkun",
+        "module": null,
+        "module_candidates": [
+          "transkun"
+        ],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_transkun",
+          "piano_transkun_clean"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError, then melodic fallback when used through import"
+      },
+      "piano_pti": {
+        "ok": false,
+        "display_name": "piano_transcription_inference",
+        "module": null,
+        "module_candidates": [
+          "piano_transcription_inference"
+        ],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_pti",
+          "piano_pti_clean"
+        ],
+        "env_files": {
+          "AURAL_PIANO_PTI_CHECKPOINT": {
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        },
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError unless checkpoint or explicit download opt-in is configured"
+      },
+      "piano_hft": {
+        "ok": false,
+        "display_name": "hFT-Transformer",
+        "module": null,
+        "module_candidates": [],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_hft",
+          "piano_hft_clean"
+        ],
+        "env_files": {
+          "AURAL_PIANO_HFT_CHECKPOINT": {
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        },
+        "env_values": {
+          "AURAL_PIANO_HFT_COMMAND": {
+            "configured": false,
+            "value": null
+          }
+        },
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError unless checkpoint and command adapter are configured"
+      },
+      "torchcrepe": {
+        "ok": true,
+        "display_name": "torchcrepe",
+        "module": "torchcrepe",
+        "module_candidates": [
+          "torchcrepe",
+          "torch"
+        ],
+        "module_available": true,
+        "roles": [
+          "bass",
+          "lead_guitar",
+          "rhythm_guitar"
+        ],
+        "methods": [
+          "torchcrepe"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "frame_f0_decode",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError, then melodic fallback when used through import"
+      },
+      "beatnet": {
+        "ok": false,
+        "display_name": "BeatNet",
+        "module": null,
+        "module_candidates": [
+          "BeatNet",
+          "beatnet"
+        ],
+        "module_available": false,
+        "roles": [
+          "tempo",
+          "drums"
+        ],
+        "methods": [],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "beat_downbeat_priors",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "availability-only until wired as a beat/downbeat prior"
+      },
+      "omnizart": {
+        "ok": false,
+        "display_name": "Omnizart",
+        "module": null,
+        "module_candidates": [
+          "omnizart"
+        ],
+        "module_available": false,
+        "roles": [
+          "research"
+        ],
+        "methods": [],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "research_comparator",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "availability-only research comparator; never required for portable import"
+      }
+    },
+    "cases": [
+      {
+        "case_id": "a258f4cfcd73bbe4d9a0a0236af32332-bass",
+        "name": "tmp_demucs_smoke - bass",
+        "role": "bass",
+        "family": "melodic",
+        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\audio\\stems\\bass.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\features\\notes.mid",
+        "reference_count": 47,
+        "reference_meta": {},
+        "algorithms": [
+          "melodic_yin_octave_hps_fix"
+        ],
+        "results": [
+          {
+            "algorithm": "melodic_yin_octave_hps_fix",
+            "note_count": 0,
+            "elapsed_sec": 2.1,
+            "overall": {
+              "tp": 0,
+              "fp": 0,
+              "fn": 47,
+              "f1": 0.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "pitch_correct": 0,
+              "pitch_accuracy": 0.0,
+              "octave_errors": 0,
+              "octave_error_rate": 0.0,
+              "timing_mae_ms": null
+            },
+            "predicted_notes": [],
+            "gameplay": {
+              "role": "bass",
+              "note_count": 0,
+              "duration_sec": 0.0,
+              "notes_per_minute": 0.0,
+              "playable_density_flag": false,
+              "duplicate_count": 0,
+              "duplicate_rate": 0.0,
+              "chatter_count": 0,
+              "polyphony_event_rate": 0.0,
+              "max_polyphony": 0,
+              "pitch_min": null,
+              "pitch_max": null,
+              "mean_duration_sec": 0.0,
+              "piano_left_hand_notes": null,
+              "piano_right_hand_notes": null
+            },
+            "sync": {
+              "status": "unknown",
+              "start_offset_sec": null,
+              "quarantine": false,
+              "reason": "missing predicted or reference start"
+            },
+            "classifier": {
+              "kind": "melodic",
+              "primary_dimension": "pitch",
+              "dimensions": [
+                {
+                  "name": "pitch",
+                  "class_metrics": [
+                    {
+                      "label": "C#3",
+                      "reference_count": 17,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 17,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B3",
+                      "reference_count": 5,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 5,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C2",
+                      "reference_count": 5,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 5,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C#2",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D#3",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E3",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B4",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D4",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E4",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#4",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G3",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C6",
+                      "reference_count": 1,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 1,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 0,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 47,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": 0,
+                    "octave_confusions": 0
+                  }
+                },
+                {
+                  "name": "pitch_class",
+                  "class_metrics": [
+                    {
+                      "label": "C#",
+                      "reference_count": 20,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 20,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B",
+                      "reference_count": 7,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 7,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C",
+                      "reference_count": 6,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 6,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E",
+                      "reference_count": 5,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 5,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D#",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 0,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 47,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "octave",
+                  "class_metrics": [
+                    {
+                      "label": "octave 3",
+                      "reference_count": 30,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 30,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 2",
+                      "reference_count": 8,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 8,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 4",
+                      "reference_count": 8,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 8,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 6",
+                      "reference_count": 1,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 1,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 0,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 47,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                }
+              ],
+              "timeline": [
+                {
+                  "start": 0.0,
+                  "end": 0.084766,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 5
+                },
+                {
+                  "start": 0.084766,
+                  "end": 0.169531,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.169531,
+                  "end": 0.254297,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.254297,
+                  "end": 0.339062,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 0.339062,
+                  "end": 0.423828,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.423828,
+                  "end": 0.508594,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 0.508594,
+                  "end": 0.593359,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2
+                },
+                {
+                  "start": 0.593359,
+                  "end": 0.678125,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.678125,
+                  "end": 0.762891,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.762891,
+                  "end": 0.847656,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 0.847656,
+                  "end": 0.932422,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.932422,
+                  "end": 1.017187,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 1.017187,
+                  "end": 1.101953,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.101953,
+                  "end": 1.186719,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 1.186719,
+                  "end": 1.271484,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 1.271484,
+                  "end": 1.35625,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.35625,
+                  "end": 1.441016,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.441016,
+                  "end": 1.525781,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4
+                },
+                {
+                  "start": 1.525781,
+                  "end": 1.610547,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.610547,
+                  "end": 1.695312,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.695312,
+                  "end": 1.780078,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 1.780078,
+                  "end": 1.864844,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.864844,
+                  "end": 1.949609,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.949609,
+                  "end": 2.034375,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4
+                }
+              ],
+              "coverage": {
+                "reference_events": 47,
+                "predicted_events": 0
+              }
+            },
+            "mir_eval": {
+              "available": true,
+              "backend": "mir_eval.transcription",
+              "status": "ok",
+              "reference_count": 47,
+              "predicted_count": 0,
+              "onset": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "average_overlap_ratio": 0.0
+              },
+              "onset_offset": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "average_overlap_ratio": 0.0
+              },
+              "params": {
+                "onset_tolerance_sec": 0.06,
+                "offset_ratio": 0.2,
+                "offset_min_tolerance_sec": 0.05
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "summary": {
+    "algorithm_summaries": [
+      {
+        "algorithm": "melodic_yin_octave_hps_fix",
+        "mean_f1": 0.0,
+        "mir_eval_mean_onset_f1": 0.0,
+        "mir_eval_mean_onset_offset_f1": 0.0,
+        "case_count": 1
+      }
+    ],
+    "promotion_candidates": [
+      {
+        "role": "bass",
+        "algorithm": "melodic_yin_octave_hps_fix",
+        "mean_f1": 0.0,
+        "case_count": 1,
+        "flagged_case_count": 0,
+        "benchmark_winner": true,
+        "promotion_status": "benchmark_winner_review_required",
+        "can_promote_without_review": false,
+        "review_required": true
+      }
+    ],
+    "worst_failures": [],
+    "rows": [
+      {
+        "case_id": "a258f4cfcd73bbe4d9a0a0236af32332-bass",
+        "role": "bass",
+        "algorithm": "melodic_yin_octave_hps_fix",
+        "f1": 0.0,
+        "mir_eval_onset_f1": 0.0,
+        "mir_eval_onset_offset_f1": 0.0,
+        "note_count": 0,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": false,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      }
+    ]
+  }
+}

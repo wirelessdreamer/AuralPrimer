@@ -64,6 +64,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - [x] Added deterministic algorithm modules under `python/ingest/src/aural_ingest/algorithms/*` for all planned IDs
   - [x] Wired `transcribe_drums` stage to emit `features/events.json` from selected/fallback algorithm
   - [x] Replaced deterministic pattern stubs with class-based waveform-driven DSP rebuild (`TranscriptionAlgorithm` contract, shared pre/post-processing, weighted fusion in `combined_filter`)
+  - [~] Real-world sparse-source fidelity is still not recovered: the default `combined_filter` path is currently over-liberal on at least one reported real song (`Psalm 12`), with likely false-positive pressure coming from three-detector fusion, aggressive expanded-kit remaps, permissive refractory settings, and the dense synthetic fallback path used when candidate recovery fails
   - [ ] Reach full pre-loss quality parity and optional ML-backed drum inference path
 - [~] Restore melodic transcription paths (Basic Pitch + pYIN) and frozen-runtime model-path fallback
   - [x] Added melodic orchestration for `auto`/`basic_pitch`/`pyin` with fallback + warning propagation
@@ -74,6 +75,45 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
 - [x] Revalidate packaging discipline so portable builds always include the newest sidecar (timestamp/hash check)
 - [x] Portable build now stages `demucs_6` modelpack (`keys/drums/guitar/bass/vocals`) with manifest validation
 - [x] Resolve note conflict for `import-dir` events export ordering (`sections` before `events.json`) and lock with tests
+
+### Transcription quality program (2026-05-02)
+- [~] Treat transcription improvement as a repo-wide quality program across drums, bass, guitar, keys/piano, and import sync instead of one-off method tweaks.
+  - [x] Added transcription profiles: `gameplay_default`, `fidelity_midi`, `research_ab`.
+  - [x] Added unified quality benchmark module/CLI for full-corpus runs with profile metadata, optional backend status, gameplay metrics, sync quarantine, reports, and heatmaps.
+  - [x] Added gameplay metrics for density, duplicates/chatter, polyphony, piano hand distribution, drum lane coverage, drum overlaps, and start-offset quarantine.
+  - [x] Recorded transcription profile in import metadata and stable song-id fingerprinting.
+  - [x] Added role playability cleanup for bass, lead guitar, and rhythm guitar.
+  - [x] Added fail-safe optional research wiring for MT3/YourMT3, Basic Pitch, Transkun, PTI, hFT, torchcrepe, BeatNet, and Omnizart availability reporting.
+  - [x] Added `torchcrepe` as explicit/research monophonic method only; not part of legacy/default fallback.
+  - [x] Added quality epic tracker: `benchmarks/quality/TRANSCRIPTION_QUALITY_EPIC.md`.
+  - [~] Add standalone Piano MIDI Refinement Workbench for source MIDI + audio A/B review.
+    - [x] Captured requirements in `benchmarks/piano/PIANO_REFINEMENT_WORKBENCH.md`.
+    - [x] Implement `refine-piano` CLI, static dashboard, candidate MIDI artifacts, and reference/no-reference scoring.
+    - [ ] Validate on real Suno piano MIDI plus matching audio/reference cases.
+  - [x] Generate benchmark manifests from scanned SongPacks/split-stem folders so full-corpus A/B runs are repeatable.
+  - [x] Add bounded guard-run filters (`--role`, `--case-filter`, `--max-cases`) for generated quality manifests.
+  - [x] Add self-contained classifier performance explorer for full report coverage: role/method/risk filters, per-class metrics, confusions, pitch summaries, and TP/FP/FN timelines.
+    - [~] Run the generated full-corpus quality manifest on local guard cases and save report artifacts.
+      - [x] First bounded guard smoke: Psalm 130 keys / `piano_auto`, role-filtered reference MIDI, saved at `benchmarks/quality/runs/20260502_100131_psalm-130-keys-guard-role-filtered`.
+      - [ ] Expand guard run to drums, bass, rhythm guitar, lead guitar, and at least one additional keys/piano case before treating it as a promotion gate.
+  - [x] Add promotion-gate evaluation that labels benchmark winners without automatically changing `gameplay_default`.
+  - [ ] Implement active BeatNet beat/downbeat-prior adapter only if benchmark setup shows it is worth testing.
+  - [ ] Implement active Omnizart research comparator only if benchmark setup shows it is worth testing.
+  - [ ] Add split-folder and single-file analysis import smoke gates to the final promotion checklist.
+  - [ ] Build portable only after targeted tests, full benchmark, import smoke tests, model-absence tests, sidecar runtime check, and packaging checks pass.
+
+### Audit refresh (2026-04-20 repo scan)
+- [x] Current app split is real in the tree: `apps/game` is the primary playback/gameplay runtime, while `apps/desktop` is the authoring/import surface.
+- [~] `apps/desktop` still carries a hidden `legacyPlaybackScaffold` for shared transport/plugin code paths, but it is not the active end-user playback shell.
+- [~] Reference visualizers are mixed-fidelity right now:
+  - [x] `viz-lyrics` consumes real `features/lyrics.json` timing data when present.
+  - [x] `viz-drum-highway` consumes host-provided parsed MIDI note events.
+  - [ ] `viz-beats` still renders a placeholder 1-beat-per-second grid instead of SongPack beat/section data.
+  - [ ] `viz-nashville` still renders a placeholder harmony lane because the host does not yet provide chord/key song data to plugins.
+  - [ ] `viz-fretboard` still uses a placeholder time-driven cursor instead of host note/chord queries.
+- [~] Release automation is still partial:
+  - [x] `.github/workflows/lint-test.yml` runs TS, Python, Rust, SongPack fixture validation, and Rust coverage.
+  - [ ] `.github/workflows/build-release.yml` still leaves Python sidecar build/upload as placeholders and still invokes the legacy `@auralprimer/desktop` build target instead of the current game/studio package split.
 
 ### Now (top priority)
 - [x] Create the initial monorepo layout skeleton (apps/, packages/, python/, visualizers/, assets/, docs/)
@@ -119,23 +159,24 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
     - [~] Investigate ASIO feasibility/licensing; likely start with WASAPI exclusive as default
       - [x] Added optional ASIO build feature (`--features asio`) + runtime host selection UI (host + device)
       - [ ] Validate SDK/licensing/distribution policy and default-host strategy for production installer builds
-- [~] Implement ingest sidecar MVP (decode + beats/tempo + sections + chart gen)
+- [~] Implement ingest sidecar MVP (decode + beats/tempo + sections + SongPack feature generation)
   - [x] `python/ingest` project scaffold (`pyproject.toml`, `pytest`, `ruff`)
-  - [x] Sidecar CLI surface (current): `aural_ingest stages|info|validate|import|import-dir|import-dtx`
+  - [x] Sidecar CLI surface (current): `aural_ingest stages|info|validate|import|import-dir|import-dtx|runtime-check|benchmark-drums`
   - [x] JSONL progress event emitter (`aural_ingest.progress`)
   - [x] Real decode + analysis stages (wav inputs supported without ffmpeg; non-wav requires ffmpeg)
-  - [x] Determinism tests (synthetic click-track wav fixture) for decode+tempo+beats+sections+chart
+  - [x] Determinism tests (synthetic click-track wav fixture) for decode+tempo+beats+sections+SongPack feature outputs (`notes.mid` / `events.json`)
   - [x] Host import UI wiring to run sidecar + stream progress
     - [x] Configure panel ingest controls now call desktop `ingest_import` command end-to-end
     - [x] Stream per-stage JSONL progress events into Configure UI during import
+  - [x] Runtime-check surface for dependency/modelpack health is wired through the sidecar and desktop UI
 - [ ] (Recovery) Restore lost transcription stack + regression protections from 2026-03-03 notes (see Milestone 4A)
 - [x] Strengthen automated test coverage gates (TS + Python) and expand Rust core unit coverage
   - [x] TS coverage reporting + thresholds (`vitest --coverage`)
-  - [x] Python coverage reporting + fail-under gate (`pytest-cov`, fail-under 85)
+  - [x] Python coverage reporting + fail-under gate (`pytest --cov`, fail-under 80 via `python/ingest/pyproject.toml`)
   - [x] Add high-value unit tests for untested Rust modules (`wav_mix`, `audio_decode`, `models`, `midi_clock_service`)
-  - [ ] Validate new Rust `cargo llvm-cov` CI step in GitHub runner environment
+  - [x] Rust `cargo llvm-cov` CI step wired into `.github/workflows/lint-test.yml`
 
-- [ ] (New) GHWT-DE importer (MVP: preview audio)
+- [~] (New) GHWT-DE importer (audio import/stem mixdown working; chart parsing still pending)
   - [x] Add Configure UI section to scan/import GHWT-DE DLC songs
   - [x] Add Tauri commands: configure GHWT paths + scan DLC + import preview audio
   - [x] Runtime: allow SongPacks with `audio/mix.wav` to load/play
@@ -147,7 +188,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
     - [x] Import full stems (DLC*_1..3) and mix down to `audio/mix.wav` (fallback to preview)
     - [ ] Parse GH charts from `*.pak.xen` into canonical SongPack charts/features
 
-- [ ] (New) Create SongPack from WAV stems + MIDI (song creator / importer)
+- [~] (New) Create SongPack from WAV stems + MIDI (song creator / importer)
   - [x] Spec: confirm SongPack output contract (manifest + audio + features)
   - [x] Desktop UI: Configure section with file pickers (stems WAVs + MIDI) + metadata (title/artist)
   - [x] Backend: create SongPack folder in songs directory
@@ -159,19 +200,37 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - [x] Tests:
     - [x] Rust: fixture WAV+MIDI -> SongPack created; validates presence of artifacts
     - [ ] TS: library scan sees created SongPack and can load audio/mix.wav
+- [~] (New) Raw song folder importer (Suno/export folder -> canonical SongPack)
+  - [x] Inspect raw folder contents (stems, MIDIs, lyrics) and surface detected-role + timing warnings
+  - [x] Import folder into SongPack with `audio/mix.wav`, copied source MIDIs, normalized combined `features/notes.mid`, and optional lyrics carry-through
+  - [x] Suno/raw-song import currently treats normalized source MIDI as the chart/timing authority when a playable mapping is found (`suno_source_midi_normalized`, `timing_authority = normalized_source`)
+  - [x] Preserve Suno source MIDI drum note identities during raw-song import; safe start-time normalization still applies, but the importer no longer auto-canonicalizes drum pitches against the audio stem (this had been producing non-matching drum output relative to source MIDI)
+  - [x] When a role-specific source MIDI/audio start delta is wildly unstable (>2s), raw-song import now falls back to the cross-track median normalization offset instead of dropping that role from the gameplay chart; this targets Psalm 10-style drum/audio sync failures while keeping source MIDI authoritative
+  - [x] Raw-song import now derives non-drum gameplay roles from per-track MIDI names/channels when source filenames are generic, so bass/guitar/keys charts survive import and render instead of being silently dropped
+  - [x] UI wiring exists in both `apps/game` and `apps/desktop`
+  - [ ] Studio import UX should explicitly show which import engine/path was used and what the authoritative chart source is (for example: `raw_song_folder / Suno source MIDI` vs `sidecar ingest / combined_filter`)
+  - [ ] Add richer authoring overrides / broader source heuristics and more fixture coverage
 - [x] Implement model manager (download/import + versioned storage under `assets/models/`)
   - [x] Models UI section (preferred + local import)
   - [x] Tauri commands: list/install model packs
   - [x] Zip format: modelpack.json + files/**, extracted into app data dir
 - [x] (New) Define songs-folder location policy + persistence (default per OS + user override) and add tests
 - [ ] (New) Add optional file-watcher for live library updates (post-startup scan)
+- [~] (New) Drum benchmark / reference shootout tooling
+  - [x] Fixture corpus + manifest under `assets/test_fixtures/drum_benchmark_midis`
+  - [x] Python CLI/scripts for `benchmark-drums` and manual reference shootouts
+  - [ ] CI thresholds / published dashboards are not wired yet
 
 - [~] (New) Realtime MIDI I/O + clock sync (bidirectional)
   - [x] Decide initial API boundary: Rust MIDI service + Tauri commands/events (no WebMIDI dependency)
   - [x] Implement MIDI device enumeration + port selection UI
+    - [x] Windows builds use `midir` WinRT enumeration so modern MIDI endpoints are visible; macOS/Linux remain CoreMIDI/ALSA.
+    - [x] Input port selection now persists and re-resolves by stable backend port id before falling back to name.
   - [~] Implement MIDI input routing (note on/off + key CCs) into gameplay input bus
     - [x] Native callback now emits structured `midi_input_message` events (note on/off, CC, pitch bend, program/pressure, realtime, SPP, optional SysEx)
     - [x] Host forwards MIDI input events onto a window-level app event (`auralprimer:midi-input`) for gameplay integration points
+    - [x] Frontend input bus now maintains active keyboard notes, sustain-held state, and monitor output for hardware testing
+    - [x] Piano-roll keyboard now highlights live MIDI input notes while a keys chart is loaded
     - [ ] Map `auralprimer:midi-input` into concrete gameplay scoring/hit-window evaluators
   - [x] Implement MIDI clock input -> transport sync (Start/Stop/Continue + Clock + SPP best-effort)
   - [x] Implement MIDI clock output from transport (supports tempo slowdown + loop)
@@ -179,6 +238,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - [x] SysEx support (opt-in per port) + safety controls
   - [~] Contract tests: determinism + jitter tolerance + loop/seek behavior under MIDI sync
     - [x] Added Rust unit coverage for inbound message parsing + outbound message validation/SysEx policy
+    - [x] Added frontend unit coverage for active-note/sustain/all-notes-off tracking
     - [ ] Add deterministic fake-device integration tests for realtime jitter/loop behavior under sustained clock traffic
 
 - [x] Build instructions: `BUILDING.md`
@@ -210,7 +270,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - TS: `vitest` runs in CI (`npm test`)
   - Rust: `cargo test` is configured to run in CI (`apps/desktop/src-tauri/tests/smoke.rs`)
   - Python: `pytest` runs in CI (`python/ingest/tests/test_smoke.py`)
-- [ ] Contract-test scaffolding:
+- [x] Contract-test scaffolding:
   - SongPack schema validation tests can run with at least one fixture.
 
 **Exit criteria**
@@ -250,21 +310,21 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - `features/tempo_map.json`
   - `features/sections.json`
   - `charts/*.json` (at least one chart schema)
-- [ ] `packages/songpack` library:
+- [x] `packages/songpack` library:
   - [x] load directory SongPack
   - [x] load zip SongPack
   - [x] validate SongPack against JSON schemas
   - [x] canonical JSON serialization (stable key ordering)
-  - [ ] version/migration entry points (even if only identity migration for v1)
+  - [x] version/migration entry points (identity migration for v1 is implemented)
 
 **TDD / testing deliverables**
 - [x] Schema tests (fast, always-on): fixtures under `assets/test_fixtures/songpacks/...`
 - [x] Round-trip tests: parse → normalize → serialize stability
-- [ ] Negative tests: missing files, invalid versions, out-of-range event times
+- [x] Negative tests: missing files, invalid versions, out-of-range event times
 
 **Exit criteria**
-- [ ] `packages/songpack` can validate at least one fixture SongPack.
-- [ ] CI fails if a schema breaks fixture validation.
+- [x] `packages/songpack` can validate at least one fixture SongPack.
+- [x] CI fails if a schema breaks fixture validation.
 
 **Dependencies / notes**
 - This milestone unblocks host + plugin work.
@@ -274,13 +334,17 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
 ### Milestone 2 — Desktop host skeleton (Tauri) + playback + plugin loader (2–4 weeks)
 **Goal**: A minimal desktop app can load a SongPack and render a plugin synced to audio.
 
+**Audit note (2026-04-20)**
+- Active playback/runtime work now lives primarily in `apps/game`.
+- `apps/desktop` focuses on authoring/import flows and retains a hidden `legacyPlaybackScaffold` for shared playback/plugin code.
+
 **Deliverables**
-- [x] `apps/desktop` created (Tauri + TS UI).
+- [x] `apps/game` + `apps/desktop` created (Tauri + TS UI; gameplay/runtime is centered in `apps/game`).
 - [x] Song library view (minimal): list SongPacks found in a configured folder.
 - [x] Scan songs folder on startup to discover new/removed SongPacks (directory + zip containers).
 - [x] Load SongPack + show basic metadata.
 - [x] Audio playback + transport clock (MVP):
-  - load `audio/mix.ogg` or `audio/mix.mp3` from selected SongPack
+  - load `audio/mix.wav`, `audio/mix.ogg`, or `audio/mix.mp3` from selected SongPack
   - play/pause/stop/seek
   - drive `TransportState.t` from `audio.currentTime`
 - [x] Audio playback + transport clock (next):
@@ -308,11 +372,12 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - [x] always display **key + mode** (even if placeholder from fixture)
 
 **TDD / testing deliverables**
-- [ ] Host + plugin contract tests:
-  - load reference plugin
-  - run lifecycle smoke test
-  - render N frames without crash
-- [ ] Transport monotonicity tests
+- [~] Host + plugin contract tests:
+  - [x] built-in/user plugin loading + discovery coverage exists
+  - [ ] instantiate reference plugins and run lifecycle/render smoke frames end-to-end
+- [~] Transport monotonicity tests
+  - [x] transport/native-timebase unit coverage exists
+  - [ ] add explicit monotonic/property-style transport clock assertions
 
 **Exit criteria**
 - [ ] A fixture SongPack plays with a minimal plugin rendering beats/sections.
@@ -343,6 +408,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - minimal `TransportState` and frame context
 - [x] `packages/viz-sdk` (init context extension):
   - `VizInitContext.song.lyrics?: unknown` (host-provided)
+  - [x] host-provided `charts`, `notesMidiBytes`, parsed `notes`, and optional `players` metadata
 - [ ] `packages/viz-sdk` (next):
   - `SongHandle` query APIs with time-window queries
   - host services boundary (no direct filesystem access)
@@ -350,7 +416,13 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - [x] `viz-beats` (Canvas2D beat grid; lifecycle smoke target)
   - [x] `viz-lyrics` (Canvas2D karaoke-style lyrics highlighting)
   - [x] `viz-nashville` (chords lane; placeholder if chords missing)
-  - [x] `viz-fretboard` (from MIDI notes)
+  - [x] `viz-fretboard` (present in tree; currently placeholder cursor until richer note queries are exposed)
+  - [x] `viz-drum-highway` (host-provided MIDI notes mapped to drum lanes)
+
+**Current fidelity notes**
+- `viz-lyrics` is data-driven when `features/lyrics.json` exists.
+- `viz-drum-highway` is data-driven from host-provided parsed MIDI note events.
+- `viz-beats`, `viz-nashville`, and `viz-fretboard` still contain placeholder logic and need richer host song-query APIs to become fully data-driven.
 
 **TDD / testing deliverables**
 - [ ] SDK contract tests for API stability.
@@ -372,17 +444,20 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - `aural_ingest validate <songpack-dir>` (file presence checks)
   - `aural_ingest info <songpack-dir>`
   - `aural_ingest stages`
-- [~] Pipeline stages (MVP deterministic analysis is implemented; advanced transcription is not yet restored):
+- [x] `aural_ingest runtime-check`
+- [x] `aural_ingest benchmark-drums <stem> <reference>`
+- [~] Pipeline stages (current repo pipeline has moved beyond the original `chart_generation` MVP and now centers on `notes.mid`/`events.json` outputs):
   - [x] `init_songpack`
   - [x] `decode_audio` (writes deterministic `audio/mix.wav`; non-wav decode requires ffmpeg)
-  - [x] `beats_tempo` (deterministic BPM estimate + generated beat grid)
+  - [x] `beats_tempo` (deterministic BPM estimate + generated beat grid, plus optional `high_accuracy` `librosa.beat_track` mode with fallback metadata)
   - [x] `sections` (generated section blocks from duration + BPM)
-  - [x] `chart_generation` (deterministic beats-only easy chart)
-  - [~] Restore higher-fidelity transcription outputs (`audio/stems/*.wav`, `charts/notes.mid`, richer feature extraction)
+  - [~] `separate_stems` (Demucs-backed when modelpack/runtime is present; still optional / best-effort)
     - [x] Added deterministic guitar stem split stage that emits `audio/stems/lead_guitar.wav` + `audio/stems/rhythm_guitar.wav` (uses `audio/stems/guitar.wav` when present, else mix fallback)
-    - [ ] Integrate true Demucs separation stage and richer multi-stem outputs from modelpacks
+    - [ ] Integrate broader multi-stem outputs / production-quality separation beyond the current best-effort path
+  - [x] Drum + melodic transcription emit `features/notes.mid` and `features/events.json`
+  - [~] JSON chart generation remains limited; there is no standalone `chart_generation` Python stage in the current tree
 - [x] Structured JSONL progress reporting.
-- [ ] Host import UI to run sidecar and show progress.
+- [x] Host import UI to run sidecar and show progress.
 
 **TDD / testing deliverables**
 - [ ] Stage fingerprint determinism tests.
@@ -410,6 +485,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - [x] `import-dir` (MVP directory audio source selection + forward to import pipeline)
   - [x] `import-dtx` (MVP: resolve DTX-referenced audio or chart-folder audio, then forward to import pipeline)
   - [x] `--drum-filter`, `--melodic-method`, `--shifts`, `--multi-filter` (validated parsing + import pass-through)
+  - [~] `--multi-filter` is currently parsed/persisted plumbing; a distinct multi-engine execution path is not yet evident in the current pipeline
 - [x] Rebuild drum algorithm set: `combined_filter`, `dsp_bandpass_improved`, `dsp_spectral_flux`, `adaptive_beat_grid`, `dsp_bandpass`, `aural_onset`, `librosa_superflux`
 - [~] Set default drum path to `combined_filter`; preserve documented fallback ordering; log unknown algorithm IDs instead of silent adaptive fallback
   - [x] Fallback-chain behavior and unknown-ID handling encoded in `python/ingest/src/aural_ingest/transcription.py`
@@ -423,7 +499,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
     - [ ] Integrate true Basic Pitch/pYIN inference backends (model/runtime parity)
 - [x] Restore Rust command forwarding of drum/melodic args from UI to sidecar
   - [x] Added Rust `ingest_import` Tauri command + sidecar CLI arg builder with explicit forwarding for drum/melodic flags
-  - [x] Added desktop client wrapper (`apps/desktop/src/ingestClient.ts`) and tests to lock payload forwarding
+  - [x] Added app client wrappers (`apps/desktop/src/ingestClient.ts`, `apps/game/src/ingestClient.ts`) and tests to lock payload forwarding
   - [x] Wire Configure UI import controls to call `ingest_import` end-to-end
 - [x] Restore chart parser strict/relaxed guard so sparse dedicated drum tracks are not dropped
   - [x] Added `apps/desktop/src/chartLoader.ts` strict/relaxed selection logic with dedicated drum-track guard
@@ -433,16 +509,20 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
 - [x] Verify/fix `import-dir` ordering around `sections` and `events.json`
 
 **TDD / testing deliverables**
-- [ ] Python: `test_transcription_resilience.py` recovered with fallback and algorithm-diversity assertions
+- [~] Python: `test_transcription_resilience.py` recovered with fallback and algorithm-diversity assertions
+  - [~] Current assertions explicitly reward expanded note diversity for `combined_filter`; they do not yet guard against sparse-source false positives like the Psalm 12 report
+  - [ ] Add a sparse-source regression fixture/assertion that fails when exported drum MIDI contains hallucinated/non-source drum hits
 - [x] Python: `test_import_pipeline.py` includes `import-dir` events-export ordering regression coverage
 - [x] Desktop: `chartLoader.test.ts` strict-vs-relaxed behavior and sparse-drum preservation cases
 - [x] Desktop: `chartLoader.kingInZionRegression.test.ts` fixture regression test
 - [x] End-to-end smoke: same stem A/B (`adaptive_beat_grid` vs `combined_filter`) confirms expanded-kit distribution in `combined_filter` (covered by ingest algorithm regression tests)
+  - [~] This currently validates diversity more than fidelity; add a counterbalancing precision-oriented fixture before treating default import quality as recovered
 
 **Exit criteria**
-- [ ] Default import path reproduces expanded drum-note diversity on known regression fixtures
-- [ ] Portable package contains sidecar matching just-built hash/timestamp
-- [ ] Regression suites above run in CI and prevent fallback/order regressions
+- [~] Default import path reproduces expanded drum-note diversity on known regression fixtures, but that is now known to be an incomplete/possibly wrong success metric for sparse real-world material
+- [ ] Default import path preserves sparse-source fidelity without hallucinated expanded-kit hits (add Psalm 12-equivalent regression coverage before calling recovery complete)
+- [x] Portable package contains sidecar matching just-built hash/timestamp
+- [~] Regression suites above run in CI and prevent fallback/order regressions, but they do not yet protect against sparse-source false positives in real-world drum imports
 
 ---
 
@@ -454,10 +534,14 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - importer id
   - input discovery/validation
   - conversion into canonical SongPack
+  - importer provenance surfaced in Studio UI and persisted in import results/metadata (`importer_id`, engine/path used, chart authority)
 - [ ] Importers:
-  - [ ] `audio_only` (baseline)
-  - [ ] `midi` (user-provided MIDI + optional audio)
+  - [~] `audio_only` (baseline sidecar import path exists; stable importer interface is not frozen)
+  - [~] `midi` (stem+MIDI SongPack creation and raw-song folder import exist; formal importer interface is not frozen)
   - [x] `ghwt_de` (MVP: preview audio import into SongPacks)
+  - [x] `raw_song_folder` / Suno-style export folder import (inspection + SongPack creation)
+    - [x] Uses normalized Suno MIDI as source-of-truth gameplay timing when the MIDI is mappable
+    - [ ] Make that source-of-truth choice obvious in Studio so users do not confuse it with heuristic sidecar transcription
 
 **TDD / testing deliverables**
 - [ ] Importer contract tests per importer (fixtures in `assets/test_fixtures/import_sources/...`).
@@ -481,7 +565,10 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - `files/**` extracted under `assets/models/<id>/<version>/...` in app data dir
   - sha256 verification supported when downloading (optional expected hash)
   - safety: no overwrite + path traversal prevention
-- [ ] Sidecar integration: stages declare required model id/version and resolve path.
+- [~] Sidecar integration: stages declare required model id/version and resolve path.
+  - [x] `stages` / `runtime-check` expose required model metadata for Demucs and MT3 drum engines
+  - [x] melodic model resolution fallback (`onnx -> tflite -> savedmodel`) is restored in transcription code
+  - [ ] fully gate all model-dependent stages from host UX when required packs are missing
 
 **TDD / testing deliverables**
 - [ ] Model pack verification tests (hash checking, version non-overwrite).
@@ -566,21 +653,22 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
 - [x] Drum transcription architecture:
   - [x] restore algorithm modules (`combined_filter`, `dsp_bandpass_improved`, `dsp_spectral_flux`, `adaptive_beat_grid`, `dsp_bandpass`, `aural_onset`, `librosa_superflux`)
   - [x] enforce explicit fallback chain from notes
-  - [x] set default to `combined_filter`
-  - [x] unknown algorithm IDs must log warning + return explicit fallback id used
-- [ ] Melodic transcription architecture:
-  - [ ] `basic_pitch` path first for polyphonic targets (guitar/keys), `pyin` fallback for monophonic safety path
-  - [ ] frozen-runtime model resolution order from notes (`onnx -> tflite -> savedmodel`)
-- [ ] Beat/tempo/sections quality upgrade:
-  - [ ] keep deterministic MVP pipeline in place
-  - [ ] add optional higher-accuracy mode using `librosa.beat.beat_track` and/or Essentia `RhythmExtractor2013` for offline imports
-- [ ] Stem separation provider model:
-  - [ ] keep separator pluggable (`none`, `demucs`, future providers)
+- [~] Melodic transcription architecture:
+  - [x] `basic_pitch` requested path + `pyin` fallback chain restored in orchestration
+  - [x] frozen-runtime model resolution order from notes (`onnx -> tflite -> savedmodel`)
+  - [ ] reach full Basic Pitch/pYIN runtime-quality parity
+- [~] Beat/tempo quality upgrade:
+  - [x] keep deterministic MVP pipeline in place
+  - [x] add optional higher-accuracy mode using `librosa.beat.beat_track` with fallback metadata when unavailable
+  - [ ] evaluate whether Essentia-backed offline extraction is still needed
+- [~] Stem separation provider model:
+  - [x] keep separator pluggable (`none`, `demucs`, future providers)
+  - [~] Demucs remains a best-effort, replaceable provider rather than a fully hardened default
   - [ ] note: upstream `facebookresearch/demucs` is archived; treat provider as "best-effort, replaceable"
 
 ### D) Packaging + sidecar reliability hardening
 - [ ] Tauri sidecar contract hardening:
-  - [ ] define `bundle.externalBin` entries for desktop + studio sidecars
+  - [ ] define `bundle.externalBin` entries for desktop + game sidecars
   - [ ] ensure target-triple suffixed binaries are generated/copy-validated pre-bundle
   - [ ] run sidecars via `shell().sidecar("<name>")` only
 - [ ] PyInstaller reliability for model-based sidecar:
@@ -632,46 +720,67 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
   - [ ] `--benchmark-compare-fail=mean:<threshold>`
 
 #### E5) Quality benchmarks (audio ML / MIR)
-- [ ] Separation quality:
-  - [ ] evaluate stems with `museval` SDR protocol
-  - [ ] use MUSDB18/MUSDB18-HQ for controlled comparisons
-- [ ] Transcription quality:
-  - [ ] evaluate note events with `mir_eval.transcription` (precision/recall/F1/overlap)
-  - [ ] include both onset-only and onset+offset scoring modes
-- [ ] Drum-specific datasets for regression fixtures:
-  - [ ] ENST-Drums
-  - [ ] IDMT-SMT-Drums
+- [~] Separation quality:
+  - [x] Add optional fail-safe `museval` SDR protocol adapter for local reference/estimate stem comparisons.
+  - [x] Report MUSDB18/MUSDB18-HQ dataset roots as internal-only benchmark sources and explicitly prevent product-shipping assumptions.
+  - [ ] Run MUSDB18/MUSDB18-HQ comparisons after local dataset roots are configured.
+- [x] Transcription quality:
+  - [x] Evaluate referenced melodic/piano note events with `mir_eval.transcription` (precision/recall/F1/overlap).
+  - [x] Include both onset-only and onset+offset scoring modes in `summary.json` and `report.md`.
+- [~] Drum-specific datasets for regression fixtures:
+  - [x] Report ENST-Drums root/status as internal-only benchmark source.
+  - [x] Report IDMT-SMT-Drums root/status as internal-only benchmark source.
+  - [ ] Generate local drum benchmark manifests from ENST/IDMT once dataset roots are configured.
 
 #### E6) Frontend/runtime performance benchmarks
-- [ ] Add `vitest bench` suites for parser/mapping hot paths and plugin update loops.
-- [ ] Add bench artifact comparison in CI (`vitest bench --outputJson` + `--compare`).
+- [~] Add `vitest bench` suites for parser/mapping hot paths and plugin update loops.
+  - [x] Added `apps/game/benchmarks/frontend.bench.ts` covering MIDI parser, drum chart selection, melodic track selection, key-signature inference, and built-in visualizer update/render loops.
+  - [x] Added `npm run bench:frontend` to write `benchmarks/frontend/vitest-bench.latest.json`.
+  - [ ] Extend visualizer coverage to all built-ins after placeholder visualizers are backed by real data contracts.
+- [~] Add bench artifact comparison in CI (`vitest bench --outputJson` + `--compare`).
+  - [x] Added `npm run bench:frontend:compare` with optional baseline comparison against `benchmarks/frontend/vitest-bench.baseline.json`.
+  - [x] Added CI benchmark artifact upload for `benchmarks/frontend/*.json`.
+  - [ ] Freeze a versioned frontend benchmark baseline and threshold policy before making comparison failures PR-blocking.
 - [ ] Add Playwright trace-based end-to-end perf captures for import/playback/plugin rendering paths.
+  - [ ] Requires a deterministic app-runner fixture that can launch the game/studio shell and export traces in CI.
 
 ### F) CI enforcement upgrades
-- [ ] Add dedicated benchmark workflows:
-  - [ ] `bench-rust` (criterion + iai-callgrind artifacts)
-  - [ ] `bench-python` (pytest-benchmark JSON artifacts)
-  - [ ] `bench-ts` (vitest bench JSON artifacts)
-- [ ] Add quality-gate workflow:
-  - [ ] transcription/separation fixture scoring
-  - [ ] fail on delta thresholds defined in versioned config (`benchmarks/thresholds.yml`)
-- [ ] Publish benchmark dashboards as CI artifacts for every PR touching `apps/desktop/src-tauri`, `python/ingest`, or parser code.
+- [~] Add dedicated benchmark workflows:
+  - [~] `bench-rust` artifact workflow added; current runner writes skip/summary artifacts until Criterion/IAI benchmark targets exist.
+  - [x] `bench-python` pytest-benchmark workflow and JSON artifacts added for opt-in ingest runtime benchmarks.
+  - [x] `bench-ts` vitest bench workflow and JSON artifacts added for frontend/parser/plugin hot paths.
+- [~] Add quality-gate workflow:
+  - [~] Transcription/separation quality summaries are checked when present; active CI fixture scoring still needs committed/synthetic promotion fixtures and configured private dataset roots.
+  - [x] Added versioned threshold config at `benchmarks/thresholds.yml` plus dependency-free threshold checker.
+  - [~] Threshold mode is `warn` by default; switch to strict only after baseline and threshold policy are frozen.
+- [x] Publish benchmark dashboards as CI artifacts for PRs touching `apps/*/src-tauri`, `python/ingest`, parser/frontend benchmark paths, or quality benchmark paths.
 
 ### G) Research-driven decision gates to resolve before implementation lock
 - [x] Choose realtime-safe queue strategy for audio callback (`rtrb` only vs dual-queue design for metrics).
-- [ ] Choose beat/tempo production default (`librosa`-first vs Essentia-first) for deterministic imports.
-- [ ] Choose separator support policy (ship Demucs provider as optional experimental vs fully supported path).
-- [ ] Freeze benchmark threshold policy for PR blocking (strict vs warn-only for first 2 weeks).
+- [x] Choose beat/tempo production default (`librosa`-first vs Essentia-first) for deterministic imports.
+  - [x] Production default is `high_accuracy` / `librosa.beat_track` first, with `standard` energy-autocorrelation fallback.
+  - [x] Essentia remains a research candidate, not a default, until adapter/benchmark/packaging evidence justifies it.
+- [x] Choose separator support policy (ship Demucs provider as optional experimental vs fully supported path).
+  - [x] Demucs is optional experimental under `auto`; absence must skip separation and continue with provided stems or mix fallback.
+  - [x] GPU acceleration is supported when available, with CPU fallback/model-absence safety still required.
+- [x] Freeze benchmark threshold policy for PR blocking (strict vs warn-only for first 2 weeks).
+  - [x] Threshold config remains `warn` mode; strict PR blocking is disabled until representative baselines, role thresholds, hardware profile, and reviewed fixtures are frozen.
+  - [x] Once those are frozen, keep warn-only for at least 14 days before enabling strict gates.
 
-### H) Clarifications needed from project owner (to finalize this plan)
-- [ ] Confirm primary success metric priority:
-  - [ ] lowest-latency playback/runtime
-  - [ ] best transcription quality
-  - [ ] fastest import throughput
-- [ ] Confirm target hardware baseline for perf gates (minimum Windows/Linux CPU class and default buffer size).
-- [ ] Confirm legal/product stance for research-only datasets in CI (MUSDB18, ENST, IDMT) vs internal/private fixtures only.
-- [ ] Confirm whether `apps/studio` restoration is required in this recovery phase or deferred after sidecar recovery.
-- [ ] Confirm whether GPU acceleration is in scope for sidecar in v1 recovery, or CPU-only deterministic path first.
+### H) Clarifications from project owner
+- [x] Primary success metric priority is best transcription quality.
+  - [x] Lowest-latency playback/runtime remains important, but it is not the top priority for transcription/import method selection.
+  - [x] Fastest import throughput is secondary to recognizable, playable, high-quality transcription output.
+- [x] Target hardware baseline for perf gates: anything remotely modern should be supported on Windows/Linux.
+  - [x] Converted into concrete profiles in `benchmarks/thresholds.yml`: `minimum_modern` = 8 logical CPU threads / 16 GB RAM / x64-or-arm64 / no GPU required for default import; `recommended_model_workstation` = 12 logical CPU threads / 32 GB RAM / GPU recommended for model-backed A/B.
+  - [x] Added `npm run bench:hardware` to capture `benchmarks/hardware/local-profile.latest.json` and upload it with benchmark CI artifacts.
+- [x] Legal/product stance for research-only datasets: allowed for internal benchmarking and evaluation only.
+  - [x] Do not ship research-only dataset content, derived in-game content, or dataset-dependent fixtures in the game/product.
+  - [x] Keep distributable fixtures synthetic, owned, permissively licensed, or explicitly cleared.
+- [~] Additional dedicated Studio-only surface beyond `apps/desktop` is deferred.
+  - [~] No extra product-surface answer is needed right now; continue using `apps/desktop`/AuralStudio for current recovery work.
+- [x] GPU acceleration is in scope and should be supported first class for sidecar/model-backed transcription.
+  - [x] CPU fallback remains required for portability and model-absence safety.
 
 ### I) External references used for this deep-dive section
 - CPAL docs: `https://docs.rs/cpal/latest/cpal/`
@@ -702,11 +811,10 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
 
 ## Blocked / Questions (need decisions)
 
-### A) Audio codec layer implementation choice (host)
-Pick one initial approach:
-- Option 1: bundle `ffmpeg` sidecar for decode to PCM/wav for playback
-- Option 2: use platform audio stack decode where available + fallback sidecar
-- Option 3: ship a small decoder library for mp3/ogg (license implications)
+### A) Audio codec layer implementation choice (host) - resolved
+- [x] Chosen approach: bundled Rust/Symphonia decoder for host playback (`mix.ogg`, `mix.mp3`, `mix.wav`).
+- [x] FFmpeg remains sidecar-only for ingest/non-WAV source conversion; it is not required for normal SongPack playback.
+- [x] Documented in `docs/audio-codec-policy.md` and locked with host decode policy tests.
 
 ### B) Importer boundaries
 - What is the minimum initial importer interface surface (CLI + filesystem contract) we want to freeze in v0.1?

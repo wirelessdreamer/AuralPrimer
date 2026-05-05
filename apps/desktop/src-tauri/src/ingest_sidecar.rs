@@ -117,6 +117,47 @@ fn explicit_binary(req: &IngestImportRequest) -> Option<String> {
     non_empty_opt(&req.ingest_binary_path)
 }
 
+fn runtime_fallback_sidecar_binary() -> Option<String> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let sidecar_leaf = if cfg!(target_os = "windows") {
+        "aural_ingest.exe"
+    } else {
+        "aural_ingest"
+    };
+
+    for candidate in [
+        exe_dir.join(sidecar_leaf),
+        exe_dir.join("sidecar").join(sidecar_leaf),
+    ] {
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+
+    None
+}
+
+fn run_runtime_fallback_with_progress(
+    args: &[String],
+    app: Option<&AppHandle>,
+    reason: &str,
+) -> Option<Result<IngestImportResult, String>> {
+    let binary = runtime_fallback_sidecar_binary()?;
+    Some(run_explicit_binary_with_progress(&binary, args, app).map_err(|fallback_error| {
+        format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
+    }))
+}
+
+fn run_runtime_fallback_capture(
+    args: &[String],
+    reason: &str,
+) -> Option<Result<IngestRuntimeCheckResult, String>> {
+    let binary = runtime_fallback_sidecar_binary()?;
+    Some(run_explicit_binary_capture(&binary, args).map_err(|fallback_error| {
+        format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
+    }))
+}
+
 pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, String> {
     let source_path = req.source_path.trim();
     if source_path.is_empty() {
@@ -272,15 +313,27 @@ fn run_tauri_sidecar_with_progress(
     app: &AppHandle,
     args: &[String],
 ) -> Result<IngestImportResult, String> {
-    let command = app
-        .shell()
-        .sidecar(INGEST_SIDECAR_NAME)
-        .map_err(|e| format!("failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?
-        .args(args.to_vec());
+    let command = match app.shell().sidecar(INGEST_SIDECAR_NAME) {
+        Ok(command) => command.args(args.to_vec()),
+        Err(error) => {
+            let reason = format!("failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {error}");
+            if let Some(result) = run_runtime_fallback_with_progress(args, Some(app), &reason) {
+                return result;
+            }
+            return Err(reason);
+        }
+    };
 
-    let (mut rx, _child) = command
-        .spawn()
-        .map_err(|e| format!("failed to spawn Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?;
+    let (mut rx, _child) = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let reason = format!("failed to spawn Tauri sidecar {INGEST_SIDECAR_NAME}: {error}");
+            if let Some(result) = run_runtime_fallback_with_progress(args, Some(app), &reason) {
+                return result;
+            }
+            return Err(reason);
+        }
+    };
 
     let mut stdout_lines: Vec<String> = vec![];
     let mut stderr_lines: Vec<String> = vec![];
@@ -366,14 +419,27 @@ fn run_explicit_binary_capture(binary: &str, args: &[String]) -> Result<IngestRu
 }
 
 fn run_tauri_sidecar_capture(app: &AppHandle, args: &[String]) -> Result<IngestRuntimeCheckResult, String> {
-    let command = app
-        .shell()
-        .sidecar(INGEST_SIDECAR_NAME)
-        .map_err(|e| format!("failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?
-        .args(args.to_vec());
+    let command = match app.shell().sidecar(INGEST_SIDECAR_NAME) {
+        Ok(command) => command.args(args.to_vec()),
+        Err(error) => {
+            let reason = format!("failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {error}");
+            if let Some(result) = run_runtime_fallback_capture(args, &reason) {
+                return result;
+            }
+            return Err(reason);
+        }
+    };
 
-    let output = tauri::async_runtime::block_on(async move { command.output().await })
-        .map_err(|e| format!("failed to execute Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?;
+    let output = match tauri::async_runtime::block_on(async move { command.output().await }) {
+        Ok(output) => output,
+        Err(error) => {
+            let reason = format!("failed to execute Tauri sidecar {INGEST_SIDECAR_NAME}: {error}");
+            if let Some(result) = run_runtime_fallback_capture(args, &reason) {
+                return result;
+            }
+            return Err(reason);
+        }
+    };
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();

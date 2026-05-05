@@ -2,8 +2,10 @@ export type DrumLane = "BD" | "SD" | "HH" | "CY" | "RD" | "HT" | "LT" | "FT";
 
 export type MidiNoteLike = {
   t: number;
+  t_off?: number;
   midi: number;
   channel?: number;
+  velocity?: number;
 };
 
 export type MidiTrackLike = {
@@ -20,8 +22,10 @@ type TempoEvent = {
 
 type ParsedMidiNote = {
   tick: number;
+  tickOff?: number;
   midi: number;
   channel?: number;
+  velocity?: number;
 };
 
 type ParsedMidiTrack = {
@@ -51,7 +55,7 @@ export type DrumChartSelection = {
   relaxedUniqueLanes: DrumLane[];
 };
 
-const DRUM_TRACK_NAME_RE = /\b(drum|kit|percussion)\b/i;
+const DRUM_TRACK_NAME_RE = /\b(drums?|kit|percussion)\b/i;
 
 function mapMidiToLane(midi: number): DrumLane | null {
   if (midi === 35 || midi === 36) return "BD";
@@ -254,6 +258,7 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
     const end = Math.min(bytes.length, off + trkLen);
 
     const notes: ParsedMidiNote[] = [];
+    const openNotes = new Map<string, { tick: number; velocity: number }>();
     let name = "";
     let absTicks = 0;
     let runningStatus = 0;
@@ -310,14 +315,66 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
 
       const channel = status & 0x0f;
       const msg = status & 0xf0;
-      if (msg === 0x90 && d2 > 0) {
-        notes.push({
-          tick: absTicks,
-          midi: d1,
-          channel
-        });
+      const noteKey = `${channel}:${d1}`;
+
+      if (msg === 0x90) {
+        if (d2 > 0) {
+          const prior = openNotes.get(noteKey);
+          if (prior) {
+            notes.push({
+              tick: prior.tick,
+              tickOff: absTicks,
+              midi: d1,
+              channel,
+              velocity: prior.velocity
+            });
+          }
+          openNotes.set(noteKey, {
+            tick: absTicks,
+            velocity: d2
+          });
+        } else {
+          const prior = openNotes.get(noteKey);
+          if (prior) {
+            notes.push({
+              tick: prior.tick,
+              tickOff: absTicks,
+              midi: d1,
+              channel,
+              velocity: prior.velocity
+            });
+            openNotes.delete(noteKey);
+          }
+        }
+      } else if (msg === 0x80) {
+        const prior = openNotes.get(noteKey);
+        if (prior) {
+          notes.push({
+            tick: prior.tick,
+            tickOff: absTicks,
+            midi: d1,
+            channel,
+            velocity: prior.velocity
+          });
+          openNotes.delete(noteKey);
+        }
       }
     }
+
+    for (const [key, prior] of openNotes.entries()) {
+      const parts = key.split(":");
+      const midi = Number(parts[1]);
+      const channel = Number(parts[0]);
+      if (!Number.isFinite(midi) || !Number.isFinite(channel)) continue;
+      notes.push({
+        tick: prior.tick,
+        midi,
+        channel,
+        velocity: prior.velocity
+      });
+    }
+
+    notes.sort((a, b) => a.tick - b.tick || a.midi - b.midi);
 
     tracks.push({
       index: ti,
@@ -334,8 +391,10 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
     name: track.name,
     notes: track.notes.map((note) => ({
       t: tickToSeconds(note.tick),
+      t_off: typeof note.tickOff === "number" ? tickToSeconds(note.tickOff) : undefined,
       midi: note.midi,
-      channel: note.channel
+      channel: note.channel,
+      velocity: note.velocity
     }))
   }));
 }
@@ -485,14 +544,14 @@ export function selectMelodicTracks(tracks: MidiTrackLike[]): MelodicTrackSelect
     if (seenRoles.has(role)) continue;
     seenRoles.add(role);
 
-    // Collect note-on pairs.  For now, we just use note-on times + a minimum duration.
+    // Use parsed note-off timing when present, with a small floor for visibility.
     const melodicNotes: MelodicNote[] = track.notes
       .filter((n) => n.channel !== 9 && n.channel !== 15)
       .map((n) => ({
         t_on: n.t,
-        t_off: n.t + 0.15, // minimum visible duration
+        t_off: Math.max(n.t + 0.06, typeof n.t_off === "number" ? n.t_off : n.t + 0.15),
         pitch: n.midi,
-        velocity: 100,
+        velocity: Math.max(0, Math.min(1, (n.velocity ?? 100) / 127)),
       }));
 
     if (melodicNotes.length === 0) continue;

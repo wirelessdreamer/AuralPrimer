@@ -221,13 +221,9 @@ fn ghwt_bulk_import_imports_all_scanned_songs() {
     let songs_folder = tmp.path().join("songs");
     fs::create_dir_all(&songs_folder).unwrap();
 
-    let res = auralprimer_game_tauri::ghwt::import_all_to_folder(
-        None,
-        &data_root,
-        &songs_folder,
-        None,
-    )
-    .unwrap();
+    let res =
+        auralprimer_game_tauri::ghwt::import_all_to_folder(None, &data_root, &songs_folder, None)
+            .unwrap();
     assert_eq!(res.len(), 2);
     assert!(res.iter().all(|r| r.ok));
     assert!(songs_folder.join("ghwt_DLC13.songpack").is_dir());

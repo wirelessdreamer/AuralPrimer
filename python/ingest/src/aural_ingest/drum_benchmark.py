@@ -6,6 +6,9 @@ from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping
 
+import numpy as np
+import soundfile as sf
+
 from aural_ingest.transcription import DrumEvent
 
 
@@ -132,6 +135,95 @@ class _MidiNoteOn:
     velocity: int
     track_index: int
     track_name: str | None
+
+
+def _smoothed(values: np.ndarray, radius: int) -> np.ndarray:
+    if values.size == 0:
+        return values.copy()
+    out = np.zeros_like(values, dtype=np.float64)
+    for idx in range(values.size):
+        start = max(0, idx - radius)
+        end = min(values.size, idx + radius + 1)
+        out[idx] = float(np.mean(values[start:end]))
+    return out
+
+
+def _detect_active_segments(reference_audio_path: Path) -> list[tuple[float, float]]:
+    data, sample_rate = sf.read(str(reference_audio_path), always_2d=True, dtype="float32")
+    if sample_rate <= 0 or data.size == 0:
+        return []
+
+    mono = np.mean(data, axis=1, dtype=np.float64)
+    total_frames = int(mono.shape[0])
+    if total_frames <= 0:
+        return []
+
+    frame_size = max(int(round(float(sample_rate) * 0.04)), 256)
+    hop_size = max(int(round(float(sample_rate) * 0.02)), 128)
+
+    envelope_times: list[float] = []
+    envelope_values: list[float] = []
+    frame_start = 0
+    while frame_start < total_frames:
+        frame_end = min(frame_start + frame_size, total_frames)
+        frame = mono[frame_start:frame_end]
+        rms = float(np.sqrt(np.mean(np.square(frame), dtype=np.float64))) if frame.size else 0.0
+        envelope_times.append(frame_start / float(sample_rate))
+        envelope_values.append(rms)
+        if frame_end == total_frames:
+            break
+        frame_start += hop_size
+
+    if not envelope_values:
+        return []
+
+    smoothed_values = _smoothed(np.asarray(envelope_values, dtype=np.float64), 2)
+    max_value = float(np.max(smoothed_values)) if smoothed_values.size else 0.0
+    if max_value <= 1e-5:
+        return []
+
+    threshold = max(
+        float(np.percentile(smoothed_values, 20.0)) * 2.25,
+        max_value * 0.14,
+        0.0015,
+    )
+    frame_span = float(hop_size) / float(sample_rate)
+    min_segment_duration = 0.16
+    max_bridge_gap = 0.18
+
+    segments: list[tuple[float, float]] = []
+    current_start: float | None = None
+    last_time = 0.0
+    for time_sec, value in zip(envelope_times, smoothed_values, strict=False):
+        active = float(value) >= threshold
+        if active:
+            if current_start is None:
+                current_start = float(time_sec)
+            last_time = float(time_sec) + frame_span
+        elif current_start is not None:
+            end = max(last_time, current_start + frame_span)
+            if end - current_start >= min_segment_duration:
+                segments.append((current_start, end))
+            current_start = None
+    if current_start is not None:
+        end = max(last_time, current_start + frame_span)
+        if end - current_start >= min_segment_duration:
+            segments.append((current_start, end))
+
+    merged: list[tuple[float, float]] = []
+    for start, end in segments:
+        if merged and start - merged[-1][1] <= max_bridge_gap:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _first_active_segment_start_sec(reference_audio_path: Path) -> float | None:
+    for start, _ in _detect_active_segments(reference_audio_path):
+        if np.isfinite(start):
+            return float(start)
+    return None
 
 
 def normalize_drum_class(value: str | None) -> str | None:
@@ -368,6 +460,7 @@ def _parse_midi_note_ons(reference_path: Path) -> tuple[list[_MidiNoteOn], list[
                 pos += 1
             else:
                 data1 = status_byte
+                pos += 1
 
             if event_type in {0xC0, 0xD0}:
                 continue
@@ -431,7 +524,26 @@ def _tick_to_seconds(tick: int, tempo_changes: list[tuple[int, int]], ticks_per_
     return total_sec
 
 
-def _load_reference_midi(reference_path: Path) -> tuple[list[BenchmarkEvent], dict[str, Any]]:
+def _first_reference_midi_note_start_sec(reference_path: Path) -> float | None:
+    note_ons, tempo_changes_raw, ticks_per_quarter = _parse_midi_note_ons(reference_path)
+    strict = [
+        event
+        for event in note_ons
+        if event.channel == 9 or ("drum" in (event.track_name or "").strip().lower())
+    ]
+    relaxed = [event for event in note_ons if normalize_drum_note(event.note) is not None]
+    selected = strict if strict else relaxed
+    if not selected:
+        return None
+    tempo_changes = _compress_tempo_changes(tempo_changes_raw)
+    return min(_tick_to_seconds(event.tick, tempo_changes, ticks_per_quarter) for event in selected)
+
+
+def _load_reference_midi(
+    reference_path: Path,
+    *,
+    start_offset_sec: float = 0.0,
+) -> tuple[list[BenchmarkEvent], dict[str, Any]]:
     note_ons, tempo_changes_raw, ticks_per_quarter = _parse_midi_note_ons(reference_path)
 
     strict = [
@@ -452,7 +564,7 @@ def _load_reference_midi(reference_path: Path) -> tuple[list[BenchmarkEvent], di
             continue
         events.append(
             BenchmarkEvent(
-                time=_tick_to_seconds(event.tick, tempo_changes, ticks_per_quarter),
+                time=max(0.0, _tick_to_seconds(event.tick, tempo_changes, ticks_per_quarter) - float(start_offset_sec)),
                 drum_class=drum_class,
             )
         )
@@ -466,11 +578,71 @@ def _load_reference_midi(reference_path: Path) -> tuple[list[BenchmarkEvent], di
     }
 
 
-def load_drum_reference(reference_path: Path | str) -> tuple[list[BenchmarkEvent], dict[str, Any]]:
+def _measure_reference_start_offset_sec(
+    reference_path: Path,
+    audio_path: Path,
+    *,
+    min_abs_offset_sec: float,
+    max_abs_offset_sec: float,
+) -> dict[str, Any] | None:
+    audio_start_sec = _first_active_segment_start_sec(audio_path)
+    if audio_start_sec is None:
+        return None
+    midi_start_sec = _first_reference_midi_note_start_sec(reference_path)
+    if midi_start_sec is None:
+        return None
+    offset_sec = float(midi_start_sec) - float(audio_start_sec)
+    if abs(offset_sec) < float(min_abs_offset_sec) or abs(offset_sec) > float(max_abs_offset_sec):
+        return {
+            "observed_start_offset_sec": round(offset_sec, 6),
+            "audio_start_sec": round(float(audio_start_sec), 6),
+            "midi_start_sec": round(float(midi_start_sec), 6),
+            "applied_start_offset_sec": 0.0,
+            "start_alignment_applied": False,
+            "start_alignment_reason": "observed offset outside safe normalization window",
+        }
+    return {
+        "observed_start_offset_sec": round(offset_sec, 6),
+        "audio_start_sec": round(float(audio_start_sec), 6),
+        "midi_start_sec": round(float(midi_start_sec), 6),
+        "applied_start_offset_sec": round(offset_sec, 6),
+        "start_alignment_applied": True,
+        "start_alignment_reason": "audio_start_offset",
+    }
+
+
+def load_drum_reference(
+    reference_path: Path | str,
+    *,
+    audio_path: Path | str | None = None,
+    normalize_start_to_audio: bool = False,
+    min_abs_offset_sec: float = 0.05,
+    max_abs_offset_sec: float = 2.0,
+) -> tuple[list[BenchmarkEvent], dict[str, Any]]:
     path = Path(reference_path)
     suffix = path.suffix.lower()
     if suffix in {".mid", ".midi"}:
-        return _load_reference_midi(path)
+        start_meta: dict[str, Any] = {
+            "start_alignment_policy": "none",
+            "start_alignment_applied": False,
+            "applied_start_offset_sec": 0.0,
+        }
+        start_offset_sec = 0.0
+        if normalize_start_to_audio and audio_path is not None:
+            audio_file = Path(audio_path)
+            start_meta["start_alignment_policy"] = "audio_start_offset"
+            start_meta["reference_audio_path"] = str(audio_file)
+            measured = _measure_reference_start_offset_sec(
+                path,
+                audio_file,
+                min_abs_offset_sec=float(min_abs_offset_sec),
+                max_abs_offset_sec=float(max_abs_offset_sec),
+            )
+            if measured is not None:
+                start_meta.update(measured)
+                start_offset_sec = float(measured.get("applied_start_offset_sec", 0.0) or 0.0)
+        events, meta = _load_reference_midi(path, start_offset_sec=start_offset_sec)
+        return events, {**meta, **start_meta}
     return _load_reference_json(path)
 
 
@@ -681,6 +853,13 @@ def benchmark_algorithms(
                 "algorithm": algorithm_id,
                 "raw_predicted_count": len(raw_events),
                 "ignored_predicted_events": ignored,
+                "predicted_events": [
+                    {
+                        "time": round(float(event.time), 6),
+                        "class": event.drum_class,
+                    }
+                    for event in predicted_events
+                ],
                 **evaluation,
             }
         )

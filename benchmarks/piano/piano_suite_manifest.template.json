@@ -1,0 +1,20 @@
+{
+  "songs": [
+    {
+      "id": "replace_me_solo_piano",
+      "name": "Replace Me - Solo Piano",
+      "instrument": "keys",
+      "wav": "D:\\Path\\To\\solo_piano.wav",
+      "midi": "D:\\Path\\To\\solo_piano_reference.mid",
+      "offset_sec": 0.0
+    },
+    {
+      "id": "replace_me_piano_stem",
+      "name": "Replace Me - Piano Stem",
+      "instrument": "keys",
+      "wav": "D:\\Path\\To\\piano_stem.wav",
+      "midi": "D:\\Path\\To\\piano_stem_reference.mid",
+      "offset_sec": 0.0
+    }
+  ]
+}

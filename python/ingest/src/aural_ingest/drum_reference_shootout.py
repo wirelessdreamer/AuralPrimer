@@ -31,6 +31,7 @@ class ShootoutCase:
     title: str
     wav_path: Path
     reference_path: Path
+    normalize_reference_start_to_audio: bool = False
     summary: str = ""
     tags: tuple[str, ...] = ()
     focus: tuple[str, ...] = ()
@@ -242,6 +243,11 @@ def load_manual_corpus_manifest(manifest_path: Path | str) -> tuple[dict[str, An
     title = str(data.get("title", corpus_id)).strip() or corpus_id
     reference_trust = str(data.get("reference_trust", "suspect")).strip().lower() or "suspect"
     description = str(data.get("description", "")).strip()
+    reference_alignment = data.get("reference_alignment", {}) if isinstance(data.get("reference_alignment"), Mapping) else {}
+    reference_alignment_mode = str(reference_alignment.get("mode", "")).strip().lower()
+    normalize_reference_start_to_audio_default = reference_alignment_mode == "audio_start_offset"
+    min_abs_offset_sec = float(reference_alignment.get("min_abs_offset_sec", 0.05) or 0.05)
+    max_abs_offset_sec = float(reference_alignment.get("max_abs_offset_sec", 2.0) or 2.0)
 
     cases: list[ShootoutCase] = []
     for index, item in enumerate(data.get("cases", []), start=1):
@@ -258,12 +264,17 @@ def load_manual_corpus_manifest(manifest_path: Path | str) -> tuple[dict[str, An
         if not reference_path.is_file():
             warnings.append(f"{case_id}: missing reference file {reference_path}")
             continue
+        case_reference_alignment = (
+            item.get("reference_alignment", {}) if isinstance(item.get("reference_alignment"), Mapping) else {}
+        )
+        case_alignment_mode = str(case_reference_alignment.get("mode", reference_alignment_mode)).strip().lower()
         cases.append(
             ShootoutCase(
                 case_id=case_id,
                 title=title_value,
                 wav_path=wav_path,
                 reference_path=reference_path,
+                normalize_reference_start_to_audio=case_alignment_mode == "audio_start_offset",
                 summary=str(item.get("summary", "")).strip(),
                 tags=tuple(str(tag) for tag in item.get("tags", [])),
                 focus=tuple(str(focus) for focus in item.get("focus", [])),
@@ -276,6 +287,12 @@ def load_manual_corpus_manifest(manifest_path: Path | str) -> tuple[dict[str, An
         "reference_trust": reference_trust,
         "description": description,
         "manifest_path": str(path),
+        "reference_alignment": {
+            "mode": reference_alignment_mode or "none",
+            "normalize_reference_start_to_audio_default": normalize_reference_start_to_audio_default,
+            "min_abs_offset_sec": min_abs_offset_sec,
+            "max_abs_offset_sec": max_abs_offset_sec,
+        },
     }, warnings, cases
 
 
@@ -295,9 +312,18 @@ def run_manual_corpus_benchmark(
     algorithm_ids = _collect_algorithm_ids(algorithms)
     registry = build_default_drum_algorithm_registry()
     case_payloads: list[dict[str, Any]] = []
+    reference_alignment = corpus_meta.get("reference_alignment", {})
+    min_abs_offset_sec = float(reference_alignment.get("min_abs_offset_sec", 0.05) or 0.05)
+    max_abs_offset_sec = float(reference_alignment.get("max_abs_offset_sec", 2.0) or 2.0)
 
     for case in cases:
-        reference_events, reference_meta = load_drum_reference(case.reference_path)
+        reference_events, reference_meta = load_drum_reference(
+            case.reference_path,
+            audio_path=case.wav_path,
+            normalize_start_to_audio=case.normalize_reference_start_to_audio,
+            min_abs_offset_sec=min_abs_offset_sec,
+            max_abs_offset_sec=max_abs_offset_sec,
+        )
         results = benchmark_algorithms(
             case.wav_path,
             reference_events,

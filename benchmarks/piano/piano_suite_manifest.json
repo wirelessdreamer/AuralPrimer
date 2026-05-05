@@ -1,0 +1,70 @@
+{
+  "songs": [
+    {
+      "id": "psalm_130_keyboard",
+      "name": "Psalm 130 - Keyboard Stem",
+      "instrument": "keys",
+      "case_tags": ["piano_stem", "bass_clef_suspect", "dense_left_hand", "suno_reference"],
+      "wav": "D:\\Psalms\\Psalm 130 - emo\\psalm 130 - 5 Stems\\psalm 130 - 5 (Keyboard).wav",
+      "midi": "D:\\Psalms\\Psalm 130 - emo\\psalm 130 - 5 Stems\\psalm 130 - 5 (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 120.0,
+      "duration_sec": 12.0
+    },
+    {
+      "id": "psalm_130_synth",
+      "name": "Psalm 130 - Synth Stem",
+      "instrument": "keys",
+      "case_tags": ["synth_stem", "sustain_heavy", "psalm_130", "suno_reference"],
+      "wav": "D:\\Psalms\\Psalm 130 - emo\\psalm 130 - 5 Stems\\psalm 130 - 5 (Synth).wav",
+      "midi": "D:\\Psalms\\Psalm 130 - emo\\psalm 130 - 5 Stems\\psalm 130 - 5 (Synth).mid",
+      "offset_sec": 0.0,
+      "start_sec": 120.0,
+      "duration_sec": 12.0
+    },
+    {
+      "id": "psalm_10_keyboard",
+      "name": "Psalm 10 - Keyboard Stem",
+      "instrument": "keys",
+      "case_tags": ["piano_stem", "chordal", "suno_reference"],
+      "wav": "D:\\Psalms\\Psalm 10\\Psalm 10 - Why Stems\\Psalm 10 - Why (Keyboard).wav",
+      "midi": "D:\\Psalms\\Psalm 10\\Psalm 10 - Why Stems\\Psalm 10 - Why (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 108.0,
+      "duration_sec": 12.0
+    },
+    {
+      "id": "psalm_2_keyboard",
+      "name": "Psalm 2 - Keyboard Stem",
+      "instrument": "keys",
+      "case_tags": ["piano_stem", "repeated_notes", "suno_reference"],
+      "wav": "D:\\Psalms\\Psalm 2\\Book of Psalms - Psalm 2 - King in Zion Stems\\Book of Psalms - Psalm 2 - King in Zion (Keyboard).wav",
+      "midi": "D:\\Psalms\\Psalm 2\\Book of Psalms - Psalm 2 - King in Zion Stems\\Book of Psalms - Psalm 2 - King in Zion (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 68.0,
+      "duration_sec": 12.0
+    },
+    {
+      "id": "psalm_7_keyboard",
+      "name": "Psalm 7 - Keyboard Stem",
+      "instrument": "keys",
+      "case_tags": ["piano_stem", "sparse_chordal", "suno_reference"],
+      "wav": "D:\\Psalms\\Psalm 7\\Psalm 7 - The Chase (Edit) Stems\\Psalm 7 - The Chase (Edit) (Keyboard).wav",
+      "midi": "D:\\Psalms\\Psalm 7\\Psalm 7 - The Chase (Edit) Stems\\Psalm 7 - The Chase (Edit) (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 184.0,
+      "duration_sec": 12.0
+    },
+    {
+      "id": "psalm_6_break_in_piano_only",
+      "name": "Psalm 6 - Break In - Piano Only",
+      "instrument": "keys",
+      "case_tags": ["piano_only", "no_reference", "listening_case", "sustain_heavy"],
+      "wav": "D:\\Psalms\\Psalm 6 - Break In - piano.wav",
+      "midi": null,
+      "offset_sec": 0.0,
+      "start_sec": 60.0,
+      "duration_sec": 12.0
+    }
+  ]
+}

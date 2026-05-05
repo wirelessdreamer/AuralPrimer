@@ -11,13 +11,14 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devUrl": "http://localhost:5174",
+    "devUrl": "http://localhost:46174",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "AuralPrimer",
         "width": 1024,
         "height": 768

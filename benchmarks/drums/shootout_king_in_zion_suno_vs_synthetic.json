@@ -3,6 +3,11 @@
   "title": "Suno suspect MIDI corpus",
   "reference_trust": "suspect",
   "description": "Raw Suno drum export audio paired with Suno-exported MIDI. Use this only as a diagnostic reference corpus, not as ground truth.",
+  "reference_alignment": {
+    "mode": "audio_start_offset",
+    "min_abs_offset_sec": 0.05,
+    "max_abs_offset_sec": 2.0
+  },
   "cases": [
     {
       "id": "king_in_zion_suno",

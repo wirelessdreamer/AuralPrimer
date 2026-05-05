@@ -185,6 +185,23 @@ def _should_emit_secondary_core(
     return votes["snare"] >= 0.18 and snare_hit >= 0.24 and snare_dom >= 0.16 and zcr >= 0.18
 
 
+def _should_emit_hat_overlay(
+    *,
+    emit_core: bool,
+    hat_conf: float,
+    core_score: float,
+    votes: dict[str, float],
+    high_hit: float,
+    high_dom: float,
+) -> bool:
+    if not emit_core:
+        return True
+    if (hat_conf >= core_score * 0.62) or (votes["hi_hat"] >= 0.22):
+        return True
+    # Real drum grooves often have kick+hat or snare+hat at the same onset.
+    return votes["hi_hat"] >= 0.16 and high_hit >= 0.2 and high_dom >= 0.12 and hat_conf >= 0.28
+
+
 def _emit_candidate(
     out: list[DrumCandidate],
     *,
@@ -471,8 +488,14 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                 hat_strength = max(_bucket_strength(cluster, "hi_hat"), hat_score)
                 hat_conf = hat_score
 
-            # Keep hats independent when the core detector is uncertain, but do not flood every cluster.
-            if (not emit_core) or (hat_conf >= core_score * 0.62) or (votes["hi_hat"] >= 0.22):
+            if _should_emit_hat_overlay(
+                emit_core=emit_core,
+                hat_conf=hat_conf,
+                core_score=core_score,
+                votes=votes,
+                high_hit=high_hit,
+                high_dom=high_dom,
+            ):
                 _emit_candidate(
                     decoded,
                     time_sec=refined_time,

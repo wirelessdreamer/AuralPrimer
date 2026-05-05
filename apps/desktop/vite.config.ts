@@ -3,7 +3,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   clearScreen: false,
   server: {
-    port: 5173,
+    port: 46173,
     strictPort: true
   }
 });

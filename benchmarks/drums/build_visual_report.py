@@ -47,21 +47,23 @@ ALGORITHM_LABELS = {
     "librosa_superflux": "Librosa superflux",
     "multi_resolution": "Multi-resolution",
     "multi_resolution_template": "Multi-resolution template",
+    "mr_mt3_drums": "MR-MT3 drums",
     "onset_aligned": "Onset aligned",
     "probabilistic_pattern": "Probabilistic pattern",
     "spectral_flux_multiband": "Spectral flux multiband",
     "spectral_template_multipass": "Template multipass",
     "spectral_template_with_grid": "Template + grid",
     "template_xcorr": "Template xcorr",
+    "yourmt3_drums": "YourMT3 drums",
 }
 
 DISTORTION_NOTES = {
-    "beat_conditioned_multiband_decoder": "Best trusted method collapses on suspect Suno reference. Strong evidence that the reference is bad, not that the decoder regressed.",
-    "hybrid_kick_grid": "Another top trusted method gets pushed down sharply by suspect Suno MIDI. The tuning signal would move in the wrong direction if Suno were treated as truth.",
-    "dsp_bandpass_improved": "Legacy DSP path gets artificially promoted by suspect Suno MIDI. This is exactly the kind of false optimization target the shootout was designed to catch.",
-    "dsp_spectral_flux": "Another weak legacy path looks stronger than it should when measured against suspect Suno MIDI.",
-    "combined_filter": "The only material positive delta. It is still weak on trusted synthetic, so the Suno reference is rewarding the wrong behavior.",
-    "adaptive_beat_grid_multilabel": "Looks best on suspect Suno, but only at 0.202 overall. That is not a real absolute win; it is a distorted ranking.",
+    "yourmt3_drums": "Leads both the trusted synthetic suite and the normalized Suno diagnostic corpus. The suspect side now agrees directionally with the trusted gate for this engine.",
+    "beat_conditioned_multiband_decoder": "Safe start normalization helped, but this engine is still demoted sharply on suspect Suno. That points to remaining reference mismatch beyond the simple start offset.",
+    "hybrid_kick_grid": "The best trusted heuristic still gets pushed down on the normalized suspect corpus. Suno diagnostics are more useful now, but still not safe as a selection target.",
+    "adaptive_beat_grid": "This engine gains a lot on the normalized suspect corpus, which is informative, but still not enough to replace the trusted gate.",
+    "dsp_spectral_flux": "A weaker DSP path is still promoted on suspect Suno even after start normalization. That is a warning sign that these references remain diagnostic-only.",
+    "combined_filter": "Still gets an artificial lift on suspect Suno. The normalization fixed the obvious start slip, but not all of the reference distortion.",
 }
 
 RESEARCH_SOURCES = [
@@ -153,6 +155,20 @@ def _format_delta(value: float | None) -> str:
 
 def _pretty_algorithm(name: str) -> str:
     return ALGORITHM_LABELS.get(name, name.replace("_", " "))
+
+
+def _scaled_max(values: Sequence[float | None], *, floor: float, headroom: float = 1.08) -> float:
+    usable = [float(value) for value in values if value is not None]
+    if not usable:
+        return floor
+    return max(floor, max(usable) * headroom)
+
+
+def _scaled_abs_max(values: Sequence[float | None], *, floor: float, headroom: float = 1.08) -> float:
+    usable = [abs(float(value)) for value in values if value is not None]
+    if not usable:
+        return floor
+    return max(floor, max(usable) * headroom)
 
 
 def _score_color(value: float, *, positive: bool = True) -> str:
@@ -368,6 +384,10 @@ def _link_item(label: str, target: str) -> str:
 def build_report() -> Path:
     shootout_dir = _read_latest_shootout_dir()
     shootout = _load_json(shootout_dir / "summary.json")
+    recommendation = shootout.get("recommendation", {})
+    best_trusted_heuristic = recommendation.get("best_trusted_heuristic") or {}
+    best_learned = recommendation.get("best_learned_candidate") or {}
+    suspect_cases = list(shootout["suspect"]["payload"].get("cases", []))
 
     trusted_summaries = sorted(
         shootout["trusted"]["summary"]["algorithm_summaries"],
@@ -380,6 +400,25 @@ def build_report() -> Path:
         reverse=True,
     )
     comparison_rows = shootout["comparison"]["rows"]
+    suspect_alignment_applied = [
+        case for case in suspect_cases if case.get("reference_meta", {}).get("start_alignment_applied")
+    ]
+    suspect_alignment_skipped = [
+        case
+        for case in suspect_cases
+        if case.get("reference_meta", {}).get("start_alignment_policy") == "audio_start_offset"
+        and not case.get("reference_meta", {}).get("start_alignment_applied")
+    ]
+    suspect_alignment_rows = [
+        [
+            str(case.get("title", case.get("case_id", "-"))),
+            "Applied" if case.get("reference_meta", {}).get("start_alignment_applied") else "Skipped",
+            _format_delta(case.get("reference_meta", {}).get("observed_start_offset_sec")),
+            _format_delta(case.get("reference_meta", {}).get("applied_start_offset_sec")),
+            str(case.get("reference_meta", {}).get("start_alignment_reason", "-")),
+        ]
+        for case in suspect_cases
+    ]
 
     core_lanes = _load_json(MILESTONE_PATHS["core_lanes"])
     hybrid_mvp = _load_json(MILESTONE_PATHS["hybrid_mvp"])
@@ -484,68 +523,85 @@ def build_report() -> Path:
         title="Timing budget across milestones",
         subtitle="Lower is better. The hybrid gains did not come from a large timing penalty.",
         items=[(entry["label"], entry["timing"]) for entry in milestone_entries if entry["timing"] is not None],
-        max_value=35.0,
+        max_value=_scaled_max([entry["timing"] for entry in milestone_entries if entry["timing"] is not None], floor=30.0, headroom=1.05),
         color="#7dd3fc",
         width=1020,
     )
 
     paired_chart = _render_grouped_bar_chart(
-        title="Top trusted algorithms measured against trusted vs suspect references",
-        subtitle="The same algorithms are scored twice: once against known-good rendered MIDI and once against suspect Suno MIDI.",
+        title="Top trusted algorithms measured against trusted vs normalized suspect references",
+        subtitle="The same algorithms are scored twice: once against known-good rendered MIDI and once against the normalized Suno diagnostic corpus.",
         categories=[_pretty_algorithm(row["algorithm"]) for row in paired_top_rows],
         series=[
             ("Trusted synthetic", [row["trusted"]["mean_overall_f1"] for row in paired_top_rows], "#4ad0a6"),
-            ("Suspect Suno", [row["suspect"]["mean_overall_f1"] for row in paired_top_rows], "#ff8b5e"),
+            ("Normalized Suno diagnostics", [row["suspect"]["mean_overall_f1"] for row in paired_top_rows], "#ff8b5e"),
         ],
-        max_value=0.4,
+        max_value=_scaled_max(
+            [row["trusted"]["mean_overall_f1"] for row in paired_top_rows]
+            + [row["suspect"]["mean_overall_f1"] for row in paired_top_rows],
+            floor=0.35,
+            headroom=1.08,
+        ),
         width=1020,
     )
 
     trusted_chart = _render_horizontal_bar_chart(
         title="Trusted synthetic leaderboard",
-        subtitle="18 algorithms on the rendered known-good fixture suite.",
+        subtitle=f"{len(trusted_summaries)} algorithms on the rendered known-good fixture suite.",
         items=trusted_top_items,
-        max_value=0.36,
+        max_value=_scaled_max([value for _label, value in trusted_top_items], floor=0.35, headroom=1.08),
         color="#4ad0a6",
         width=1020,
     )
 
     suspect_chart = _render_horizontal_bar_chart(
-        title="Suspect Suno leaderboard",
-        subtitle="The same 18 algorithms, but scored against the suspect King in Zion Suno MIDI reference.",
+        title="Normalized Suno diagnostic leaderboard",
+        subtitle=f"{len(suspect_summaries)} algorithms on {len(suspect_cases)} Suno drum-stem cases, with safe start normalization applied on {len(suspect_alignment_applied)} case(s).",
         items=suspect_top_items,
-        max_value=0.24,
+        max_value=_scaled_max([value for _label, value in suspect_top_items], floor=0.3, headroom=1.08),
         color="#ff8b5e",
         width=1020,
     )
 
     delta_chart = _render_diverging_bar_chart(
-        title="Overall F1 distortion when Suno MIDI is used as reference",
-        subtitle="Positive means the algorithm looks better on suspect Suno than on trusted synthetic. Negative means it gets punished by the suspect reference.",
+        title="Overall F1 distortion after safe Suno start normalization",
+        subtitle="Positive means the algorithm looks better on the normalized Suno diagnostics than on trusted synthetic. Negative means it still gets punished by the suspect reference.",
         items=[
             (_pretty_algorithm(row["algorithm"]), row["delta_suspect_minus_trusted"]["mean_overall_f1"])
             for row in delta_rows
         ],
         width=1020,
-        abs_max=0.18,
+        abs_max=_scaled_abs_max(
+            [row["delta_suspect_minus_trusted"]["mean_overall_f1"] for row in delta_rows],
+            floor=0.1,
+            headroom=1.1,
+        ),
         value_format="{:+.3f}",
     )
 
     rank_shift_chart = _render_diverging_bar_chart(
-        title="Leaderboard rank shift caused by suspect Suno MIDI",
-        subtitle="Negative means promoted by suspect Suno. Positive means demoted by suspect Suno.",
+        title="Leaderboard rank shift on the normalized Suno diagnostics",
+        subtitle="Negative means promoted by the normalized Suno diagnostic corpus. Positive means demoted by it.",
         items=[(_pretty_algorithm(row["algorithm"]), float(row["rank_shift"])) for row in rank_shift_rows],
         width=1020,
-        abs_max=12.0,
+        abs_max=_scaled_abs_max(
+            [float(row["rank_shift"]) for row in rank_shift_rows if row.get("rank_shift") is not None],
+            floor=8.0,
+            headroom=1.1,
+        ),
         value_format="{:+.0f}",
     )
 
     holdout_chart = _render_grouped_bar_chart(
         title="Historic King in Zion holdout view",
-        subtitle="Useful as a diagnostic snapshot, but no longer acceptable as truth because the Suno MIDI reference is suspect.",
+        subtitle="Useful as a single-song diagnostic snapshot, but superseded by the normalized 7-song Suno diagnostic corpus for suspect-reference analysis.",
         categories=["Overall", "Kick", "Snare", "Hi-hat"],
         series=holdout_series,
-        max_value=0.35,
+        max_value=_scaled_max(
+            [value for _label, values, _fill in holdout_series for value in values],
+            floor=0.3,
+            headroom=1.08,
+        ),
         width=1020,
     )
 
@@ -564,10 +620,10 @@ def build_report() -> Path:
 
     distortion_focus = []
     for algorithm in [
+        "yourmt3_drums",
         "beat_conditioned_multiband_decoder",
         "hybrid_kick_grid",
-        "adaptive_beat_grid_multilabel",
-        "dsp_bandpass_improved",
+        "adaptive_beat_grid",
         "dsp_spectral_flux",
         "combined_filter",
     ]:
@@ -601,6 +657,10 @@ def build_report() -> Path:
     generated_local = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
     trusted_best = trusted_summaries[0]
     suspect_best = suspect_summaries[0]
+    suspect_alignment_summary = (
+        f"Safe audio-start normalization applied on {len(suspect_alignment_applied)} of {len(suspect_cases)} suspect case(s); "
+        f"{len(suspect_alignment_skipped)} remained unshifted because the observed offset was outside the safe window."
+    )
 
     source_links = [
         _link_item("Latest shootout report.html", _rel_href(shootout_dir / "report.html")),
@@ -818,8 +878,8 @@ def build_report() -> Path:
   <main class="page">
     <section class="hero" id="top">
       <div class="eyebrow">AuralPrimer / Drum Benchmark Program</div>
-      <h1>Visual benchmark report: trusted synthetic truth vs suspect Suno MIDI</h1>
-      <p class="lede">This report consolidates the current drum-transcription research path, the retained benchmark milestones, the old King in Zion holdout context, and the new trusted-vs-suspect shootout. The core conclusion is stable: the rendered fixture suite with known-good MIDI remains the truth set, while Suno-exported MIDI is diagnostic-only and cannot be used as a tuning target.</p>
+      <h1>Visual benchmark report: trusted synthetic truth vs normalized Suno diagnostics</h1>
+      <p class="lede">This report consolidates the current drum-transcription research path, the retained benchmark milestones, the historic King in Zion context, and the new full-corpus trusted-vs-Suno shootout after safe audio-start normalization. The conclusion is tighter now: correcting the obvious Suno start offset materially improves the diagnostic signal, but the rendered fixture suite with known-good MIDI still remains the only tuning truth set.</p>
       <div class="nav">
         <a href="#overview">Overview</a>
         <a href="#milestones">Milestones</a>
@@ -838,19 +898,21 @@ def build_report() -> Path:
         </div>
       </div>
       <div class="grid">
-        <div class="span-3">{_card("Best trusted result", _format_score(trusted_best["mean_overall_f1"]), f"{_pretty_algorithm(trusted_best['algorithm'])} is still the top performer on the rendered known-good fixture suite.")}</div>
-        <div class="span-3">{_card("Best suspect Suno result", _format_score(suspect_best["mean_overall_f1"]), f"{_pretty_algorithm(suspect_best['algorithm'])} tops the suspect Suno ranking, but only at an absolute score of {_format_score(suspect_best['mean_overall_f1'])}.")}</div>
-        <div class="span-3">{_card("Biggest false promotion", f"{_pretty_algorithm(biggest_false_promotion['algorithm'])} #{biggest_false_promotion['trusted_rank']} to #{biggest_false_promotion['suspect_rank']}", "Suspect Suno MIDI rewards behavior that does not survive the trusted synthetic suite.")}</div>
-        <div class="span-3">{_card("Biggest false demotion", f"{_pretty_algorithm(biggest_false_demotion['algorithm'])} #{biggest_false_demotion['trusted_rank']} to #{biggest_false_demotion['suspect_rank']}", "A top performer gets pushed down by the suspect reference, which is why Suno MIDI can no longer be treated as truth.")}</div>
+        <div class="span-3">{_card("Best trusted result", _format_score(trusted_best["mean_overall_f1"]), f"{_pretty_algorithm(trusted_best['algorithm'])} leads the rendered known-good suite overall.")}</div>
+        <div class="span-3">{_card("Best trusted heuristic", _format_score(best_trusted_heuristic.get("mean_overall_f1")), f"{_pretty_algorithm(best_trusted_heuristic.get('algorithm', '-'))} remains the best heuristic gate on trusted synthetic.")}</div>
+        <div class="span-3">{_card("Best normalized Suno result", _format_score(suspect_best["mean_overall_f1"]), f"{_pretty_algorithm(suspect_best['algorithm'])} now tops the normalized Suno diagnostic corpus at {_format_score(suspect_best['mean_overall_f1'])} overall.")}</div>
+        <div class="span-3">{_card("Alignment coverage", f"{len(suspect_alignment_applied)}/{len(suspect_cases)}", "Suspect Suno cases that accepted safe audio-start normalization before scoring.")}</div>
       </div>
       <div class="grid">
         <div class="card span-8">
           <h3>Current operational policy</h3>
-          <p>The benchmark program now has a clean rule: optimize against the trusted rendered suite, keep a manually audited real-audio holdout for sanity checks, and treat Suno-exported MIDI as advisory metadata only. The latest shootout exists specifically to show how badly the suspect Suno timing can distort the leaderboard.</p>
+          <p>The benchmark rule is now sharper: optimize against the trusted rendered suite, keep a manually audited real-audio holdout for sanity checks, and use the normalized Suno corpus only as a diagnostic lens. Start-offset normalization is allowed when the reference and audio differ by a safe amount, but large or structurally broken Suno offsets still keep that corpus out of selection logic.</p>
           <div>
-            <span class="pill">18 algorithms</span>
-            <span class="pill">10 rendered trusted fixtures</span>
-            <span class="pill">1 suspect Suno case</span>
+            <span class="pill">{len(trusted_summaries)} algorithms</span>
+            <span class="pill">{len(shootout['trusted']['payload']['cases'])} rendered trusted fixtures</span>
+            <span class="pill">{len(suspect_cases)} suspect Suno cases</span>
+            <span class="pill">{len(suspect_alignment_applied)} safe-aligned</span>
+            <span class="pill">{len(suspect_alignment_skipped)} left unshifted</span>
             <span class="pill">60 ms matching tolerance</span>
             <span class="pill">Offline HTML, no server required</span>
           </div>
@@ -858,9 +920,9 @@ def build_report() -> Path:
         <div class="card span-4">
           <h3>Key findings</h3>
           <ul class="findings">
-            <li>The hybrid line was the first real structural win because it lifted overall, kick, snare, and hi-hat together.</li>
-            <li>The adaptive refinement is real, but mainly as a kick-specific improvement.</li>
-            <li>The latest trusted-vs-suspect shootout proves Suno MIDI can reward weaker legacy DSP paths and punish the strongest trusted methods.</li>
+            <li>Safe start normalization materially changed the Suno-side leaderboard. The normalized diagnostic corpus no longer makes the raw-offset mistake look like algorithm failure.</li>
+            <li><code>yourmt3_drums</code> now leads both trusted synthetic and normalized Suno diagnostics, while <code>hybrid_kick_grid</code> remains the strongest trusted heuristic baseline.</li>
+            <li>The suspect corpus is more useful now, but still not safe for promotion decisions because several songs remained out-of-window and unshifted.</li>
           </ul>
         </div>
       </div>
@@ -888,7 +950,7 @@ def build_report() -> Path:
       <div class="section-header">
         <div>
           <div class="kicker">Current shootout</div>
-          <h2>Trusted synthetic truth vs suspect Suno MIDI</h2>
+          <h2>Trusted synthetic truth vs normalized Suno diagnostics</h2>
         </div>
       </div>
       <div class="grid">
@@ -898,8 +960,13 @@ def build_report() -> Path:
         <div class="card span-12 chart">{delta_chart}</div>
         <div class="card span-12 chart">{rank_shift_chart}</div>
         <div class="card span-12">
+          <h3>Suspect case alignment status</h3>
+          <p>{html.escape(suspect_alignment_summary)}</p>
+          {_render_table(["Case", "Normalization", "Observed offset", "Applied shift", "Reason"], suspect_alignment_rows)}
+        </div>
+        <div class="card span-12">
           <h3>What the shootout proves</h3>
-          <p>On trusted synthetic, the top of the board is still led by the hybrid line. On suspect Suno, weaker legacy methods get promoted and strong trusted methods get punished. That is exactly the failure mode the benchmark needed to catch before those suspect references could bias further tuning.</p>
+          <p>The normalized Suno diagnostics are substantially more believable than the old raw-reference view. They now agree with the trusted suite on the headline result, because <code>yourmt3_drums</code> leads both. But the corpus still distorts some heuristic rankings and still contains cases with unusable start offsets, so it remains diagnostic-only rather than a tuning target.</p>
           {_render_table(["Algorithm", "Trusted rank", "Suspect rank", "Overall delta", "Why it matters"], distortion_focus)}
         </div>
       </div>
@@ -916,15 +983,15 @@ def build_report() -> Path:
         <div class="card span-12 chart">{holdout_chart}</div>
         <div class="card span-7">
           <h3>How to read this now</h3>
-          <p>The older King in Zion holdout is still useful as a diagnostic snapshot of real-audio behavior, but it is no longer acceptable as a truth benchmark because the Suno MIDI reference itself is suspect. That means the chart below should inform error analysis, not optimization targets.</p>
+          <p>The older King in Zion holdout is still useful as a diagnostic snapshot of real-audio behavior, but it is no longer the primary suspect-data lens. The normalized 7-song Suno diagnostic corpus is a better way to inspect how algorithms behave once the simple start-offset issue is corrected. The chart below still informs error analysis, not optimization targets.</p>
           {_render_table(["Algorithm", "Overall", "Kick", "Snare", "Hi-hat", "Timing"], holdout_rows)}
         </div>
         <div class="card span-5">
           <h3>Diagnostic takeaway</h3>
           <ul>
-            <li>The retained retry did improve the old holdout slightly, but only by a small margin.</li>
-            <li>Manual inspection of King in Zion is what exposed that the Suno-exported MIDI timing could not be trusted.</li>
-            <li>The correct follow-up is to keep real audio in the loop, but only with validated references or manual audit, not raw Suno MIDI exports.</li>
+            <li>The retained retry did improve the old holdout slightly, but the bigger lesson was about reference hygiene, not retry tuning.</li>
+            <li>Manual inspection of King in Zion exposed the start-offset problem; the normalized 7-song diagnostic corpus confirms that this offset was real and recoverable on several songs.</li>
+            <li>The correct follow-up is to keep Suno audio and MIDI in the workflow, but only with safe normalization plus a strict rule that suspect references never become the source-of-truth gate.</li>
           </ul>
         </div>
       </div>
@@ -955,7 +1022,7 @@ def build_report() -> Path:
       <div class="grid">
         <div class="card span-12">
           <h3>Current direction</h3>
-          <p>The retained path is still to improve the hybrid family on trusted synthetic while keeping a manually audited real-audio gate. The new trusted-vs-suspect shootout did not replace the older research program; it clarified the data policy around it. Future work should keep Suno assets for import, lyrics, and diagnostics, but never let suspect Suno MIDI become a source-of-truth benchmark again.</p>
+          <p>The retained path is still benchmark-first: keep the rendered trusted suite as the gate, populate the curated real holdout, and use the normalized Suno corpus as a regression-detection layer for importer and timing logic. The new finding is not that Suno MIDI is useless; it is that start normalization rescues part of its value, while the remaining outlier songs prove it still cannot replace validated references.</p>
         </div>
       </div>
     </section>

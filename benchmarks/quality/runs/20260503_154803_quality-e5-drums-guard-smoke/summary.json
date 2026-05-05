@@ -1,0 +1,2285 @@
+{
+  "payload": {
+    "suite_version": "0.4.0",
+    "generated_at_utc": "2026-05-03T19:48:03Z",
+    "profile": {
+      "description": "Prefer in-game recognizability, stable density, and fail-safe local defaults.",
+      "drum_engines": [
+        "beat_conditioned_multiband_decoder",
+        "spectral_flux_multiband",
+        "adaptive_beat_grid",
+        "combined_filter",
+        "dsp_bandpass_improved"
+      ],
+      "melodic_methods_by_instrument": {
+        "bass": [
+          "melodic_yin_octave_hps_fix",
+          "melodic_adaptive",
+          "melodic_yin_bass80",
+          "melodic_octave_fix"
+        ],
+        "keys": [
+          "piano_auto",
+          "piano_polyphonic_clean",
+          "melodic_octave_fix",
+          "melodic_hpss_combined"
+        ],
+        "lead_guitar": [
+          "melodic_adaptive",
+          "melodic_octave_fix",
+          "melodic_combined",
+          "basic_pitch"
+        ],
+        "rhythm_guitar": [
+          "melodic_hpss_combined",
+          "melodic_adaptive",
+          "melodic_octave_fix",
+          "melodic_combined"
+        ]
+      },
+      "profile": "gameplay_default",
+      "known_profiles": [
+        "gameplay_default",
+        "fidelity_midi",
+        "research_ab"
+      ]
+    },
+    "tolerance_ms": 60.0,
+    "quality_metric_backends": {
+      "mir_eval": {
+        "ok": true,
+        "display_name": "MIR Eval",
+        "module": "mir_eval",
+        "module_candidates": [
+          "mir_eval"
+        ],
+        "purpose": "note-event transcription metrics",
+        "protocols": [
+          "mir_eval.transcription"
+        ],
+        "failure_mode": "reference-backed MIR metrics omitted; native benchmark metrics still run"
+      },
+      "museval": {
+        "ok": false,
+        "display_name": "Museval",
+        "module": null,
+        "module_candidates": [
+          "museval"
+        ],
+        "purpose": "source-separation SDR protocol",
+        "protocols": [
+          "BSSEval v4 / museval.evaluate"
+        ],
+        "failure_mode": "separation SDR metrics omitted; transcription benchmarks still run"
+      }
+    },
+    "dataset_sources": {
+      "musdb18": {
+        "ok": false,
+        "display_name": "MUSDB18",
+        "purpose": "controlled source-separation evaluation",
+        "roles": [
+          "drums",
+          "bass",
+          "other",
+          "vocals",
+          "mixture"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_MUSDB18_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; do not ship dataset content or derived in-game content"
+      },
+      "musdb18_hq": {
+        "ok": false,
+        "display_name": "MUSDB18-HQ",
+        "purpose": "controlled high-quality source-separation evaluation",
+        "roles": [
+          "drums",
+          "bass",
+          "other",
+          "vocals",
+          "mixture"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_MUSDB18_HQ_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; do not ship dataset content or derived in-game content"
+      },
+      "enst_drums": {
+        "ok": false,
+        "display_name": "ENST-Drums",
+        "purpose": "drum transcription regression fixtures",
+        "roles": [
+          "drums"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_ENST_DRUMS_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; keep product fixtures synthetic/owned/cleared"
+      },
+      "idmt_smt_drums": {
+        "ok": false,
+        "display_name": "IDMT-SMT-Drums",
+        "purpose": "drum transcription regression fixtures",
+        "roles": [
+          "drums"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_IDMT_SMT_DRUMS_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; keep product fixtures synthetic/owned/cleared"
+      }
+    },
+    "model_backends": {
+      "mt3": {
+        "ok": true,
+        "engines": {
+          "mr_mt3_drums": {
+            "ok": true,
+            "backend": "mt3",
+            "engine": "mr_mt3_drums",
+            "model_id": "mr_mt3",
+            "modelpack_id": "mr_mt3",
+            "modelpack_version": "hf-main-20260325",
+            "checkpoint_path": "D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325\\files\\checkpoints\\mr_mt3\\mt3.pth",
+            "modelpack_root": "D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325",
+            "size_mb": 176.0,
+            "speed_x_realtime": 57.0,
+            "description": "MR-MT3 drum transcription baseline"
+          },
+          "yourmt3_drums": {
+            "ok": true,
+            "backend": "mt3",
+            "engine": "yourmt3_drums",
+            "model_id": "yourmt3",
+            "modelpack_id": "yourmt3",
+            "modelpack_version": "hf-main-20260325",
+            "checkpoint_path": "D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325\\files\\checkpoints\\yourmt3\\mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops\\last.ckpt",
+            "modelpack_root": "D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325",
+            "size_mb": 536.0,
+            "speed_x_realtime": 15.0,
+            "description": "YourMT3 drum transcription research candidate"
+          }
+        },
+        "methods": [
+          "mr_mt3_drums",
+          "yourmt3_drums"
+        ],
+        "roles": [
+          "drums"
+        ],
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear FileNotFoundError/RuntimeError, no portable requirement"
+      },
+      "basic_pitch": {
+        "ok": true,
+        "display_name": "Basic Pitch",
+        "module": "basic_pitch",
+        "module_candidates": [
+          "basic_pitch"
+        ],
+        "module_available": true,
+        "roles": [
+          "bass",
+          "lead_guitar",
+          "rhythm_guitar",
+          "keys"
+        ],
+        "methods": [
+          "basic_pitch"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "event_decode",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "portable-safe fallback through melodic fallback chain"
+      },
+      "piano_transkun": {
+        "ok": false,
+        "display_name": "Transkun",
+        "module": null,
+        "module_candidates": [
+          "transkun"
+        ],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_transkun",
+          "piano_transkun_clean"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError, then melodic fallback when used through import"
+      },
+      "piano_pti": {
+        "ok": false,
+        "display_name": "piano_transcription_inference",
+        "module": null,
+        "module_candidates": [
+          "piano_transcription_inference"
+        ],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_pti",
+          "piano_pti_clean"
+        ],
+        "env_files": {
+          "AURAL_PIANO_PTI_CHECKPOINT": {
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        },
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError unless checkpoint or explicit download opt-in is configured"
+      },
+      "piano_hft": {
+        "ok": false,
+        "display_name": "hFT-Transformer",
+        "module": null,
+        "module_candidates": [],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_hft",
+          "piano_hft_clean"
+        ],
+        "env_files": {
+          "AURAL_PIANO_HFT_CHECKPOINT": {
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        },
+        "env_values": {
+          "AURAL_PIANO_HFT_COMMAND": {
+            "configured": false,
+            "value": null
+          }
+        },
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError unless checkpoint and command adapter are configured"
+      },
+      "torchcrepe": {
+        "ok": true,
+        "display_name": "torchcrepe",
+        "module": "torchcrepe",
+        "module_candidates": [
+          "torchcrepe",
+          "torch"
+        ],
+        "module_available": true,
+        "roles": [
+          "bass",
+          "lead_guitar",
+          "rhythm_guitar"
+        ],
+        "methods": [
+          "torchcrepe"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "frame_f0_decode",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError, then melodic fallback when used through import"
+      },
+      "beatnet": {
+        "ok": false,
+        "display_name": "BeatNet",
+        "module": null,
+        "module_candidates": [
+          "BeatNet",
+          "beatnet"
+        ],
+        "module_available": false,
+        "roles": [
+          "tempo",
+          "drums"
+        ],
+        "methods": [],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "beat_downbeat_priors",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "availability-only until wired as a beat/downbeat prior"
+      },
+      "omnizart": {
+        "ok": false,
+        "display_name": "Omnizart",
+        "module": null,
+        "module_candidates": [
+          "omnizart"
+        ],
+        "module_available": false,
+        "roles": [
+          "research"
+        ],
+        "methods": [],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "research_comparator",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "availability-only research comparator; never required for portable import"
+      }
+    },
+    "cases": [
+      {
+        "case_id": "10f446654fdc37e5805af28cccc17571-drums",
+        "name": "Smoke - drums",
+        "role": "drums",
+        "family": "drums",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\audio\\stems\\drums.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\features\\notes.mid",
+        "reference_count": 22,
+        "reference_meta": {
+          "format": "midi",
+          "ignored_reference_events": 0,
+          "selected_mode": "strict",
+          "ticks_per_quarter": 480,
+          "start_alignment_policy": "none",
+          "start_alignment_applied": false,
+          "applied_start_offset_sec": 0.0
+        },
+        "algorithms": [
+          "beat_conditioned_multiband_decoder"
+        ],
+        "results": [
+          {
+            "algorithm": "beat_conditioned_multiband_decoder",
+            "raw_predicted_count": 19,
+            "ignored_predicted_events": 0,
+            "predicted_events": [
+              {
+                "time": 0.0,
+                "class": "kick"
+              },
+              {
+                "time": 0.082,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.164,
+                "class": "snare"
+              },
+              {
+                "time": 0.246,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.328,
+                "class": "kick"
+              },
+              {
+                "time": 0.41,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.492,
+                "class": "crash"
+              },
+              {
+                "time": 0.574,
+                "class": "tom2"
+              },
+              {
+                "time": 0.656,
+                "class": "kick"
+              },
+              {
+                "time": 0.738,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.82,
+                "class": "snare"
+              },
+              {
+                "time": 0.902,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.984,
+                "class": "kick"
+              },
+              {
+                "time": 1.066,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.148,
+                "class": "crash"
+              },
+              {
+                "time": 1.23,
+                "class": "tom2"
+              },
+              {
+                "time": 1.312,
+                "class": "kick"
+              },
+              {
+                "time": 1.394,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.476,
+                "class": "snare"
+              }
+            ],
+            "reference_count": 22,
+            "predicted_count": 19,
+            "tolerance_ms": 60.0,
+            "overall": {
+              "reference_count": 22,
+              "predicted_count": 19,
+              "tp": 3,
+              "fp": 16,
+              "fn": 19,
+              "precision": 0.157895,
+              "recall": 0.136364,
+              "f1": 0.146341,
+              "timing_mae_ms": 21.333
+            },
+            "per_class": {
+              "kick": {
+                "reference_count": 3,
+                "predicted_count": 5,
+                "tp": 1,
+                "fp": 4,
+                "fn": 2,
+                "precision": 0.2,
+                "recall": 0.333333,
+                "f1": 0.25,
+                "timing_mae_ms": 0.0
+              },
+              "snare": {
+                "reference_count": 3,
+                "predicted_count": 3,
+                "tp": 0,
+                "fp": 3,
+                "fn": 3,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "hi_hat": {
+                "reference_count": 5,
+                "predicted_count": 7,
+                "tp": 2,
+                "fp": 5,
+                "fn": 3,
+                "precision": 0.285714,
+                "recall": 0.4,
+                "f1": 0.333333,
+                "timing_mae_ms": 32.0
+              },
+              "crash": {
+                "reference_count": 2,
+                "predicted_count": 2,
+                "tp": 0,
+                "fp": 2,
+                "fn": 2,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "ride": {
+                "reference_count": 2,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 2,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom1": {
+                "reference_count": 2,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 2,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom2": {
+                "reference_count": 2,
+                "predicted_count": 2,
+                "tp": 0,
+                "fp": 2,
+                "fn": 2,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom3": {
+                "reference_count": 3,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 3,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              }
+            },
+            "confusions": [
+              {
+                "reference_class": "kick",
+                "predicted_class": "hi_hat",
+                "count": 1
+              },
+              {
+                "reference_class": "snare",
+                "predicted_class": "kick",
+                "count": 1
+              },
+              {
+                "reference_class": "snare",
+                "predicted_class": "hi_hat",
+                "count": 1
+              },
+              {
+                "reference_class": "hi_hat",
+                "predicted_class": "kick",
+                "count": 1
+              },
+              {
+                "reference_class": "hi_hat",
+                "predicted_class": "tom2",
+                "count": 1
+              },
+              {
+                "reference_class": "crash",
+                "predicted_class": "snare",
+                "count": 1
+              },
+              {
+                "reference_class": "crash",
+                "predicted_class": "tom2",
+                "count": 1
+              },
+              {
+                "reference_class": "ride",
+                "predicted_class": "snare",
+                "count": 1
+              },
+              {
+                "reference_class": "tom1",
+                "predicted_class": "kick",
+                "count": 1
+              },
+              {
+                "reference_class": "tom2",
+                "predicted_class": "hi_hat",
+                "count": 1
+              },
+              {
+                "reference_class": "tom2",
+                "predicted_class": "crash",
+                "count": 1
+              },
+              {
+                "reference_class": "tom3",
+                "predicted_class": "snare",
+                "count": 1
+              },
+              {
+                "reference_class": "tom3",
+                "predicted_class": "hi_hat",
+                "count": 1
+              }
+            ],
+            "gameplay": {
+              "role": "drums",
+              "event_count": 19,
+              "duration_sec": 1.476,
+              "events_per_minute": 772.358,
+              "lane_coverage": 1,
+              "lanes_present": [
+                "0"
+              ],
+              "duplicate_count": 0,
+              "duplicate_rate": 0.0,
+              "overlap_count": 0,
+              "overlap_rate": 0.0
+            },
+            "sync": {
+              "status": "ok",
+              "start_offset_sec": 0.0,
+              "quarantine": false,
+              "threshold_sec": 2.0
+            },
+            "classifier": {
+              "kind": "drums",
+              "primary_dimension": "drum_lane",
+              "dimensions": [
+                {
+                  "name": "drum_lane",
+                  "class_metrics": [
+                    {
+                      "label": "snare",
+                      "reference_count": 3,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "tom3",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "crash",
+                      "reference_count": 2,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "ride",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "tom1",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "tom2",
+                      "reference_count": 2,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "kick",
+                      "reference_count": 3,
+                      "predicted_count": 5,
+                      "tp": 1,
+                      "fp": 4,
+                      "fn": 2,
+                      "precision": 0.2,
+                      "recall": 0.333333,
+                      "f1": 0.25
+                    },
+                    {
+                      "label": "hi_hat",
+                      "reference_count": 5,
+                      "predicted_count": 7,
+                      "tp": 2,
+                      "fp": 5,
+                      "fn": 3,
+                      "precision": 0.285714,
+                      "recall": 0.4,
+                      "f1": 0.333333
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "snare",
+                      "predicted_class": "hi_hat",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "tom3",
+                      "predicted_class": "snare",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "tom2",
+                      "predicted_class": "crash",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "crash",
+                      "predicted_class": "tom2",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "tom1",
+                      "predicted_class": "kick",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "ride",
+                      "predicted_class": "hi_hat",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "kick",
+                      "predicted_class": "hi_hat",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "snare",
+                      "predicted_class": "kick",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "tom3",
+                      "predicted_class": "hi_hat",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "hi_hat",
+                      "predicted_class": "crash",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "hi_hat",
+                      "predicted_class": "kick",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "tom2",
+                      "predicted_class": "hi_hat",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "crash",
+                      "predicted_class": "snare",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 3,
+                  "matched_confusions": 13,
+                  "unmatched_predictions": 3,
+                  "unmatched_references": 6,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                }
+              ],
+              "timeline": [
+                {
+                  "start": 0.0,
+                  "end": 0.087023,
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.087023,
+                  "end": 0.174045,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.174045,
+                  "end": 0.261068,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.261068,
+                  "end": 0.34809,
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.34809,
+                  "end": 0.435113,
+                  "tp": 1,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.435113,
+                  "end": 0.522135,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.522135,
+                  "end": 0.609158,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.609158,
+                  "end": 0.696181,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.696181,
+                  "end": 0.783203,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.783203,
+                  "end": 0.870226,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.870226,
+                  "end": 0.957248,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.957248,
+                  "end": 1.044271,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.044271,
+                  "end": 1.131293,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.131293,
+                  "end": 1.218316,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.218316,
+                  "end": 1.305339,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.305339,
+                  "end": 1.392361,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.392361,
+                  "end": 1.479384,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 1.479384,
+                  "end": 1.566406,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.566406,
+                  "end": 1.653429,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.653429,
+                  "end": 1.740451,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.740451,
+                  "end": 1.827474,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.827474,
+                  "end": 1.914497,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.914497,
+                  "end": 2.001519,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 2.001519,
+                  "end": 2.088542,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                }
+              ],
+              "coverage": {
+                "reference_events": 22,
+                "predicted_events": 19
+              }
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "a258f4cfcd73bbe4d9a0a0236af32332-drums",
+        "name": "tmp_demucs_smoke - drums",
+        "role": "drums",
+        "family": "drums",
+        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\audio\\stems\\drums.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\features\\notes.mid",
+        "reference_count": 23,
+        "reference_meta": {
+          "format": "midi",
+          "ignored_reference_events": 0,
+          "selected_mode": "strict",
+          "ticks_per_quarter": 480,
+          "start_alignment_policy": "none",
+          "start_alignment_applied": false,
+          "applied_start_offset_sec": 0.0
+        },
+        "algorithms": [
+          "beat_conditioned_multiband_decoder"
+        ],
+        "results": [
+          {
+            "algorithm": "beat_conditioned_multiband_decoder",
+            "raw_predicted_count": 25,
+            "ignored_predicted_events": 0,
+            "predicted_events": [
+              {
+                "time": 0.0,
+                "class": "kick"
+              },
+              {
+                "time": 0.082,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.164,
+                "class": "snare"
+              },
+              {
+                "time": 0.246,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.328,
+                "class": "kick"
+              },
+              {
+                "time": 0.41,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.492,
+                "class": "crash"
+              },
+              {
+                "time": 0.574,
+                "class": "tom2"
+              },
+              {
+                "time": 0.656,
+                "class": "kick"
+              },
+              {
+                "time": 0.738,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.82,
+                "class": "snare"
+              },
+              {
+                "time": 0.902,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.984,
+                "class": "kick"
+              },
+              {
+                "time": 1.066,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.148,
+                "class": "crash"
+              },
+              {
+                "time": 1.23,
+                "class": "tom2"
+              },
+              {
+                "time": 1.312,
+                "class": "kick"
+              },
+              {
+                "time": 1.394,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.476,
+                "class": "snare"
+              },
+              {
+                "time": 1.558,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.64,
+                "class": "kick"
+              },
+              {
+                "time": 1.722,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.804,
+                "class": "crash"
+              },
+              {
+                "time": 1.886,
+                "class": "tom2"
+              },
+              {
+                "time": 1.968,
+                "class": "kick"
+              }
+            ],
+            "reference_count": 23,
+            "predicted_count": 25,
+            "tolerance_ms": 60.0,
+            "overall": {
+              "reference_count": 23,
+              "predicted_count": 25,
+              "tp": 3,
+              "fp": 22,
+              "fn": 20,
+              "precision": 0.12,
+              "recall": 0.130435,
+              "f1": 0.125,
+              "timing_mae_ms": 31.819
+            },
+            "per_class": {
+              "kick": {
+                "reference_count": 3,
+                "predicted_count": 7,
+                "tp": 1,
+                "fp": 6,
+                "fn": 2,
+                "precision": 0.142857,
+                "recall": 0.333333,
+                "f1": 0.2,
+                "timing_mae_ms": 8.208
+              },
+              "snare": {
+                "reference_count": 0,
+                "predicted_count": 3,
+                "tp": 0,
+                "fp": 3,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "hi_hat": {
+                "reference_count": 0,
+                "predicted_count": 9,
+                "tp": 0,
+                "fp": 9,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "crash": {
+                "reference_count": 17,
+                "predicted_count": 3,
+                "tp": 2,
+                "fp": 1,
+                "fn": 15,
+                "precision": 0.666667,
+                "recall": 0.117647,
+                "f1": 0.2,
+                "timing_mae_ms": 43.625
+              },
+              "ride": {
+                "reference_count": 3,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 3,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom1": {
+                "reference_count": 0,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom2": {
+                "reference_count": 0,
+                "predicted_count": 3,
+                "tp": 0,
+                "fp": 3,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom3": {
+                "reference_count": 0,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              }
+            },
+            "confusions": [
+              {
+                "reference_class": "crash",
+                "predicted_class": "hi_hat",
+                "count": 7
+              },
+              {
+                "reference_class": "crash",
+                "predicted_class": "kick",
+                "count": 3
+              },
+              {
+                "reference_class": "crash",
+                "predicted_class": "snare",
+                "count": 2
+              },
+              {
+                "reference_class": "crash",
+                "predicted_class": "tom2",
+                "count": 2
+              },
+              {
+                "reference_class": "kick",
+                "predicted_class": "hi_hat",
+                "count": 1
+              },
+              {
+                "reference_class": "kick",
+                "predicted_class": "crash",
+                "count": 1
+              },
+              {
+                "reference_class": "ride",
+                "predicted_class": "snare",
+                "count": 1
+              }
+            ],
+            "gameplay": {
+              "role": "drums",
+              "event_count": 25,
+              "duration_sec": 1.968,
+              "events_per_minute": 762.195,
+              "lane_coverage": 1,
+              "lanes_present": [
+                "0"
+              ],
+              "duplicate_count": 0,
+              "duplicate_rate": 0.0,
+              "overlap_count": 0,
+              "overlap_rate": 0.0
+            },
+            "sync": {
+              "status": "ok",
+              "start_offset_sec": -0.044792,
+              "quarantine": false,
+              "threshold_sec": 2.0
+            },
+            "classifier": {
+              "kind": "drums",
+              "primary_dimension": "drum_lane",
+              "dimensions": [
+                {
+                  "name": "drum_lane",
+                  "class_metrics": [
+                    {
+                      "label": "ride",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "hi_hat",
+                      "reference_count": 0,
+                      "predicted_count": 9,
+                      "tp": 0,
+                      "fp": 9,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "snare",
+                      "reference_count": 0,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "tom2",
+                      "reference_count": 0,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "crash",
+                      "reference_count": 17,
+                      "predicted_count": 3,
+                      "tp": 2,
+                      "fp": 1,
+                      "fn": 15,
+                      "precision": 0.666667,
+                      "recall": 0.117647,
+                      "f1": 0.2
+                    },
+                    {
+                      "label": "kick",
+                      "reference_count": 3,
+                      "predicted_count": 7,
+                      "tp": 1,
+                      "fp": 6,
+                      "fn": 2,
+                      "precision": 0.142857,
+                      "recall": 0.333333,
+                      "f1": 0.2
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "crash",
+                      "predicted_class": "hi_hat",
+                      "count": 7
+                    },
+                    {
+                      "reference_class": "crash",
+                      "predicted_class": "tom2",
+                      "count": 3
+                    },
+                    {
+                      "reference_class": "crash",
+                      "predicted_class": "kick",
+                      "count": 2
+                    },
+                    {
+                      "reference_class": "kick",
+                      "predicted_class": "hi_hat",
+                      "count": 2
+                    },
+                    {
+                      "reference_class": "ride",
+                      "predicted_class": "snare",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "crash",
+                      "predicted_class": "snare",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 3,
+                  "matched_confusions": 16,
+                  "unmatched_predictions": 6,
+                  "unmatched_references": 4,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                }
+              ],
+              "timeline": [
+                {
+                  "start": 0.0,
+                  "end": 0.084766,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 1
+                },
+                {
+                  "start": 0.084766,
+                  "end": 0.169531,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.169531,
+                  "end": 0.254297,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.254297,
+                  "end": 0.339062,
+                  "tp": 1,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.339062,
+                  "end": 0.423828,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.423828,
+                  "end": 0.508594,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.508594,
+                  "end": 0.593359,
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.593359,
+                  "end": 0.678125,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.678125,
+                  "end": 0.762891,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.762891,
+                  "end": 0.847656,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 2
+                },
+                {
+                  "start": 0.847656,
+                  "end": 0.932422,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.932422,
+                  "end": 1.017187,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 1.017187,
+                  "end": 1.101953,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.101953,
+                  "end": 1.186719,
+                  "tp": 1,
+                  "fp": 0,
+                  "fn": 2
+                },
+                {
+                  "start": 1.186719,
+                  "end": 1.271484,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.271484,
+                  "end": 1.35625,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 1.35625,
+                  "end": 1.441016,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.441016,
+                  "end": 1.525781,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.525781,
+                  "end": 1.610547,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.610547,
+                  "end": 1.695312,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.695312,
+                  "end": 1.780078,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.780078,
+                  "end": 1.864844,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 1.864844,
+                  "end": 1.949609,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.949609,
+                  "end": 2.034375,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                }
+              ],
+              "coverage": {
+                "reference_events": 23,
+                "predicted_events": 25
+              }
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "dec1dc4f8d3fb66862092120ed3209a8-drums",
+        "name": "input - drums",
+        "role": "drums",
+        "family": "drums",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\audio\\stems\\drums.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\features\\notes.mid",
+        "reference_count": 13,
+        "reference_meta": {
+          "format": "midi",
+          "ignored_reference_events": 0,
+          "selected_mode": "strict",
+          "ticks_per_quarter": 480,
+          "start_alignment_policy": "none",
+          "start_alignment_applied": false,
+          "applied_start_offset_sec": 0.0
+        },
+        "algorithms": [
+          "beat_conditioned_multiband_decoder"
+        ],
+        "results": [
+          {
+            "algorithm": "beat_conditioned_multiband_decoder",
+            "raw_predicted_count": 36,
+            "ignored_predicted_events": 0,
+            "predicted_events": [
+              {
+                "time": 0.0,
+                "class": "snare"
+              },
+              {
+                "time": 0.041216,
+                "class": "kick"
+              },
+              {
+                "time": 0.177979,
+                "class": "kick"
+              },
+              {
+                "time": 0.320351,
+                "class": "kick"
+              },
+              {
+                "time": 0.376998,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.45524,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.492479,
+                "class": "snare"
+              },
+              {
+                "time": 0.492479,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.621388,
+                "class": "snare"
+              },
+              {
+                "time": 0.934603,
+                "class": "hi_hat"
+              },
+              {
+                "time": 0.989615,
+                "class": "snare"
+              },
+              {
+                "time": 0.989615,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.095692,
+                "class": "tom2"
+              },
+              {
+                "time": 1.125043,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.242776,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.376568,
+                "class": "kick"
+              },
+              {
+                "time": 1.376568,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.440164,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.486278,
+                "class": "snare"
+              },
+              {
+                "time": 1.486278,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.581859,
+                "class": "tom2"
+              },
+              {
+                "time": 1.615608,
+                "class": "snare"
+              },
+              {
+                "time": 1.761306,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.805629,
+                "class": "kick"
+              },
+              {
+                "time": 1.928471,
+                "class": "hi_hat"
+              },
+              {
+                "time": 1.986482,
+                "class": "snare"
+              },
+              {
+                "time": 1.986482,
+                "class": "hi_hat"
+              },
+              {
+                "time": 2.033195,
+                "class": "kick"
+              },
+              {
+                "time": 2.357131,
+                "class": "kick"
+              },
+              {
+                "time": 2.397569,
+                "class": "hi_hat"
+              },
+              {
+                "time": 2.474613,
+                "class": "snare"
+              },
+              {
+                "time": 2.474613,
+                "class": "hi_hat"
+              },
+              {
+                "time": 2.575964,
+                "class": "tom2"
+              },
+              {
+                "time": 2.609829,
+                "class": "snare"
+              },
+              {
+                "time": 2.892299,
+                "class": "hi_hat"
+              },
+              {
+                "time": 2.9376,
+                "class": "kick"
+              }
+            ],
+            "reference_count": 13,
+            "predicted_count": 36,
+            "tolerance_ms": 60.0,
+            "overall": {
+              "reference_count": 13,
+              "predicted_count": 36,
+              "tp": 8,
+              "fp": 28,
+              "fn": 5,
+              "precision": 0.222222,
+              "recall": 0.615385,
+              "f1": 0.326531,
+              "timing_mae_ms": 3.154
+            },
+            "per_class": {
+              "kick": {
+                "reference_count": 0,
+                "predicted_count": 8,
+                "tp": 0,
+                "fp": 8,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "snare": {
+                "reference_count": 13,
+                "predicted_count": 9,
+                "tp": 8,
+                "fp": 1,
+                "fn": 5,
+                "precision": 0.888889,
+                "recall": 0.615385,
+                "f1": 0.727273,
+                "timing_mae_ms": 3.154
+              },
+              "hi_hat": {
+                "reference_count": 0,
+                "predicted_count": 16,
+                "tp": 0,
+                "fp": 16,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "crash": {
+                "reference_count": 0,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "ride": {
+                "reference_count": 0,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom1": {
+                "reference_count": 0,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom2": {
+                "reference_count": 0,
+                "predicted_count": 3,
+                "tp": 0,
+                "fp": 3,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              },
+              "tom3": {
+                "reference_count": 0,
+                "predicted_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "timing_mae_ms": null
+              }
+            },
+            "confusions": [
+              {
+                "reference_class": "snare",
+                "predicted_class": "kick",
+                "count": 4
+              }
+            ],
+            "gameplay": {
+              "role": "drums",
+              "event_count": 36,
+              "duration_sec": 2.9376,
+              "events_per_minute": 735.294,
+              "lane_coverage": 1,
+              "lanes_present": [
+                "0"
+              ],
+              "duplicate_count": 6,
+              "duplicate_rate": 0.166667,
+              "overlap_count": 0,
+              "overlap_rate": 0.0
+            },
+            "sync": {
+              "status": "ok",
+              "start_offset_sec": -0.078333,
+              "quarantine": false,
+              "threshold_sec": 2.0
+            },
+            "classifier": {
+              "kind": "drums",
+              "primary_dimension": "drum_lane",
+              "dimensions": [
+                {
+                  "name": "drum_lane",
+                  "class_metrics": [
+                    {
+                      "label": "hi_hat",
+                      "reference_count": 0,
+                      "predicted_count": 16,
+                      "tp": 0,
+                      "fp": 16,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "kick",
+                      "reference_count": 0,
+                      "predicted_count": 8,
+                      "tp": 0,
+                      "fp": 8,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "tom2",
+                      "reference_count": 0,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "snare",
+                      "reference_count": 13,
+                      "predicted_count": 9,
+                      "tp": 8,
+                      "fp": 1,
+                      "fn": 5,
+                      "precision": 0.888889,
+                      "recall": 0.615385,
+                      "f1": 0.727273
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "snare",
+                      "predicted_class": "kick",
+                      "count": 4
+                    }
+                  ],
+                  "matched_tp": 8,
+                  "matched_confusions": 4,
+                  "unmatched_predictions": 24,
+                  "unmatched_references": 1,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                }
+              ],
+              "timeline": [
+                {
+                  "start": 0.0,
+                  "end": 0.1224,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 1
+                },
+                {
+                  "start": 0.1224,
+                  "end": 0.2448,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.2448,
+                  "end": 0.3672,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.3672,
+                  "end": 0.4896,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 0.4896,
+                  "end": 0.612,
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.612,
+                  "end": 0.7344,
+                  "tp": 1,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.7344,
+                  "end": 0.8568,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.8568,
+                  "end": 0.9792,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.9792,
+                  "end": 1.1016,
+                  "tp": 1,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 1.1016,
+                  "end": 1.224,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 1.224,
+                  "end": 1.3464,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 1.3464,
+                  "end": 1.4688,
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 1
+                },
+                {
+                  "start": 1.4688,
+                  "end": 1.5912,
+                  "tp": 1,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 1.5912,
+                  "end": 1.7136,
+                  "tp": 1,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.7136,
+                  "end": 1.836,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 1.836,
+                  "end": 1.9584,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 1.9584,
+                  "end": 2.0808,
+                  "tp": 1,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 2.0808,
+                  "end": 2.2032,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 2.2032,
+                  "end": 2.3256,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 2.3256,
+                  "end": 2.448,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 2.448,
+                  "end": 2.5704,
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 2.5704,
+                  "end": 2.6928,
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 2.6928,
+                  "end": 2.8152,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 2.8152,
+                  "end": 2.9376,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0
+                }
+              ],
+              "coverage": {
+                "reference_events": 13,
+                "predicted_events": 36
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "summary": {
+    "algorithm_summaries": [
+      {
+        "algorithm": "beat_conditioned_multiband_decoder",
+        "mean_f1": 0.199291,
+        "mir_eval_mean_onset_f1": null,
+        "mir_eval_mean_onset_offset_f1": null,
+        "case_count": 3
+      }
+    ],
+    "promotion_candidates": [
+      {
+        "role": "drums",
+        "algorithm": "beat_conditioned_multiband_decoder",
+        "mean_f1": 0.199291,
+        "case_count": 3,
+        "flagged_case_count": 1,
+        "benchmark_winner": true,
+        "promotion_status": "blocked_by_gameplay_flags",
+        "can_promote_without_review": false,
+        "review_required": true
+      }
+    ],
+    "worst_failures": [
+      {
+        "case_id": "dec1dc4f8d3fb66862092120ed3209a8-drums",
+        "role": "drums",
+        "algorithm": "beat_conditioned_multiband_decoder",
+        "f1": 0.326531,
+        "mir_eval_onset_f1": null,
+        "mir_eval_onset_offset_f1": null,
+        "note_count": null,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": false,
+          "sync_quarantine": false,
+          "duplicates": true
+        }
+      }
+    ],
+    "rows": [
+      {
+        "case_id": "10f446654fdc37e5805af28cccc17571-drums",
+        "role": "drums",
+        "algorithm": "beat_conditioned_multiband_decoder",
+        "f1": 0.146341,
+        "mir_eval_onset_f1": null,
+        "mir_eval_onset_offset_f1": null,
+        "note_count": null,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": false,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      },
+      {
+        "case_id": "a258f4cfcd73bbe4d9a0a0236af32332-drums",
+        "role": "drums",
+        "algorithm": "beat_conditioned_multiband_decoder",
+        "f1": 0.125,
+        "mir_eval_onset_f1": null,
+        "mir_eval_onset_offset_f1": null,
+        "note_count": null,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": false,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      },
+      {
+        "case_id": "dec1dc4f8d3fb66862092120ed3209a8-drums",
+        "role": "drums",
+        "algorithm": "beat_conditioned_multiband_decoder",
+        "f1": 0.326531,
+        "mir_eval_onset_f1": null,
+        "mir_eval_onset_offset_f1": null,
+        "note_count": null,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": false,
+          "sync_quarantine": false,
+          "duplicates": true
+        }
+      }
+    ]
+  }
+}

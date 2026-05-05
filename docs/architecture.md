@@ -16,7 +16,7 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
   - scan a configured songs folder on startup for `*.songpack` (zip) and `*.songpack/` (directory) SongPacks
   - update local library index when new SongPacks appear
 - Audio playback + transport clock (play/pause/seek/loop)
-- Local audio codec layer (decode MP3/OGG as needed for playback)
+- Local audio codec layer (Rust/Symphonia decode for SongPack playback)
 - Latency compensation & sync
 - Visualization plugin loading + lifecycle management
 - Input routing (keyboard/controller; mic/MIDI later)
@@ -125,6 +125,8 @@ Treat MIDI as a first-class runtime subsystem alongside Audio and Transport:
 - A **MIDI sync adapter** can be attached to the Transport to map between:
   - incoming MIDI clock ticks ↔ transport time progression
   - transport time progression ↔ outgoing MIDI clock ticks
+- A **MIDI input bus** normalizes native keyboard/controller messages into structured frontend events and active-note state for gameplay integration.
+  See `docs/midi-keyboard-testing.md` for the current hardware verification path.
 
 Key concept: **Tempo scaling**
 - The transport exposes a playbackRate (practice slowdown).
@@ -181,3 +183,8 @@ Each stable interface must have **contract tests** (TDD-first) that:
 - ML dependencies pinned and vendored into sidecar builds
 
 > Note: transcription accuracy is treated as modular and replaceable; early MVP can start with MIDI import and beat/section extraction.
+
+### Host audio codecs
+- Playback hosts decode SongPack `mix.ogg`, `mix.mp3`, and `mix.wav` in-process with Rust/Symphonia.
+- FFmpeg is not part of the normal playback path; it is reserved for ingest-sidecar source conversion.
+- See `docs/audio-codec-policy.md`.

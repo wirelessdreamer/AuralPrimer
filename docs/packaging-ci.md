@@ -37,11 +37,15 @@ Bundling requirements:
 - **do not include model weights** in installers
 
 ### Audio decoding
-If ingest requires MP3 decoding:
-- bundle `ffmpeg` as another sidecar executable
-- or use a library-based decoder for mp3 (but ffmpeg is the most robust)
+Host playback:
+- use the in-process Rust/Symphonia decoder for SongPack `mix.ogg`, `mix.mp3`, and `mix.wav`
+- do not require FFmpeg or platform codec packs for normal playback
 
-Recommended: bundle ffmpeg and document license obligations.
+Ingest:
+- non-WAV source conversion may use a bundled `ffmpeg` sidecar
+- generated SongPacks still write canonical `audio/mix.wav`
+
+Recommended: keep FFmpeg contained to the ingest sidecar boundary and document license obligations.
 
 ---
 ## Sidecar invocation contract
