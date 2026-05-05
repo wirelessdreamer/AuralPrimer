@@ -1,0 +1,45 @@
+name: quality-gates
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "python/ingest/**"
+      - "benchmarks/quality/**"
+      - "benchmarks/thresholds.yml"
+      - "scripts/check-benchmark-thresholds.py"
+      - ".github/workflows/quality-gates.yml"
+  push:
+    branches: [ main ]
+
+jobs:
+  quality-thresholds:
+    name: quality-thresholds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check committed/generated quality summaries against thresholds
+        env:
+          AURAL_BENCHMARK_GATE_MODE: warn
+        run: >
+          python scripts/check-benchmark-thresholds.py
+          --thresholds benchmarks/thresholds.yml
+          --quality-summary "benchmarks/quality/runs/**/summary.json"
+
+      - name: Upload quality benchmark dashboards
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-benchmark-dashboards
+          path: |
+            benchmarks/quality/runs/**/summary.json
+            benchmarks/quality/runs/**/report.md
+            benchmarks/quality/runs/**/report.html
+            benchmarks/quality/runs/**/classifier_performance.html
+            benchmarks/quality/runs/**/*.svg
+          if-no-files-found: ignore

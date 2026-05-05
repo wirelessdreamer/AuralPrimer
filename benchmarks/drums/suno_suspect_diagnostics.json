@@ -3,6 +3,11 @@
   "title": "Suno Suspect Drum Stem Diagnostics",
   "reference_trust": "suspect",
   "description": "Diagnostic-only Psalms/Suno drum stems with suspect exported MIDI references. Use for distortion analysis, never for model selection.",
+  "reference_alignment": {
+    "mode": "audio_start_offset",
+    "min_abs_offset_sec": 0.05,
+    "max_abs_offset_sec": 2.0
+  },
   "cases": [
     {
       "id": "psalm_1",

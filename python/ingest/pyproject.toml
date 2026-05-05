@@ -27,6 +27,9 @@ aural_ingest = "aural_ingest.cli:main"
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "--cov=src/aural_ingest --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=80"
+markers = [
+  "runtime_benchmark: opt-in ingest runtime benchmarks run by npm run bench:python",
+]
 
 [tool.ruff]
 line-length = 100

@@ -98,6 +98,16 @@ def _count_note_on_statuses(midi_bytes: bytes, statuses: set[int], notes: set[in
     return sum(_count_note_on(midi_bytes, status, notes) for status in statuses)
 
 
+@pytest.fixture(autouse=True)
+def _use_fast_standard_beat_default_for_import_smokes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep broad import fixtures fast; explicit high-accuracy tests still opt in."""
+
+    from aural_ingest import cli
+
+    monkeypatch.setattr(cli, "DEFAULT_BEAT_ANALYSIS_MODE", "standard")
+    monkeypatch.setattr(cli, "DEFAULT_STEM_SEPARATION_PROVIDER", "none")
+
+
 @pytest.mark.parametrize("bpm", [90.0, 120.0])
 def test_import_generates_valid_songpack(tmp_path: Path, bpm: float) -> None:
     # Arrange
@@ -308,6 +318,255 @@ def test_import_uses_explicit_drum_stem_for_drum_transcription(
     assert manifest["recognition"]["drums"]["source_path"] == str(drum_stem)
 
 
+def test_import_reuses_configured_input_stems_for_analysis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src_mix = tmp_path / "mix.wav"
+    _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
+    drum_stem = tmp_path / "drums.wav"
+    bass_stem = tmp_path / "bass.wav"
+    lead_stem = tmp_path / "lead.wav"
+    rhythm_stem = tmp_path / "rhythm.wav"
+    keys_stem = tmp_path / "keys.wav"
+    _write_clicktrack_wav(drum_stem, sr=48_000, duration_sec=2.0, bpm=90.0)
+    _write_clicktrack_wav(bass_stem, sr=48_000, duration_sec=2.0, bpm=60.0)
+    _write_dual_tone_wav(lead_stem, sr=48_000, duration_sec=2.0)
+    _write_dual_tone_wav(rhythm_stem, sr=48_000, duration_sec=2.0)
+    _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
+    out = tmp_path / "InputStems.songpack"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import (
+        DrumEvent,
+        DrumTranscriptionResult,
+        InstrumentTranscriptionResult,
+        MelodicNote,
+        MelodicTranscriptionResult,
+    )
+
+    seen: dict[str, object] = {}
+
+    def fake_transcribe_drums(
+        stem_path: Path,
+        requested_engine: str | None,
+        algorithm_registry: dict[str, object],
+        logger: object = None,
+    ) -> DrumTranscriptionResult:
+        seen["drum_source"] = Path(stem_path)
+        return DrumTranscriptionResult(
+            events=[DrumEvent(time=0.0, note=36, velocity=90)],
+            used_algorithm=requested_engine or "combined_filter",
+            attempted_algorithms=[requested_engine or "combined_filter"],
+            warnings=[],
+        )
+
+    def fake_transcribe_all_melodic_stems(
+        stems: dict[str, Path],
+        requested_method: str | None,
+        logger: object = None,
+    ) -> list[InstrumentTranscriptionResult]:
+        seen["instrument_stems"] = {role: Path(path) for role, path in stems.items()}
+        note = MelodicNote(t_on=0.0, t_off=0.2, pitch=48, velocity=90, instrument="bass")
+        return [
+            InstrumentTranscriptionResult(
+                instrument="bass",
+                notes=[note],
+                used_method=requested_method,
+                attempted_methods=[requested_method or "auto"],
+                warnings=[],
+                stem_path=str(stems["bass"]),
+            )
+        ]
+
+    def fake_transcribe_melodic(*_args: object, **_kwargs: object) -> MelodicTranscriptionResult:
+        return MelodicTranscriptionResult(
+            notes=[],
+            used_method="melodic_adaptive",
+            attempted_methods=["melodic_adaptive"],
+            warnings=[],
+        )
+
+    monkeypatch.setattr(cli, "transcribe_drums", fake_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", fake_transcribe_all_melodic_stems)
+    monkeypatch.setattr(cli, "transcribe_melodic", fake_transcribe_melodic)
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(src_mix)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "disable_stem_separation": True,
+            "input_stem_paths": {
+                "drums": str(drum_stem),
+                "bass": str(bass_stem),
+                "lead_guitar": str(lead_stem),
+                "rhythm_guitar": str(rhythm_stem),
+                "keys": str(keys_stem),
+            },
+        }
+    )
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_stem_path = None
+    args.melodic_method = "melodic_adaptive"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import(args) == 0
+    assert seen["drum_source"] == out / "audio" / "stems" / "drums.wav"
+    assert seen["instrument_stems"] == {
+        "bass": out / "audio" / "stems" / "bass.wav",
+        "lead_guitar": out / "audio" / "stems" / "lead_guitar.wav",
+        "rhythm_guitar": out / "audio" / "stems" / "rhythm_guitar.wav",
+        "keys": out / "audio" / "stems" / "keys.wav",
+    }
+
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["pipeline"]["input_stems"]["roles"] == [
+        "bass",
+        "drums",
+        "keys",
+        "lead_guitar",
+        "rhythm_guitar",
+    ]
+    assert manifest["pipeline"]["guitar_split"]["status"] == "reused"
+    assert manifest["pipeline"]["guitar_split"]["source_kind"] == "provided_split"
+    stems_assets = manifest["assets"]["audio"]["stems"]
+    assert stems_assets["drums_path"] == "audio/stems/drums.wav"
+    assert stems_assets["bass_path"] == "audio/stems/bass.wav"
+    assert stems_assets["lead_guitar_path"] == "audio/stems/lead_guitar.wav"
+    assert stems_assets["rhythm_guitar_path"] == "audio/stems/rhythm_guitar.wav"
+    assert stems_assets["keys_path"] == "audio/stems/keys.wav"
+
+
+def test_import_dir_reuses_configured_input_stems_without_existing_mix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src_dir = tmp_path / "stem_dir"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    drum_stem = src_dir / "drums.wav"
+    bass_stem = src_dir / "bass.wav"
+    lead_stem = src_dir / "lead.wav"
+    rhythm_stem = src_dir / "rhythm.wav"
+    keys_stem = src_dir / "keys.wav"
+    _write_clicktrack_wav(drum_stem, sr=48_000, duration_sec=2.0, bpm=90.0)
+    _write_clicktrack_wav(bass_stem, sr=48_000, duration_sec=2.0, bpm=60.0)
+    _write_dual_tone_wav(lead_stem, sr=48_000, duration_sec=2.0)
+    _write_dual_tone_wav(rhythm_stem, sr=48_000, duration_sec=2.0)
+    _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
+    out = tmp_path / "StemDir.songpack"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import (
+        DrumEvent,
+        DrumTranscriptionResult,
+        InstrumentTranscriptionResult,
+        MelodicNote,
+        MelodicTranscriptionResult,
+    )
+
+    seen: dict[str, object] = {}
+
+    def fake_transcribe_drums(
+        stem_path: Path,
+        requested_engine: str | None,
+        algorithm_registry: dict[str, object],
+        logger: object = None,
+    ) -> DrumTranscriptionResult:
+        seen["drum_source"] = Path(stem_path)
+        return DrumTranscriptionResult(
+            events=[DrumEvent(time=0.0, note=36, velocity=90)],
+            used_algorithm=requested_engine or "combined_filter",
+            attempted_algorithms=[requested_engine or "combined_filter"],
+            warnings=[],
+        )
+
+    def fake_transcribe_all_melodic_stems(
+        stems: dict[str, Path],
+        requested_method: str | None,
+        logger: object = None,
+    ) -> list[InstrumentTranscriptionResult]:
+        seen["instrument_stems"] = {role: Path(path) for role, path in stems.items()}
+        note = MelodicNote(t_on=0.0, t_off=0.2, pitch=48, velocity=90, instrument="bass")
+        return [
+            InstrumentTranscriptionResult(
+                instrument="bass",
+                notes=[note],
+                used_method=requested_method,
+                attempted_methods=[requested_method or "auto"],
+                warnings=[],
+                stem_path=str(stems["bass"]),
+            )
+        ]
+
+    def fake_transcribe_melodic(*_args: object, **_kwargs: object) -> MelodicTranscriptionResult:
+        return MelodicTranscriptionResult(
+            notes=[],
+            used_method="melodic_adaptive",
+            attempted_methods=["melodic_adaptive"],
+            warnings=[],
+        )
+
+    monkeypatch.setattr(cli, "transcribe_drums", fake_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", fake_transcribe_all_melodic_stems)
+    monkeypatch.setattr(cli, "transcribe_melodic", fake_transcribe_melodic)
+
+    args = type("Args", (), {})()
+    args.input_dir_path = str(src_dir)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "disable_stem_separation": True,
+            "input_stem_paths": {
+                "drums": str(drum_stem),
+                "bass": str(bass_stem),
+                "lead_guitar": str(lead_stem),
+                "rhythm_guitar": str(rhythm_stem),
+                "keys": str(keys_stem),
+            },
+        }
+    )
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_stem_path = None
+    args.melodic_method = "melodic_adaptive"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import_dir(args) == 0
+    assert (out / "audio" / "mix.wav").is_file()
+    assert seen["drum_source"] == out / "audio" / "stems" / "drums.wav"
+    assert seen["instrument_stems"] == {
+        "bass": out / "audio" / "stems" / "bass.wav",
+        "lead_guitar": out / "audio" / "stems" / "lead_guitar.wav",
+        "rhythm_guitar": out / "audio" / "stems" / "rhythm_guitar.wav",
+        "keys": out / "audio" / "stems" / "keys.wav",
+    }
+
+    _mix_channels, mix_sr, mix_samples = _read_pcm16_wav(out / "audio" / "mix.wav")
+    _drum_channels, drum_sr, drum_samples = _read_pcm16_wav(drum_stem)
+    assert mix_sr == drum_sr == 48_000
+    assert mix_samples != drum_samples
+
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["pipeline"]["input_stems"]["roles"] == [
+        "bass",
+        "drums",
+        "keys",
+        "lead_guitar",
+        "rhythm_guitar",
+    ]
+    assert manifest["pipeline"]["guitar_split"]["status"] == "reused"
+
+
 def test_import_uses_demucs_separated_drums_and_guitar_when_available(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -390,6 +649,8 @@ def test_import_uses_demucs_separated_drums_and_guitar_when_available(
     args.drum_filter = "combined_filter"
     args.drum_stem_path = None
     args.melodic_method = "auto"
+    args.stem_separation_provider = "demucs"
+    args.stem_separation_provider_path = None
     args.shifts = 1
     args.multi_filter = False
 

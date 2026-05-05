@@ -8,12 +8,16 @@ use tauri::{AppHandle, Emitter};
 pub struct MidiInputPortInfo {
     pub id: usize,
     pub name: String,
+    pub stable_id: String,
+    pub backend: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MidiInputSelection {
     pub id: usize,
     pub name: String,
+    #[serde(default)]
+    pub stable_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +56,29 @@ pub struct MidiClockInputConnection {
     _conn: MidiInputConnection<()>,
 }
 
+pub fn midi_input_backend_name() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "winrt"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "coremidi"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "alsa"
+    }
+    #[cfg(all(
+        not(target_os = "windows"),
+        not(target_os = "macos"),
+        not(target_os = "linux")
+    ))]
+    {
+        "midir"
+    }
+}
+
 pub fn list_midi_input_ports() -> Result<Vec<MidiInputPortInfo>, String> {
     let input =
         MidiInput::new("AuralPrimer").map_err(|e| format!("midir: cannot create input: {e}"))?;
@@ -59,8 +86,13 @@ pub fn list_midi_input_ports() -> Result<Vec<MidiInputPortInfo>, String> {
     for (i, p) in input.ports().iter().enumerate() {
         let name = input
             .port_name(p)
-            .unwrap_or_else(|_| "(unknown)".to_string());
-        res.push(MidiInputPortInfo { id: i, name });
+            .unwrap_or_else(|e| format!("(unknown: {e})"));
+        res.push(MidiInputPortInfo {
+            id: i,
+            name,
+            stable_id: p.id(),
+            backend: midi_input_backend_name().to_string(),
+        });
     }
     Ok(res)
 }
@@ -70,6 +102,16 @@ pub fn resolve_selection_to_port_id(sel: &MidiInputSelection) -> Result<usize, S
         MidiInput::new("AuralPrimer").map_err(|e| format!("midir: cannot create input: {e}"))?;
 
     let ports = input.ports();
+
+    if let Some(stable_id) = sel.stable_id.as_deref() {
+        if !stable_id.trim().is_empty() {
+            for (i, p) in ports.iter().enumerate() {
+                if p.id() == stable_id {
+                    return Ok(i);
+                }
+            }
+        }
+    }
 
     if sel.id < ports.len() {
         let p = &ports[sel.id];
@@ -508,6 +550,25 @@ mod tests {
 
         let down = parse_midi_input_message_event(1, &[0xE1, 0x00, 0x00], false).unwrap();
         assert_eq!(down.value_signed, Some(-8192));
+    }
+
+    #[test]
+    fn parses_keyboard_controllers_and_short_channel_messages() {
+        let sustain = parse_midi_input_message_event(10, &[0xB2, 64, 127], false).unwrap();
+        assert_eq!(sustain.message_type, "control_change");
+        assert_eq!(sustain.channel, Some(2));
+        assert_eq!(sustain.data1, Some(64));
+        assert_eq!(sustain.data2, Some(127));
+
+        let program = parse_midi_input_message_event(11, &[0xC3, 4], false).unwrap();
+        assert_eq!(program.message_type, "program_change");
+        assert_eq!(program.channel, Some(3));
+        assert_eq!(program.data1, Some(4));
+
+        let pressure = parse_midi_input_message_event(12, &[0xD4, 99], false).unwrap();
+        assert_eq!(pressure.message_type, "channel_pressure");
+        assert_eq!(pressure.channel, Some(4));
+        assert_eq!(pressure.data1, Some(99));
     }
 
     #[test]

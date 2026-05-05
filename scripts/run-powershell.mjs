@@ -42,6 +42,24 @@ function resolvePowerShellHost() {
   return "pwsh";
 }
 
+function resolveScriptPath(scriptArg) {
+  if (path.isAbsolute(scriptArg)) {
+    return scriptArg;
+  }
+
+  const cwdCandidate = path.resolve(process.cwd(), scriptArg);
+  if (fileExists(cwdCandidate)) {
+    return cwdCandidate;
+  }
+
+  const repoCandidate = path.resolve(repoRoot, scriptArg);
+  if (fileExists(repoCandidate)) {
+    return repoCandidate;
+  }
+
+  return cwdCandidate;
+}
+
 function toWindowsPath(inputPath) {
   const result = spawnSync("wslpath", ["-w", inputPath], {
     encoding: "utf8",
@@ -94,7 +112,7 @@ if (argv.length === 0) {
 
 const host = resolvePowerShellHost();
 const scriptArg = argv[0];
-const scriptPath = path.isAbsolute(scriptArg) ? scriptArg : path.resolve(repoRoot, scriptArg);
+const scriptPath = resolveScriptPath(scriptArg);
 const trailingArgs = argv.slice(1);
 
 let fileArg = scriptPath;

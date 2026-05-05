@@ -300,6 +300,17 @@ def test_default_registry_contains_all_expected_algorithms() -> None:
         assert callable(reg[k])
 
 
+def test_default_melodic_registry_contains_all_expected_algorithms() -> None:
+    from aural_ingest.transcription import KNOWN_MELODIC_METHODS, build_default_melodic_algorithm_registry
+
+    reg = build_default_melodic_algorithm_registry()
+    for k in KNOWN_MELODIC_METHODS:
+        if k == "auto":
+            continue
+        assert k in reg
+        assert callable(reg[k])
+
+
 def test_common_builder_handles_nonpositive_step_size(tmp_path: Path) -> None:
     from aural_ingest.algorithms._common import build_pattern_events
 

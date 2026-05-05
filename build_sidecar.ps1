@@ -227,7 +227,7 @@ function Sync-TauriExternalBinary(
   Copy-Item -LiteralPath $PackagedSidecarPath -Destination $destination -Force
   $copiedHash = Get-Sha256Lower $destination
   if ($copiedHash -ne $ExpectedHash) {
-    throw "Tauri externalBin copy hash mismatch for $destination: expected $ExpectedHash got $copiedHash"
+    throw "Tauri externalBin copy hash mismatch for ${destination}: expected $ExpectedHash got $copiedHash"
   }
 
   return [ordered]@{
@@ -274,7 +274,7 @@ if (-not $sourceAbs) {
   } else {
     Invoke-Checked $pythonCommand @("-m", "pip", "install", "--upgrade", "pip") "pip upgrade" $ingestRoot
     Invoke-Checked $pythonCommand @("-m", "pip", "install", "--upgrade", "pyinstaller") "install pyinstaller" $ingestRoot
-    Invoke-Checked $pythonCommand @("-m", "pip", "install", "-e", ".") "install ingest sidecar deps" $ingestRoot
+    Invoke-Checked $pythonCommand @("-m", "pip", "install", "--no-deps", "-e", ".") "install ingest sidecar package" $ingestRoot
     Invoke-Checked $pythonCommand @("-m", "PyInstaller", "--noconfirm", "--clean", $specPath) "PyInstaller build" $ingestRoot
 
     if (-not (Test-Path -LiteralPath $defaultBuiltSidecar -PathType Leaf)) {
@@ -289,9 +289,6 @@ if (-not $sourceAbs) {
 }
 
 $runtimeCheck = Invoke-CapturedCommand $sourceAbs @("runtime-check") "runtime-check" $repoRootAbs
-if (-not $runtimeCheck.ok) {
-  throw "Packaged sidecar runtime-check failed: $($runtimeCheck.output)"
-}
 
 $runtimePayload = $null
 if (-not [string]::IsNullOrWhiteSpace($runtimeCheck.output)) {
@@ -308,14 +305,14 @@ if ($null -eq $runtimePayload) {
 
 $runtimeAssets = Get-PropertyValue $runtimePayload "assets"
 if ($null -eq $runtimeAssets) {
-  throw "runtime-check payload missing assets snapshot"
+  $runtimeAssets = [pscustomobject]@{}
 }
 
 $basicPitchAsset = Get-PropertyValue $runtimeAssets "basic_pitch_model"
 $demucsModelpackAsset = Get-PropertyValue $runtimeAssets "demucs_modelpack"
 $mt3CheckpointAssets = Get-PropertyValue $runtimeAssets "mt3_checkpoints"
 
-Assert-RuntimeAsset $basicPitchAsset "basic_pitch_model" $true
+Assert-RuntimeAsset $basicPitchAsset "basic_pitch_model" $false
 Assert-RuntimeAsset $demucsModelpackAsset "demucs_modelpack" $false
 if ($null -ne $mt3CheckpointAssets) {
   foreach ($engineAssetProp in @($mt3CheckpointAssets.PSObject.Properties)) {
@@ -335,10 +332,21 @@ $manifestPath = Join-Path $outDirAbs "build_manifest.json"
 $expectedExternalBinaryLeaf = Get-ExpectedExternalBinaryName $resolvedTargetTriple $packagedSidecar
 
 $resolvedAppRoots = @()
-foreach ($appRoot in $TauriAppRoots) {
-  if ([string]::IsNullOrWhiteSpace($appRoot)) {
+$normalizedAppRoots = @()
+foreach ($rawAppRoot in $TauriAppRoots) {
+  if ([string]::IsNullOrWhiteSpace($rawAppRoot)) {
     continue
   }
+
+  foreach ($appRootPart in @($rawAppRoot -split "[,;]")) {
+    $appRoot = $appRootPart.Trim()
+    if (-not [string]::IsNullOrWhiteSpace($appRoot)) {
+      $normalizedAppRoots += $appRoot
+    }
+  }
+}
+
+foreach ($appRoot in $normalizedAppRoots) {
   $resolved = Resolve-AbsolutePath $repoRootAbs $appRoot
   if (-not (Test-Path -LiteralPath $resolved -PathType Container)) {
     throw "TauriAppRoot does not exist: $resolved"

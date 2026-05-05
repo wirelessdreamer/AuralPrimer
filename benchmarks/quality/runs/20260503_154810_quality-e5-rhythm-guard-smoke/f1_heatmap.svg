@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="326" height="272" viewBox="0 0 326 272">
+<rect width="100%" height="100%" fill="#101722"/>
+<text x="16" y="28" fill="#f3f7ff" font-family="Segoe UI, sans-serif" font-size="18" font-weight="700">F1 by Case and Method</text>
+<text x="222" y="102" transform="rotate(-35 222 102)" fill="#b9c7d9" font-family="Segoe UI, sans-serif" font-size="11">melodic_hpss_combined</text>
+<text x="16" y="126" fill="#d8e0ee" font-family="Segoe UI, sans-serif" font-size="11">10f446654fdc37e5805af28cccc17571-rhythm-guitar-rhythm-guitar</text>
+<rect x="210" y="110" width="90" height="22" rx="3" fill="#1f885f"/>
+<text x="218" y="125" fill="#f7fbff" font-family="Consolas, monospace" font-size="10">1.00</text>
+<text x="16" y="150" fill="#d8e0ee" font-family="Segoe UI, sans-serif" font-size="11">a258f4cfcd73bbe4d9a0a0236af32332-rhythm-guitar-guitar</text>
+<rect x="210" y="134" width="90" height="22" rx="3" fill="#512131"/>
+<text x="218" y="149" fill="#f7fbff" font-family="Consolas, monospace" font-size="10">0.04</text>
+<text x="16" y="174" fill="#d8e0ee" font-family="Segoe UI, sans-serif" font-size="11">a258f4cfcd73bbe4d9a0a0236af32332-rhythm-guitar-rhythm-guitar</text>
+<rect x="210" y="158" width="90" height="22" rx="3" fill="#531d2f"/>
+<text x="218" y="173" fill="#f7fbff" font-family="Consolas, monospace" font-size="10">0.00</text>
+<text x="16" y="198" fill="#d8e0ee" font-family="Segoe UI, sans-serif" font-size="11">dec1dc4f8d3fb66862092120ed3209a8-rhythm-guitar-guitar</text>
+<rect x="210" y="182" width="90" height="22" rx="3" fill="#4c2a35"/>
+<text x="218" y="197" fill="#f7fbff" font-family="Consolas, monospace" font-size="10">0.12</text>
+<text x="16" y="222" fill="#d8e0ee" font-family="Segoe UI, sans-serif" font-size="11">dec1dc4f8d3fb66862092120ed3209a8-rhythm-guitar-rhythm-guitar</text>
+<rect x="210" y="206" width="90" height="22" rx="3" fill="#531d2f"/>
+<text x="218" y="221" fill="#f7fbff" font-family="Consolas, monospace" font-size="10">0.00</text>
+</svg>

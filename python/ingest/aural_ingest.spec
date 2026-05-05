@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import importlib.util
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
@@ -82,6 +83,16 @@ for package in SUBMODULE_PACKAGES:
         hiddenimports.extend(collect_submodules(package))
     except Exception:
         continue
+
+try:
+    basic_pitch_spec = importlib.util.find_spec("basic_pitch")
+    if basic_pitch_spec and basic_pitch_spec.submodule_search_locations:
+        basic_pitch_dir = Path(next(iter(basic_pitch_spec.submodule_search_locations))).resolve()
+        basic_pitch_model_dir = basic_pitch_dir / "saved_models" / "icassp_2022"
+        if basic_pitch_model_dir.is_dir():
+            datas.append((str(basic_pitch_model_dir), "basic_pitch/saved_models/icassp_2022"))
+except Exception:
+    pass
 
 hiddenimports = _dedupe(hiddenimports)
 

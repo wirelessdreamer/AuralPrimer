@@ -65,10 +65,13 @@ fn raw_song_importer_writes_songpack_artifacts() {
     .unwrap();
 
     let res = raw_song::import_raw_song_folder(
+        None,
         raw_song::ImportRawSongFolderRequest {
             folder_path: raw_dir.to_string_lossy().to_string(),
             title: Some("My Song".to_string()),
             artist: Some("Me".to_string()),
+            chart_source: raw_song::RawSongChartSource::SourceMidi,
+            melodic_method: None,
         },
         &songs_dir,
     )

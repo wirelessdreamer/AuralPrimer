@@ -24,9 +24,11 @@ fn main() {
         folder_path: folder,
         title,
         artist,
+        chart_source: raw_song::RawSongChartSource::SourceMidi,
+        melodic_method: None,
     };
 
-    match raw_song::import_raw_song_folder(req, &songs_dir) {
+    match raw_song::import_raw_song_folder(None, req, &songs_dir) {
         Ok(res) => {
             println!("{}", serde_json::to_string_pretty(&res).unwrap());
         }

@@ -1,5 +1,8 @@
 import json
 from pathlib import Path
+import numpy as np
+import pytest
+import soundfile as sf
 
 
 def test_load_drum_reference_json_filters_to_drum_tracks_and_normalizes_aliases(tmp_path: Path) -> None:
@@ -59,6 +62,104 @@ def test_load_drum_reference_midi_reads_drum_track_and_preserves_times(tmp_path:
     assert [event.drum_class for event in events] == ["kick", "snare"]
     assert events[0].time == 0.0
     assert abs(events[1].time - 0.5) < 1e-6
+
+
+def test_parse_midi_note_ons_handles_running_status_note_pairs(tmp_path: Path) -> None:
+    from aural_ingest.drum_benchmark import _parse_midi_note_ons
+
+    track_data = bytes(
+        [
+            0x00,
+            0xFF,
+            0x03,
+            0x05,
+            0x44,
+            0x72,
+            0x75,
+            0x6D,
+            0x73,
+            0x00,
+            0x99,
+            0x24,
+            0x60,
+            0x0A,
+            0x26,
+            0x64,
+            0x0A,
+            0x89,
+            0x24,
+            0x00,
+            0x00,
+            0x26,
+            0x00,
+            0x00,
+            0xFF,
+            0x2F,
+            0x00,
+        ]
+    )
+    midi_bytes = (
+        b"MThd"
+        + (6).to_bytes(4, "big")
+        + (0).to_bytes(2, "big")
+        + (1).to_bytes(2, "big")
+        + (480).to_bytes(2, "big")
+        + b"MTrk"
+        + len(track_data).to_bytes(4, "big")
+        + track_data
+    )
+    reference = tmp_path / "running_status.mid"
+    reference.write_bytes(midi_bytes)
+
+    notes, _, division = _parse_midi_note_ons(reference)
+
+    assert division == 480
+    assert [(note.tick, note.note, note.velocity, note.channel, note.track_name) for note in notes] == [
+        (0, 36, 96, 9, "Drums"),
+        (10, 38, 100, 9, "Drums"),
+    ]
+
+
+def test_load_drum_reference_midi_can_normalize_start_to_audio(tmp_path: Path) -> None:
+    from aural_ingest import cli
+    from aural_ingest.drum_benchmark import load_drum_reference
+    from aural_ingest.transcription import DrumEvent
+
+    sample_rate = 48_000
+    audio = np.zeros(sample_rate * 2, dtype=np.float32)
+    audio[int(0.5 * sample_rate) : int(1.1 * sample_rate)] = 0.35
+    wav_path = tmp_path / "drums.wav"
+    sf.write(str(wav_path), audio, sample_rate)
+
+    reference = tmp_path / "reference.mid"
+    midi_bytes = cli._build_notes_mid_bytes(
+        bpm=120.0,
+        beats=[],
+        sections=[],
+        drum_events=[
+            DrumEvent(time=1.0, note=36, velocity=96),
+            DrumEvent(time=1.5, note=38, velocity=104),
+        ],
+        melodic_notes=[],
+    )
+    reference.write_bytes(midi_bytes)
+
+    raw_events, _ = load_drum_reference(reference)
+    normalized_events, meta = load_drum_reference(
+        reference,
+        audio_path=wav_path,
+        normalize_start_to_audio=True,
+    )
+
+    assert raw_events[0].time == pytest.approx(1.0, abs=1e-6)
+    assert meta["start_alignment_policy"] == "audio_start_offset"
+    assert meta["start_alignment_applied"] is True
+    assert meta["applied_start_offset_sec"] == pytest.approx(meta["observed_start_offset_sec"], abs=1e-6)
+    assert 0.4 <= float(meta["applied_start_offset_sec"]) <= 0.6
+    assert normalized_events[0].time == pytest.approx(
+        raw_events[0].time - float(meta["applied_start_offset_sec"]),
+        abs=1e-6,
+    )
 
 
 def test_evaluate_drum_transcription_surfaces_snare_confusions() -> None:

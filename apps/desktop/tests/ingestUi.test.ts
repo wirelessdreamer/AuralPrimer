@@ -31,6 +31,17 @@ describe("ingestUi", () => {
     });
   });
 
+  it("passes through piano melodic methods unchanged", () => {
+    const req = buildIngestRequestFromForm({
+      sourcePath: "C:/music/piano.wav",
+      mode: "import",
+      melodicMethod: " piano_auto ",
+      multiFilter: false
+    });
+
+    expect(req.melodic_method).toBe("piano_auto");
+  });
+
   it("validates required source and shifts", () => {
     expect(() =>
       buildIngestRequestFromForm({

@@ -180,3 +180,60 @@ def test_write_reference_shootout_outputs_emits_required_files(tmp_path: Path) -
     assert "Delta (Suspect - Trusted)" in report_md
     assert "Selection Policy" in report_md
     assert "Engine Notes" in report_html
+
+
+def test_run_manual_corpus_benchmark_enables_audio_start_reference_alignment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aural_ingest.drum_reference_shootout import run_manual_corpus_benchmark
+
+    wav_path = tmp_path / "case.wav"
+    wav_path.write_bytes(b"RIFFstub")
+    midi_path = tmp_path / "case.mid"
+    midi_path.write_bytes(b"MThdstub")
+    manifest_path = tmp_path / "suspect.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "corpus_id": "suspect",
+                "title": "Suspect",
+                "reference_trust": "suspect",
+                "reference_alignment": {
+                    "mode": "audio_start_offset",
+                    "min_abs_offset_sec": 0.05,
+                    "max_abs_offset_sec": 2.0,
+                },
+                "cases": [
+                    {
+                        "id": "case_1",
+                        "title": "Case 1",
+                        "wav_path": str(wav_path),
+                        "reference_path": str(midi_path),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_load_drum_reference(reference_path, **kwargs):
+        captured["reference_path"] = str(reference_path)
+        captured["kwargs"] = dict(kwargs)
+        return [], {"format": "midi", "start_alignment_applied": True}
+
+    monkeypatch.setattr("aural_ingest.drum_reference_shootout.load_drum_reference", fake_load_drum_reference)
+    monkeypatch.setattr("aural_ingest.drum_reference_shootout.build_default_drum_algorithm_registry", lambda: {})
+    monkeypatch.setattr("aural_ingest.drum_reference_shootout.benchmark_algorithms", lambda *args, **kwargs: [])
+
+    payload = run_manual_corpus_benchmark(manifest_path, algorithms=["adaptive_beat_grid"])
+
+    assert captured["reference_path"] == str(midi_path)
+    assert captured["kwargs"] == {
+        "audio_path": wav_path,
+        "normalize_start_to_audio": True,
+        "min_abs_offset_sec": 0.05,
+        "max_abs_offset_sec": 2.0,
+    }
+    assert payload["corpus"]["reference_alignment"]["mode"] == "audio_start_offset"

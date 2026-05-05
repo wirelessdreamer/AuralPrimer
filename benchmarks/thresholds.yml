@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "mode": "warn",
+  "blocking_policy": {
+    "strict_pr_blocking": false,
+    "minimum_warn_only_period": "at least 14 days after representative baselines are frozen",
+    "strict_requires": [
+      "versioned baselines",
+      "role-specific quality thresholds",
+      "representative local hardware profile",
+      "reviewed synthetic/private quality fixtures"
+    ]
+  },
+  "notes": [
+    "JSON-compatible YAML keeps CI dependency-free. Change mode to strict only after baselines are frozen.",
+    "Research-only datasets may feed internal benchmark runs, but dataset content or derived in-game fixtures must not ship."
+  ],
+  "hardware": {
+    "target_profile": "minimum_modern",
+    "profiles": {
+      "minimum_modern": {
+        "description": "Concrete floor for anything remotely modern on Windows/Linux.",
+        "min_logical_cpus": 8,
+        "min_memory_gb": 16,
+        "allowed_arch": ["x64", "x86_64", "arm64", "aarch64"],
+        "gpu_required_for_default_import": false,
+        "notes": [
+          "Integrated graphics are acceptable for default import/playback.",
+          "GPU acceleration is first-class for model-backed transcription when present, but CPU fallback is required."
+        ]
+      },
+      "recommended_model_workstation": {
+        "description": "Recommended local A/B and model-backed transcription workstation.",
+        "min_logical_cpus": 12,
+        "min_memory_gb": 32,
+        "allowed_arch": ["x64", "x86_64", "arm64", "aarch64"],
+        "gpu_required_for_default_import": false,
+        "gpu_recommended_for_model_backed_transcription": true
+      }
+    }
+  },
+  "quality": {
+    "max_error_count": 0,
+    "max_sync_quarantine_count": 0,
+    "max_flagged_case_rate": 1.0,
+    "min_mean_f1_by_role": {}
+  },
+  "frontend": {
+    "max_mean_ms_by_benchmark": {
+      "parse MIDI tracks from 6-track synthetic SongPack MIDI": 10.0,
+      "select drum chart from parsed tracks": 5.0,
+      "select melodic tracks from parsed tracks": 5.0,
+      "parse MIDI and select melodic tracks end-to-end": 15.0,
+      "select drum chart from dense in-memory track fixture": 5.0,
+      "infer key signature from dense piano track": 2.0,
+      "beats visualizer update+render 240 frames": 10.0,
+      "drum highway visualizer update+render 240 frames": 20.0
+    }
+  },
+  "python": {
+    "max_mean_ms_by_benchmark": {}
+  }
+}

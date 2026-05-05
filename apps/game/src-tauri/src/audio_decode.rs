@@ -1,6 +1,8 @@
 //! Audio decoding helpers (Phase 1.5)
 //!
-//! Goal: decode common compressed formats (MP3/OGG/Vorbis) into interleaved PCM16.
+//! Host playback policy: decode common SongPack formats in-process with
+//! Symphonia. FFmpeg remains an ingest-sidecar dependency, not a playback
+//! dependency.
 
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
@@ -19,20 +21,36 @@ pub struct DecodedPcm16 {
     pub data: Vec<i16>, // interleaved
 }
 
+pub const HOST_AUDIO_CODEC_POLICY_ID: &str = "rust_symphonia_in_process";
+pub const HOST_AUDIO_CODEC_POLICY: &str =
+    "Host playback decodes SongPack audio in-process with Rust/Symphonia; FFmpeg is sidecar-only for ingest conversion.";
+pub const HOST_AUDIO_SUPPORTED_MIME_HINTS: &[&str] = &[
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/ogg",
+    "application/ogg",
+    "audio/wav",
+    "audio/wave",
+    "audio/x-wav",
+];
+
+pub fn host_audio_supported_mime_hints() -> &'static [&'static str] {
+    HOST_AUDIO_SUPPORTED_MIME_HINTS
+}
+
+fn extension_hint_for_mime(mime: &str) -> Option<&'static str> {
+    match mime {
+        "audio/mpeg" | "audio/mp3" => Some("mp3"),
+        "audio/ogg" | "application/ogg" => Some("ogg"),
+        "audio/wav" | "audio/wave" | "audio/x-wav" => Some("wav"),
+        _ => None,
+    }
+}
+
 pub fn decode_to_pcm16(bytes: &[u8], mime: &str) -> Result<DecodedPcm16, String> {
     let mut hint = Hint::new();
-    // Provide extension hints when possible.
-    match mime {
-        "audio/mpeg" | "audio/mp3" => {
-            hint.with_extension("mp3");
-        }
-        "audio/ogg" | "application/ogg" => {
-            hint.with_extension("ogg");
-        }
-        "audio/wav" | "audio/wave" | "audio/x-wav" => {
-            hint.with_extension("wav");
-        }
-        _ => {}
+    if let Some(extension) = extension_hint_for_mime(mime) {
+        hint.with_extension(extension);
     }
 
     let mss = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
@@ -116,6 +134,17 @@ mod tests {
     fn decode_rejects_invalid_bytes() {
         let err = decode_to_pcm16(b"not audio", "audio/wav").unwrap_err();
         assert!(err.contains("decode probe error"));
+    }
+
+    #[test]
+    fn codec_policy_is_in_process_symphonia() {
+        assert_eq!(HOST_AUDIO_CODEC_POLICY_ID, "rust_symphonia_in_process");
+        assert!(HOST_AUDIO_CODEC_POLICY.contains("Symphonia"));
+        assert!(HOST_AUDIO_CODEC_POLICY.contains("FFmpeg is sidecar-only"));
+        assert!(host_audio_supported_mime_hints().contains(&"audio/ogg"));
+        assert_eq!(extension_hint_for_mime("audio/mpeg"), Some("mp3"));
+        assert_eq!(extension_hint_for_mime("audio/x-wav"), Some("wav"));
+        assert_eq!(extension_hint_for_mime("application/octet-stream"), None);
     }
 
     #[test]

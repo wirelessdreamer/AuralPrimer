@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classifier Performance Explorer</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #08111d;
+  --panel: #101b2a;
+  --panel-2: #142338;
+  --line: #263955;
+  --text: #edf5ff;
+  --muted: #9fb1c7;
+  --accent: #47d7ac;
+  --warn: #f3c663;
+  --bad: #ff6b7d;
+  --good: #74e39a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(71, 215, 172, 0.17), transparent 34rem),
+    radial-gradient(circle at 78% 12%, rgba(75, 119, 255, 0.12), transparent 26rem),
+    var(--bg);
+  color: var(--text);
+  font-family: "Aptos", "Segoe UI", sans-serif;
+}
+header {
+  padding: 28px 34px 18px;
+  border-bottom: 1px solid var(--line);
+}
+h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 48px); letter-spacing: -0.04em; }
+h2 { margin: 0 0 14px; font-size: 18px; }
+h3 { margin: 18px 0 10px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.subhead { margin: 0; color: var(--muted); max-width: 960px; }
+.run-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+.pill { border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; background: rgba(255,255,255,0.04); }
+main { padding: 22px 34px 36px; display: grid; grid-template-columns: minmax(420px, 1.1fr) minmax(360px, 0.9fr); gap: 18px; }
+section, .panel {
+  background: rgba(16, 27, 42, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.28);
+}
+section { padding: 18px; }
+.controls { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; }
+select, input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #07111f;
+  color: var(--text);
+  padding: 9px 10px;
+  font: inherit;
+}
+.cards { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.card strong { display: block; font-size: 24px; }
+.card span { color: var(--muted); font-size: 12px; }
+.table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,0.07); text-align: left; white-space: nowrap; }
+th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; background: rgba(255,255,255,0.03); }
+tr[data-row] { cursor: pointer; }
+tr[data-row]:hover, tr.selected { background: rgba(71, 215, 172, 0.09); }
+.score { font-family: "Cascadia Mono", "Consolas", monospace; }
+.risk { color: var(--bad); }
+.ok { color: var(--good); }
+.muted { color: var(--muted); }
+.heatmap {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) repeat(var(--cols), minmax(72px, 1fr));
+  gap: 4px;
+  align-items: stretch;
+  margin: 12px 0 16px;
+}
+.heat-cell, .heat-label {
+  min-height: 32px;
+  border-radius: 9px;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  font-size: 12px;
+}
+.heat-label { background: rgba(255,255,255,0.04); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heat-cell { font-family: "Cascadia Mono", "Consolas", monospace; text-align: center; }
+.detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.detail-stat { border: 1px solid var(--line); background: rgba(255,255,255,0.04); border-radius: 14px; padding: 12px; }
+.detail-stat strong { display: block; font-size: 22px; }
+.confusion-list { display: grid; gap: 7px; }
+.confusion-row { display: flex; justify-content: space-between; gap: 8px; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 8px 10px; background: rgba(255,255,255,0.03); }
+.timeline { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; height: 72px; align-items: end; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: #07111f; }
+.bar { min-height: 2px; border-radius: 5px 5px 0 0; background: linear-gradient(to top, var(--bad) 0 33%, var(--warn) 33% 66%, var(--good) 66% 100%); }
+.empty { color: var(--muted); padding: 20px; border: 1px dashed var(--line); border-radius: 14px; }
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr; padding: 18px; }
+  header { padding: 22px 18px 14px; }
+  .controls, .cards { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+}
+@media (max-width: 640px) {
+  .controls, .cards, .detail-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Classifier Performance Explorer</h1>
+  <p class="subhead">Single-file report for inspecting transcription classifier behavior across drums, melodic roles, and piano. It shows per-class precision/recall/F1, confusions, timing buckets, gameplay flags, and promotion-gate context without requiring a server.</p>
+  <div class="run-meta" id="run-meta"></div>
+</header>
+<main>
+  <section>
+    <h2>Coverage</h2>
+    <div class="controls">
+      <label>Role<select id="role-filter"></select></label>
+      <label>Algorithm<select id="algorithm-filter"></select></label>
+      <label>Risk<select id="risk-filter"><option value="all">All</option><option value="flagged">Flagged only</option><option value="clean">Clean only</option></select></label>
+      <label>Search<input id="search-filter" type="search" placeholder="case, method, role"></label>
+    </div>
+    <div class="cards" id="overview-cards"></div>
+    <h3>F1 Heatmap</h3>
+    <div id="heatmap"></div>
+    <h3>Runs</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Case</th><th>Role</th><th>Method</th><th>F1</th><th>Refs</th><th>Pred</th><th>Risk</th></tr></thead>
+      <tbody id="row-table"></tbody>
+    </table></div>
+  </section>
+  <section>
+    <h2>Classifier Detail</h2>
+    <div id="detail"></div>
+  </section>
+</main>
+<script id="classifier-data" type="application/json">{"run":{"generated_at_utc":"2026-05-03T19:48:10Z","suite_version":"0.4.0","profile":"gameplay_default","tolerance_ms":60.0},"summary":{"algorithm_summaries":[{"algorithm":"piano_auto","mean_f1":0.3421,"mir_eval_mean_onset_f1":0.342105,"mir_eval_mean_onset_offset_f1":0.0,"case_count":3}],"promotion_candidates":[{"role":"keys","algorithm":"piano_auto","mean_f1":0.3421,"case_count":3,"flagged_case_count":2,"benchmark_winner":true,"promotion_status":"blocked_by_gameplay_flags","can_promote_without_review":false,"review_required":true}],"worst_failures":[{"case_id":"a258f4cfcd73bbe4d9a0a0236af32332-keys","role":"keys","algorithm":"piano_auto","f1":0.0263,"mir_eval_onset_f1":0.026316,"mir_eval_onset_offset_f1":0.0,"note_count":29,"error":false,"gameplay_flags":{"error":false,"density":true,"sync_quarantine":false,"duplicates":false}},{"case_id":"dec1dc4f8d3fb66862092120ed3209a8-keys","role":"keys","algorithm":"piano_auto","f1":0.0,"mir_eval_onset_f1":0.0,"mir_eval_onset_offset_f1":0.0,"note_count":19,"error":false,"gameplay_flags":{"error":false,"density":true,"sync_quarantine":false,"duplicates":false}}]},"model_backends":{"mt3":{"ok":true,"engines":{"mr_mt3_drums":{"ok":true,"backend":"mt3","engine":"mr_mt3_drums","model_id":"mr_mt3","modelpack_id":"mr_mt3","modelpack_version":"hf-main-20260325","checkpoint_path":"D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325\\files\\checkpoints\\mr_mt3\\mt3.pth","modelpack_root":"D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325","size_mb":176.0,"speed_x_realtime":57.0,"description":"MR-MT3 drum transcription baseline"},"yourmt3_drums":{"ok":true,"backend":"mt3","engine":"yourmt3_drums","model_id":"yourmt3","modelpack_id":"yourmt3","modelpack_version":"hf-main-20260325","checkpoint_path":"D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325\\files\\checkpoints\\yourmt3\\mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops\\last.ckpt","modelpack_root":"D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325","size_mb":536.0,"speed_x_realtime":15.0,"description":"YourMT3 drum transcription research candidate"}},"methods":["mr_mt3_drums","yourmt3_drums"],"roles":["drums"],"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear FileNotFoundError/RuntimeError, no portable requirement"},"basic_pitch":{"ok":true,"display_name":"Basic Pitch","module":"basic_pitch","module_candidates":["basic_pitch"],"module_available":true,"roles":["bass","lead_guitar","rhythm_guitar","keys"],"methods":["basic_pitch"],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"event_decode","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"portable-safe fallback through melodic fallback chain"},"piano_transkun":{"ok":false,"display_name":"Transkun","module":null,"module_candidates":["transkun"],"module_available":false,"roles":["keys"],"methods":["piano_transkun","piano_transkun_clean"],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError, then melodic fallback when used through import"},"piano_pti":{"ok":false,"display_name":"piano_transcription_inference","module":null,"module_candidates":["piano_transcription_inference"],"module_available":false,"roles":["keys"],"methods":["piano_pti","piano_pti_clean"],"env_files":{"AURAL_PIANO_PTI_CHECKPOINT":{"configured":false,"path":null,"exists":false}},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError unless checkpoint or explicit download opt-in is configured"},"piano_hft":{"ok":false,"display_name":"hFT-Transformer","module":null,"module_candidates":[],"module_available":false,"roles":["keys"],"methods":["piano_hft","piano_hft_clean"],"env_files":{"AURAL_PIANO_HFT_CHECKPOINT":{"configured":false,"path":null,"exists":false}},"env_values":{"AURAL_PIANO_HFT_COMMAND":{"configured":false,"value":null}},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":true,"decode":"temp_midi","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError unless checkpoint and command adapter are configured"},"torchcrepe":{"ok":true,"display_name":"torchcrepe","module":"torchcrepe","module_candidates":["torchcrepe","torch"],"module_available":true,"roles":["bass","lead_guitar","rhythm_guitar"],"methods":["torchcrepe"],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"frame_f0_decode","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"clear RuntimeError, then melodic fallback when used through import"},"beatnet":{"ok":false,"display_name":"BeatNet","module":null,"module_candidates":["BeatNet","beatnet"],"module_available":false,"roles":["tempo","drums"],"methods":[],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"beat_downbeat_priors","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"availability-only until wired as a beat/downbeat prior"},"omnizart":{"ok":false,"display_name":"Omnizart","module":null,"module_candidates":["omnizart"],"module_available":false,"roles":["research"],"methods":[],"env_files":{},"env_values":{},"model_path":null,"adapter_contract":{"availability_check":true,"modelpack_resolution":false,"decode":"research_comparator","instrument_tagging":true,"clear_failure":true,"portable_safe_absence":true},"failure_mode":"availability-only research comparator; never required for portable import"}},"quality_metric_backends":{"mir_eval":{"ok":true,"display_name":"MIR Eval","module":"mir_eval","module_candidates":["mir_eval"],"purpose":"note-event transcription metrics","protocols":["mir_eval.transcription"],"failure_mode":"reference-backed MIR metrics omitted; native benchmark metrics still run"},"museval":{"ok":false,"display_name":"Museval","module":null,"module_candidates":["museval"],"purpose":"source-separation SDR protocol","protocols":["BSSEval v4 / museval.evaluate"],"failure_mode":"separation SDR metrics omitted; transcription benchmarks still run"}},"dataset_sources":{"musdb18":{"ok":false,"display_name":"MUSDB18","purpose":"controlled source-separation evaluation","roles":["drums","bass","other","vocals","mixture"],"roots":[{"env_var":"AURAL_MUSDB18_ROOT","configured":false,"path":null,"exists":false}],"ship_policy":"internal benchmarking only; do not ship dataset content or derived in-game content"},"musdb18_hq":{"ok":false,"display_name":"MUSDB18-HQ","purpose":"controlled high-quality source-separation evaluation","roles":["drums","bass","other","vocals","mixture"],"roots":[{"env_var":"AURAL_MUSDB18_HQ_ROOT","configured":false,"path":null,"exists":false}],"ship_policy":"internal benchmarking only; do not ship dataset content or derived in-game content"},"enst_drums":{"ok":false,"display_name":"ENST-Drums","purpose":"drum transcription regression fixtures","roles":["drums"],"roots":[{"env_var":"AURAL_ENST_DRUMS_ROOT","configured":false,"path":null,"exists":false}],"ship_policy":"internal benchmarking only; keep product fixtures synthetic/owned/cleared"},"idmt_smt_drums":{"ok":false,"display_name":"IDMT-SMT-Drums","purpose":"drum transcription regression fixtures","roles":["drums"],"roots":[{"env_var":"AURAL_IDMT_SMT_DRUMS_ROOT","configured":false,"path":null,"exists":false}],"ship_policy":"internal benchmarking only; keep product fixtures synthetic/owned/cleared"}},"cases":[{"case_id":"10f446654fdc37e5805af28cccc17571-keys","name":"Smoke - keys","role":"keys","family":"piano","reference_count":1,"reference_path":"D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\features\\notes.mid","results":[{"algorithm":"piano_auto","overall":{"tp":1,"fp":0,"fn":0,"f1":1.0,"precision":1.0,"recall":1.0,"onset_only_f1":1.0,"pitch_accuracy":1.0,"offset_accuracy":0.0,"note_with_offset_f1":0.0,"note_with_offset_velocity_f1":0.0,"onset_timing_mae_ms":8.12,"offset_timing_mae_ms":630.21,"velocity_mae":0.0,"duplicate_rate":0.0},"note_count":1,"event_count":null,"error":null,"gameplay":{"role":"keys","note_count":1,"duration_sec":1.5,"notes_per_minute":40.0,"playable_density_flag":false,"duplicate_count":0,"duplicate_rate":0.0,"chatter_count":0,"polyphony_event_rate":0.0,"max_polyphony":1,"pitch_min":46,"pitch_max":46,"mean_duration_sec":1.48,"piano_left_hand_notes":1,"piano_right_hand_notes":0},"sync":{"status":"ok","start_offset_sec":-0.008125,"quarantine":false,"threshold_sec":2.0},"mir_eval":{"available":true,"backend":"mir_eval.transcription","status":"ok","reference_count":1,"predicted_count":1,"onset":{"precision":1.0,"recall":1.0,"f1":1.0,"average_overlap_ratio":0.697502},"onset_offset":{"precision":0.0,"recall":0.0,"f1":0.0,"average_overlap_ratio":0.0},"params":{"onset_tolerance_sec":0.06,"offset_ratio":0.2,"offset_min_tolerance_sec":0.05}},"classifier":{"kind":"piano","primary_dimension":"pitch","dimensions":[{"name":"pitch","class_metrics":[{"label":"A#2","reference_count":1,"predicted_count":1,"tp":1,"fp":0,"fn":0,"precision":1.0,"recall":1.0,"f1":1.0}],"confusions":[],"matched_tp":1,"matched_confusions":0,"unmatched_predictions":0,"unmatched_references":0,"pitch_error_summary":{"semitone_near_confusions":0,"octave_confusions":0}},{"name":"pitch_class","class_metrics":[{"label":"A#","reference_count":1,"predicted_count":1,"tp":1,"fp":0,"fn":0,"precision":1.0,"recall":1.0,"f1":1.0}],"confusions":[],"matched_tp":1,"matched_confusions":0,"unmatched_predictions":0,"unmatched_references":0,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"octave","class_metrics":[{"label":"octave 2","reference_count":1,"predicted_count":1,"tp":1,"fp":0,"fn":0,"precision":1.0,"recall":1.0,"f1":1.0}],"confusions":[],"matched_tp":1,"matched_confusions":0,"unmatched_predictions":0,"unmatched_references":0,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"hand_zone","class_metrics":[{"label":"low-left","reference_count":1,"predicted_count":1,"tp":1,"fp":0,"fn":0,"precision":1.0,"recall":1.0,"f1":1.0}],"confusions":[],"matched_tp":1,"matched_confusions":0,"unmatched_predictions":0,"unmatched_references":0,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"sustain_bucket","class_metrics":[{"label":"long-sustain","reference_count":1,"predicted_count":0,"tp":0,"fp":0,"fn":1,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"sustain","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0}],"confusions":[{"reference_class":"long-sustain","predicted_class":"sustain","count":1}],"matched_tp":0,"matched_confusions":1,"unmatched_predictions":0,"unmatched_references":0,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}}],"timeline":[{"start":0.0,"end":0.088759,"tp":1,"fp":0,"fn":0},{"start":0.088759,"end":0.177517,"tp":0,"fp":0,"fn":0},{"start":0.177517,"end":0.266276,"tp":0,"fp":0,"fn":0},{"start":0.266276,"end":0.355035,"tp":0,"fp":0,"fn":0},{"start":0.355035,"end":0.443793,"tp":0,"fp":0,"fn":0},{"start":0.443793,"end":0.532552,"tp":0,"fp":0,"fn":0},{"start":0.532552,"end":0.621311,"tp":0,"fp":0,"fn":0},{"start":0.621311,"end":0.710069,"tp":0,"fp":0,"fn":0},{"start":0.710069,"end":0.798828,"tp":0,"fp":0,"fn":0},{"start":0.798828,"end":0.887587,"tp":0,"fp":0,"fn":0},{"start":0.887587,"end":0.976345,"tp":0,"fp":0,"fn":0},{"start":0.976345,"end":1.065104,"tp":0,"fp":0,"fn":0},{"start":1.065104,"end":1.153863,"tp":0,"fp":0,"fn":0},{"start":1.153863,"end":1.242621,"tp":0,"fp":0,"fn":0},{"start":1.242621,"end":1.33138,"tp":0,"fp":0,"fn":0},{"start":1.33138,"end":1.420139,"tp":0,"fp":0,"fn":0},{"start":1.420139,"end":1.508897,"tp":0,"fp":0,"fn":0},{"start":1.508897,"end":1.597656,"tp":0,"fp":0,"fn":0},{"start":1.597656,"end":1.686415,"tp":0,"fp":0,"fn":0},{"start":1.686415,"end":1.775173,"tp":0,"fp":0,"fn":0},{"start":1.775173,"end":1.863932,"tp":0,"fp":0,"fn":0},{"start":1.863932,"end":1.952691,"tp":0,"fp":0,"fn":0},{"start":1.952691,"end":2.041449,"tp":0,"fp":0,"fn":0},{"start":2.041449,"end":2.130208,"tp":0,"fp":0,"fn":0}],"coverage":{"reference_events":1,"predicted_events":1}}}]},{"case_id":"a258f4cfcd73bbe4d9a0a0236af32332-keys","name":"tmp_demucs_smoke - keys","role":"keys","family":"piano","reference_count":47,"reference_path":"D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\features\\notes.mid","results":[{"algorithm":"piano_auto","overall":{"tp":1,"fp":28,"fn":46,"f1":0.0263,"precision":0.0345,"recall":0.0213,"onset_only_f1":0.5,"pitch_accuracy":0.0526,"offset_accuracy":1.0,"note_with_offset_f1":0.0263,"note_with_offset_velocity_f1":0.0,"onset_timing_mae_ms":25.98,"offset_timing_mae_ms":82.3,"velocity_mae":37.0,"duplicate_rate":0.0},"note_count":29,"event_count":null,"error":null,"gameplay":{"role":"keys","note_count":29,"duration_sec":2.0,"notes_per_minute":870.0,"playable_density_flag":true,"duplicate_count":0,"duplicate_rate":0.0,"chatter_count":0,"polyphony_event_rate":0.931034,"max_polyphony":12,"pitch_min":34,"pitch_max":96,"mean_duration_sec":0.282694,"piano_left_hand_notes":12,"piano_right_hand_notes":17},"sync":{"status":"ok","start_offset_sec":0.0,"quarantine":false,"threshold_sec":2.0},"mir_eval":{"available":true,"backend":"mir_eval.transcription","status":"ok","reference_count":47,"predicted_count":29,"onset":{"precision":0.034483,"recall":0.021277,"f1":0.026316,"average_overlap_ratio":0.604674},"onset_offset":{"precision":0.0,"recall":0.0,"f1":0.0,"average_overlap_ratio":0.0},"params":{"onset_tolerance_sec":0.06,"offset_ratio":0.2,"offset_min_tolerance_sec":0.05}},"classifier":{"kind":"piano","primary_dimension":"pitch","dimensions":[{"name":"pitch","class_metrics":[{"label":"C#3","reference_count":17,"predicted_count":0,"tp":0,"fp":0,"fn":17,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B3","reference_count":5,"predicted_count":0,"tp":0,"fp":0,"fn":5,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C2","reference_count":5,"predicted_count":2,"tp":0,"fp":2,"fn":5,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C#2","reference_count":3,"predicted_count":0,"tp":0,"fp":0,"fn":3,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D#3","reference_count":3,"predicted_count":0,"tp":0,"fp":0,"fn":3,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E3","reference_count":3,"predicted_count":0,"tp":0,"fp":0,"fn":3,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B4","reference_count":2,"predicted_count":1,"tp":0,"fp":1,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E4","reference_count":2,"predicted_count":1,"tp":0,"fp":1,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#4","reference_count":2,"predicted_count":0,"tp":0,"fp":0,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G3","reference_count":2,"predicted_count":0,"tp":0,"fp":0,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C6","reference_count":1,"predicted_count":0,"tp":0,"fp":0,"fn":1,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#1","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#2","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#4","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A2","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A3","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A4","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A5","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B5","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C#4","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C7","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D#2","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D5","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E2","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#2","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F2","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F4","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F5","reference_count":0,"predicted_count":3,"tp":0,"fp":3,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#3","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G2","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D4","reference_count":2,"predicted_count":2,"tp":1,"fp":1,"fn":1,"precision":0.5,"recall":0.5,"f1":0.5}],"confusions":[{"reference_class":"C2","predicted_class":"E4","count":1},{"reference_class":"E3","predicted_class":"F4","count":1},{"reference_class":"C6","predicted_class":"B4","count":1},{"reference_class":"B3","predicted_class":"B5","count":1},{"reference_class":"C#3","predicted_class":"F5","count":1},{"reference_class":"C#3","predicted_class":"D4","count":1},{"reference_class":"G3","predicted_class":"F5","count":1},{"reference_class":"C#3","predicted_class":"A4","count":1},{"reference_class":"D#3","predicted_class":"C7","count":1},{"reference_class":"F#4","predicted_class":"C#4","count":1},{"reference_class":"D#3","predicted_class":"G#3","count":1},{"reference_class":"E3","predicted_class":"G2","count":1},{"reference_class":"C#2","predicted_class":"C2","count":1},{"reference_class":"B3","predicted_class":"A#1","count":1},{"reference_class":"C#3","predicted_class":"A3","count":1},{"reference_class":"E4","predicted_class":"C2","count":1},{"reference_class":"B4","predicted_class":"A2","count":1},{"reference_class":"C2","predicted_class":"A#2","count":1}],"matched_tp":1,"matched_confusions":18,"unmatched_predictions":10,"unmatched_references":28,"pitch_error_summary":{"semitone_near_confusions":1,"octave_confusions":1}},{"name":"pitch_class","class_metrics":[{"label":"C","reference_count":6,"predicted_count":3,"tp":0,"fp":3,"fn":6,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"D#","reference_count":3,"predicted_count":1,"tp":0,"fp":1,"fn":3,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#","reference_count":2,"predicted_count":1,"tp":0,"fp":1,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G","reference_count":2,"predicted_count":1,"tp":0,"fp":1,"fn":2,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A","reference_count":0,"predicted_count":5,"tp":0,"fp":5,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#","reference_count":0,"predicted_count":3,"tp":0,"fp":3,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F","reference_count":0,"predicted_count":5,"tp":0,"fp":5,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C#","reference_count":20,"predicted_count":2,"tp":2,"fp":0,"fn":18,"precision":1.0,"recall":0.1,"f1":0.181818},{"label":"B","reference_count":7,"predicted_count":2,"tp":1,"fp":1,"fn":6,"precision":0.5,"recall":0.142857,"f1":0.222222},{"label":"D","reference_count":2,"predicted_count":3,"tp":1,"fp":2,"fn":1,"precision":0.333333,"recall":0.5,"f1":0.4},{"label":"E","reference_count":5,"predicted_count":2,"tp":2,"fp":0,"fn":3,"precision":1.0,"recall":0.4,"f1":0.571429}],"confusions":[{"reference_class":"C#","predicted_class":"A","count":2},{"reference_class":"C","predicted_class":"F","count":1},{"reference_class":"C","predicted_class":"B","count":1},{"reference_class":"C#","predicted_class":"D","count":1},{"reference_class":"G","predicted_class":"F","count":1},{"reference_class":"D#","predicted_class":"C","count":1},{"reference_class":"D#","predicted_class":"G#","count":1},{"reference_class":"E","predicted_class":"G","count":1},{"reference_class":"C#","predicted_class":"C","count":1},{"reference_class":"B","predicted_class":"A#","count":1},{"reference_class":"B","predicted_class":"C","count":1},{"reference_class":"C","predicted_class":"A","count":1}],"matched_tp":6,"matched_confusions":13,"unmatched_predictions":10,"unmatched_references":28,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"octave","class_metrics":[{"label":"octave 6","reference_count":1,"predicted_count":0,"tp":0,"fp":0,"fn":1,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 1","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 5","reference_count":0,"predicted_count":6,"tp":0,"fp":6,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 7","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 3","reference_count":30,"predicted_count":2,"tp":2,"fp":0,"fn":28,"precision":1.0,"recall":0.066667,"f1":0.125001},{"label":"octave 4","reference_count":8,"predicted_count":10,"tp":2,"fp":8,"fn":6,"precision":0.2,"recall":0.25,"f1":0.222222},{"label":"octave 2","reference_count":8,"predicted_count":9,"tp":2,"fp":7,"fn":6,"precision":0.222222,"recall":0.25,"f1":0.235294}],"confusions":[{"reference_class":"octave 3","predicted_class":"octave 4","count":3},{"reference_class":"octave 3","predicted_class":"octave 5","count":3},{"reference_class":"octave 4","predicted_class":"octave 2","count":2},{"reference_class":"octave 2","predicted_class":"octave 4","count":1},{"reference_class":"octave 6","predicted_class":"octave 4","count":1},{"reference_class":"octave 3","predicted_class":"octave 7","count":1},{"reference_class":"octave 3","predicted_class":"octave 2","count":1},{"reference_class":"octave 3","predicted_class":"octave 1","count":1}],"matched_tp":6,"matched_confusions":13,"unmatched_predictions":10,"unmatched_references":28,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"hand_zone","class_metrics":[{"label":"left","reference_count":30,"predicted_count":2,"tp":2,"fp":0,"fn":28,"precision":1.0,"recall":0.066667,"f1":0.125001},{"label":"low-left","reference_count":8,"predicted_count":10,"tp":2,"fp":8,"fn":6,"precision":0.2,"recall":0.25,"f1":0.222222},{"label":"right","reference_count":8,"predicted_count":10,"tp":2,"fp":8,"fn":6,"precision":0.2,"recall":0.25,"f1":0.222222},{"label":"high-right","reference_count":1,"predicted_count":7,"tp":1,"fp":6,"fn":0,"precision":0.142857,"recall":1.0,"f1":0.25}],"confusions":[{"reference_class":"left","predicted_class":"right","count":4},{"reference_class":"left","predicted_class":"high-right","count":3},{"reference_class":"left","predicted_class":"low-left","count":2},{"reference_class":"right","predicted_class":"low-left","count":2},{"reference_class":"low-left","predicted_class":"right","count":1}],"matched_tp":7,"matched_confusions":12,"unmatched_predictions":10,"unmatched_references":28,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"sustain_bucket","class_metrics":[{"label":"staccato","reference_count":24,"predicted_count":1,"tp":1,"fp":0,"fn":23,"precision":1.0,"recall":0.041667,"f1":0.080001},{"label":"short","reference_count":23,"predicted_count":28,"tp":13,"fp":15,"fn":10,"precision":0.464286,"recall":0.565217,"f1":0.509804}],"confusions":[{"reference_class":"staccato","predicted_class":"short","count":5}],"matched_tp":14,"matched_confusions":5,"unmatched_predictions":10,"unmatched_references":28,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}}],"timeline":[{"start":0.0,"end":0.089974,"tp":0,"fp":10,"fn":5},{"start":0.089974,"end":0.179948,"tp":0,"fp":2,"fn":1},{"start":0.179948,"end":0.269922,"tp":1,"fp":2,"fn":2},{"start":0.269922,"end":0.359896,"tp":0,"fp":0,"fn":1},{"start":0.359896,"end":0.44987,"tp":0,"fp":1,"fn":1},{"start":0.44987,"end":0.539844,"tp":0,"fp":1,"fn":5},{"start":0.539844,"end":0.629818,"tp":0,"fp":0,"fn":1},{"start":0.629818,"end":0.719792,"tp":0,"fp":0,"fn":0},{"start":0.719792,"end":0.809766,"tp":0,"fp":0,"fn":3},{"start":0.809766,"end":0.89974,"tp":0,"fp":1,"fn":2},{"start":0.89974,"end":0.989714,"tp":0,"fp":4,"fn":0},{"start":0.989714,"end":1.079687,"tp":0,"fp":0,"fn":4},{"start":1.079687,"end":1.169661,"tp":0,"fp":0,"fn":2},{"start":1.169661,"end":1.259635,"tp":0,"fp":0,"fn":2},{"start":1.259635,"end":1.349609,"tp":0,"fp":0,"fn":2},{"start":1.349609,"end":1.439583,"tp":0,"fp":0,"fn":1},{"start":1.439583,"end":1.529557,"tp":0,"fp":0,"fn":4},{"start":1.529557,"end":1.619531,"tp":0,"fp":0,"fn":1},{"start":1.619531,"end":1.709505,"tp":0,"fp":2,"fn":1},{"start":1.709505,"end":1.799479,"tp":0,"fp":4,"fn":3},{"start":1.799479,"end":1.889453,"tp":0,"fp":1,"fn":1},{"start":1.889453,"end":1.979427,"tp":0,"fp":0,"fn":0},{"start":1.979427,"end":2.069401,"tp":0,"fp":0,"fn":4},{"start":2.069401,"end":2.159375,"tp":0,"fp":0,"fn":0}],"coverage":{"reference_events":47,"predicted_events":29}}}]},{"case_id":"dec1dc4f8d3fb66862092120ed3209a8-keys","name":"input - keys","role":"keys","family":"piano","reference_count":6,"reference_path":"D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\features\\notes.mid","results":[{"algorithm":"piano_auto","overall":{"tp":0,"fp":19,"fn":6,"f1":0.0,"precision":0.0,"recall":0.0,"onset_only_f1":0.08,"pitch_accuracy":0.0,"offset_accuracy":0.0,"note_with_offset_f1":0.0,"note_with_offset_velocity_f1":0.0,"onset_timing_mae_ms":null,"offset_timing_mae_ms":null,"velocity_mae":null,"duplicate_rate":0.0},"note_count":19,"event_count":null,"error":null,"gameplay":{"role":"keys","note_count":19,"duration_sec":2.917075,"notes_per_minute":390.802,"playable_density_flag":true,"duplicate_count":0,"duplicate_rate":0.0,"chatter_count":0,"polyphony_event_rate":0.947368,"max_polyphony":7,"pitch_min":56,"pitch_max":93,"mean_duration_sec":0.295339,"piano_left_hand_notes":5,"piano_right_hand_notes":14},"sync":{"status":"ok","start_offset_sec":0.409725,"quarantine":false,"threshold_sec":2.0},"mir_eval":{"available":true,"backend":"mir_eval.transcription","status":"ok","reference_count":6,"predicted_count":19,"onset":{"precision":0.0,"recall":0.0,"f1":0.0,"average_overlap_ratio":0.0},"onset_offset":{"precision":0.0,"recall":0.0,"f1":0.0,"average_overlap_ratio":0.0},"params":{"onset_tolerance_sec":0.06,"offset_ratio":0.2,"offset_min_tolerance_sec":0.05}},"classifier":{"kind":"piano","primary_dimension":"pitch","dimensions":[{"name":"pitch","class_metrics":[{"label":"A3","reference_count":6,"predicted_count":1,"tp":0,"fp":1,"fn":6,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#3","reference_count":0,"predicted_count":3,"tp":0,"fp":3,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#4","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A6","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B4","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B5","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C4","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E6","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#5","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#6","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F6","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#3","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#4","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G6","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0}],"confusions":[{"reference_class":"A3","predicted_class":"C4","count":1}],"matched_tp":0,"matched_confusions":1,"unmatched_predictions":18,"unmatched_references":5,"pitch_error_summary":{"semitone_near_confusions":0,"octave_confusions":0}},{"name":"pitch_class","class_metrics":[{"label":"A","reference_count":6,"predicted_count":3,"tp":0,"fp":3,"fn":6,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"A#","reference_count":0,"predicted_count":5,"tp":0,"fp":5,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"B","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"C","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"E","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"F#","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"G#","reference_count":0,"predicted_count":3,"tp":0,"fp":3,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0}],"confusions":[{"reference_class":"A","predicted_class":"C","count":1}],"matched_tp":0,"matched_confusions":1,"unmatched_predictions":18,"unmatched_references":5,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"octave","class_metrics":[{"label":"octave 3","reference_count":6,"predicted_count":5,"tp":0,"fp":5,"fn":6,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 4","reference_count":0,"predicted_count":6,"tp":0,"fp":6,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 5","reference_count":0,"predicted_count":2,"tp":0,"fp":2,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"octave 6","reference_count":0,"predicted_count":6,"tp":0,"fp":6,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0}],"confusions":[{"reference_class":"octave 3","predicted_class":"octave 4","count":1}],"matched_tp":0,"matched_confusions":1,"unmatched_predictions":18,"unmatched_references":5,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"hand_zone","class_metrics":[{"label":"left","reference_count":6,"predicted_count":5,"tp":0,"fp":5,"fn":6,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"high-right","reference_count":0,"predicted_count":8,"tp":0,"fp":8,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"right","reference_count":0,"predicted_count":6,"tp":0,"fp":6,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0}],"confusions":[{"reference_class":"left","predicted_class":"right","count":1}],"matched_tp":0,"matched_confusions":1,"unmatched_predictions":18,"unmatched_references":5,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}},{"name":"sustain_bucket","class_metrics":[{"label":"staccato","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"sustain","reference_count":0,"predicted_count":1,"tp":0,"fp":1,"fn":0,"precision":0.0,"recall":0.0,"f1":0.0},{"label":"short","reference_count":6,"predicted_count":17,"tp":1,"fp":16,"fn":5,"precision":0.058824,"recall":0.166667,"f1":0.086957}],"confusions":[],"matched_tp":1,"matched_confusions":0,"unmatched_predictions":18,"unmatched_references":5,"pitch_error_summary":{"semitone_near_confusions":null,"octave_confusions":null}}],"timeline":[{"start":0.0,"end":0.123331,"tp":0,"fp":0,"fn":1},{"start":0.123331,"end":0.246663,"tp":0,"fp":0,"fn":0},{"start":0.246663,"end":0.369994,"tp":0,"fp":0,"fn":0},{"start":0.369994,"end":0.493325,"tp":0,"fp":1,"fn":0},{"start":0.493325,"end":0.616657,"tp":0,"fp":0,"fn":1},{"start":0.616657,"end":0.739988,"tp":0,"fp":0,"fn":0},{"start":0.739988,"end":0.86332,"tp":0,"fp":0,"fn":0},{"start":0.86332,"end":0.986651,"tp":0,"fp":3,"fn":0},{"start":0.986651,"end":1.109982,"tp":0,"fp":0,"fn":1},{"start":1.109982,"end":1.233314,"tp":0,"fp":0,"fn":0},{"start":1.233314,"end":1.356645,"tp":0,"fp":0,"fn":0},{"start":1.356645,"end":1.479977,"tp":0,"fp":2,"fn":0},{"start":1.479977,"end":1.603308,"tp":0,"fp":0,"fn":1},{"start":1.603308,"end":1.726639,"tp":0,"fp":0,"fn":0},{"start":1.726639,"end":1.849971,"tp":0,"fp":0,"fn":0},{"start":1.849971,"end":1.973302,"tp":0,"fp":4,"fn":0},{"start":1.973302,"end":2.096633,"tp":0,"fp":0,"fn":1},{"start":2.096633,"end":2.219965,"tp":0,"fp":1,"fn":0},{"start":2.219965,"end":2.343296,"tp":0,"fp":1,"fn":0},{"start":2.343296,"end":2.466627,"tp":0,"fp":7,"fn":0},{"start":2.466627,"end":2.589959,"tp":0,"fp":0,"fn":1},{"start":2.589959,"end":2.71329,"tp":0,"fp":0,"fn":0},{"start":2.71329,"end":2.836622,"tp":0,"fp":0,"fn":0},{"start":2.836622,"end":2.959953,"tp":0,"fp":0,"fn":0}],"coverage":{"reference_events":6,"predicted_events":19}}}]}]}</script>
+<script>
+const data = JSON.parse(document.getElementById("classifier-data").textContent);
+const state = { role: "all", algorithm: "all", risk: "all", query: "", selectedKey: "", dimension: "" };
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+function fmt(value, digits = 3) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "n/a";
+  return Number(value).toFixed(digits);
+}
+function allRows() {
+  const rows = [];
+  for (const c of data.cases || []) {
+    for (const r of c.results || []) {
+      rows.push({ key: `${c.case_id}::${r.algorithm}`, case: c, result: r });
+    }
+  }
+  return rows;
+}
+function classifierPrimary(result) {
+  const classifier = result.classifier || {};
+  const dims = classifier.dimensions || [];
+  return dims.find(d => d.name === classifier.primary_dimension) || dims[0] || {};
+}
+function predictedCount(row) {
+  const coverage = (row.result.classifier || {}).coverage || {};
+  return coverage.predicted_events ?? row.result.note_count ?? row.result.event_count ?? 0;
+}
+function isFlagged(row) {
+  const gameplay = row.result.gameplay || {};
+  const sync = row.result.sync || {};
+  return Boolean(row.result.error)
+    || Boolean(gameplay.playable_density_flag)
+    || Boolean(sync.quarantine)
+    || Number(gameplay.duplicate_rate || 0) > 0.08;
+}
+function riskLabel(row) {
+  const flags = [];
+  const gameplay = row.result.gameplay || {};
+  const sync = row.result.sync || {};
+  if (row.result.error) flags.push("error");
+  if (gameplay.playable_density_flag) flags.push("density");
+  if (Number(gameplay.duplicate_rate || 0) > 0.08) flags.push("duplicates");
+  if (sync.quarantine) flags.push("sync");
+  return flags.length ? flags.join(", ") : "clean";
+}
+function filteredRows() {
+  const q = state.query.trim().toLowerCase();
+  return allRows().filter(row => {
+    const haystack = `${row.case.case_id} ${row.case.name || ""} ${row.case.role} ${row.result.algorithm}`.toLowerCase();
+    if (state.role !== "all" && row.case.role !== state.role) return false;
+    if (state.algorithm !== "all" && row.result.algorithm !== state.algorithm) return false;
+    if (state.risk === "flagged" && !isFlagged(row)) return false;
+    if (state.risk === "clean" && isFlagged(row)) return false;
+    return !q || haystack.includes(q);
+  });
+}
+function populateFilters() {
+  const rows = allRows();
+  const roles = [...new Set(rows.map(row => row.case.role).filter(Boolean))].sort();
+  const algorithms = [...new Set(rows.map(row => row.result.algorithm).filter(Boolean))].sort();
+  const roleFilter = document.getElementById("role-filter");
+  const algorithmFilter = document.getElementById("algorithm-filter");
+  roleFilter.innerHTML = `<option value="all">All roles</option>${roles.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("")}`;
+  algorithmFilter.innerHTML = `<option value="all">All methods</option>${algorithms.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("")}`;
+}
+function renderMeta() {
+  const run = data.run || {};
+  document.getElementById("run-meta").innerHTML = [
+    `Generated ${esc(run.generated_at_utc || "unknown")}`,
+    `Suite ${esc(run.suite_version || "unknown")}`,
+    `Profile ${esc(run.profile || "unknown")}`,
+    `Tolerance ${fmt(run.tolerance_ms, 1)}ms`
+  ].map(text => `<span class="pill">${text}</span>`).join("");
+}
+function renderOverview(rows) {
+  const flagged = rows.filter(isFlagged).length;
+  const withF1 = rows.map(row => row.result.overall && row.result.overall.f1).filter(v => v !== null && v !== undefined);
+  const meanF1 = withF1.length ? withF1.reduce((a, b) => a + Number(b), 0) / withF1.length : null;
+  const classes = rows.reduce((acc, row) => acc + ((classifierPrimary(row.result).class_metrics || []).length), 0);
+  document.getElementById("overview-cards").innerHTML = [
+    ["Runs", rows.length],
+    ["Flagged", flagged],
+    ["Mean F1", fmt(meanF1)],
+    ["Class rows", classes]
+  ].map(([label, value]) => `<div class="card"><strong>${esc(value)}</strong><span>${esc(label)}</span></div>`).join("");
+}
+function colorFor(value, flagged) {
+  if (value === null || value === undefined) return flagged ? "#653143" : "#263955";
+  const v = Math.max(0, Math.min(1, Number(value)));
+  const r = Math.round(220 - (130 * v));
+  const g = Math.round(70 + (150 * v));
+  const b = Math.round(92 + (30 * v));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+function renderHeatmap(rows) {
+  const cases = [...new Map(rows.map(row => [row.case.case_id, row.case])).values()];
+  const algorithms = [...new Set(rows.map(row => row.result.algorithm).filter(Boolean))].sort();
+  if (!cases.length || !algorithms.length) {
+    document.getElementById("heatmap").innerHTML = `<div class="empty">No rows match the current filters.</div>`;
+    return;
+  }
+  const byKey = new Map(rows.map(row => [`${row.case.case_id}::${row.result.algorithm}`, row]));
+  const maxCols = Math.max(1, algorithms.length);
+  let html = `<div class="heatmap" style="--cols:${maxCols}"><div class="heat-label">Case / method</div>${algorithms.map(a => `<div class="heat-label">${esc(a)}</div>`).join("")}`;
+  for (const c of cases) {
+    html += `<div class="heat-label" title="${esc(c.name || c.case_id)}">${esc(c.case_id)}</div>`;
+    for (const a of algorithms) {
+      const row = byKey.get(`${c.case_id}::${a}`);
+      if (!row) {
+        html += `<div class="heat-cell muted">-</div>`;
+      } else {
+        const f1 = row.result.overall ? row.result.overall.f1 : null;
+        html += `<div class="heat-cell" style="background:${colorFor(f1, isFlagged(row))}" title="${esc(riskLabel(row))}">${fmt(f1, 2)}</div>`;
+      }
+    }
+  }
+  html += `</div>`;
+  document.getElementById("heatmap").innerHTML = html;
+}
+function renderRows(rows) {
+  const tbody = document.getElementById("row-table");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">No rows match the current filters.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((row, idx) => {
+    const f1 = row.result.overall ? row.result.overall.f1 : null;
+    const risk = riskLabel(row);
+    const selected = row.key === state.selectedKey ? " selected" : "";
+    return `<tr data-row="${idx}" class="${selected}">
+      <td>${esc(row.case.case_id)}</td>
+      <td>${esc(row.case.role)}</td>
+      <td>${esc(row.result.algorithm)}</td>
+      <td class="score">${fmt(f1)}</td>
+      <td class="score">${esc(row.case.reference_count ?? 0)}</td>
+      <td class="score">${esc(predictedCount(row))}</td>
+      <td class="${risk === "clean" ? "ok" : "risk"}">${esc(risk)}</td>
+    </tr>`;
+  }).join("");
+  tbody.querySelectorAll("tr[data-row]").forEach(tr => {
+    tr.addEventListener("click", () => {
+      const row = rows[Number(tr.dataset.row)];
+      state.selectedKey = row.key;
+      state.dimension = "";
+      render();
+    });
+  });
+}
+function selectedRow(rows) {
+  if (!rows.length) return null;
+  return rows.find(row => row.key === state.selectedKey) || rows[0];
+}
+function renderTimeline(timeline) {
+  if (!timeline || !timeline.length) return `<div class="empty">No timeline buckets available.</div>`;
+  const maxCount = Math.max(1, ...timeline.map(b => Number(b.tp || 0) + Number(b.fp || 0) + Number(b.fn || 0)));
+  return `<div class="timeline">${timeline.map(b => {
+    const total = Number(b.tp || 0) + Number(b.fp || 0) + Number(b.fn || 0);
+    const height = Math.max(3, Math.round((total / maxCount) * 100));
+    const title = `${fmt(b.start, 2)}-${fmt(b.end, 2)}s TP:${b.tp || 0} FP:${b.fp || 0} FN:${b.fn || 0}`;
+    return `<span class="bar" title="${esc(title)}" style="height:${height}%"></span>`;
+  }).join("")}</div>`;
+}
+function renderDetail(rows) {
+  const row = selectedRow(rows);
+  const detail = document.getElementById("detail");
+  if (!row) {
+    detail.innerHTML = `<div class="empty">Select a classifier run.</div>`;
+    return;
+  }
+  state.selectedKey = row.key;
+  const classifier = row.result.classifier || {};
+  const dimensions = classifier.dimensions || [];
+  const dimension = dimensions.find(d => d.name === state.dimension)
+    || dimensions.find(d => d.name === classifier.primary_dimension)
+    || dimensions[0]
+    || {};
+  state.dimension = dimension.name || "";
+  const metrics = dimension.class_metrics || [];
+  const confusions = dimension.confusions || [];
+  const pitch = dimension.pitch_error_summary || {};
+  const selector = dimensions.length
+    ? `<label>Dimension<select id="dimension-select">${dimensions.map(d => `<option value="${esc(d.name)}" ${d.name === state.dimension ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>`
+    : "";
+  const classRows = metrics.length
+    ? metrics.map(m => `<tr><td>${esc(m.label)}</td><td class="score">${esc(m.reference_count)}</td><td class="score">${esc(m.predicted_count)}</td><td class="score">${esc(m.tp)}</td><td class="score">${fmt(m.precision)}</td><td class="score">${fmt(m.recall)}</td><td class="score">${fmt(m.f1)}</td></tr>`).join("")
+    : `<tr><td colspan="7" class="muted">No per-class metrics available.</td></tr>`;
+  const confusionRows = confusions.length
+    ? confusions.slice(0, 16).map(c => `<div class="confusion-row"><span>${esc(c.reference_class)} -> ${esc(c.predicted_class)}</span><strong>${esc(c.count)}</strong></div>`).join("")
+    : `<div class="empty">No near-time class confusions found.</div>`;
+  detail.innerHTML = `
+    <div class="panel" style="padding:14px; margin-bottom:12px;">
+      <div class="muted">${esc(row.case.case_id)} / ${esc(row.case.role)}</div>
+      <h2 style="margin:4px 0 10px;">${esc(row.result.algorithm)}</h2>
+      ${selector}
+    </div>
+    <div class="detail-grid">
+      <div class="detail-stat"><strong>${esc(dimension.matched_tp ?? 0)}</strong><span class="muted">True positives</span></div>
+      <div class="detail-stat"><strong>${esc(dimension.matched_confusions ?? 0)}</strong><span class="muted">Near-time confusions</span></div>
+      <div class="detail-stat"><strong>${esc((dimension.unmatched_predictions ?? 0) + (dimension.unmatched_references ?? 0))}</strong><span class="muted">Unmatched events</span></div>
+    </div>
+    <h3>Per-Class Metrics</h3>
+    <div class="table-wrap"><table><thead><tr><th>Class</th><th>Refs</th><th>Pred</th><th>TP</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody>${classRows}</tbody></table></div>
+    <h3>Confusions</h3>
+    <div class="confusion-list">${confusionRows}</div>
+    <h3>Pitch Error Summary</h3>
+    <div class="cards">
+      <div class="card"><strong>${esc(pitch.semitone_near_confusions ?? "n/a")}</strong><span>semitone-near</span></div>
+      <div class="card"><strong>${esc(pitch.octave_confusions ?? "n/a")}</strong><span>octave errors</span></div>
+    </div>
+    <h3>TP/FP/FN Timeline</h3>
+    ${renderTimeline(classifier.timeline || [])}
+  `;
+  const dimSelect = document.getElementById("dimension-select");
+  if (dimSelect) {
+    dimSelect.addEventListener("change", event => {
+      state.dimension = event.target.value;
+      renderDetail(filteredRows());
+    });
+  }
+}
+function render() {
+  const rows = filteredRows();
+  renderOverview(rows);
+  renderHeatmap(rows);
+  renderRows(rows);
+  renderDetail(rows);
+}
+document.getElementById("role-filter").addEventListener("change", event => { state.role = event.target.value; state.selectedKey = ""; render(); });
+document.getElementById("algorithm-filter").addEventListener("change", event => { state.algorithm = event.target.value; state.selectedKey = ""; render(); });
+document.getElementById("risk-filter").addEventListener("change", event => { state.risk = event.target.value; state.selectedKey = ""; render(); });
+document.getElementById("search-filter").addEventListener("input", event => { state.query = event.target.value; state.selectedKey = ""; render(); });
+populateFilters();
+renderMeta();
+render();
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
 mod audio_decode;
 pub mod audio_engine;
@@ -217,6 +217,38 @@ fn resolve_portable_data_dirs() -> Option<(PathBuf, PathBuf)> {
     }
 
     None
+}
+
+fn resolve_webview_data_dir(window_label: &str) -> Option<PathBuf> {
+    let (_, data_dir) = resolve_portable_data_dirs()?;
+    Some(data_dir.join("webview").join(window_label))
+}
+
+fn build_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    if app.get_webview_window("main").is_some() {
+        return Ok(());
+    }
+
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "missing main window config"))?;
+
+    let mut builder = WebviewWindowBuilder::from_config(app.handle(), &window_config)?;
+    if let Some(webview_data_dir) = resolve_webview_data_dir(&window_config.label) {
+        fs::create_dir_all(&webview_data_dir)?;
+        eprintln!(
+            "[webview] using portable data dir: {}",
+            webview_data_dir.display()
+        );
+        builder = builder.data_directory(webview_data_dir);
+    }
+    builder.build()?;
+    Ok(())
 }
 
 fn get_paths(app: &AppHandle) -> Result<SongsFolderPaths, String> {
@@ -834,8 +866,11 @@ fn native_audio_set_output_device(
     if let Some((sample_rate_hz, channels)) = maybe_engine_cfg {
         let target_sample_rate_hz = match normalized.as_ref() {
             Some(sel) if sel.sample_rate_hz > 0 => sel.sample_rate_hz,
-            _ => native_audio::preferred_output_sample_rate_for_selection(host_selection.clone(), None)
-                .unwrap_or(sample_rate_hz),
+            _ => native_audio::preferred_output_sample_rate_for_selection(
+                host_selection.clone(),
+                None,
+            )
+            .unwrap_or(sample_rate_hz),
         };
         let new_engine = native_audio::NativeAudioHandle::new_with_output_device(
             target_sample_rate_hz,
@@ -1149,7 +1184,7 @@ fn import_raw_song_folder(
     req: raw_song::ImportRawSongFolderRequest,
 ) -> Result<raw_song::ImportRawSongFolderResult, String> {
     let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
-    raw_song::import_raw_song_folder(req, &songs_folder)
+    raw_song::import_raw_song_folder(Some(&app), req, &songs_folder)
 }
 
 #[tauri::command]
@@ -1767,6 +1802,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            build_main_window(app)?;
+
             // Restore persisted MIDI clock output selection (best-effort).
             let handle = app.handle();
             if let Ok(Some(sel)) = get_midi_clock_output_port_selection(&handle) {
@@ -2395,6 +2432,7 @@ fn midi_clock_input_start_and_persist(
         Some(midi_clock_input::MidiInputSelection {
             id: p.id,
             name: p.name,
+            stable_id: Some(p.stable_id),
         }),
     )?;
     set_midi_input_tempo_scale(&app, tempo_scale)?;

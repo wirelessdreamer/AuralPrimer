@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "tauri:sidecar": "node ../../scripts/run-powershell.mjs ../../build_sidecar.ps1 -SyncTauriBinaries -TauriAppRoots apps/desktop/src-tauri apps/game/src-tauri",
+    "tauri:sidecar": "node ../../scripts/run-powershell.mjs ../../build_sidecar.ps1 -RepoRoot ../.. -SyncTauriBinaries -TauriAppRoots apps/desktop/src-tauri,apps/game/src-tauri",
     "tauri:dev": "npm run tauri:sidecar && node ../../scripts/run-tauri.mjs dev",
     "tauri:dev:asio": "npm run tauri:sidecar && node ../../scripts/run-tauri.mjs dev --features asio",
     "tauri:build": "npm run tauri:sidecar && node ../../scripts/run-tauri.mjs build",

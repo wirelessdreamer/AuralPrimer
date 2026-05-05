@@ -1,0 +1,48 @@
+{
+  "generated_at_utc": "2026-05-04T01:14:33.844Z",
+  "schema": "auralprimer_benchmark_hardware_profile.v1",
+  "target_profile_id": "recommended_model_workstation",
+  "platform": {
+    "os": "win32",
+    "type": "Windows_NT",
+    "release": "10.0.26200",
+    "arch": "x64"
+  },
+  "cpu": {
+    "model": "AMD Ryzen 9 7950X 16-Core Processor            ",
+    "logical_count": 32
+  },
+  "memory": {
+    "total_gb": 127.183,
+    "free_gb_at_capture": 59.775
+  },
+  "gpu": {
+    "acceleration_required_for_default_import": false,
+    "detected": [
+      {
+        "name": "Meta Virtual Monitor",
+        "reported_adapter_ram_gb": null,
+        "driver_version": "11.1.45.729"
+      },
+      {
+        "name": "LuminonCore IDDCX Adapter",
+        "reported_adapter_ram_gb": null,
+        "driver_version": "1.0.2018.1204"
+      },
+      {
+        "name": "AMD Radeon(TM) Graphics",
+        "reported_adapter_ram_gb": 0.5,
+        "driver_version": "32.0.13066.12"
+      },
+      {
+        "name": "NVIDIA GeForce RTX 5090",
+        "reported_adapter_ram_gb": 3.999,
+        "driver_version": "32.0.15.9186"
+      }
+    ]
+  },
+  "runtime": {
+    "node": "v24.12.0",
+    "npm_user_agent": "npm/11.6.2 node/v24.12.0 win32 x64 workspaces/false"
+  }
+}

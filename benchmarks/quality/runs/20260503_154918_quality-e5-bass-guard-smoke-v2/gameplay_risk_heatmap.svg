@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="326" height="176" viewBox="0 0 326 176">
+<rect width="100%" height="100%" fill="#101722"/>
+<text x="16" y="28" fill="#f3f7ff" font-family="Segoe UI, sans-serif" font-size="18" font-weight="700">Gameplay Risk Flags by Case and Method</text>
+<text x="222" y="102" transform="rotate(-35 222 102)" fill="#b9c7d9" font-family="Segoe UI, sans-serif" font-size="11">melodic_yin_octave_hps_fix</text>
+<text x="16" y="126" fill="#d8e0ee" font-family="Segoe UI, sans-serif" font-size="11">a258f4cfcd73bbe4d9a0a0236af32332-bass</text>
+<rect x="210" y="110" width="90" height="22" rx="3" fill="#1f885f"/>
+<text x="218" y="125" fill="#f7fbff" font-family="Consolas, monospace" font-size="10">0.00</text>
+</svg>

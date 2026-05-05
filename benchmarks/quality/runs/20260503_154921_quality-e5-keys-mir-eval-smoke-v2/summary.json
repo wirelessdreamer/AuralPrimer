@@ -1,0 +1,3203 @@
+{
+  "payload": {
+    "suite_version": "0.4.0",
+    "generated_at_utc": "2026-05-03T19:49:21Z",
+    "profile": {
+      "description": "Prefer in-game recognizability, stable density, and fail-safe local defaults.",
+      "drum_engines": [
+        "beat_conditioned_multiband_decoder",
+        "spectral_flux_multiband",
+        "adaptive_beat_grid",
+        "combined_filter",
+        "dsp_bandpass_improved"
+      ],
+      "melodic_methods_by_instrument": {
+        "bass": [
+          "melodic_yin_octave_hps_fix",
+          "melodic_adaptive",
+          "melodic_yin_bass80",
+          "melodic_octave_fix"
+        ],
+        "keys": [
+          "piano_auto",
+          "piano_polyphonic_clean",
+          "melodic_octave_fix",
+          "melodic_hpss_combined"
+        ],
+        "lead_guitar": [
+          "melodic_adaptive",
+          "melodic_octave_fix",
+          "melodic_combined",
+          "basic_pitch"
+        ],
+        "rhythm_guitar": [
+          "melodic_hpss_combined",
+          "melodic_adaptive",
+          "melodic_octave_fix",
+          "melodic_combined"
+        ]
+      },
+      "profile": "gameplay_default",
+      "known_profiles": [
+        "gameplay_default",
+        "fidelity_midi",
+        "research_ab"
+      ]
+    },
+    "tolerance_ms": 60.0,
+    "quality_metric_backends": {
+      "mir_eval": {
+        "ok": true,
+        "display_name": "MIR Eval",
+        "module": "mir_eval",
+        "module_candidates": [
+          "mir_eval"
+        ],
+        "purpose": "note-event transcription metrics",
+        "protocols": [
+          "mir_eval.transcription"
+        ],
+        "failure_mode": "reference-backed MIR metrics omitted; native benchmark metrics still run"
+      },
+      "museval": {
+        "ok": false,
+        "display_name": "Museval",
+        "module": null,
+        "module_candidates": [
+          "museval"
+        ],
+        "purpose": "source-separation SDR protocol",
+        "protocols": [
+          "BSSEval v4 / museval.evaluate"
+        ],
+        "failure_mode": "separation SDR metrics omitted; transcription benchmarks still run"
+      }
+    },
+    "dataset_sources": {
+      "musdb18": {
+        "ok": false,
+        "display_name": "MUSDB18",
+        "purpose": "controlled source-separation evaluation",
+        "roles": [
+          "drums",
+          "bass",
+          "other",
+          "vocals",
+          "mixture"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_MUSDB18_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; do not ship dataset content or derived in-game content"
+      },
+      "musdb18_hq": {
+        "ok": false,
+        "display_name": "MUSDB18-HQ",
+        "purpose": "controlled high-quality source-separation evaluation",
+        "roles": [
+          "drums",
+          "bass",
+          "other",
+          "vocals",
+          "mixture"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_MUSDB18_HQ_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; do not ship dataset content or derived in-game content"
+      },
+      "enst_drums": {
+        "ok": false,
+        "display_name": "ENST-Drums",
+        "purpose": "drum transcription regression fixtures",
+        "roles": [
+          "drums"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_ENST_DRUMS_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; keep product fixtures synthetic/owned/cleared"
+      },
+      "idmt_smt_drums": {
+        "ok": false,
+        "display_name": "IDMT-SMT-Drums",
+        "purpose": "drum transcription regression fixtures",
+        "roles": [
+          "drums"
+        ],
+        "roots": [
+          {
+            "env_var": "AURAL_IDMT_SMT_DRUMS_ROOT",
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        ],
+        "ship_policy": "internal benchmarking only; keep product fixtures synthetic/owned/cleared"
+      }
+    },
+    "model_backends": {
+      "mt3": {
+        "ok": true,
+        "engines": {
+          "mr_mt3_drums": {
+            "ok": true,
+            "backend": "mt3",
+            "engine": "mr_mt3_drums",
+            "model_id": "mr_mt3",
+            "modelpack_id": "mr_mt3",
+            "modelpack_version": "hf-main-20260325",
+            "checkpoint_path": "D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325\\files\\checkpoints\\mr_mt3\\mt3.pth",
+            "modelpack_root": "D:\\AuralPrimer\\assets\\models\\mr_mt3\\hf-main-20260325",
+            "size_mb": 176.0,
+            "speed_x_realtime": 57.0,
+            "description": "MR-MT3 drum transcription baseline"
+          },
+          "yourmt3_drums": {
+            "ok": true,
+            "backend": "mt3",
+            "engine": "yourmt3_drums",
+            "model_id": "yourmt3",
+            "modelpack_id": "yourmt3",
+            "modelpack_version": "hf-main-20260325",
+            "checkpoint_path": "D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325\\files\\checkpoints\\yourmt3\\mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops\\last.ckpt",
+            "modelpack_root": "D:\\AuralPrimer\\assets\\models\\yourmt3\\hf-main-20260325",
+            "size_mb": 536.0,
+            "speed_x_realtime": 15.0,
+            "description": "YourMT3 drum transcription research candidate"
+          }
+        },
+        "methods": [
+          "mr_mt3_drums",
+          "yourmt3_drums"
+        ],
+        "roles": [
+          "drums"
+        ],
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear FileNotFoundError/RuntimeError, no portable requirement"
+      },
+      "basic_pitch": {
+        "ok": true,
+        "display_name": "Basic Pitch",
+        "module": "basic_pitch",
+        "module_candidates": [
+          "basic_pitch"
+        ],
+        "module_available": true,
+        "roles": [
+          "bass",
+          "lead_guitar",
+          "rhythm_guitar",
+          "keys"
+        ],
+        "methods": [
+          "basic_pitch"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "event_decode",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "portable-safe fallback through melodic fallback chain"
+      },
+      "piano_transkun": {
+        "ok": false,
+        "display_name": "Transkun",
+        "module": null,
+        "module_candidates": [
+          "transkun"
+        ],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_transkun",
+          "piano_transkun_clean"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError, then melodic fallback when used through import"
+      },
+      "piano_pti": {
+        "ok": false,
+        "display_name": "piano_transcription_inference",
+        "module": null,
+        "module_candidates": [
+          "piano_transcription_inference"
+        ],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_pti",
+          "piano_pti_clean"
+        ],
+        "env_files": {
+          "AURAL_PIANO_PTI_CHECKPOINT": {
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        },
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError unless checkpoint or explicit download opt-in is configured"
+      },
+      "piano_hft": {
+        "ok": false,
+        "display_name": "hFT-Transformer",
+        "module": null,
+        "module_candidates": [],
+        "module_available": false,
+        "roles": [
+          "keys"
+        ],
+        "methods": [
+          "piano_hft",
+          "piano_hft_clean"
+        ],
+        "env_files": {
+          "AURAL_PIANO_HFT_CHECKPOINT": {
+            "configured": false,
+            "path": null,
+            "exists": false
+          }
+        },
+        "env_values": {
+          "AURAL_PIANO_HFT_COMMAND": {
+            "configured": false,
+            "value": null
+          }
+        },
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": true,
+          "decode": "temp_midi",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError unless checkpoint and command adapter are configured"
+      },
+      "torchcrepe": {
+        "ok": true,
+        "display_name": "torchcrepe",
+        "module": "torchcrepe",
+        "module_candidates": [
+          "torchcrepe",
+          "torch"
+        ],
+        "module_available": true,
+        "roles": [
+          "bass",
+          "lead_guitar",
+          "rhythm_guitar"
+        ],
+        "methods": [
+          "torchcrepe"
+        ],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "frame_f0_decode",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "clear RuntimeError, then melodic fallback when used through import"
+      },
+      "beatnet": {
+        "ok": false,
+        "display_name": "BeatNet",
+        "module": null,
+        "module_candidates": [
+          "BeatNet",
+          "beatnet"
+        ],
+        "module_available": false,
+        "roles": [
+          "tempo",
+          "drums"
+        ],
+        "methods": [],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "beat_downbeat_priors",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "availability-only until wired as a beat/downbeat prior"
+      },
+      "omnizart": {
+        "ok": false,
+        "display_name": "Omnizart",
+        "module": null,
+        "module_candidates": [
+          "omnizart"
+        ],
+        "module_available": false,
+        "roles": [
+          "research"
+        ],
+        "methods": [],
+        "env_files": {},
+        "env_values": {},
+        "model_path": null,
+        "adapter_contract": {
+          "availability_check": true,
+          "modelpack_resolution": false,
+          "decode": "research_comparator",
+          "instrument_tagging": true,
+          "clear_failure": true,
+          "portable_safe_absence": true
+        },
+        "failure_mode": "availability-only research comparator; never required for portable import"
+      }
+    },
+    "cases": [
+      {
+        "case_id": "10f446654fdc37e5805af28cccc17571-keys",
+        "name": "Smoke - keys",
+        "role": "keys",
+        "family": "piano",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\audio\\stems\\keys.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\features\\notes.mid",
+        "reference_count": 1,
+        "reference_meta": {},
+        "algorithms": [
+          "piano_auto"
+        ],
+        "results": [
+          {
+            "algorithm": "piano_auto",
+            "note_count": 1,
+            "elapsed_sec": 5.71,
+            "prediction": {
+              "note_count": 1,
+              "duplicate_predictions": 0,
+              "duplicate_rate": 0.0,
+              "pitch_min": 46,
+              "pitch_max": 46,
+              "mean_duration_sec": 1.48,
+              "mean_velocity": 52.0
+            },
+            "predicted_notes": [
+              {
+                "t_on": 0.02,
+                "t_off": 1.5,
+                "pitch": 46,
+                "velocity": 52,
+                "instrument": "keys"
+              }
+            ],
+            "overall": {
+              "tp": 1,
+              "fp": 0,
+              "fn": 0,
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "onset_only_f1": 1.0,
+              "pitch_accuracy": 1.0,
+              "offset_accuracy": 0.0,
+              "note_with_offset_f1": 0.0,
+              "note_with_offset_velocity_f1": 0.0,
+              "onset_timing_mae_ms": 8.12,
+              "offset_timing_mae_ms": 630.21,
+              "velocity_mae": 0.0,
+              "duplicate_rate": 0.0
+            },
+            "gameplay": {
+              "role": "keys",
+              "note_count": 1,
+              "duration_sec": 1.5,
+              "notes_per_minute": 40.0,
+              "playable_density_flag": false,
+              "duplicate_count": 0,
+              "duplicate_rate": 0.0,
+              "chatter_count": 0,
+              "polyphony_event_rate": 0.0,
+              "max_polyphony": 1,
+              "pitch_min": 46,
+              "pitch_max": 46,
+              "mean_duration_sec": 1.48,
+              "piano_left_hand_notes": 1,
+              "piano_right_hand_notes": 0
+            },
+            "sync": {
+              "status": "ok",
+              "start_offset_sec": -0.008125,
+              "quarantine": false,
+              "threshold_sec": 2.0
+            },
+            "classifier": {
+              "kind": "piano",
+              "primary_dimension": "pitch",
+              "dimensions": [
+                {
+                  "name": "pitch",
+                  "class_metrics": [
+                    {
+                      "label": "A#2",
+                      "reference_count": 1,
+                      "predicted_count": 1,
+                      "tp": 1,
+                      "fp": 0,
+                      "fn": 0,
+                      "precision": 1.0,
+                      "recall": 1.0,
+                      "f1": 1.0
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 1,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 0,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": 0,
+                    "octave_confusions": 0
+                  }
+                },
+                {
+                  "name": "pitch_class",
+                  "class_metrics": [
+                    {
+                      "label": "A#",
+                      "reference_count": 1,
+                      "predicted_count": 1,
+                      "tp": 1,
+                      "fp": 0,
+                      "fn": 0,
+                      "precision": 1.0,
+                      "recall": 1.0,
+                      "f1": 1.0
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 1,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 0,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "octave",
+                  "class_metrics": [
+                    {
+                      "label": "octave 2",
+                      "reference_count": 1,
+                      "predicted_count": 1,
+                      "tp": 1,
+                      "fp": 0,
+                      "fn": 0,
+                      "precision": 1.0,
+                      "recall": 1.0,
+                      "f1": 1.0
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 1,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 0,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "hand_zone",
+                  "class_metrics": [
+                    {
+                      "label": "low-left",
+                      "reference_count": 1,
+                      "predicted_count": 1,
+                      "tp": 1,
+                      "fp": 0,
+                      "fn": 0,
+                      "precision": 1.0,
+                      "recall": 1.0,
+                      "f1": 1.0
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 1,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 0,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "sustain_bucket",
+                  "class_metrics": [
+                    {
+                      "label": "long-sustain",
+                      "reference_count": 1,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 1,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "sustain",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "long-sustain",
+                      "predicted_class": "sustain",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 0,
+                  "matched_confusions": 1,
+                  "unmatched_predictions": 0,
+                  "unmatched_references": 0,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                }
+              ],
+              "timeline": [
+                {
+                  "start": 0.0,
+                  "end": 0.088759,
+                  "tp": 1,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.088759,
+                  "end": 0.177517,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.177517,
+                  "end": 0.266276,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.266276,
+                  "end": 0.355035,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.355035,
+                  "end": 0.443793,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.443793,
+                  "end": 0.532552,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.532552,
+                  "end": 0.621311,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.621311,
+                  "end": 0.710069,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.710069,
+                  "end": 0.798828,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.798828,
+                  "end": 0.887587,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.887587,
+                  "end": 0.976345,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.976345,
+                  "end": 1.065104,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.065104,
+                  "end": 1.153863,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.153863,
+                  "end": 1.242621,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.242621,
+                  "end": 1.33138,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.33138,
+                  "end": 1.420139,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.420139,
+                  "end": 1.508897,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.508897,
+                  "end": 1.597656,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.597656,
+                  "end": 1.686415,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.686415,
+                  "end": 1.775173,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.775173,
+                  "end": 1.863932,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.863932,
+                  "end": 1.952691,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.952691,
+                  "end": 2.041449,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 2.041449,
+                  "end": 2.130208,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                }
+              ],
+              "coverage": {
+                "reference_events": 1,
+                "predicted_events": 1
+              }
+            },
+            "mir_eval": {
+              "available": true,
+              "backend": "mir_eval.transcription",
+              "status": "ok",
+              "reference_count": 1,
+              "predicted_count": 1,
+              "onset": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "average_overlap_ratio": 0.697502
+              },
+              "onset_offset": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "average_overlap_ratio": 0.0
+              },
+              "params": {
+                "onset_tolerance_sec": 0.06,
+                "offset_ratio": 0.2,
+                "offset_min_tolerance_sec": 0.05
+              }
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "a258f4cfcd73bbe4d9a0a0236af32332-keys",
+        "name": "tmp_demucs_smoke - keys",
+        "role": "keys",
+        "family": "piano",
+        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\audio\\stems\\keys.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\features\\notes.mid",
+        "reference_count": 47,
+        "reference_meta": {},
+        "algorithms": [
+          "piano_auto"
+        ],
+        "results": [
+          {
+            "algorithm": "piano_auto",
+            "note_count": 29,
+            "elapsed_sec": 0.95,
+            "prediction": {
+              "note_count": 29,
+              "duplicate_predictions": 0,
+              "duplicate_rate": 0.0,
+              "pitch_min": 34,
+              "pitch_max": 96,
+              "mean_duration_sec": 0.2827,
+              "mean_velocity": 69.0
+            },
+            "predicted_notes": [
+              {
+                "t_on": 0.0,
+                "t_off": 0.348334,
+                "pitch": 64,
+                "velocity": 82,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.0,
+                "t_off": 0.348334,
+                "pitch": 65,
+                "velocity": 82,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.0,
+                "t_off": 0.379578,
+                "pitch": 71,
+                "velocity": 80,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.0,
+                "t_off": 0.548639,
+                "pitch": 83,
+                "velocity": 80,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.01161,
+                "t_off": 0.13932,
+                "pitch": 77,
+                "velocity": 77,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.02322,
+                "t_off": 0.353602,
+                "pitch": 61,
+                "velocity": 58,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.06966,
+                "t_off": 0.23581,
+                "pitch": 62,
+                "velocity": 44,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.06966,
+                "t_off": 0.2242,
+                "pitch": 69,
+                "velocity": 47,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.06966,
+                "t_off": 0.365004,
+                "pitch": 74,
+                "velocity": 43,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.06966,
+                "t_off": 0.327056,
+                "pitch": 81,
+                "velocity": 46,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.12771,
+                "t_off": 0.2322,
+                "pitch": 77,
+                "velocity": 61,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.15093,
+                "t_off": 0.415964,
+                "pitch": 70,
+                "velocity": 60,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.22059,
+                "t_off": 0.561421,
+                "pitch": 77,
+                "velocity": 47,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.2322,
+                "t_off": 0.501345,
+                "pitch": 69,
+                "velocity": 41,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.24381,
+                "t_off": 0.517718,
+                "pitch": 62,
+                "velocity": 45,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.429569,
+                "t_off": 0.737059,
+                "pitch": 96,
+                "velocity": 59,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.510839,
+                "t_off": 0.769652,
+                "pitch": 61,
+                "velocity": 55,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.835918,
+                "t_off": 1.138233,
+                "pitch": 56,
+                "velocity": 78,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.963628,
+                "t_off": 1.329895,
+                "pitch": 43,
+                "velocity": 76,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.975238,
+                "t_off": 1.342686,
+                "pitch": 36,
+                "velocity": 81,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.986848,
+                "t_off": 1.309929,
+                "pitch": 34,
+                "velocity": 77,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.986848,
+                "t_off": 1.340084,
+                "pitch": 42,
+                "velocity": 85,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.637007,
+                "t_off": 1.934971,
+                "pitch": 57,
+                "velocity": 71,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.706667,
+                "t_off": 2.0,
+                "pitch": 36,
+                "velocity": 90,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.729887,
+                "t_off": 2.0,
+                "pitch": 45,
+                "velocity": 87,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.776327,
+                "t_off": 2.0,
+                "pitch": 46,
+                "velocity": 85,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.787936,
+                "t_off": 2.0,
+                "pitch": 39,
+                "velocity": 91,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.787936,
+                "t_off": 2.0,
+                "pitch": 40,
+                "velocity": 91,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.799546,
+                "t_off": 2.0,
+                "pitch": 41,
+                "velocity": 82,
+                "instrument": "keys"
+              }
+            ],
+            "overall": {
+              "tp": 1,
+              "fp": 28,
+              "fn": 46,
+              "f1": 0.0263,
+              "precision": 0.0345,
+              "recall": 0.0213,
+              "onset_only_f1": 0.5,
+              "pitch_accuracy": 0.0526,
+              "offset_accuracy": 1.0,
+              "note_with_offset_f1": 0.0263,
+              "note_with_offset_velocity_f1": 0.0,
+              "onset_timing_mae_ms": 25.98,
+              "offset_timing_mae_ms": 82.3,
+              "velocity_mae": 37.0,
+              "duplicate_rate": 0.0
+            },
+            "gameplay": {
+              "role": "keys",
+              "note_count": 29,
+              "duration_sec": 2.0,
+              "notes_per_minute": 870.0,
+              "playable_density_flag": true,
+              "duplicate_count": 0,
+              "duplicate_rate": 0.0,
+              "chatter_count": 0,
+              "polyphony_event_rate": 0.931034,
+              "max_polyphony": 12,
+              "pitch_min": 34,
+              "pitch_max": 96,
+              "mean_duration_sec": 0.282694,
+              "piano_left_hand_notes": 12,
+              "piano_right_hand_notes": 17
+            },
+            "sync": {
+              "status": "ok",
+              "start_offset_sec": 0.0,
+              "quarantine": false,
+              "threshold_sec": 2.0
+            },
+            "classifier": {
+              "kind": "piano",
+              "primary_dimension": "pitch",
+              "dimensions": [
+                {
+                  "name": "pitch",
+                  "class_metrics": [
+                    {
+                      "label": "C#3",
+                      "reference_count": 17,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 17,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B3",
+                      "reference_count": 5,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 5,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C2",
+                      "reference_count": 5,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 5,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C#2",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D#3",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E3",
+                      "reference_count": 3,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B4",
+                      "reference_count": 2,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E4",
+                      "reference_count": 2,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#4",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G3",
+                      "reference_count": 2,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C6",
+                      "reference_count": 1,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 1,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A#1",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A#2",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A#4",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A2",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A3",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A4",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A5",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B5",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C#4",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C7",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D#2",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D5",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E2",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#2",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F2",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F4",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F5",
+                      "reference_count": 0,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G#3",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G2",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D4",
+                      "reference_count": 2,
+                      "predicted_count": 2,
+                      "tp": 1,
+                      "fp": 1,
+                      "fn": 1,
+                      "precision": 0.5,
+                      "recall": 0.5,
+                      "f1": 0.5
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "C2",
+                      "predicted_class": "E4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "E3",
+                      "predicted_class": "F4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C6",
+                      "predicted_class": "B4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "B3",
+                      "predicted_class": "B5",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C#3",
+                      "predicted_class": "F5",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C#3",
+                      "predicted_class": "D4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "G3",
+                      "predicted_class": "F5",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C#3",
+                      "predicted_class": "A4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "D#3",
+                      "predicted_class": "C7",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "F#4",
+                      "predicted_class": "C#4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "D#3",
+                      "predicted_class": "G#3",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "E3",
+                      "predicted_class": "G2",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C#2",
+                      "predicted_class": "C2",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "B3",
+                      "predicted_class": "A#1",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C#3",
+                      "predicted_class": "A3",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "E4",
+                      "predicted_class": "C2",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "B4",
+                      "predicted_class": "A2",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C2",
+                      "predicted_class": "A#2",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 1,
+                  "matched_confusions": 18,
+                  "unmatched_predictions": 10,
+                  "unmatched_references": 28,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": 1,
+                    "octave_confusions": 1
+                  }
+                },
+                {
+                  "name": "pitch_class",
+                  "class_metrics": [
+                    {
+                      "label": "C",
+                      "reference_count": 6,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 6,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "D#",
+                      "reference_count": 3,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 3,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#",
+                      "reference_count": 2,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G",
+                      "reference_count": 2,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 2,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A",
+                      "reference_count": 0,
+                      "predicted_count": 5,
+                      "tp": 0,
+                      "fp": 5,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A#",
+                      "reference_count": 0,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F",
+                      "reference_count": 0,
+                      "predicted_count": 5,
+                      "tp": 0,
+                      "fp": 5,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G#",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C#",
+                      "reference_count": 20,
+                      "predicted_count": 2,
+                      "tp": 2,
+                      "fp": 0,
+                      "fn": 18,
+                      "precision": 1.0,
+                      "recall": 0.1,
+                      "f1": 0.181818
+                    },
+                    {
+                      "label": "B",
+                      "reference_count": 7,
+                      "predicted_count": 2,
+                      "tp": 1,
+                      "fp": 1,
+                      "fn": 6,
+                      "precision": 0.5,
+                      "recall": 0.142857,
+                      "f1": 0.222222
+                    },
+                    {
+                      "label": "D",
+                      "reference_count": 2,
+                      "predicted_count": 3,
+                      "tp": 1,
+                      "fp": 2,
+                      "fn": 1,
+                      "precision": 0.333333,
+                      "recall": 0.5,
+                      "f1": 0.4
+                    },
+                    {
+                      "label": "E",
+                      "reference_count": 5,
+                      "predicted_count": 2,
+                      "tp": 2,
+                      "fp": 0,
+                      "fn": 3,
+                      "precision": 1.0,
+                      "recall": 0.4,
+                      "f1": 0.571429
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "C#",
+                      "predicted_class": "A",
+                      "count": 2
+                    },
+                    {
+                      "reference_class": "C",
+                      "predicted_class": "F",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C",
+                      "predicted_class": "B",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C#",
+                      "predicted_class": "D",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "G",
+                      "predicted_class": "F",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "D#",
+                      "predicted_class": "C",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "D#",
+                      "predicted_class": "G#",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "E",
+                      "predicted_class": "G",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C#",
+                      "predicted_class": "C",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "B",
+                      "predicted_class": "A#",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "B",
+                      "predicted_class": "C",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "C",
+                      "predicted_class": "A",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 6,
+                  "matched_confusions": 13,
+                  "unmatched_predictions": 10,
+                  "unmatched_references": 28,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "octave",
+                  "class_metrics": [
+                    {
+                      "label": "octave 6",
+                      "reference_count": 1,
+                      "predicted_count": 0,
+                      "tp": 0,
+                      "fp": 0,
+                      "fn": 1,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 1",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 5",
+                      "reference_count": 0,
+                      "predicted_count": 6,
+                      "tp": 0,
+                      "fp": 6,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 7",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 3",
+                      "reference_count": 30,
+                      "predicted_count": 2,
+                      "tp": 2,
+                      "fp": 0,
+                      "fn": 28,
+                      "precision": 1.0,
+                      "recall": 0.066667,
+                      "f1": 0.125001
+                    },
+                    {
+                      "label": "octave 4",
+                      "reference_count": 8,
+                      "predicted_count": 10,
+                      "tp": 2,
+                      "fp": 8,
+                      "fn": 6,
+                      "precision": 0.2,
+                      "recall": 0.25,
+                      "f1": 0.222222
+                    },
+                    {
+                      "label": "octave 2",
+                      "reference_count": 8,
+                      "predicted_count": 9,
+                      "tp": 2,
+                      "fp": 7,
+                      "fn": 6,
+                      "precision": 0.222222,
+                      "recall": 0.25,
+                      "f1": 0.235294
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "octave 3",
+                      "predicted_class": "octave 4",
+                      "count": 3
+                    },
+                    {
+                      "reference_class": "octave 3",
+                      "predicted_class": "octave 5",
+                      "count": 3
+                    },
+                    {
+                      "reference_class": "octave 4",
+                      "predicted_class": "octave 2",
+                      "count": 2
+                    },
+                    {
+                      "reference_class": "octave 2",
+                      "predicted_class": "octave 4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "octave 6",
+                      "predicted_class": "octave 4",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "octave 3",
+                      "predicted_class": "octave 7",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "octave 3",
+                      "predicted_class": "octave 2",
+                      "count": 1
+                    },
+                    {
+                      "reference_class": "octave 3",
+                      "predicted_class": "octave 1",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 6,
+                  "matched_confusions": 13,
+                  "unmatched_predictions": 10,
+                  "unmatched_references": 28,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "hand_zone",
+                  "class_metrics": [
+                    {
+                      "label": "left",
+                      "reference_count": 30,
+                      "predicted_count": 2,
+                      "tp": 2,
+                      "fp": 0,
+                      "fn": 28,
+                      "precision": 1.0,
+                      "recall": 0.066667,
+                      "f1": 0.125001
+                    },
+                    {
+                      "label": "low-left",
+                      "reference_count": 8,
+                      "predicted_count": 10,
+                      "tp": 2,
+                      "fp": 8,
+                      "fn": 6,
+                      "precision": 0.2,
+                      "recall": 0.25,
+                      "f1": 0.222222
+                    },
+                    {
+                      "label": "right",
+                      "reference_count": 8,
+                      "predicted_count": 10,
+                      "tp": 2,
+                      "fp": 8,
+                      "fn": 6,
+                      "precision": 0.2,
+                      "recall": 0.25,
+                      "f1": 0.222222
+                    },
+                    {
+                      "label": "high-right",
+                      "reference_count": 1,
+                      "predicted_count": 7,
+                      "tp": 1,
+                      "fp": 6,
+                      "fn": 0,
+                      "precision": 0.142857,
+                      "recall": 1.0,
+                      "f1": 0.25
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "left",
+                      "predicted_class": "right",
+                      "count": 4
+                    },
+                    {
+                      "reference_class": "left",
+                      "predicted_class": "high-right",
+                      "count": 3
+                    },
+                    {
+                      "reference_class": "left",
+                      "predicted_class": "low-left",
+                      "count": 2
+                    },
+                    {
+                      "reference_class": "right",
+                      "predicted_class": "low-left",
+                      "count": 2
+                    },
+                    {
+                      "reference_class": "low-left",
+                      "predicted_class": "right",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 7,
+                  "matched_confusions": 12,
+                  "unmatched_predictions": 10,
+                  "unmatched_references": 28,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "sustain_bucket",
+                  "class_metrics": [
+                    {
+                      "label": "staccato",
+                      "reference_count": 24,
+                      "predicted_count": 1,
+                      "tp": 1,
+                      "fp": 0,
+                      "fn": 23,
+                      "precision": 1.0,
+                      "recall": 0.041667,
+                      "f1": 0.080001
+                    },
+                    {
+                      "label": "short",
+                      "reference_count": 23,
+                      "predicted_count": 28,
+                      "tp": 13,
+                      "fp": 15,
+                      "fn": 10,
+                      "precision": 0.464286,
+                      "recall": 0.565217,
+                      "f1": 0.509804
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "staccato",
+                      "predicted_class": "short",
+                      "count": 5
+                    }
+                  ],
+                  "matched_tp": 14,
+                  "matched_confusions": 5,
+                  "unmatched_predictions": 10,
+                  "unmatched_references": 28,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                }
+              ],
+              "timeline": [
+                {
+                  "start": 0.0,
+                  "end": 0.089974,
+                  "tp": 0,
+                  "fp": 10,
+                  "fn": 5
+                },
+                {
+                  "start": 0.089974,
+                  "end": 0.179948,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 1
+                },
+                {
+                  "start": 0.179948,
+                  "end": 0.269922,
+                  "tp": 1,
+                  "fp": 2,
+                  "fn": 2
+                },
+                {
+                  "start": 0.269922,
+                  "end": 0.359896,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.359896,
+                  "end": 0.44987,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 0.44987,
+                  "end": 0.539844,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 5
+                },
+                {
+                  "start": 0.539844,
+                  "end": 0.629818,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.629818,
+                  "end": 0.719792,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.719792,
+                  "end": 0.809766,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3
+                },
+                {
+                  "start": 0.809766,
+                  "end": 0.89974,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 2
+                },
+                {
+                  "start": 0.89974,
+                  "end": 0.989714,
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0
+                },
+                {
+                  "start": 0.989714,
+                  "end": 1.079687,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4
+                },
+                {
+                  "start": 1.079687,
+                  "end": 1.169661,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2
+                },
+                {
+                  "start": 1.169661,
+                  "end": 1.259635,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2
+                },
+                {
+                  "start": 1.259635,
+                  "end": 1.349609,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2
+                },
+                {
+                  "start": 1.349609,
+                  "end": 1.439583,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.439583,
+                  "end": 1.529557,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4
+                },
+                {
+                  "start": 1.529557,
+                  "end": 1.619531,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.619531,
+                  "end": 1.709505,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 1
+                },
+                {
+                  "start": 1.709505,
+                  "end": 1.799479,
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 3
+                },
+                {
+                  "start": 1.799479,
+                  "end": 1.889453,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1
+                },
+                {
+                  "start": 1.889453,
+                  "end": 1.979427,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.979427,
+                  "end": 2.069401,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4
+                },
+                {
+                  "start": 2.069401,
+                  "end": 2.159375,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                }
+              ],
+              "coverage": {
+                "reference_events": 47,
+                "predicted_events": 29
+              }
+            },
+            "mir_eval": {
+              "available": true,
+              "backend": "mir_eval.transcription",
+              "status": "ok",
+              "reference_count": 47,
+              "predicted_count": 29,
+              "onset": {
+                "precision": 0.034483,
+                "recall": 0.021277,
+                "f1": 0.026316,
+                "average_overlap_ratio": 0.604674
+              },
+              "onset_offset": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "average_overlap_ratio": 0.0
+              },
+              "params": {
+                "onset_tolerance_sec": 0.06,
+                "offset_ratio": 0.2,
+                "offset_min_tolerance_sec": 0.05
+              }
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "dec1dc4f8d3fb66862092120ed3209a8-keys",
+        "name": "input - keys",
+        "role": "keys",
+        "family": "piano",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\audio\\stems\\keys.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\features\\notes.mid",
+        "reference_count": 6,
+        "reference_meta": {},
+        "algorithms": [
+          "piano_auto"
+        ],
+        "results": [
+          {
+            "algorithm": "piano_auto",
+            "note_count": 19,
+            "elapsed_sec": 0.78,
+            "prediction": {
+              "note_count": 19,
+              "duplicate_predictions": 0,
+              "duplicate_rate": 0.0,
+              "pitch_min": 56,
+              "pitch_max": 93,
+              "mean_duration_sec": 0.2953,
+              "mean_velocity": 70.74
+            },
+            "predicted_notes": [
+              {
+                "t_on": 0.429569,
+                "t_off": 0.693186,
+                "pitch": 89,
+                "velocity": 51,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.928798,
+                "t_off": 1.204955,
+                "pitch": 68,
+                "velocity": 68,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.928798,
+                "t_off": 1.197827,
+                "pitch": 88,
+                "velocity": 58,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 0.928798,
+                "t_off": 1.194128,
+                "pitch": 93,
+                "velocity": 54,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.428027,
+                "t_off": 1.706565,
+                "pitch": 91,
+                "velocity": 70,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.428027,
+                "t_off": 1.70312,
+                "pitch": 93,
+                "velocity": 68,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.927256,
+                "t_off": 2.203413,
+                "pitch": 68,
+                "velocity": 68,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.927256,
+                "t_off": 2.199041,
+                "pitch": 70,
+                "velocity": 65,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.927256,
+                "t_off": 2.197073,
+                "pitch": 83,
+                "velocity": 60,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 1.927256,
+                "t_off": 2.21652,
+                "pitch": 90,
+                "velocity": 57,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.171066,
+                "t_off": 2.287166,
+                "pitch": 58,
+                "velocity": 58,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.275556,
+                "t_off": 2.414875,
+                "pitch": 58,
+                "velocity": 66,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.345215,
+                "t_off": 2.905465,
+                "pitch": 57,
+                "velocity": 77,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.403265,
+                "t_off": 2.917075,
+                "pitch": 58,
+                "velocity": 83,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.414875,
+                "t_off": 2.723923,
+                "pitch": 70,
+                "velocity": 87,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.426485,
+                "t_off": 2.765176,
+                "pitch": 56,
+                "velocity": 91,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.426485,
+                "t_off": 2.733446,
+                "pitch": 78,
+                "velocity": 79,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.438095,
+                "t_off": 2.732224,
+                "pitch": 71,
+                "velocity": 88,
+                "instrument": "keys"
+              },
+              {
+                "t_on": 2.449705,
+                "t_off": 2.748046,
+                "pitch": 60,
+                "velocity": 96,
+                "instrument": "keys"
+              }
+            ],
+            "overall": {
+              "tp": 0,
+              "fp": 19,
+              "fn": 6,
+              "f1": 0.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "onset_only_f1": 0.08,
+              "pitch_accuracy": 0.0,
+              "offset_accuracy": 0.0,
+              "note_with_offset_f1": 0.0,
+              "note_with_offset_velocity_f1": 0.0,
+              "onset_timing_mae_ms": null,
+              "offset_timing_mae_ms": null,
+              "velocity_mae": null,
+              "duplicate_rate": 0.0
+            },
+            "gameplay": {
+              "role": "keys",
+              "note_count": 19,
+              "duration_sec": 2.917075,
+              "notes_per_minute": 390.802,
+              "playable_density_flag": true,
+              "duplicate_count": 0,
+              "duplicate_rate": 0.0,
+              "chatter_count": 0,
+              "polyphony_event_rate": 0.947368,
+              "max_polyphony": 7,
+              "pitch_min": 56,
+              "pitch_max": 93,
+              "mean_duration_sec": 0.295339,
+              "piano_left_hand_notes": 5,
+              "piano_right_hand_notes": 14
+            },
+            "sync": {
+              "status": "ok",
+              "start_offset_sec": 0.409725,
+              "quarantine": false,
+              "threshold_sec": 2.0
+            },
+            "classifier": {
+              "kind": "piano",
+              "primary_dimension": "pitch",
+              "dimensions": [
+                {
+                  "name": "pitch",
+                  "class_metrics": [
+                    {
+                      "label": "A3",
+                      "reference_count": 6,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 6,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A#3",
+                      "reference_count": 0,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A#4",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A6",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B4",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B5",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C4",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E6",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#5",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#6",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F6",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G#3",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G#4",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G6",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "A3",
+                      "predicted_class": "C4",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 0,
+                  "matched_confusions": 1,
+                  "unmatched_predictions": 18,
+                  "unmatched_references": 5,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": 0,
+                    "octave_confusions": 0
+                  }
+                },
+                {
+                  "name": "pitch_class",
+                  "class_metrics": [
+                    {
+                      "label": "A",
+                      "reference_count": 6,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 6,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "A#",
+                      "reference_count": 0,
+                      "predicted_count": 5,
+                      "tp": 0,
+                      "fp": 5,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "B",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "C",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "E",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "F#",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "G#",
+                      "reference_count": 0,
+                      "predicted_count": 3,
+                      "tp": 0,
+                      "fp": 3,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "A",
+                      "predicted_class": "C",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 0,
+                  "matched_confusions": 1,
+                  "unmatched_predictions": 18,
+                  "unmatched_references": 5,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "octave",
+                  "class_metrics": [
+                    {
+                      "label": "octave 3",
+                      "reference_count": 6,
+                      "predicted_count": 5,
+                      "tp": 0,
+                      "fp": 5,
+                      "fn": 6,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 4",
+                      "reference_count": 0,
+                      "predicted_count": 6,
+                      "tp": 0,
+                      "fp": 6,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 5",
+                      "reference_count": 0,
+                      "predicted_count": 2,
+                      "tp": 0,
+                      "fp": 2,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "octave 6",
+                      "reference_count": 0,
+                      "predicted_count": 6,
+                      "tp": 0,
+                      "fp": 6,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "octave 3",
+                      "predicted_class": "octave 4",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 0,
+                  "matched_confusions": 1,
+                  "unmatched_predictions": 18,
+                  "unmatched_references": 5,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "hand_zone",
+                  "class_metrics": [
+                    {
+                      "label": "left",
+                      "reference_count": 6,
+                      "predicted_count": 5,
+                      "tp": 0,
+                      "fp": 5,
+                      "fn": 6,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "high-right",
+                      "reference_count": 0,
+                      "predicted_count": 8,
+                      "tp": 0,
+                      "fp": 8,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "right",
+                      "reference_count": 0,
+                      "predicted_count": 6,
+                      "tp": 0,
+                      "fp": 6,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    }
+                  ],
+                  "confusions": [
+                    {
+                      "reference_class": "left",
+                      "predicted_class": "right",
+                      "count": 1
+                    }
+                  ],
+                  "matched_tp": 0,
+                  "matched_confusions": 1,
+                  "unmatched_predictions": 18,
+                  "unmatched_references": 5,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                },
+                {
+                  "name": "sustain_bucket",
+                  "class_metrics": [
+                    {
+                      "label": "staccato",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "sustain",
+                      "reference_count": 0,
+                      "predicted_count": 1,
+                      "tp": 0,
+                      "fp": 1,
+                      "fn": 0,
+                      "precision": 0.0,
+                      "recall": 0.0,
+                      "f1": 0.0
+                    },
+                    {
+                      "label": "short",
+                      "reference_count": 6,
+                      "predicted_count": 17,
+                      "tp": 1,
+                      "fp": 16,
+                      "fn": 5,
+                      "precision": 0.058824,
+                      "recall": 0.166667,
+                      "f1": 0.086957
+                    }
+                  ],
+                  "confusions": [],
+                  "matched_tp": 1,
+                  "matched_confusions": 0,
+                  "unmatched_predictions": 18,
+                  "unmatched_references": 5,
+                  "pitch_error_summary": {
+                    "semitone_near_confusions": null,
+                    "octave_confusions": null
+                  }
+                }
+              ],
+              "timeline": [
+                {
+                  "start": 0.0,
+                  "end": 0.123331,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.123331,
+                  "end": 0.246663,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.246663,
+                  "end": 0.369994,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.369994,
+                  "end": 0.493325,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 0.493325,
+                  "end": 0.616657,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 0.616657,
+                  "end": 0.739988,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.739988,
+                  "end": 0.86332,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 0.86332,
+                  "end": 0.986651,
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 0
+                },
+                {
+                  "start": 0.986651,
+                  "end": 1.109982,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.109982,
+                  "end": 1.233314,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.233314,
+                  "end": 1.356645,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.356645,
+                  "end": 1.479977,
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0
+                },
+                {
+                  "start": 1.479977,
+                  "end": 1.603308,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 1.603308,
+                  "end": 1.726639,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.726639,
+                  "end": 1.849971,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 1.849971,
+                  "end": 1.973302,
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0
+                },
+                {
+                  "start": 1.973302,
+                  "end": 2.096633,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 2.096633,
+                  "end": 2.219965,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 2.219965,
+                  "end": 2.343296,
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0
+                },
+                {
+                  "start": 2.343296,
+                  "end": 2.466627,
+                  "tp": 0,
+                  "fp": 7,
+                  "fn": 0
+                },
+                {
+                  "start": 2.466627,
+                  "end": 2.589959,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 1
+                },
+                {
+                  "start": 2.589959,
+                  "end": 2.71329,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 2.71329,
+                  "end": 2.836622,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                },
+                {
+                  "start": 2.836622,
+                  "end": 2.959953,
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 0
+                }
+              ],
+              "coverage": {
+                "reference_events": 6,
+                "predicted_events": 19
+              }
+            },
+            "mir_eval": {
+              "available": true,
+              "backend": "mir_eval.transcription",
+              "status": "ok",
+              "reference_count": 6,
+              "predicted_count": 19,
+              "onset": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "average_overlap_ratio": 0.0
+              },
+              "onset_offset": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "average_overlap_ratio": 0.0
+              },
+              "params": {
+                "onset_tolerance_sec": 0.06,
+                "offset_ratio": 0.2,
+                "offset_min_tolerance_sec": 0.05
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "summary": {
+    "algorithm_summaries": [
+      {
+        "algorithm": "piano_auto",
+        "mean_f1": 0.3421,
+        "mir_eval_mean_onset_f1": 0.342105,
+        "mir_eval_mean_onset_offset_f1": 0.0,
+        "case_count": 3
+      }
+    ],
+    "promotion_candidates": [
+      {
+        "role": "keys",
+        "algorithm": "piano_auto",
+        "mean_f1": 0.3421,
+        "case_count": 3,
+        "flagged_case_count": 2,
+        "benchmark_winner": true,
+        "promotion_status": "blocked_by_gameplay_flags",
+        "can_promote_without_review": false,
+        "review_required": true
+      }
+    ],
+    "worst_failures": [
+      {
+        "case_id": "a258f4cfcd73bbe4d9a0a0236af32332-keys",
+        "role": "keys",
+        "algorithm": "piano_auto",
+        "f1": 0.0263,
+        "mir_eval_onset_f1": 0.026316,
+        "mir_eval_onset_offset_f1": 0.0,
+        "note_count": 29,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": true,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      },
+      {
+        "case_id": "dec1dc4f8d3fb66862092120ed3209a8-keys",
+        "role": "keys",
+        "algorithm": "piano_auto",
+        "f1": 0.0,
+        "mir_eval_onset_f1": 0.0,
+        "mir_eval_onset_offset_f1": 0.0,
+        "note_count": 19,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": true,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      }
+    ],
+    "rows": [
+      {
+        "case_id": "10f446654fdc37e5805af28cccc17571-keys",
+        "role": "keys",
+        "algorithm": "piano_auto",
+        "f1": 1.0,
+        "mir_eval_onset_f1": 1.0,
+        "mir_eval_onset_offset_f1": 0.0,
+        "note_count": 1,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": false,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      },
+      {
+        "case_id": "a258f4cfcd73bbe4d9a0a0236af32332-keys",
+        "role": "keys",
+        "algorithm": "piano_auto",
+        "f1": 0.0263,
+        "mir_eval_onset_f1": 0.026316,
+        "mir_eval_onset_offset_f1": 0.0,
+        "note_count": 29,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": true,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      },
+      {
+        "case_id": "dec1dc4f8d3fb66862092120ed3209a8-keys",
+        "role": "keys",
+        "algorithm": "piano_auto",
+        "f1": 0.0,
+        "mir_eval_onset_f1": 0.0,
+        "mir_eval_onset_offset_f1": 0.0,
+        "note_count": 19,
+        "error": false,
+        "gameplay_flags": {
+          "error": false,
+          "density": true,
+          "sync_quarantine": false,
+          "duplicates": false
+        }
+      }
+    ]
+  }
+}

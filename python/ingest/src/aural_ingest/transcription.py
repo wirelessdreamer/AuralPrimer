@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import importlib.util
 import json
 import os
 from dataclasses import dataclass, field
@@ -41,13 +42,141 @@ KNOWN_DRUM_ENGINES: tuple[str, ...] = KNOWN_HEURISTIC_DRUM_FILTERS + KNOWN_MT3_D
 KNOWN_DRUM_FILTERS: tuple[str, ...] = KNOWN_DRUM_ENGINES
 
 KNOWN_MELODIC_METHODS: tuple[str, ...] = (
-    "auto", 
-    "pyin", 
+    "auto",
+    "piano_auto",
+    "piano_polyphonic",
+    "piano_polyphonic_clean",
+    "piano_transkun",
+    "piano_transkun_clean",
+    "piano_pti",
+    "piano_pti_clean",
+    "piano_hft",
+    "piano_hft_clean",
+    "pyin",
     "basic_pitch",
     "melodic_combined",
     "melodic_octave_fix",
     "melodic_yin_octave_hps_fix",
+    "melodic_adaptive",
+    "melodic_yin_bass80",
+    "melodic_hpss_combined",
+    "melodic_template_multipass",
+    "torchcrepe",
 )
+
+KNOWN_TRANSCRIPTION_PROFILES: tuple[str, ...] = (
+    "gameplay_default",
+    "fidelity_midi",
+    "research_ab",
+)
+
+TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
+    "gameplay_default": {
+        "description": "Prefer in-game recognizability, stable density, and fail-safe local defaults.",
+        "drum_engines": [
+            "beat_conditioned_multiband_decoder",
+            "spectral_flux_multiband",
+            "adaptive_beat_grid",
+            "combined_filter",
+            "dsp_bandpass_improved",
+        ],
+        "melodic_methods_by_instrument": {
+            "bass": [
+                "melodic_yin_octave_hps_fix",
+                "melodic_adaptive",
+                "melodic_yin_bass80",
+                "melodic_octave_fix",
+            ],
+            "keys": [
+                "piano_auto",
+                "piano_polyphonic_clean",
+                "melodic_octave_fix",
+                "melodic_hpss_combined",
+            ],
+            "lead_guitar": [
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_combined",
+                "basic_pitch",
+            ],
+            "rhythm_guitar": [
+                "melodic_hpss_combined",
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_combined",
+            ],
+        },
+    },
+    "fidelity_midi": {
+        "description": "Prefer denser symbolic output for A/B review and piano-roll export.",
+        "drum_engines": [
+            "yourmt3_drums",
+            "mr_mt3_drums",
+            "beat_conditioned_multiband_decoder",
+            "spectral_template_with_grid",
+        ],
+        "melodic_methods_by_instrument": {
+            "bass": ["basic_pitch", "melodic_yin_octave_hps_fix", "melodic_octave_fix"],
+            "keys": [
+                "piano_transkun_clean",
+                "piano_pti_clean",
+                "piano_hft_clean",
+                "piano_polyphonic_clean",
+                "basic_pitch",
+            ],
+            "lead_guitar": ["basic_pitch", "melodic_hpss_combined", "melodic_octave_fix"],
+            "rhythm_guitar": ["basic_pitch", "melodic_hpss_combined", "melodic_octave_fix"],
+        },
+    },
+    "research_ab": {
+        "description": "Expose all plausible local research candidates without changing defaults.",
+        "drum_engines": list(KNOWN_DRUM_ENGINES),
+        "melodic_methods_by_instrument": {
+            "bass": [
+                "melodic_yin_octave_hps_fix",
+                "melodic_yin_bass80",
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_hpss_combined",
+                "melodic_combined",
+                "basic_pitch",
+                "torchcrepe",
+                "pyin",
+            ],
+            "keys": [
+                "piano_auto",
+                "piano_polyphonic_clean",
+                "piano_transkun_clean",
+                "piano_pti_clean",
+                "piano_hft_clean",
+                "melodic_octave_fix",
+                "melodic_hpss_combined",
+                "melodic_combined",
+                "basic_pitch",
+                "torchcrepe",
+                "pyin",
+            ],
+            "lead_guitar": [
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_hpss_combined",
+                "melodic_combined",
+                "basic_pitch",
+                "torchcrepe",
+                "pyin",
+            ],
+            "rhythm_guitar": [
+                "melodic_hpss_combined",
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_combined",
+                "basic_pitch",
+                "torchcrepe",
+                "pyin",
+            ],
+        },
+    },
+}
 
 INSTRUMENT_ROLES: tuple[str, ...] = (
     "bass",
@@ -69,6 +198,7 @@ INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
 DEFAULT_DRUM_ENGINE = "combined_filter"
 DEFAULT_DRUM_FILTER = DEFAULT_DRUM_ENGINE
 DEFAULT_MELODIC_METHOD = "auto"
+DEFAULT_TRANSCRIPTION_PROFILE = "gameplay_default"
 
 MT3_MODELPACK_DIRNAME = "assets/models"
 
@@ -614,6 +744,14 @@ def _default_basic_pitch_model_roots() -> list[Path]:
     except Exception:
         pass
 
+    try:
+        basic_pitch_spec = importlib.util.find_spec("basic_pitch")
+        if basic_pitch_spec and basic_pitch_spec.submodule_search_locations:
+            package_dir = Path(next(iter(basic_pitch_spec.submodule_search_locations))).resolve()
+            roots.append(package_dir.parent)
+    except Exception:
+        pass
+
     deduped: list[Path] = []
     seen: set[str] = set()
     for p in roots:
@@ -649,11 +787,21 @@ def build_default_melodic_algorithm_registry(
 ) -> dict[str, MelodicTranscriber]:
     # Import lazily to keep module import lightweight and avoid unnecessary startup costs.
     from aural_ingest.algorithms import (
+        melodic_adaptive,
         melodic_basic_pitch,
         melodic_pyin,
         melodic_combined,
+        melodic_hpss_combined,
         melodic_octave_fix,
+        melodic_template_multipass,
+        melodic_torchcrepe,
+        melodic_yin_bass80,
         melodic_yin_octave_hps_fix,
+        piano_cleanup,
+        piano_hft,
+        piano_polyphonic,
+        piano_pti,
+        piano_transkun,
     )
 
     roots = list(model_search_roots) if model_search_roots is not None else _default_basic_pitch_model_roots()
@@ -663,6 +811,9 @@ def build_default_melodic_algorithm_registry(
 
     def _basic_pitch(stem_path: Path) -> list[MelodicNote]:
         return melodic_basic_pitch.transcribe(stem_path, model_path=basic_pitch_model_path, instrument=_inst)
+
+    def _torchcrepe(stem_path: Path) -> list[MelodicNote]:
+        return melodic_torchcrepe.transcribe(stem_path, instrument=_inst)
 
     def _pyin(stem_path: Path) -> list[MelodicNote]:
         return melodic_pyin.transcribe(stem_path, instrument=_inst)
@@ -676,12 +827,89 @@ def build_default_melodic_algorithm_registry(
     def _yin_octave_hps_fix(stem_path: Path) -> list[MelodicNote]:
         return melodic_yin_octave_hps_fix.transcribe(stem_path, instrument=_inst)
 
+    def _adaptive(stem_path: Path) -> list[MelodicNote]:
+        return melodic_adaptive.transcribe(stem_path, instrument=_inst)
+
+    def _yin_bass80(stem_path: Path) -> list[MelodicNote]:
+        return melodic_yin_bass80.transcribe(stem_path, instrument=_inst)
+
+    def _hpss_combined(stem_path: Path) -> list[MelodicNote]:
+        return melodic_hpss_combined.transcribe(stem_path, instrument=_inst)
+
+    def _template_multipass(stem_path: Path) -> list[MelodicNote]:
+        return melodic_template_multipass.transcribe(stem_path, instrument=_inst)
+
+    def _piano_polyphonic(stem_path: Path) -> list[MelodicNote]:
+        return piano_polyphonic.transcribe(stem_path, instrument=_inst)
+
+    def _piano_polyphonic_clean(stem_path: Path) -> list[MelodicNote]:
+        notes = piano_polyphonic.transcribe(stem_path, instrument=_inst)
+        return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+
+    def _piano_auto(stem_path: Path) -> list[MelodicNote]:
+        for producer in (
+            _piano_polyphonic_clean,
+            _piano_polyphonic,
+            _piano_transkun_clean,
+            _piano_pti_clean,
+            _piano_transkun,
+            _piano_pti,
+            _hpss_combined,
+            _adaptive,
+            _octave_fix,
+            _combined,
+            _basic_pitch,
+            _pyin,
+        ):
+            try:
+                notes = producer(stem_path)
+            except Exception:
+                continue
+            if notes:
+                return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+        return []
+
+    def _piano_transkun(stem_path: Path) -> list[MelodicNote]:
+        return piano_transkun.transcribe(stem_path, instrument=_inst)
+
+    def _piano_transkun_clean(stem_path: Path) -> list[MelodicNote]:
+        notes = piano_transkun.transcribe(stem_path, instrument=_inst)
+        return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+
+    def _piano_pti(stem_path: Path) -> list[MelodicNote]:
+        return piano_pti.transcribe(stem_path, instrument=_inst)
+
+    def _piano_pti_clean(stem_path: Path) -> list[MelodicNote]:
+        notes = piano_pti.transcribe(stem_path, instrument=_inst)
+        return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+
+    def _piano_hft(stem_path: Path) -> list[MelodicNote]:
+        return piano_hft.transcribe(stem_path, instrument=_inst)
+
+    def _piano_hft_clean(stem_path: Path) -> list[MelodicNote]:
+        notes = piano_hft.transcribe(stem_path, instrument=_inst)
+        return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+
     return {
+        "piano_auto": _piano_auto,
+        "piano_polyphonic": _piano_polyphonic,
+        "piano_polyphonic_clean": _piano_polyphonic_clean,
+        "piano_transkun": _piano_transkun,
+        "piano_transkun_clean": _piano_transkun_clean,
+        "piano_pti": _piano_pti,
+        "piano_pti_clean": _piano_pti_clean,
+        "piano_hft": _piano_hft,
+        "piano_hft_clean": _piano_hft_clean,
         "basic_pitch": _basic_pitch,
         "pyin": _pyin,
         "melodic_combined": _combined,
         "melodic_octave_fix": _octave_fix,
         "melodic_yin_octave_hps_fix": _yin_octave_hps_fix,
+        "melodic_adaptive": _adaptive,
+        "melodic_yin_bass80": _yin_bass80,
+        "melodic_hpss_combined": _hpss_combined,
+        "melodic_template_multipass": _template_multipass,
+        "torchcrepe": _torchcrepe,
     }
 
 
@@ -713,6 +941,46 @@ def validate_melodic_method(method: str | None) -> str | None:
     if m in KNOWN_MELODIC_METHODS:
         return m
     return None
+
+
+def validate_transcription_profile(profile: str | None) -> str | None:
+    if profile is None:
+        return DEFAULT_TRANSCRIPTION_PROFILE
+    normalized = str(profile).strip().lower()
+    if not normalized:
+        return DEFAULT_TRANSCRIPTION_PROFILE
+    if normalized in KNOWN_TRANSCRIPTION_PROFILES:
+        return normalized
+    return None
+
+
+def transcription_profile_metadata(profile: str | None = None) -> dict[str, Any]:
+    normalized = validate_transcription_profile(profile)
+    if normalized is None:
+        normalized = DEFAULT_TRANSCRIPTION_PROFILE
+    payload = dict(TRANSCRIPTION_PROFILES[normalized])
+    payload["profile"] = normalized
+    payload["known_profiles"] = list(KNOWN_TRANSCRIPTION_PROFILES)
+    return _json_safe_value(payload)
+
+
+def melodic_methods_for_profile(profile: str | None, instrument: str) -> list[str]:
+    normalized = validate_transcription_profile(profile)
+    if normalized is None:
+        normalized = DEFAULT_TRANSCRIPTION_PROFILE
+    by_instrument = TRANSCRIPTION_PROFILES[normalized]["melodic_methods_by_instrument"]
+    methods = list(by_instrument.get(instrument, by_instrument.get("lead_guitar", [])))
+    if not methods:
+        methods = melodic_fallback_chain("auto", instrument=instrument)
+    return _dedupe_preserve_order([m for m in methods if m in KNOWN_MELODIC_METHODS])
+
+
+def drum_engines_for_profile(profile: str | None) -> list[str]:
+    normalized = validate_transcription_profile(profile)
+    if normalized is None:
+        normalized = DEFAULT_TRANSCRIPTION_PROFILE
+    engines = list(TRANSCRIPTION_PROFILES[normalized]["drum_engines"])
+    return _dedupe_preserve_order([e for e in engines if e in KNOWN_DRUM_ENGINES])
 
 
 def drum_fallback_chain(requested_filter: str | None) -> list[str]:
@@ -815,13 +1083,104 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
 
     if normalized == "auto":
         if instrument == "bass":
-            chain = ["melodic_yin_octave_hps_fix", "melodic_octave_fix", "melodic_combined", "basic_pitch", "pyin"]
+            chain = [
+                "melodic_yin_octave_hps_fix",
+                "melodic_adaptive",
+                "melodic_yin_bass80",
+                "melodic_octave_fix",
+                "melodic_combined",
+                "basic_pitch",
+                "pyin",
+            ]
+        elif instrument == "keys":
+            chain = [
+                "piano_auto",
+                "piano_polyphonic_clean",
+                "melodic_octave_fix",
+                "melodic_hpss_combined",
+                "melodic_combined",
+                "basic_pitch",
+                "pyin",
+            ]
         else:
-            chain = ["melodic_octave_fix", "melodic_combined", "basic_pitch", "pyin"]
+            chain = [
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_combined",
+                "basic_pitch",
+                "pyin",
+            ]
+    elif normalized == "piano_auto":
+        chain = [
+            "piano_auto",
+            "piano_polyphonic_clean",
+            "melodic_hpss_combined",
+            "melodic_octave_fix",
+            "melodic_combined",
+            "basic_pitch",
+            "pyin",
+        ]
+    elif normalized in {"piano_polyphonic", "piano_polyphonic_clean"}:
+        chain = [
+            normalized,
+            "piano_auto",
+            "melodic_hpss_combined",
+            "melodic_octave_fix",
+            "melodic_combined",
+            "basic_pitch",
+            "pyin",
+        ]
+    elif normalized in {"piano_transkun", "piano_transkun_clean"}:
+        chain = [
+            normalized,
+            "piano_auto",
+            "melodic_hpss_combined",
+            "melodic_octave_fix",
+            "melodic_combined",
+            "basic_pitch",
+            "pyin",
+        ]
+    elif normalized in {"piano_pti", "piano_pti_clean"}:
+        chain = [
+            normalized,
+            "piano_auto",
+            "melodic_hpss_combined",
+            "melodic_octave_fix",
+            "melodic_combined",
+            "basic_pitch",
+            "pyin",
+        ]
+    elif normalized in {"piano_hft", "piano_hft_clean"}:
+        chain = [
+            normalized,
+            "piano_auto",
+            "melodic_hpss_combined",
+            "melodic_octave_fix",
+            "melodic_combined",
+            "basic_pitch",
+            "pyin",
+        ]
     elif normalized == "basic_pitch":
         chain = ["basic_pitch", "pyin"]
+    elif normalized == "torchcrepe":
+        chain = [
+            "torchcrepe",
+            "melodic_yin_octave_hps_fix",
+            "melodic_adaptive",
+            "melodic_octave_fix",
+            "pyin",
+        ]
     else:
-        chain = [normalized, "melodic_octave_fix", "melodic_yin_octave_hps_fix", "melodic_combined", "basic_pitch", "pyin"]
+        chain = [
+            normalized,
+            "melodic_adaptive",
+            "melodic_octave_fix",
+            "melodic_yin_octave_hps_fix",
+            "melodic_hpss_combined",
+            "melodic_combined",
+            "basic_pitch",
+            "pyin",
+        ]
 
     out: list[str] = []
     for x in chain:
@@ -968,6 +1327,48 @@ def transcribe_melodic(
     )
 
 
+def apply_role_playability_cleanup(notes: list[MelodicNote], instrument: str) -> list[MelodicNote]:
+    if instrument not in {"bass", "lead_guitar", "rhythm_guitar"} or len(notes) <= 1:
+        return notes
+
+    if instrument == "bass":
+        cluster_window = 0.035
+        min_cluster_gap = 0.045
+        max_polyphony = 1
+    elif instrument == "lead_guitar":
+        cluster_window = 0.03
+        min_cluster_gap = 0.04
+        max_polyphony = 2
+    else:
+        cluster_window = 0.035
+        min_cluster_gap = 0.065
+        max_polyphony = 3
+
+    ordered = sorted(notes, key=lambda n: (float(n.t_on), -int(n.velocity), -float(n.t_off - n.t_on)))
+    clusters: list[list[MelodicNote]] = []
+    for note in ordered:
+        if not clusters or abs(float(note.t_on) - float(clusters[-1][0].t_on)) > cluster_window:
+            clusters.append([note])
+        else:
+            clusters[-1].append(note)
+
+    kept: list[MelodicNote] = []
+    last_cluster_time: float | None = None
+    for cluster in clusters:
+        cluster_time = min(float(n.t_on) for n in cluster)
+        if last_cluster_time is not None and cluster_time - last_cluster_time < min_cluster_gap:
+            continue
+        selected = sorted(
+            cluster,
+            key=lambda n: (int(n.velocity), float(n.t_off - n.t_on)),
+            reverse=True,
+        )[:max_polyphony]
+        kept.extend(selected)
+        last_cluster_time = cluster_time
+
+    return sorted(kept, key=lambda n: (float(n.t_on), int(n.pitch)))
+
+
 def transcribe_all_melodic_stems(
     stems: dict[str, Path],
     requested_method: str | None,
@@ -1019,6 +1420,7 @@ def transcribe_all_melodic_stems(
             )
             for n in result.notes
         ]
+        tagged_notes = apply_role_playability_cleanup(tagged_notes, instrument)
 
         results.append(
             InstrumentTranscriptionResult(
