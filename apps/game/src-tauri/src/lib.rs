@@ -302,6 +302,12 @@ fn save_settings(paths: &SongsFolderPaths, settings: &Settings) -> Result<(), St
 }
 
 fn parse_manifest_json(raw: &str) -> Result<ManifestSummary, String> {
+    // Strip a UTF-8 BOM if present. PowerShell's `Set-Content -Encoding UTF8`
+    // writes a BOM by default, and serde_json rejects it ("expected value at
+    // line 1 column 1") -- which would silently hide the songpack from the
+    // Play Songs scan with no actionable error.
+    let raw = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+
     let v: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))?;
 
@@ -348,6 +354,7 @@ fn read_zip_manifest(songpack_zip: &Path) -> Result<ManifestSummary, String> {
 }
 
 fn parse_manifest_raw(raw: &str) -> Result<serde_json::Value, String> {
+    let raw = raw.strip_prefix('\u{feff}').unwrap_or(raw);
     serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))
 }
 
@@ -2446,4 +2453,200 @@ fn midi_clock_input_stop(state: tauri::State<MidiClockInputState>) -> Result<(),
     let mut lock = state.conn.lock().unwrap();
     *lock = None;
     Ok(())
+}
+
+#[cfg(test)]
+mod manifest_scan_tests {
+    //! Regression tests for SongPack discovery on the game side.
+    //!
+    //! Context: a SongPack written by `aural_ingest import` did not surface
+    //! in the Play Songs panel. The Rust scan reads `manifest.json` and
+    //! extracts five fields (schema_version, song_id, title, artist,
+    //! duration_sec); a silent type mismatch on any of these turns into
+    //! `None` and the UI renders "(missing title)" with no error.
+    //!
+    //! These tests pin the parser's contract against the exact JSON shape
+    //! `aural_ingest` produces (see python/ingest/src/aural_ingest/cli.py
+    //! init_songpack stage). The Python side has a matching test that
+    //! validates its emitter against packages/songpack/schemas/manifest.schema.json.
+
+    use super::{parse_manifest_json, read_dir_manifest};
+    use std::fs;
+    use tempfile::tempdir;
+
+    /// JSON literal matching the shape aural_ingest writes to manifest.json
+    /// after the init_songpack stage (post-decode update fills in duration).
+    fn aural_ingest_manifest_json() -> &'static str {
+        r#"{
+          "schema_version": "1.0.0",
+          "song_id": "3333ca45d864ceb68a9e7e5bc4932546",
+          "title": "Heaven Whispered",
+          "artist": "Book of Psalms (Psalm 19)",
+          "duration_sec": 288.44,
+          "source": {
+            "original_filename": "Psalm 19 - Heaven Whispered.wav",
+            "original_sha256": "0d388fabf6169dca693adde70a816356841b0e2ed2b219a30d30fdda4965e8e1",
+            "ingest_timestamp": "2026-05-21T20:15:21Z"
+          },
+          "timing": {
+            "audio_sample_rate_hz": 44100,
+            "audio_start_offset_sec": 0.0,
+            "timebase": "audio"
+          },
+          "pipeline": {
+            "pipeline_id": "aural_ingest",
+            "pipeline_version": "0.1.0",
+            "profile": "gameplay_default",
+            "stage_fingerprints": {"init_songpack": "0.1.0"},
+            "transcription": {"drum_engine": "combined_filter"}
+          },
+          "recognition": {},
+          "assets": {
+            "audio": {"mix_path": "audio/mix.wav", "stems": {"drums": "audio/stems/drums.wav"}},
+            "features": {"beats_path": "features/beats.json"},
+            "midi": {"notes_path": "features/notes.mid"}
+          }
+        }"#
+    }
+
+    #[test]
+    fn parse_aural_ingest_manifest_extracts_all_five_required_fields() {
+        let parsed = parse_manifest_json(aural_ingest_manifest_json())
+            .expect("aural_ingest manifest must parse");
+
+        assert_eq!(parsed.schema_version.as_deref(), Some("1.0.0"));
+        assert_eq!(
+            parsed.song_id.as_deref(),
+            Some("3333ca45d864ceb68a9e7e5bc4932546")
+        );
+        assert_eq!(parsed.title.as_deref(), Some("Heaven Whispered"));
+        assert_eq!(
+            parsed.artist.as_deref(),
+            Some("Book of Psalms (Psalm 19)")
+        );
+        assert_eq!(parsed.duration_sec, Some(288.44));
+    }
+
+    #[test]
+    fn parse_init_stage_manifest_with_zero_duration_and_empty_artist() {
+        // Partially-imported songpack: init_songpack stage completed but the
+        // import was killed before decode_audio finalized duration_sec.
+        // These minimal field values must still survive parsing -- the game's
+        // permissive scan otherwise drops the songpack with no error message.
+        let raw = r#"{
+            "schema_version": "1.0.0",
+            "song_id": "abc123",
+            "title": "Untitled",
+            "artist": "",
+            "duration_sec": 0.0
+        }"#;
+        let parsed = parse_manifest_json(raw).expect("init-stage manifest must parse");
+        assert_eq!(parsed.artist.as_deref(), Some(""));
+        assert_eq!(parsed.duration_sec, Some(0.0));
+    }
+
+    #[test]
+    fn parse_manifest_handles_missing_optional_fields() {
+        // The parser is intentionally permissive; absent fields become None
+        // rather than errors. Verify we don't accidentally tighten this and
+        // start rejecting existing on-disk songpacks.
+        let parsed = parse_manifest_json("{}").expect("empty object must parse");
+        assert!(parsed.schema_version.is_none());
+        assert!(parsed.title.is_none());
+        assert!(parsed.duration_sec.is_none());
+    }
+
+    #[test]
+    fn parse_manifest_returns_none_for_wrong_field_types() {
+        // Silent-failure regression: if the Python emitter ever changes
+        // `duration_sec` from a number to a string (or `title` from a string
+        // to a number), the parser falls back to None and the UI shows
+        // "(missing title)". This test documents that behavior so anyone
+        // tightening parse_manifest_json knows what they're locking in.
+        let raw = r#"{
+            "schema_version": 1,
+            "title": 123,
+            "duration_sec": "288.44"
+        }"#;
+        let parsed = parse_manifest_json(raw).expect("type mismatches still parse as JSON");
+        assert!(
+            parsed.schema_version.is_none(),
+            "schema_version as int must not parse as string"
+        );
+        assert!(
+            parsed.title.is_none(),
+            "title as int must not parse as string"
+        );
+        assert!(
+            parsed.duration_sec.is_none(),
+            "duration_sec as string must not parse as f64"
+        );
+    }
+
+    #[test]
+    fn parse_manifest_rejects_invalid_json() {
+        let result = parse_manifest_json("this is not json");
+        assert!(result.is_err(), "non-JSON input must surface as error");
+        let err = result.unwrap_err();
+        assert!(err.contains("invalid JSON"), "error message must explain why: {err}");
+    }
+
+    #[test]
+    fn read_dir_manifest_finds_and_parses_aural_ingest_manifest_on_disk() {
+        // End-to-end: create a tempdir mirroring `<portable>/data/songs/<x>.songpack/`
+        // with a real manifest.json and assert the scanner returns the same
+        // fields as the in-memory parse. Catches IO-layer regressions
+        // (encoding, BOM, line endings, missing read perms).
+        let tmp = tempdir().expect("tempdir");
+        let songpack_dir = tmp.path().join("test.songpack");
+        fs::create_dir(&songpack_dir).expect("mkdir");
+        fs::write(
+            songpack_dir.join("manifest.json"),
+            aural_ingest_manifest_json(),
+        )
+        .expect("write manifest.json");
+
+        let summary = read_dir_manifest(&songpack_dir).expect("scan should succeed");
+        assert_eq!(summary.title.as_deref(), Some("Heaven Whispered"));
+        assert_eq!(summary.duration_sec, Some(288.44));
+    }
+
+    #[test]
+    fn read_dir_manifest_errors_clearly_when_manifest_missing() {
+        let tmp = tempdir().expect("tempdir");
+        let songpack_dir = tmp.path().join("broken.songpack");
+        fs::create_dir(&songpack_dir).expect("mkdir");
+        // No manifest.json written.
+        let err = read_dir_manifest(&songpack_dir)
+            .expect_err("missing manifest must be an error");
+        assert!(
+            err.contains("manifest.json"),
+            "error must name the file: {err}"
+        );
+    }
+
+    #[test]
+    fn read_dir_manifest_tolerates_utf8_bom() {
+        // PowerShell's `Set-Content -Encoding UTF8` writes a BOM by default,
+        // and the portable-manifest writer in create_portable.ps1 uses that.
+        // If aural_ingest ever switches to a Windows-side writer with the
+        // same default, manifest.json would acquire a BOM. serde_json on
+        // recent versions accepts BOM, but this test pins the assumption.
+        let tmp = tempdir().expect("tempdir");
+        let songpack_dir = tmp.path().join("bom.songpack");
+        fs::create_dir(&songpack_dir).expect("mkdir");
+        let mut bytes = b"\xef\xbb\xbf".to_vec();
+        bytes.extend_from_slice(aural_ingest_manifest_json().as_bytes());
+        fs::write(songpack_dir.join("manifest.json"), bytes).expect("write");
+
+        let result = read_dir_manifest(&songpack_dir);
+        // If this assertion fails after a serde_json bump, the portable
+        // writer needs to drop BOM before manifest.json hits disk.
+        assert!(
+            result.is_ok(),
+            "manifest.json with UTF-8 BOM must still parse; if this fails, \
+             switch to a non-BOM writer for manifest.json. error was: {:?}",
+            result.err()
+        );
+    }
 }

@@ -915,8 +915,8 @@ function setRoute(route: Route) {
 function openPlaySongFlow() {
   logConsole("gamestate", "open play flow");
   setRoute("play");
+  // showSongLibraryStep() now calls refresh() internally on every show.
   showSongLibraryStep();
-  void refresh();
 }
 
 async function exitApplication() {
@@ -1624,6 +1624,14 @@ function showSongLibraryStep() {
   } catch {
     // ignore
   }
+  // Always rescan when the library panel is shown. Covers app-start (line
+  // ~1281 module-init call), returning from focus mode / pause menu, and
+  // navigating in from Home or the nav bar. Previously the initial DOM left
+  // statusEl reading "(not loaded)" until the user clicked the Refresh
+  // button or navigated away and back; new SongPacks dropped into the
+  // songs folder by aural_ingest while the app was open also stayed
+  // invisible until that manual refresh.
+  void refresh();
 }
 
 function canOpenLoadedSongBackOutPrompt(): boolean {
