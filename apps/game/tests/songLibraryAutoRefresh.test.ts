@@ -1,24 +1,32 @@
 /**
- * Source-level regression test for the song-library auto-refresh fix.
+ * Source-level regression tests for the song-library auto-refresh wiring.
  *
- * Context: a Psalm 19 SongPack imported via `aural_ingest import` did not
- * surface in the Play Songs panel because `showSongLibraryStep()` (which is
- * called on app boot, from the pause menu, from focus-toggle, AND from
- * `openPlaySongFlow`) did not trigger `refresh()`. The fix was to move the
- * `void refresh()` call into `showSongLibraryStep` itself so every entry
- * into the library panel rescans the songs folder.
+ * Two complementary cases:
  *
- * Full unit-testing main.ts is impractical (3,500+ lines of side-effectful
- * module init with Tauri invokes and DOM bindings). We instead pin the fix
- * at the source level: assert the call exists and lives inside the right
- * function. If a future refactor extracts the call (e.g., back into
- * `openPlaySongFlow`), this test fails and reminds the author that every
- * library-step entry point needs auto-refresh, not just the play-button
- * click path.
+ *  1. **Library-panel entry refresh.** Originally an imported SongPack did
+ *     not surface in the Play Songs panel because `showSongLibraryStep()`
+ *     (called on app boot, from the pause menu, from focus-toggle, and
+ *     from `openPlaySongFlow`) did not trigger `refresh()`. The fix moved
+ *     `void refresh()` into `showSongLibraryStep` so every library-entry
+ *     path rescans the songs folder.
+ *
+ *  2. **Filesystem-watcher auto-refresh.** While the panel is already
+ *     visible, a `.songpack/` dropped into the songs folder by an external
+ *     tool (e.g. `aural_ingest import` from a separate shell) used to stay
+ *     invisible until the user clicked Refresh. The Rust side now mounts a
+ *     `notify`-based watcher and emits a debounced `songs_folder_changed`
+ *     Tauri event; the frontend listens for it inside a `haveTauri()`
+ *     guard and calls `refresh()`. A boot-time `start_songs_folder_watch`
+ *     invoke is the backstop in case setup() race-loses to a missing
+ *     folder.
+ *
+ * Full unit-testing main.ts is impractical (4.5k+ lines, side-effectful
+ * Tauri/DOM init). We pin both wirings at the source level so future
+ * refactors that drop a call get caught.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -93,9 +101,44 @@ describe("song-library auto-refresh on show", () => {
 
   it("library refresh keeps the Refresh button as a manual fallback", () => {
     // The Refresh button is the user's escape hatch for cases the auto-call
-    // doesn't cover (e.g., file dropped into the songs folder while the
-    // user has been staring at the same panel for an hour). Don't remove it.
+    // doesn't cover. Don't remove it.
     const src = loadMain();
     expect(src).toMatch(/refreshBtn\.addEventListener\(\s*["']click["']\s*,\s*\(\)\s*=>\s*void\s+refresh\s*\(\s*\)/);
+  });
+});
+
+describe("song-library auto-refresh on filesystem change", () => {
+  // Use a pre-loaded source for these tests so the regex-heavy assertions
+  // don't re-read main.ts repeatedly.
+  const mainTsPath = join(__dirname, "..", "src", "main.ts");
+  const mainTsSource = readFileSync(mainTsPath, "utf8");
+
+  it("listens for songs_folder_changed events from the Rust watcher", () => {
+    expect(mainTsSource).toMatch(/listen\(\s*["']songs_folder_changed["']/);
+  });
+
+  it("invokes refresh() inside the songs_folder_changed handler", () => {
+    // The handler body should call refresh() so a single Tauri event triggers
+    // the same code path as the manual refresh button.
+    const handlerBlockMatch = mainTsSource.match(
+      /listen\(\s*["']songs_folder_changed["'][^)]*?,\s*\(\s*\)\s*=>\s*\{([\s\S]*?)\}\s*\)/
+    );
+    expect(handlerBlockMatch).not.toBeNull();
+    expect(handlerBlockMatch?.[1] ?? "").toMatch(/refresh\(\)/);
+  });
+
+  it("guards the watcher wiring behind haveTauri()", () => {
+    // We only want to register the listener in the desktop shell, not in the
+    // browser-only Vite dev server. The simplest test is to confirm the
+    // listen() call sits inside a haveTauri() conditional block.
+    expect(mainTsSource).toMatch(
+      /if\s*\(\s*haveTauri\(\)\s*\)\s*\{[\s\S]*?listen\(\s*["']songs_folder_changed["']/
+    );
+  });
+
+  it("calls start_songs_folder_watch as a boot-time backstop", () => {
+    // Even if the Rust setup() race-loses to a missing folder, the frontend
+    // re-arms the watcher idempotently on boot.
+    expect(mainTsSource).toMatch(/invoke\(\s*["']start_songs_folder_watch["']/);
   });
 });

@@ -18,6 +18,7 @@ mod midi_clock_service;
 mod models;
 mod native_audio;
 pub mod raw_song;
+pub mod songs_watch;
 pub mod stem_midi;
 pub mod wav_mix;
 
@@ -636,7 +637,12 @@ fn set_songs_folder_override(app: AppHandle, songs_folder: String) -> Result<(),
     let paths = get_paths(&app)?;
     let mut settings = load_settings(&paths);
     settings.songs_folder = Some(songs_folder);
-    save_settings(&paths, &settings)
+    save_settings(&paths, &settings)?;
+    // Re-mount the filesystem watcher on the new path so external drops keep
+    // refreshing the library panel. Best-effort: a watcher failure should not
+    // block the user from setting the override.
+    remount_songs_watch_best_effort(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -644,7 +650,34 @@ fn clear_songs_folder_override(app: AppHandle) -> Result<(), String> {
     let paths = get_paths(&app)?;
     let mut settings = load_settings(&paths);
     settings.songs_folder = None;
-    save_settings(&paths, &settings)
+    save_settings(&paths, &settings)?;
+    remount_songs_watch_best_effort(&app);
+    Ok(())
+}
+
+/// Resolve the current songs folder and (re)mount the watcher on it. Logged
+/// failures are non-fatal — the user always retains the manual refresh button.
+fn remount_songs_watch_best_effort(app: &AppHandle) {
+    match get_songs_folder(app.clone()) {
+        Ok(folder) => {
+            let path = PathBuf::from(folder);
+            if let Err(e) = songs_watch::ensure_watch(app, &path) {
+                eprintln!("songs_watch: re-mount failed: {e}");
+            }
+        }
+        Err(e) => eprintln!("songs_watch: cannot resolve songs folder for re-mount: {e}"),
+    }
+}
+
+/// Tauri command counterpart to `remount_songs_watch_best_effort`. The
+/// frontend calls this once on boot to guarantee the watcher is live even if
+/// the `setup()` mount raced ahead of folder creation. Idempotent: returns
+/// `Ok(())` immediately if a watcher on the current path is already running.
+#[tauri::command]
+fn start_songs_folder_watch(app: AppHandle) -> Result<(), String> {
+    let folder = get_songs_folder(app.clone())?;
+    let path = PathBuf::from(folder);
+    songs_watch::ensure_watch(&app, &path)
 }
 
 // -----------------
@@ -1806,13 +1839,31 @@ pub fn run() {
         .manage(MidiClockOutputState::default())
         .manage(MidiClockInputState::default())
         .manage(NativeAudioState::default())
+        .manage(songs_watch::SongsWatchState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             build_main_window(app)?;
 
-            // Restore persisted MIDI clock output selection (best-effort).
+            // Mount the songs-folder watcher as early as possible so external
+            // tools (e.g. `aural_ingest import` from a separate shell) trigger
+            // an automatic library refresh while the user is staring at the
+            // panel. Best-effort: a failure here just means the user falls
+            // back to the manual refresh button.
             let handle = app.handle();
+            match get_songs_folder(handle.clone()) {
+                Ok(folder) => {
+                    let path = PathBuf::from(folder);
+                    if let Err(e) = songs_watch::ensure_watch(handle, &path) {
+                        eprintln!("songs_watch: initial mount failed: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("songs_watch: cannot resolve songs folder for initial mount: {e}");
+                }
+            }
+
+            // Restore persisted MIDI clock output selection (best-effort).
             if let Ok(Some(sel)) = get_midi_clock_output_port_selection(&handle) {
                 if let Ok(port_id) = midi_clock::resolve_selection_to_port_id(&sel) {
                     let state = app.state::<MidiClockOutputState>();
@@ -1879,6 +1930,7 @@ pub fn run() {
             get_songs_folder,
             set_songs_folder_override,
             clear_songs_folder_override,
+            start_songs_folder_watch,
             // native audio
             native_audio_list_output_hosts,
             native_audio_list_output_devices,
