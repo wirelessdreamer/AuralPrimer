@@ -52,6 +52,8 @@ KNOWN_MELODIC_METHODS: tuple[str, ...] = (
     "piano_pti_clean",
     "piano_hft",
     "piano_hft_clean",
+    "piano_d3rm",
+    "piano_d3rm_clean",
     "pyin",
     "basic_pitch",
     "melodic_combined",
@@ -89,6 +91,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
             ],
             "keys": [
                 "piano_auto",
+                "piano_pti_clean",
                 "piano_polyphonic_clean",
                 "melodic_octave_fix",
                 "melodic_hpss_combined",
@@ -118,9 +121,10 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
         "melodic_methods_by_instrument": {
             "bass": ["basic_pitch", "melodic_yin_octave_hps_fix", "melodic_octave_fix"],
             "keys": [
-                "piano_transkun_clean",
+                "piano_d3rm_clean",
                 "piano_pti_clean",
                 "piano_hft_clean",
+                "piano_transkun_clean",
                 "piano_polyphonic_clean",
                 "basic_pitch",
             ],
@@ -149,6 +153,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "piano_transkun_clean",
                 "piano_pti_clean",
                 "piano_hft_clean",
+                "piano_d3rm_clean",
                 "melodic_octave_fix",
                 "melodic_hpss_combined",
                 "melodic_combined",
@@ -729,18 +734,42 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
     return registry
 
 
+def _ascend_past_worktree(start: Path) -> Path | None:
+    """If ``start`` is inside a ``.claude/worktrees/<name>/`` directory, return
+    the path *above* ``.claude`` (i.e. the main checkout root). Otherwise None.
+
+    This lets model auto-discovery find checkpoints stored under the main
+    repo's ``assets/models/`` when callers run from a worktree.
+    """
+    try:
+        parts = start.parts
+    except Exception:
+        return None
+    for idx in range(len(parts) - 1):
+        if parts[idx] == ".claude" and parts[idx + 1] == "worktrees":
+            return Path(*parts[:idx])
+    return None
+
+
 def _default_basic_pitch_model_roots() -> list[Path]:
     roots: list[Path] = []
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         roots.append(Path(str(meipass)))
 
-    roots.append(Path.cwd())
+    cwd = Path.cwd()
+    roots.append(cwd)
+    main_repo_from_cwd = _ascend_past_worktree(cwd)
+    if main_repo_from_cwd is not None:
+        roots.append(main_repo_from_cwd)
 
     try:
         # Prefer repository-local roots when running from source.
         this_file = Path(__file__).resolve()
         roots.extend([this_file.parent, this_file.parents[2], this_file.parents[4]])
+        main_repo_from_module = _ascend_past_worktree(this_file)
+        if main_repo_from_module is not None:
+            roots.append(main_repo_from_module)
     except Exception:
         pass
 
@@ -781,6 +810,83 @@ def resolve_basic_pitch_model_path(search_roots: Iterable[Path | str]) -> Path |
     return None
 
 
+# Edwards et al. (arxiv 2402.01424) re-train of Kong et al. with pitch-shift +
+# reverb augmentation. Same Regress_onset_offset_frame_velocity_CRNN
+# architecture, so piano_transcription_inference loads it unchanged. Lifts MAPS
+# (out-of-distribution) F1 from 82.4 -> 88.4 with no MAESTRO regression.
+PIANO_PTI_ROBUST_CHECKPOINT_FILENAME = "high_resolution_MAESTRO_augmentations.pth"
+PIANO_PTI_ROBUST_CHECKPOINT_URL = (
+    "https://zenodo.org/records/10610212/files/high_resolution_MAESTRO_augmentations.pth"
+)
+
+
+def _piano_pti_model_subdir() -> Path:
+    return Path("piano_pti")
+
+
+def _expanded_model_roots(root: Path) -> list[Path]:
+    """Expand a search root with the same conventional subdirectories the MT3
+    code uses, so checkpoints are found under ``<root>``, ``<root>/assets/models``,
+    or ``<root>/data/assets/models``.
+    """
+    return [
+        root,
+        root / MT3_MODELPACK_DIRNAME,
+        root / "data" / MT3_MODELPACK_DIRNAME,
+        root / "AuralPrimerPortable" / "data" / MT3_MODELPACK_DIRNAME,
+    ]
+
+
+def resolve_piano_pti_checkpoint_path(search_roots: Iterable[Path | str]) -> Path | None:
+    """Find a bundled piano_pti checkpoint in the local model search roots.
+
+    Prefers the Edwards et al. robust checkpoint; falls back to any other .pth
+    inside a piano_pti/ directory if the named file isn't present.
+    """
+    subdir = _piano_pti_model_subdir()
+    primary = subdir / PIANO_PTI_ROBUST_CHECKPOINT_FILENAME
+
+    fallback_match: Path | None = None
+    for root in search_roots:
+        if root is None:
+            continue
+        for expanded in _expanded_model_roots(Path(root)):
+            candidate = expanded / primary
+            if candidate.is_file():
+                return candidate
+            if fallback_match is None:
+                piano_dir = expanded / subdir
+                if piano_dir.is_dir():
+                    for pth in sorted(piano_dir.glob("*.pth")):
+                        fallback_match = pth
+                        break
+    return fallback_match
+
+
+def _piano_d3rm_model_subdir() -> Path:
+    return Path("piano_d3rm")
+
+
+def resolve_piano_d3rm_checkpoint_path(search_roots: Iterable[Path | str]) -> Path | None:
+    """Find a bundled D3RM checkpoint (``.ckpt``) under ``<root>/piano_d3rm/``."""
+    subdir = _piano_d3rm_model_subdir()
+    for root in search_roots:
+        if root is None:
+            continue
+        for expanded in _expanded_model_roots(Path(root)):
+            piano_dir = expanded / subdir
+            if not piano_dir.is_dir():
+                continue
+            for ckpt in sorted(piano_dir.glob("*.ckpt")):
+                # Prefer the headline D3RM weight file when multiple ckpts coexist
+                # (the NAR-HC baseline is also a .ckpt).
+                if ckpt.name.lower().startswith("d3rm"):
+                    return ckpt
+            for ckpt in sorted(piano_dir.glob("*.ckpt")):
+                return ckpt
+    return None
+
+
 def build_default_melodic_algorithm_registry(
     model_search_roots: Iterable[Path | str] | None = None,
     instrument: str = "melodic",
@@ -798,6 +904,8 @@ def build_default_melodic_algorithm_registry(
         melodic_yin_bass80,
         melodic_yin_octave_hps_fix,
         piano_cleanup,
+        piano_d3rm,
+        piano_denoise,
         piano_hft,
         piano_polyphonic,
         piano_pti,
@@ -847,13 +955,23 @@ def build_default_melodic_algorithm_registry(
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
     def _piano_auto(stem_path: Path) -> list[MelodicNote]:
+        # Learned models lead: prefer the SOTA per-note transcribers (Edwards
+        # robust-Kong via piano_pti, then hFT, Transkun, D3RM) and fall back to
+        # the heuristic polyphonic estimator only when every learned model is
+        # unavailable or returns nothing. This is the opposite of the original
+        # ordering, which let the always-firing heuristic shadow the learned
+        # models.
         for producer in (
+            _piano_pti_clean,
+            _piano_hft_clean,
+            _piano_transkun_clean,
+            _piano_d3rm_clean,
+            _piano_pti,
+            _piano_hft,
+            _piano_transkun,
+            _piano_d3rm,
             _piano_polyphonic_clean,
             _piano_polyphonic,
-            _piano_transkun_clean,
-            _piano_pti_clean,
-            _piano_transkun,
-            _piano_pti,
             _hpss_combined,
             _adaptive,
             _octave_fix,
@@ -873,21 +991,32 @@ def build_default_melodic_algorithm_registry(
         return piano_transkun.transcribe(stem_path, instrument=_inst)
 
     def _piano_transkun_clean(stem_path: Path) -> list[MelodicNote]:
-        notes = piano_transkun.transcribe(stem_path, instrument=_inst)
+        with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
+            notes = piano_transkun.transcribe(in_path, instrument=_inst)
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
     def _piano_pti(stem_path: Path) -> list[MelodicNote]:
         return piano_pti.transcribe(stem_path, instrument=_inst)
 
     def _piano_pti_clean(stem_path: Path) -> list[MelodicNote]:
-        notes = piano_pti.transcribe(stem_path, instrument=_inst)
+        with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
+            notes = piano_pti.transcribe(in_path, instrument=_inst)
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
     def _piano_hft(stem_path: Path) -> list[MelodicNote]:
         return piano_hft.transcribe(stem_path, instrument=_inst)
 
     def _piano_hft_clean(stem_path: Path) -> list[MelodicNote]:
-        notes = piano_hft.transcribe(stem_path, instrument=_inst)
+        with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
+            notes = piano_hft.transcribe(in_path, instrument=_inst)
+        return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+
+    def _piano_d3rm(stem_path: Path) -> list[MelodicNote]:
+        return piano_d3rm.transcribe(stem_path, instrument=_inst)
+
+    def _piano_d3rm_clean(stem_path: Path) -> list[MelodicNote]:
+        with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
+            notes = piano_d3rm.transcribe(in_path, instrument=_inst)
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
     return {
@@ -900,6 +1029,8 @@ def build_default_melodic_algorithm_registry(
         "piano_pti_clean": _piano_pti_clean,
         "piano_hft": _piano_hft,
         "piano_hft_clean": _piano_hft_clean,
+        "piano_d3rm": _piano_d3rm,
+        "piano_d3rm_clean": _piano_d3rm_clean,
         "basic_pitch": _basic_pitch,
         "pyin": _pyin,
         "melodic_combined": _combined,
@@ -1153,6 +1284,17 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
     elif normalized in {"piano_hft", "piano_hft_clean"}:
         chain = [
             normalized,
+            "piano_auto",
+            "melodic_hpss_combined",
+            "melodic_octave_fix",
+            "melodic_combined",
+            "basic_pitch",
+            "pyin",
+        ]
+    elif normalized in {"piano_d3rm", "piano_d3rm_clean"}:
+        chain = [
+            normalized,
+            "piano_pti_clean",
             "piano_auto",
             "melodic_hpss_combined",
             "melodic_octave_fix",
