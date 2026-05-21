@@ -38,6 +38,11 @@ rtrb = "0.3"
 # use all-codecs/formats to ensure broad support.
 symphonia = { version = "0.5", default-features = false, features = ["all-codecs", "all-formats"] }
 
+# Filesystem watcher for the songs folder so external `aural_ingest import`
+# drops light up the library panel automatically. Default features are fine on
+# Windows/macOS/Linux (ReadDirectoryChangesW / FSEvents / inotify).
+notify = "6"
+
 [dev-dependencies]
 tempfile = "3"
 

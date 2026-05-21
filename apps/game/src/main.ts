@@ -4488,6 +4488,24 @@ async function refresh() {
 
 refreshBtn.addEventListener("click", () => void refresh());
 
+// Auto-refresh the library panel when files/directories appear, change, or
+// are removed under the songs folder (e.g. `aural_ingest import` from a
+// separate shell drops a new .songpack/ directory). The Rust side mounts a
+// `notify`-based watcher during setup() and emits this event after a short
+// debounce; we just re-run the same scan the manual refresh button uses.
+if (haveTauri()) {
+  void listen("songs_folder_changed", () => {
+    void refresh();
+  });
+  // Idempotent backstop in case the watcher's initial mount in setup() raced
+  // ahead of the songs folder being created. If a watcher is already running
+  // on the current path, this returns Ok(()) without doing anything.
+  void invoke("start_songs_folder_watch").catch((e) => {
+    // Best-effort — the user still has the manual refresh button.
+    console.warn("start_songs_folder_watch failed", e);
+  });
+}
+
 setOverrideBtn.addEventListener("click", () => {
   const v = songsFolderInput.value.trim();
   if (!v) return;
