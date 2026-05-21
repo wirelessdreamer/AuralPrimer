@@ -258,7 +258,10 @@ if ($SkipDesktopBuild) {
 if (-not $SkipGameBuild) {
   Push-Location $repoRootAbs
   try {
-    & npm run game:build
+    # `--no-bundle` skips MSI/NSIS installer generation (which can fail on
+    # WiX/light.exe environments). The portable build only needs the raw
+    # executable from target/release/, so installer bundles are not needed.
+    & npm run game:build -- --no-bundle
     if ($LASTEXITCODE -ne 0) {
       throw "game:build failed with exit code $LASTEXITCODE"
     }
@@ -270,7 +273,7 @@ if (-not $SkipGameBuild) {
 if (-not $SkipStudioBuild) {
   Push-Location $repoRootAbs
   try {
-    & npm run studio:build
+    & npm run studio:build -- --no-bundle
     if ($LASTEXITCODE -ne 0) {
       throw "studio:build failed with exit code $LASTEXITCODE"
     }
@@ -358,6 +361,54 @@ Copy-Item -LiteralPath $sidecarBuiltExe -Destination $portableRootSidecarExe -Fo
 Copy-Item -LiteralPath $sidecarBuiltExe -Destination $portableSidecarExe -Force
 Copy-Item -LiteralPath $sidecarBuiltManifest -Destination $portableSidecarManifest -Force
 Copy-Item -LiteralPath $demucs6ZipAbs -Destination $portableDemucs6ModelPackZip -Force
+
+# Piano transcription checkpoints (piano_pti = Edwards-robust Kong, piano_d3rm
+# = ICASSP 2025 model). Flat directory copies — no modelpack.json wrapper.
+# Auto-discovered at runtime by aural_ingest.transcription helpers via
+# resolve_piano_pti_checkpoint_path / resolve_piano_d3rm_checkpoint_path.
+$pianoModelDirs = @("piano_pti", "piano_d3rm")
+$portablePianoModelpacks = @()
+foreach ($pianoDirName in $pianoModelDirs) {
+  $sourcePianoDir = Join-Path $repoRootAbs ("assets/models/" + $pianoDirName)
+  if (-not (Test-Path -LiteralPath $sourcePianoDir -PathType Container)) {
+    continue
+  }
+
+  $portablePianoDir = Join-Path $portableAssetsModelsDir $pianoDirName
+  if (Test-Path -LiteralPath $portablePianoDir) {
+    Remove-Item -LiteralPath $portablePianoDir -Recurse -Force
+  }
+  Copy-Item -LiteralPath $sourcePianoDir -Destination $portableAssetsModelsDir -Recurse -Force
+
+  $pianoCheckpoints = @()
+  foreach ($file in (Get-ChildItem -LiteralPath $portablePianoDir -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
+    if ($file.Extension -notin @(".pth", ".ckpt", ".pt", ".bin", ".safetensors")) {
+      continue
+    }
+    $sha = Get-Sha256Lower $file.FullName
+    $pianoCheckpoints += [ordered]@{
+      filename = $file.Name
+      portable_path = $file.FullName
+      size_bytes = $file.Length
+      sha256 = $sha
+    }
+  }
+
+  if ($pianoCheckpoints.Count -eq 0) {
+    Write-Host "Skipping piano model dir '$pianoDirName': no checkpoint files (.pth/.ckpt) under $sourcePianoDir."
+    if (Test-Path -LiteralPath $portablePianoDir) {
+      Remove-Item -LiteralPath $portablePianoDir -Recurse -Force
+    }
+    continue
+  }
+
+  $portablePianoModelpacks += [ordered]@{
+    id = $pianoDirName
+    source_path = $sourcePianoDir
+    portable_path = $portablePianoDir
+    checkpoints = $pianoCheckpoints
+  }
+}
 
 $mt3ModelpackIds = @("mr_mt3", "yourmt3")
 $portableMt3Modelpacks = @()
@@ -577,7 +628,7 @@ $portableManifest = [ordered]@{
       portable_path = $portableDemucs6ModelPackZip
       portable_sha256 = $demucs6PortableSha256
     }
-  ) + $portableMt3Modelpacks
+  ) + $portableMt3Modelpacks + $portablePianoModelpacks
 }
 $portableManifest | ConvertTo-Json -Depth 8 | Set-Content -Path $portableManifestPath -Encoding UTF8
 
