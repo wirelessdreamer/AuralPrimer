@@ -581,6 +581,12 @@ def test_transcribe_drums_mt3_uses_local_checkpoint_only(tmp_path: Path, monkeyp
     fake_librosa.__spec__ = importlib.machinery.ModuleSpec("librosa", loader=None)
     fake_librosa.load = lambda _path, sr, mono: (np.zeros(1600, dtype=np.float32), sr)
     monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
+    # mt3_infer is a stub here, so the real transformers/MT3 patching is a no-op;
+    # bypass it to keep this test independent of the (heavy + env-sensitive) transformers
+    # + tensorflow imports it would otherwise trigger.
+    monkeypatch.setattr(
+        "aural_ingest.transcription.ensure_mt3_transformers_compat", lambda: None
+    )
     monkeypatch.setattr(
         "aural_ingest.transcription.resolve_mt3_modelpack",
         lambda _engine_id, **_kwargs: {
@@ -660,6 +666,12 @@ def test_transcribe_drums_mt3_suppresses_known_runtime_warnings(tmp_path: Path, 
     fake_librosa.__spec__ = importlib.machinery.ModuleSpec("librosa", loader=None)
     fake_librosa.load = lambda _path, sr, mono: (np.zeros(1600, dtype=np.float32), sr)
     monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
+    # mt3_infer is a stub here, so the real transformers/MT3 patching is a no-op;
+    # bypass it to keep this test independent of the (heavy + env-sensitive) transformers
+    # + tensorflow imports it would otherwise trigger.
+    monkeypatch.setattr(
+        "aural_ingest.transcription.ensure_mt3_transformers_compat", lambda: None
+    )
     monkeypatch.setattr(
         "aural_ingest.transcription.resolve_mt3_modelpack",
         lambda _engine_id, **_kwargs: {
