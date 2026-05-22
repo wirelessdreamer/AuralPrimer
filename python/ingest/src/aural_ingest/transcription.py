@@ -738,8 +738,8 @@ def _ascend_past_worktree(start: Path) -> Path | None:
     """If ``start`` is inside a ``.claude/worktrees/<name>/`` directory, return
     the path *above* ``.claude`` (i.e. the main checkout root). Otherwise None.
 
-    This lets model auto-discovery find checkpoints stored under the main
-    repo's ``assets/models/`` when callers run from a worktree.
+    Lets model auto-discovery find checkpoints stored under the main repo's
+    ``assets/models/`` when callers run from a worktree.
     """
     try:
         parts = start.parts
@@ -956,9 +956,9 @@ def build_default_melodic_algorithm_registry(
 
     def _piano_auto(stem_path: Path) -> list[MelodicNote]:
         # Learned models lead: prefer the SOTA per-note transcribers (Edwards
-        # robust-Kong via piano_pti, then hFT, Transkun, D3RM) and fall back to
-        # the heuristic polyphonic estimator only when every learned model is
-        # unavailable or returns nothing. This is the opposite of the original
+        # robust-Kong via piano_pti, then hFT, Transkun, D3RM) and fall back
+        # to the heuristic polyphonic estimator only when every learned model
+        # is unavailable or returns nothing. Reversed from the original
         # ordering, which let the always-firing heuristic shadow the learned
         # models.
         for producer in (
@@ -1331,11 +1331,75 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
     return out
 
 
+def remap_drum_events_to_taxonomy(
+    events: list[DrumEvent],
+    taxonomy: str,
+) -> list[DrumEvent]:
+    """Remap drum events from the internal 9-class vocabulary onto the
+    selected output taxonomy. Currently supports `5class` (the standard
+    ADTOF / production benchmark vocabulary) and `9class` (legacy
+    internal). Unknown taxonomies are passed through as-is.
+
+    Implements path 1 of `docs/research-deep-dive-adt-2026-05-07.md`. The
+    default production taxonomy stays `9class` until path 2 (model
+    upgrade) lands; users who want the standardized output today can opt
+    in via `--drum-taxonomy=5class` or the equivalent profile setting.
+    """
+
+    if not events:
+        return events
+
+    if taxonomy == "5class":
+        # Lazy import to avoid circular dependency.
+        from aural_ingest.algorithms._common import map_midi_drum_to_5class_midi
+
+        remapped: list[DrumEvent] = []
+        for event in events:
+            new_note = map_midi_drum_to_5class_midi(event.note)
+            if new_note is None:
+                # Class not in the 9-class mapping; pass through unchanged.
+                remapped.append(event)
+                continue
+            if new_note == event.note:
+                remapped.append(event)
+            else:
+                remapped.append(
+                    DrumEvent(
+                        time=event.time,
+                        note=new_note,
+                        velocity=event.velocity,
+                        duration=event.duration,
+                    )
+                )
+        return remapped
+
+    # `9class` and unknowns pass through.
+    return events
+
+
+KNOWN_DRUM_TAXONOMIES: tuple[str, ...] = ("9class", "5class")
+
+
+def validate_drum_taxonomy(taxonomy: str | None) -> str:
+    """Normalize and validate a drum taxonomy choice. Returns `9class` for
+    None or unknown values (preserving backward compatibility with imports
+    that predate the option)."""
+
+    if taxonomy is None:
+        return "9class"
+    normalized = str(taxonomy).strip().lower()
+    if normalized in KNOWN_DRUM_TAXONOMIES:
+        return normalized
+    return "9class"
+
+
 def transcribe_drums_dsp(
     stem_path: Path,
     requested_filter: str | None,
     algorithm_registry: dict[str, DrumTranscriber],
     logger: Callable[[str], None] | None = None,
+    *,
+    taxonomy: str | None = None,
 ) -> DrumTranscriptionResult:
     normalized, warnings = resolve_drum_engine(requested_filter)
     attempted: list[str] = []
@@ -1360,20 +1424,23 @@ def transcribe_drums_dsp(
             continue
 
         if events:
+            taxonomy_resolved = validate_drum_taxonomy(taxonomy)
+            mapped_events = remap_drum_events_to_taxonomy(events, taxonomy_resolved)
             return DrumTranscriptionResult(
-                events=events,
+                events=mapped_events,
                 used_algorithm=algorithm_id,
                 attempted_algorithms=attempted,
                 warnings=warnings,
-                meta={"backend": "heuristic"},
+                meta={"backend": "heuristic", "taxonomy": taxonomy_resolved},
             )
 
+    taxonomy_resolved = validate_drum_taxonomy(taxonomy)
     return DrumTranscriptionResult(
         events=[],
         used_algorithm=None,
         attempted_algorithms=attempted,
         warnings=warnings,
-        meta={"backend": "heuristic"},
+        meta={"backend": "heuristic", "taxonomy": taxonomy_resolved},
     )
 
 
@@ -1382,6 +1449,8 @@ def transcribe_drums(
     requested_engine: str | None,
     algorithm_registry: dict[str, DrumTranscriber],
     logger: Callable[[str], None] | None = None,
+    *,
+    taxonomy: str | None = None,
 ) -> DrumTranscriptionResult:
     normalized, warnings = resolve_drum_engine(requested_engine)
 
@@ -1394,20 +1463,25 @@ def transcribe_drums(
             warnings.append(msg)
             if logger:
                 logger(msg)
+            taxonomy_resolved = validate_drum_taxonomy(taxonomy)
             return DrumTranscriptionResult(
                 events=[],
                 used_algorithm=None,
                 attempted_algorithms=attempted,
                 warnings=warnings,
-                meta={"backend": "mt3", "engine": normalized},
+                meta={"backend": "mt3", "engine": normalized, "taxonomy": taxonomy_resolved},
             )
 
+        taxonomy_resolved = validate_drum_taxonomy(taxonomy)
+        mapped_events = remap_drum_events_to_taxonomy(events, taxonomy_resolved)
+        meta_with_taxonomy = dict(meta)
+        meta_with_taxonomy["taxonomy"] = taxonomy_resolved
         return DrumTranscriptionResult(
-            events=events,
+            events=mapped_events,
             used_algorithm=normalized,
             attempted_algorithms=attempted,
             warnings=warnings,
-            meta=meta,
+            meta=meta_with_taxonomy,
         )
 
     return transcribe_drums_dsp(
@@ -1415,6 +1489,82 @@ def transcribe_drums(
         requested_filter=normalized,
         algorithm_registry=algorithm_registry,
         logger=logger,
+        taxonomy=taxonomy,
+    )
+
+
+def transcribe_drums_with_profile(
+    stem_path: Path,
+    profile: str | None,
+    algorithm_registry: dict[str, DrumTranscriber],
+    logger: Callable[[str], None] | None = None,
+    *,
+    taxonomy: str | None = None,
+) -> DrumTranscriptionResult:
+    """Profile-aware drum orchestration. Walks the profile's `drum_engines`
+    list in order — MT3 engines fall through to the next entry on
+    failure (rather than ending the chain like the per-engine path does)
+    and DSP engines use their normal fallback chains.
+
+    Implements path 4 of `docs/research-deep-dive-adt-2026-05-07.md`:
+    `fidelity_midi` profile lists MT3 engines first; this function lets
+    the orchestration actually try MT3 first and silently fall back to
+    DSP when MT3 weights/runtime are absent. Behavior on the
+    `gameplay_default` profile is unchanged because its drum_engines
+    list begins with `beat_conditioned_multiband_decoder` already.
+
+    The MT3 path remains opt-in via profile selection; this function
+    does NOT change which engine is the global default."""
+
+    profile_normalized = validate_transcription_profile(profile)
+    engines = drum_engines_for_profile(profile_normalized) or []
+
+    aggregated_warnings: list[str] = []
+    aggregated_attempts: list[str] = []
+    last_meta: dict[str, Any] = {}
+
+    if not engines:
+        return transcribe_drums(
+            stem_path,
+            requested_engine=None,
+            algorithm_registry=algorithm_registry,
+            logger=logger,
+            taxonomy=taxonomy,
+        )
+
+    for engine_id in engines:
+        result = transcribe_drums(
+            stem_path,
+            requested_engine=engine_id,
+            algorithm_registry=algorithm_registry,
+            logger=logger,
+            taxonomy=taxonomy,
+        )
+        aggregated_warnings.extend(result.warnings)
+        for attempt in result.attempted_algorithms:
+            if attempt not in aggregated_attempts:
+                aggregated_attempts.append(attempt)
+        last_meta = dict(result.meta)
+        if result.events:
+            merged_meta = dict(last_meta)
+            merged_meta["profile"] = profile_normalized or "default"
+            return DrumTranscriptionResult(
+                events=result.events,
+                used_algorithm=result.used_algorithm,
+                attempted_algorithms=aggregated_attempts,
+                warnings=aggregated_warnings,
+                meta=merged_meta,
+            )
+
+    last_meta["profile"] = profile_normalized or "default"
+    if "taxonomy" not in last_meta:
+        last_meta["taxonomy"] = validate_drum_taxonomy(taxonomy)
+    return DrumTranscriptionResult(
+        events=[],
+        used_algorithm=None,
+        attempted_algorithms=aggregated_attempts,
+        warnings=aggregated_warnings,
+        meta=last_meta,
     )
 
 

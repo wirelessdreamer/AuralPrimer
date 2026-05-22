@@ -351,27 +351,34 @@ def _have_ffmpeg() -> bool:
 
 
 def _decode_to_wav(src: Path, dst_wav: Path, *, target_sr: int = 48_000) -> tuple[float, int]:
-    """Create a deterministic PCM16 mono WAV (48kHz default).
+    """Create a deterministic PCM mono WAV.
 
     Returns (duration_sec, sample_rate).
 
-    Supported inputs:
-    - .wav (PCM16): copied through (no resample)
-    - others: requires ffmpeg on PATH
+    Inputs:
+    - PCM .wav: copied through (no resample, original sample rate preserved)
+    - non-PCM .wav (IEEE float, ADPCM, etc.) or any non-wav: re-encoded via ffmpeg
+      to PCM16 mono at ``target_sr``. Requires ffmpeg next to the executable or on PATH.
     """
 
+    import wave
+
     if src.suffix.lower() == ".wav":
-        # Keep the original wav as-is. This keeps behavior simple and avoids ffmpeg dependency
-        # for our CI + unit tests.
+        # Cheap copy-through path for PCM WAVs. Python's stdlib wave module rejects
+        # non-PCM WAVs (e.g. IEEE 32-bit float, code 3) with wave.Error; fall through
+        # to ffmpeg re-encode in that case so the pipeline can still produce a
+        # deterministic PCM mix.wav. DAW master bounces are routinely 32-bit float.
         shutil.copyfile(src, dst_wav)
-        duration, sr = _wav_duration_sec(dst_wav)
-        return duration, sr
+        try:
+            return _wav_duration_sec(dst_wav)
+        except wave.Error:
+            pass  # Non-PCM container; ffmpeg below will overwrite dst_wav.
 
     ffmpeg_bin = _resolve_ffmpeg_path()
     if ffmpeg_bin is None:
         raise RuntimeError(
-            "ffmpeg not found on PATH; non-wav inputs require ffmpeg for decode. "
-            "Provide a .wav input or install ffmpeg."
+            "ffmpeg not found next to the sidecar or on PATH; non-PCM WAV and non-wav "
+            "inputs require ffmpeg for decode. Provide a PCM .wav input or install ffmpeg."
         )
 
     # Force deterministic output:
@@ -1779,7 +1786,28 @@ def _resolve_transcription_options(
         if provider_path:
             provider_name = "external"
         else:
-            provider_name = DEMUCS_PROVIDER if _resolve_demucs_modelpack(config)[0] is not None else "none"
+            modelpack_zip, _, modelpack_err = _resolve_demucs_modelpack(config)
+            if modelpack_zip is not None:
+                provider_name = DEMUCS_PROVIDER
+            else:
+                # Demucs gate flip (see docs/research-decision-gates.md
+                # 'ADT Architecture Revision (2026-05-07)' and path 3 of
+                # docs/research-deep-dive-adt-2026-05-07.md). When `auto`
+                # falls through to no separator because the modelpack is
+                # absent, surface a structured warning so downstream
+                # consumers can flag the import as separator-degraded
+                # rather than silently treating it as a normal `none`
+                # selection. Sept 2025 Enhanced-ADT literature reports
+                # +5–10% F1 from Demucs preprocessing alone, so users
+                # importing without it are paying a meaningful drum
+                # transcription quality cost.
+                provider_name = "none"
+                warnings.append(
+                    "stem_separation_provider=auto fell through to 'none' because the "
+                    f"{DEMUCS_MODELPACK_ID} modelpack was not found "
+                    f"({modelpack_err or 'no candidates checked'}); production drum "
+                    "transcription quality is reduced without Demucs preprocessing"
+                )
     elif provider_name not in {DEMUCS_PROVIDER, "none"} and not provider_path:
         provider_path = str(raw_provider).strip()
         provider_name = "external"

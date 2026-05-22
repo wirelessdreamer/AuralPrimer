@@ -27,6 +27,72 @@ DRUM_CLASS_TO_MIDI: dict[str, int] = {
 
 CORE_DRUM_CLASSES: set[str] = {"kick", "snare", "hh_closed"}
 
+
+# 5-class drum taxonomy used by ADTOF, Enhanced-ADT-via-Stem-Separation
+# (Sept 2025), and most modern ADT pipelines. Our internal 9-class output
+# remains the production default until path 1 from
+# `docs/research-deep-dive-adt-2026-05-07.md` lands; this mapping is
+# forward-looking scaffolding so ADTOF / YourMT3+ integration can plug in
+# without re-grading every downstream consumer at the same time.
+STANDARD_5CLASS_DRUM_VOCABULARY: tuple[str, ...] = (
+    "kick",
+    "snare",
+    "hi_hat",
+    "toms",
+    "cymbals",
+)
+
+
+# Maps our 9-class internal vocabulary onto the standard 5-class taxonomy.
+# Using strings (not MIDI ints) so the helper composes with both
+# `DrumEvent.note` (int) via `_map_midi_to_5class` below and with the
+# string-keyed candidate flow inside `combined_filter`.
+DRUM_9CLASS_TO_5CLASS: dict[str, str] = {
+    "kick": "kick",
+    "snare": "snare",
+    "hh_closed": "hi_hat",
+    "hh_open": "hi_hat",
+    "crash": "cymbals",
+    "ride": "cymbals",
+    "tom_high": "toms",
+    "tom_low": "toms",
+    "tom_floor": "toms",
+}
+
+
+# Canonical MIDI numbers for the 5-class taxonomy. Picks the most common
+# General-MIDI percussion mapping for each bucket so 5-class output remains
+# legal MIDI when written to `features/notes.mid`.
+DRUM_5CLASS_TO_MIDI: dict[str, int] = {
+    "kick": 36,
+    "snare": 38,
+    "hi_hat": 42,
+    "toms": 47,
+    "cymbals": 49,
+}
+
+
+def map_9class_drum_to_5class(drum_class_name: str) -> str:
+    """Map a 9-class drum class name (e.g. 'tom_floor') onto the standard
+    5-class taxonomy ('toms'). Unknown classes pass through unchanged so
+    callers can detect and report taxonomy mismatches rather than
+    silently coercing them.
+
+    Forward-looking scaffolding for path 1 in
+    `docs/research-deep-dive-adt-2026-05-07.md` (adopt 5-class as the
+    production default). No production path uses this helper yet."""
+    return DRUM_9CLASS_TO_5CLASS.get(drum_class_name, drum_class_name)
+
+
+def map_midi_drum_to_5class_midi(midi_note: int) -> int | None:
+    """Map a 9-class MIDI drum note (e.g. 41 / tom_floor) onto its 5-class
+    canonical MIDI (47 / toms). Returns None for notes that are not in the
+    9-class mapping so callers can decide whether to drop or pass through."""
+    name = next((n for n, m in DRUM_CLASS_TO_MIDI.items() if m == midi_note), None)
+    if name is None:
+        return None
+    return DRUM_5CLASS_TO_MIDI.get(map_9class_drum_to_5class(name))
+
 CLASS_REFRACTORY_SEC: dict[str, float] = {
     "kick": 0.1,
     "snare": 0.095,
@@ -1152,7 +1218,7 @@ def centroid_trajectory(
     return centroids
 
 
-def micro_nmf(
+def micro_nmf(  # noqa: E302
     magnitude_window: list[list[float]],
     templates: list[list[float]],
     *,

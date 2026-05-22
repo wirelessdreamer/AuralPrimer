@@ -1,0 +1,79 @@
+{
+  "format": "auralprimer_quality_manifest.v1",
+  "notes": [
+    "Multi-role guard manifest. Replace placeholder paths with five real",
+    "guard cases drawn from the local corpus before running.",
+    "",
+    "Goal: extend the bounded guard run beyond the existing Psalm 130 keys",
+    "smoke (benchmarks/quality/runs/20260502_100131_psalm-130-keys-guard-",
+    "role-filtered) to drums, bass, rhythm guitar, lead guitar, and at",
+    "least one additional keys/piano case. Closing this manifest is the",
+    "exit criterion for treating the quality benchmark as a promotion gate",
+    "(see wip.md > Transcription quality program > Run the generated",
+    "full-corpus quality manifest on local guard cases).",
+    "",
+    "Conventions used by run_full_corpus_quality.py:",
+    "  family=drums      for drum stems with a reference MIDI",
+    "  family=melodic    for monophonic instrument stems (bass, guitars)",
+    "  family=piano      for polyphonic keys/piano stems",
+    "  role            : drums | bass | rhythm_guitar | lead_guitar | keys",
+    "  offset_sec      : audio start offset relative to reference MIDI",
+    "",
+    "Run with:",
+    "  py -3 benchmarks/quality/run_full_corpus_quality.py \\",
+    "    --manifest benchmarks/quality/full_corpus_manifest.guard.template.json \\",
+    "    --label e5-multi-role-guard"
+  ],
+  "cases": [
+    {
+      "id": "guard_drums_TBD",
+      "name": "TODO drums guard case",
+      "family": "drums",
+      "role": "drums",
+      "wav": "D:/AuralPrimer/path/to/drums_stem.wav",
+      "reference_midi": "D:/AuralPrimer/path/to/drums_reference.mid",
+      "offset_sec": 0.0,
+      "intent": "Lock combined_filter / spectral_flux_multiband / beat_conditioned_multiband_decoder behavior on a real drum stem. Should detect a Psalm 12-style hallucination regression in addition to the synthetic guard at python/ingest/tests/test_drum_sparse_source_precision.py."
+    },
+    {
+      "id": "guard_bass_TBD",
+      "name": "TODO bass guard case",
+      "family": "melodic",
+      "role": "bass",
+      "wav": "D:/AuralPrimer/path/to/bass_stem.wav",
+      "reference_midi": "D:/AuralPrimer/path/to/bass_reference.mid",
+      "offset_sec": 0.0,
+      "intent": "Pin melodic_yin_octave_hps_fix / melodic_adaptive / melodic_yin_bass80 / melodic_octave_fix on a clean monophonic bass stem with reference MIDI."
+    },
+    {
+      "id": "guard_rhythm_guitar_TBD",
+      "name": "TODO rhythm guitar guard case",
+      "family": "melodic",
+      "role": "rhythm_guitar",
+      "wav": "D:/AuralPrimer/path/to/rhythm_guitar_stem.wav",
+      "reference_midi": "D:/AuralPrimer/path/to/rhythm_guitar_reference.mid",
+      "offset_sec": 0.0,
+      "intent": "Pin melodic_hpss_combined / melodic_adaptive / melodic_octave_fix / melodic_combined on a chord-heavy rhythm guitar stem."
+    },
+    {
+      "id": "guard_lead_guitar_TBD",
+      "name": "TODO lead guitar guard case",
+      "family": "melodic",
+      "role": "lead_guitar",
+      "wav": "D:/AuralPrimer/path/to/lead_guitar_stem.wav",
+      "reference_midi": "D:/AuralPrimer/path/to/lead_guitar_reference.mid",
+      "offset_sec": 0.0,
+      "intent": "Pin melodic_adaptive / melodic_octave_fix / melodic_combined / basic_pitch on a monophonic lead-guitar stem."
+    },
+    {
+      "id": "guard_keys_second_case_TBD",
+      "name": "TODO additional keys/piano guard case",
+      "family": "piano",
+      "role": "keys",
+      "wav": "D:/AuralPrimer/path/to/keys_or_piano_stem.wav",
+      "reference_midi": "D:/AuralPrimer/path/to/keys_or_piano_reference.mid",
+      "offset_sec": 0.0,
+      "intent": "Pair with the existing Psalm 130 keys / piano_auto guard so two keys/piano cases sit in the regression set; piano_auto / piano_polyphonic_clean / melodic_octave_fix / melodic_hpss_combined."
+    }
+  ]
+}

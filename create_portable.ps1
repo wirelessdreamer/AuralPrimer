@@ -363,8 +363,8 @@ Copy-Item -LiteralPath $sidecarBuiltManifest -Destination $portableSidecarManife
 Copy-Item -LiteralPath $demucs6ZipAbs -Destination $portableDemucs6ModelPackZip -Force
 
 # Piano transcription checkpoints (piano_pti = Edwards-robust Kong, piano_d3rm
-# = ICASSP 2025 model). Flat directory copies — no modelpack.json wrapper.
-# Auto-discovered at runtime by aural_ingest.transcription helpers via
+# placeholder for ICASSP 2025 model). Flat directory copies — no modelpack.json
+# wrapper. Auto-discovered at runtime by aural_ingest.transcription helpers via
 # resolve_piano_pti_checkpoint_path / resolve_piano_d3rm_checkpoint_path.
 $pianoModelDirs = @("piano_pti", "piano_d3rm")
 $portablePianoModelpacks = @()
@@ -381,6 +381,7 @@ foreach ($pianoDirName in $pianoModelDirs) {
   Copy-Item -LiteralPath $sourcePianoDir -Destination $portableAssetsModelsDir -Recurse -Force
 
   $pianoCheckpoints = @()
+  $missingPianoCheckpoints = @()
   foreach ($file in (Get-ChildItem -LiteralPath $portablePianoDir -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
     if ($file.Extension -notin @(".pth", ".ckpt", ".pt", ".bin", ".safetensors")) {
       continue
@@ -431,16 +432,85 @@ foreach ($modelpackId in $mt3ModelpackIds) {
   $versionManifests = @()
   foreach ($versionDir in $versionDirs) {
     $manifestPath = Join-Path $versionDir.FullName "modelpack.json"
-    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-      $versionManifests += [ordered]@{
-        version = $versionDir.Name
-        manifest_path = $manifestPath
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+      continue
+    }
+
+    $manifestObj = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifestId = [string](Get-PropertyValue $manifestObj "id")
+    if ($manifestId -ne $modelpackId) {
+      throw "modelpack.json id '$manifestId' does not match expected '$modelpackId' at $manifestPath"
+    }
+    $manifestVersion = [string](Get-PropertyValue $manifestObj "version")
+    if ([string]::IsNullOrWhiteSpace($manifestVersion)) {
+      throw "modelpack.json missing version at $manifestPath"
+    }
+    if ($manifestVersion -ne $versionDir.Name) {
+      throw "modelpack.json version '$manifestVersion' does not match directory name '$($versionDir.Name)' at $manifestPath"
+    }
+
+    $manifestSha256 = Get-Sha256Lower $manifestPath
+    $checkpointEntries = @()
+    $missingCheckpoints = @()
+    $declaredCheckpoints = @(Get-PropertyValue $manifestObj "checkpoints")
+    foreach ($cp in $declaredCheckpoints) {
+      $cpRel = [string](Get-PropertyValue $cp "path")
+      if ([string]::IsNullOrWhiteSpace($cpRel)) {
+        throw "checkpoint entry missing 'path' field in $manifestPath"
       }
+      $cpExpectedSha = [string](Get-PropertyValue $cp "sha256")
+      $cpAbs = Join-Path $versionDir.FullName ($cpRel -replace '/', '\')
+      if (-not (Test-Path -LiteralPath $cpAbs -PathType Leaf)) {
+        $missingCheckpoints += $cpRel
+        continue
+      }
+      $cpActualSha = Get-Sha256Lower $cpAbs
+      if (-not [string]::IsNullOrWhiteSpace($cpExpectedSha)) {
+        $cpExpectedShaLower = $cpExpectedSha.ToLowerInvariant()
+        if ($cpExpectedShaLower -ne $cpActualSha) {
+          throw "checkpoint hash mismatch for '$cpAbs': expected $cpExpectedShaLower got $cpActualSha"
+        }
+      }
+      $cpSize = (Get-Item -LiteralPath $cpAbs).Length
+      $checkpointEntries += [ordered]@{
+        model = [string](Get-PropertyValue $cp "model")
+        path = $cpRel
+        portable_path = $cpAbs
+        format = [string](Get-PropertyValue $cp "format")
+        size_bytes = $cpSize
+        sha256 = $cpActualSha
+      }
+    }
+
+    $isComplete = ($missingCheckpoints.Count -eq 0 -and $checkpointEntries.Count -gt 0)
+    $versionManifests += [ordered]@{
+      version = $manifestVersion
+      manifest_path = $manifestPath
+      manifest_sha256 = $manifestSha256
+      provider = [string](Get-PropertyValue $manifestObj "provider")
+      engine = [string](Get-PropertyValue $manifestObj "engine")
+      checkpoints = $checkpointEntries
+      missing_checkpoints = $missingCheckpoints
+      complete = $isComplete
     }
   }
 
+  if ($versionManifests.Count -eq 0) {
+    Write-Host "Skipping modelpack '$modelpackId': no readable modelpack.json under any version subdirectory."
+    if (Test-Path -LiteralPath $portableModelpackDir) {
+      Remove-Item -LiteralPath $portableModelpackDir -Recurse -Force
+    }
+    continue
+  }
+
+  $incompleteVersions = @($versionManifests | Where-Object { -not $_.complete })
+  $allComplete = ($incompleteVersions.Count -eq 0)
+  $latestVersion = [string]$versionManifests[-1].version
+
   $portableMt3Modelpacks += [ordered]@{
     id = $modelpackId
+    version = $latestVersion
+    complete = $allComplete
     source_path = $sourceModelpackDir
     portable_path = $portableModelpackDir
     versions = $versionManifests
