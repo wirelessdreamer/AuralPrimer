@@ -44,11 +44,15 @@ from aural_ingest.transcription import (
     is_mt3_drum_engine,
     resolve_drum_engine,
     resolve_basic_pitch_model_path,
+    DrumTranscriptionResult,
     transcribe_all_melodic_stems,
     transcribe_melodic,
     transcribe_drums,
+    validate_drum_events_against_stem_silence,
     validate_melodic_method,
     validate_transcription_profile,
+    DEFAULT_DRUM_SILENCE_GATE_DBFS,
+    DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS,
 )
 
 
@@ -1815,6 +1819,48 @@ def _resolve_transcription_options(
     requested_drum_stem, requested_drum_stem_kind = _resolve_requested_drum_stem_path(args, config)
     modelpack_zip, modelpack_manifest, _modelpack_err = _resolve_demucs_modelpack(config)
 
+    # Drum stem-silence gate (defensive post-filter, see transcription.py).
+    # CLI > config > env > built-in default; env handling lives inside
+    # validate_drum_events_against_stem_silence so leaving these None
+    # is the desired behavior unless the user overrode them at the CLI/config layer.
+    drum_silence_gate_dbfs_raw = (
+        getattr(args, "drum_silence_gate_dbfs", None)
+        if getattr(args, "drum_silence_gate_dbfs", None) is not None
+        else config.get("drum_silence_gate_dbfs")
+    )
+    drum_silence_gate_window_ms_raw = (
+        getattr(args, "drum_silence_gate_window_ms", None)
+        if getattr(args, "drum_silence_gate_window_ms", None) is not None
+        else config.get("drum_silence_gate_window_ms")
+    )
+    drum_silence_gate_dbfs: float | None
+    if drum_silence_gate_dbfs_raw is None:
+        drum_silence_gate_dbfs = None
+    else:
+        try:
+            drum_silence_gate_dbfs = float(drum_silence_gate_dbfs_raw)
+        except (TypeError, ValueError):
+            return None, f"invalid --drum-silence-gate-dbfs '{drum_silence_gate_dbfs_raw}': must be a number"
+    drum_silence_gate_window_ms: float | None
+    if drum_silence_gate_window_ms_raw is None:
+        drum_silence_gate_window_ms = None
+    else:
+        try:
+            drum_silence_gate_window_ms = float(drum_silence_gate_window_ms_raw)
+        except (TypeError, ValueError):
+            return None, (
+                f"invalid --drum-silence-gate-window-ms '{drum_silence_gate_window_ms_raw}': must be a number"
+            )
+        if drum_silence_gate_window_ms <= 0.0:
+            return None, (
+                f"invalid --drum-silence-gate-window-ms '{drum_silence_gate_window_ms_raw}': must be > 0"
+            )
+
+    drum_silence_gate_disabled = bool(
+        getattr(args, "drum_silence_gate_disabled", False)
+        or config.get("drum_silence_gate_disabled", False)
+    )
+
     return {
         "drum_engine_requested": raw_drum_filter,
         "drum_engine": normalized_drum_filter,
@@ -1837,6 +1883,9 @@ def _resolve_transcription_options(
         "beat_analysis_mode": beat_analysis_mode,
         "shifts": shifts,
         "multi_filter": multi_filter,
+        "drum_silence_gate_dbfs": drum_silence_gate_dbfs,
+        "drum_silence_gate_window_ms": drum_silence_gate_window_ms,
+        "drum_silence_gate_disabled": drum_silence_gate_disabled,
     }, None
 
 
@@ -1850,6 +1899,38 @@ def _add_transcription_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--stem-separation-provider-path")
     p.add_argument("--shifts", type=int, default=1)
     p.add_argument("--multi-filter", action="store_true")
+    p.add_argument(
+        "--drum-silence-gate-dbfs",
+        dest="drum_silence_gate_dbfs",
+        type=float,
+        default=None,
+        help=(
+            "Drop drum events whose local stem RMS is below this dBFS threshold "
+            f"(default: {DEFAULT_DRUM_SILENCE_GATE_DBFS:g} dBFS, env: "
+            "AURALPRIMER_DRUM_SILENCE_GATE_DBFS)."
+        ),
+    )
+    p.add_argument(
+        "--drum-silence-gate-window-ms",
+        dest="drum_silence_gate_window_ms",
+        type=float,
+        default=None,
+        help=(
+            "Half-window (ms) for local RMS computation around each drum event "
+            f"(default: {DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS:g} ms, env: "
+            "AURALPRIMER_DRUM_SILENCE_GATE_WINDOW_MS)."
+        ),
+    )
+    p.add_argument(
+        "--no-drum-silence-gate",
+        dest="drum_silence_gate_disabled",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable the stem-silence validation pass for drum events. Equivalent to "
+            "setting AURALPRIMER_DRUM_SILENCE_GATE_DISABLED=1."
+        ),
+    )
 
 
 def _try_relpath(path: Path, root: Path) -> str:
@@ -2746,6 +2827,55 @@ def cmd_import(args: argparse.Namespace) -> int:
     if is_mt3_drum_engine(tr_opts["drum_filter_requested"]) and drum_result.used_algorithm is None:
         log("requested MT3 drum engine did not produce a chart; aborting import")
         return 4
+
+    # Stage 6b: validate drum events against stem silence (post-filter).
+    # Drops events whose neighborhood in the separated drum stem is below
+    # the configured dBFS gate. Applies uniformly to every drum engine
+    # (heuristic + MT3) so engine code stays untouched. See
+    # `validate_drum_events_against_stem_silence` for behavior, defaults,
+    # and overrides.
+    if drum_result.events and drum_source_kind != "mix_fallback":
+        gated_events, gate_meta = validate_drum_events_against_stem_silence(
+            drum_result.events,
+            drum_source,
+            gate_dbfs=tr_opts.get("drum_silence_gate_dbfs"),
+            window_ms=tr_opts.get("drum_silence_gate_window_ms"),
+            disabled=tr_opts.get("drum_silence_gate_disabled") or None,
+            logger=log,
+        )
+        drum_result = DrumTranscriptionResult(
+            events=gated_events,
+            used_algorithm=drum_result.used_algorithm,
+            attempted_algorithms=drum_result.attempted_algorithms,
+            warnings=drum_result.warnings,
+            meta={**drum_result.meta, "stem_silence_gate": gate_meta},
+        )
+        tr_opts["drum_silence_gate"] = gate_meta
+    else:
+        # Either no events (nothing to gate) or we transcribed from the
+        # full mix (no separated drum stem -> gating against the mix would
+        # never trigger). Record skip metadata so the manifest remains
+        # consistent across imports.
+        skip_meta = {
+            "gate_dbfs": tr_opts.get("drum_silence_gate_dbfs") or DEFAULT_DRUM_SILENCE_GATE_DBFS,
+            "window_ms": tr_opts.get("drum_silence_gate_window_ms") or DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS,
+            "disabled": bool(tr_opts.get("drum_silence_gate_disabled")),
+            "events_in": len(drum_result.events),
+            "events_out": len(drum_result.events),
+            "dropped": 0,
+            "stem_path_used": str(drum_source) if drum_source_kind != "mix_fallback" else None,
+            "stem_load_ok": False,
+            "quietest_dropped_dbfs": None,
+            "skip_reason": "no_separated_drum_stem" if drum_source_kind == "mix_fallback" else "no_events",
+        }
+        tr_opts["drum_silence_gate"] = skip_meta
+        drum_result = DrumTranscriptionResult(
+            events=drum_result.events,
+            used_algorithm=drum_result.used_algorithm,
+            attempted_algorithms=drum_result.attempted_algorithms,
+            warnings=drum_result.warnings,
+            meta={**drum_result.meta, "stem_silence_gate": skip_meta},
+        )
 
     # Collect available instrument stems for per-instrument melodic transcription.
     instrument_stems: dict[str, Path] = {}

@@ -4,6 +4,7 @@ import contextlib
 import io
 import importlib.util
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1378,6 +1379,204 @@ def remap_drum_events_to_taxonomy(
 
 
 KNOWN_DRUM_TAXONOMIES: tuple[str, ...] = ("9class", "5class")
+
+
+# Drum stem-silence gate (defensive post-filter applied after the drum
+# engine emits events). Some engines — especially `combined_filter` and
+# its DSP siblings — emit hits in regions where the separated drum stem
+# is essentially silent (separator residual or detector hallucination on
+# background hum). Rather than retune every engine, we run a final RMS
+# gate against the stem itself: if the local audio at an event's time is
+# below the gate, the event is dropped.
+#
+# The default (-50 dBFS) is intentionally conservative. Music with real
+# drum hits typically sits at -30 to -10 dBFS locally; anything below
+# -50 dBFS is inaudible at normal listening levels and far below any
+# plausible separator artifact level. Override with the env var
+# AURALPRIMER_DRUM_SILENCE_GATE_DBFS (number, in dBFS) or the CLI flag
+# `--drum-silence-gate-dbfs`. Disable entirely with `--no-drum-silence-gate`
+# or AURALPRIMER_DRUM_SILENCE_GATE_DISABLED=1.
+DEFAULT_DRUM_SILENCE_GATE_DBFS: float = -50.0
+DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS: float = 30.0
+DRUM_SILENCE_GATE_ENV_DBFS: str = "AURALPRIMER_DRUM_SILENCE_GATE_DBFS"
+DRUM_SILENCE_GATE_ENV_WINDOW_MS: str = "AURALPRIMER_DRUM_SILENCE_GATE_WINDOW_MS"
+DRUM_SILENCE_GATE_ENV_DISABLED: str = "AURALPRIMER_DRUM_SILENCE_GATE_DISABLED"
+
+
+def _local_rms_at(samples: list[float], sr: int, time_sec: float, half_window_samples: int) -> float:
+    if not samples or sr <= 0 or half_window_samples <= 0:
+        return 0.0
+    center = int(round(float(time_sec) * sr))
+    lo = max(0, center - half_window_samples)
+    hi = min(len(samples), center + half_window_samples)
+    if hi <= lo:
+        return 0.0
+    seg = samples[lo:hi]
+    n = float(len(seg))
+    if n <= 0:
+        return 0.0
+    acc = 0.0
+    for x in seg:
+        acc += x * x
+    return math.sqrt(acc / n)
+
+
+def _rms_to_dbfs(rms: float) -> float:
+    if rms <= 0.0:
+        return -math.inf
+    return 20.0 * math.log10(rms)
+
+
+def _resolve_drum_silence_gate_settings(
+    gate_dbfs: float | None,
+    window_ms: float | None,
+    disabled: bool | None,
+) -> tuple[float, float, bool]:
+    """Resolve effective gate settings, with env vars overriding defaults
+    and explicit kwargs overriding env. Returns (gate_dbfs, window_ms,
+    disabled). The disabled flag short-circuits to (default, default, True)
+    so callers can record the resolved metadata uniformly."""
+
+    if disabled is None:
+        env_disabled = os.getenv(DRUM_SILENCE_GATE_ENV_DISABLED, "").strip().lower()
+        disabled = env_disabled in {"1", "true", "yes", "on"}
+
+    if gate_dbfs is None:
+        env_gate = os.getenv(DRUM_SILENCE_GATE_ENV_DBFS, "").strip()
+        if env_gate:
+            try:
+                gate_dbfs = float(env_gate)
+            except ValueError:
+                gate_dbfs = DEFAULT_DRUM_SILENCE_GATE_DBFS
+        else:
+            gate_dbfs = DEFAULT_DRUM_SILENCE_GATE_DBFS
+
+    if window_ms is None:
+        env_window = os.getenv(DRUM_SILENCE_GATE_ENV_WINDOW_MS, "").strip()
+        if env_window:
+            try:
+                window_ms = float(env_window)
+            except ValueError:
+                window_ms = DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS
+        else:
+            window_ms = DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS
+
+    if window_ms <= 0.0:
+        window_ms = DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS
+
+    return float(gate_dbfs), float(window_ms), bool(disabled)
+
+
+def validate_drum_events_against_stem_silence(
+    events: list[DrumEvent],
+    stem_path: Path,
+    *,
+    gate_dbfs: float | None = None,
+    window_ms: float | None = None,
+    disabled: bool | None = None,
+    logger: Callable[[str], None] | None = None,
+) -> tuple[list[DrumEvent], dict[str, Any]]:
+    """Drop drum events whose neighborhood in the separated drum stem is
+    below the silence gate.
+
+    Why this exists: heuristic drum engines (combined_filter and its DSP
+    siblings) emit candidate hits during stretches where the separated
+    drum stem is effectively silent (separator residual + transient-detector
+    confabulation). The result is a chart cluttered with false-positive
+    hits during verses/breakdowns. This function is a defensive post-filter
+    that compares each event time to the local stem energy and drops events
+    in obvious silence. It is conservative by default (-50 dBFS, which is
+    well below any plausible musical drum hit) so it cannot remove real
+    hits on normally-mixed audio.
+
+    Args:
+        events: ordered drum events to validate.
+        stem_path: path to the separated drum stem WAV.
+        gate_dbfs: silence gate in dBFS. Events whose local RMS is strictly
+            below this value are dropped. Defaults to -50 dBFS, or the env
+            var AURALPRIMER_DRUM_SILENCE_GATE_DBFS if set.
+        window_ms: half-window radius (so the window is +/- window_ms)
+            around each event time used to compute local RMS. Defaults to
+            30 ms, or AURALPRIMER_DRUM_SILENCE_GATE_WINDOW_MS.
+        disabled: if True, skip the gate entirely (returns events unchanged
+            with metadata recording skip). When None, honors
+            AURALPRIMER_DRUM_SILENCE_GATE_DISABLED.
+        logger: optional log callback for human-readable warnings.
+
+    Returns:
+        Tuple (kept_events, metadata). The metadata dict always carries
+        the resolved settings (`gate_dbfs`, `window_ms`, `disabled`) plus
+        accounting (`events_in`, `events_out`, `dropped`, `quietest_dropped_dbfs`,
+        `stem_path_used`, `stem_load_ok`) so callers can serialize it
+        into the songpack manifest for traceability.
+    """
+
+    # Lazy import to keep transcription.py importable without WAV helpers.
+    from aural_ingest.algorithms._common import read_wav_mono_normalized
+
+    resolved_gate, resolved_window_ms, resolved_disabled = _resolve_drum_silence_gate_settings(
+        gate_dbfs, window_ms, disabled
+    )
+
+    base_meta: dict[str, Any] = {
+        "gate_dbfs": resolved_gate,
+        "window_ms": resolved_window_ms,
+        "disabled": resolved_disabled,
+        "events_in": len(events),
+        "events_out": len(events),
+        "dropped": 0,
+        "stem_path_used": str(stem_path) if stem_path is not None else None,
+        "stem_load_ok": False,
+        "quietest_dropped_dbfs": None,
+    }
+
+    if resolved_disabled or not events:
+        return list(events), base_meta
+
+    if stem_path is None or not Path(stem_path).is_file():
+        # Fail-open: no stem available to gate against, do not drop anything.
+        msg = f"drum silence gate skipped: stem not available ({stem_path})"
+        if logger:
+            logger(msg)
+        base_meta["skip_reason"] = "stem_unavailable"
+        return list(events), base_meta
+
+    samples, sr = read_wav_mono_normalized(Path(stem_path))
+    if not samples or sr <= 0:
+        msg = f"drum silence gate skipped: could not load stem ({stem_path})"
+        if logger:
+            logger(msg)
+        base_meta["skip_reason"] = "stem_load_failed"
+        return list(events), base_meta
+
+    base_meta["stem_load_ok"] = True
+
+    half_window_samples = max(1, int(round((resolved_window_ms / 1000.0) * sr)))
+    kept: list[DrumEvent] = []
+    quietest_dropped: float | None = None
+    for ev in events:
+        rms = _local_rms_at(samples, sr, float(ev.time), half_window_samples)
+        local_db = _rms_to_dbfs(rms)
+        if local_db < resolved_gate:
+            if quietest_dropped is None or local_db < quietest_dropped:
+                quietest_dropped = local_db
+            continue
+        kept.append(ev)
+
+    dropped = len(events) - len(kept)
+    base_meta["events_out"] = len(kept)
+    base_meta["dropped"] = dropped
+    base_meta["quietest_dropped_dbfs"] = (
+        None if quietest_dropped is None or quietest_dropped == -math.inf else round(quietest_dropped, 2)
+    )
+
+    if dropped and logger:
+        logger(
+            f"drum silence gate: dropped {dropped}/{len(events)} events below "
+            f"{resolved_gate:.1f} dBFS (window +/- {resolved_window_ms:.0f}ms)"
+        )
+
+    return kept, base_meta
 
 
 def validate_drum_taxonomy(taxonomy: str | None) -> str:
