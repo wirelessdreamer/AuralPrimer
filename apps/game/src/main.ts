@@ -331,7 +331,9 @@ root.innerHTML = `
               </aside>
 
               <div class="bandSetupStage">
-                <canvas id="viz" width="800" height="240"></canvas>
+                <div id="playerStages" class="playerStages" data-player-count="1">
+                  <canvas id="viz" width="800" height="240" data-stage-index="0"></canvas>
+                </div>
                 <div id="playLyrics" class="playLyrics" hidden aria-live="polite" aria-atomic="true">
                   <div id="playLyricsCurrent" class="playLyricsCurrent"></div>
                   <div id="playLyricsNext" class="playLyricsNext"></div>
@@ -656,6 +658,7 @@ document.getElementById("homeExit")?.addEventListener("click", () => {
 const hudKeyModeEl = document.getElementById("hudKeyMode") as HTMLDivElement;
 
 const vizCanvas = document.getElementById("viz") as HTMLCanvasElement;
+const playerStagesEl = document.getElementById("playerStages") as HTMLDivElement;
 const playLyricsEl = document.getElementById("playLyrics") as HTMLDivElement;
 const playLyricsCurrentEl = document.getElementById("playLyricsCurrent") as HTMLDivElement;
 const playLyricsNextEl = document.getElementById("playLyricsNext") as HTMLDivElement;
@@ -676,14 +679,14 @@ const addPlayerBtn = document.getElementById("addPlayer") as HTMLButtonElement;
 const capsEl = document.createElement("div");
 capsEl.id = "songCaps";
 capsEl.className = "caps";
-// Insert just above the viz canvas.
-vizCanvas.insertAdjacentElement("beforebegin", capsEl);
+// Insert just above the per-player stages container.
+playerStagesEl.insertAdjacentElement("beforebegin", capsEl);
 
 const playSurfaceEl = document.createElement("div");
 playSurfaceEl.id = "playSurface";
 playSurfaceEl.className = "playSurface";
-vizCanvas.insertAdjacentElement("beforebegin", playSurfaceEl);
-playSurfaceEl.append(vizCanvas, playLyricsEl, vizStatusEl, instrumentSelectorEl, tabContainerEl);
+playerStagesEl.insertAdjacentElement("beforebegin", playSurfaceEl);
+playSurfaceEl.append(playerStagesEl, playLyricsEl, vizStatusEl, instrumentSelectorEl, tabContainerEl);
 
 const audioLoadBtn = document.getElementById("audioLoad") as HTMLButtonElement;
 const audioPlayBtn = document.getElementById("audioPlay") as HTMLButtonElement;
@@ -1054,6 +1057,22 @@ let vizCtx2d: CanvasRenderingContext2D;
 }
 
 let viz: Visualizer | null = null;
+// Player 1 always uses the static `#viz` canvas (so single-canvas refs +
+// integration tests keep working). Players 2..N get dynamically-created
+// sibling canvases appended to `#playerStages`, each with its own
+// Visualizer instance keyed off that player's instrument. The primary
+// stage's viz lifecycle lives in the existing `viz` field above; secondary
+// stages live in this array. See per-player stage logic in
+// `startVisualizer` / `stopVisualizer` / `resizeVizCanvas` / tick loop.
+type SecondaryStage = {
+  playerId: string;
+  canvas: HTMLCanvasElement;
+  ctx2d: CanvasRenderingContext2D;
+  viz: Visualizer | null;
+  dispose: (() => void) | null;
+  pluginId: string;
+};
+let secondaryStages: SecondaryStage[] = [];
 let vizRaf: number | null = null;
 let lastFrameMs: number | null = null;
 let selectedSongPackPath: string | null = null;
@@ -1097,6 +1116,29 @@ let availablePlugins: PluginDescriptor[] = [...BUILTIN_PLUGINS];
 let loadedPluginDispose: (() => void) | null = null;
 const DEFAULT_PLUGIN_ID = "viz-beats";
 const DRUM_HIGHWAY_PLUGIN_ID = "viz-drum-highway";
+const NASHVILLE_PLUGIN_ID = "viz-nashville";
+const LYRICS_PLUGIN_ID = "viz-lyrics";
+
+// Default visualizer per instrument for secondary stages. Player 1 still
+// flows through the rail's plugin select (manual override); players 2..N
+// pick their visualizer from this table based on their instrument. Drums
+// gets the highway, vocals gets lyrics, harmonic instruments get the
+// Nashville chord lane, fallback to beats.
+function defaultPluginIdForInstrument(inst: Instrument | undefined): string {
+  switch (inst) {
+    case "drums":
+      return DRUM_HIGHWAY_PLUGIN_ID;
+    case "vocals":
+      return LYRICS_PLUGIN_ID;
+    case "bass":
+    case "lead_guitar":
+    case "rhythm_guitar":
+    case "keys":
+      return NASHVILLE_PLUGIN_ID;
+    default:
+      return DEFAULT_PLUGIN_ID;
+  }
+}
 let pluginSelectionMode: "auto" | "user" = "auto";
 
 let transport: TransportState = {
@@ -1876,6 +1918,13 @@ function rerenderPlayersAndApplyAvailability() {
   applyInstrumentAvailability(selectedSongPackDetails, selectedDrumChartSelection, selectedSongPackCharts);
   syncPreferredPluginSelection();
   syncMelodicTrackSelectionFromPlayers();
+  // If a visualizer session is already live, rebuild the player 2..N stages
+  // so the user sees the added/removed player immediately.
+  if (viz) {
+    void buildSecondaryStages().catch((e) => {
+      logConsole("debugging", `secondary stages rebuild failed: ${String(e)}`);
+    });
+  }
 }
 
 addPlayerBtn.addEventListener("click", () => {
@@ -2431,6 +2480,112 @@ function resizeVizCanvas() {
   vizCtx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   viz?.onResize(cssWidth, cssHeight, dpr);
+
+  // Secondary stages share the grid layout so they get the same CSS-driven
+  // size as Player 1's canvas. Mirror the DPR scaling + onResize call.
+  for (const stage of secondaryStages) {
+    const sw = stage.canvas.clientWidth || cssWidth;
+    const sh = stage.canvas.clientHeight || cssHeight;
+    stage.canvas.width = Math.floor(sw * dpr);
+    stage.canvas.height = Math.floor(sh * dpr);
+    stage.ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    stage.viz?.onResize(sw, sh, dpr);
+  }
+}
+
+// Tear down every secondary stage's visualizer + remove its canvas from
+// the DOM. Player 1's static `#viz` canvas is never removed.
+function disposeSecondaryStages(): void {
+  for (const stage of secondaryStages) {
+    try {
+      stage.viz?.dispose();
+    } catch {
+      /* swallow */
+    }
+    if (stage.dispose) {
+      try {
+        stage.dispose();
+      } catch {
+        /* swallow */
+      }
+    }
+    stage.canvas.remove();
+  }
+  secondaryStages = [];
+  playerStagesEl.setAttribute("data-player-count", "1");
+}
+
+// Build a Visualizer for each player past Player 1. Each gets its own
+// canvas appended to `#playerStages`, its own plugin instance, and an
+// init context where `players` is just that one player (so the plugin
+// renders a single-player lane). The transport state is shared every
+// frame from the host tick loop.
+async function buildSecondaryStages(): Promise<void> {
+  disposeSecondaryStages();
+  const extras = players.slice(1);
+  if (extras.length === 0) return;
+
+  for (const player of extras) {
+    const canvas = document.createElement("canvas");
+    canvas.className = "playerStage__canvas";
+    canvas.dataset.playerId = player.id;
+    canvas.width = 800;
+    canvas.height = 240;
+    playerStagesEl.appendChild(canvas);
+
+    const ctx2d = canvas.getContext("2d");
+    if (!ctx2d) {
+      canvas.remove();
+      logConsole("debugging", `secondary stage ${player.id}: missing 2d context, skipping`);
+      continue;
+    }
+
+    const pluginId = defaultPluginIdForInstrument(player.instrument);
+    const descriptor = availablePlugins.find((p) => p.id === pluginId)
+      ?? availablePlugins.find((p) => p.id === DEFAULT_PLUGIN_ID)
+      ?? availablePlugins[0];
+    if (!descriptor) {
+      canvas.remove();
+      continue;
+    }
+
+    let loaded;
+    try {
+      loaded = await loadPlugin(descriptor);
+    } catch (e) {
+      logConsole("debugging", `secondary stage ${player.id}: plugin load failed: ${String(e)}`);
+      canvas.remove();
+      continue;
+    }
+
+    const pviz = loaded.module.createVisualizer();
+    try {
+      await pviz.init({
+        canvas,
+        ctx2d,
+        song: buildVizSongContext(),
+        players: [{ id: player.id, name: player.name, instrument: player.instrument }],
+      });
+    } catch (e) {
+      logConsole("debugging", `secondary stage ${player.id}: init failed: ${String(e)}`);
+      try { pviz.dispose(); } catch { /* swallow */ }
+      loaded.dispose?.();
+      canvas.remove();
+      continue;
+    }
+
+    secondaryStages.push({
+      playerId: player.id,
+      canvas,
+      ctx2d,
+      viz: pviz,
+      dispose: loaded.dispose ?? null,
+      pluginId: descriptor.id,
+    });
+  }
+
+  playerStagesEl.setAttribute("data-player-count", String(1 + secondaryStages.length));
+  resizeVizCanvas();
 }
 
 function stopVisualizer(opts?: { keepStatus?: boolean; preserveTransport?: boolean }) {
@@ -2454,6 +2609,9 @@ function stopVisualizer(opts?: { keepStatus?: boolean; preserveTransport?: boole
       loadedPluginDispose = null;
     }
   }
+
+  // Tear down every Player 2..N stage too.
+  disposeSecondaryStages();
 
   if (!opts?.preserveTransport) {
     transport = { ...transport, t: 0, isPlaying: false };
@@ -2734,12 +2892,21 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     canvas: vizCanvas,
     ctx2d: vizCtx2d,
     song: buildVizSongContext(),
-    players: players.map((p) => ({
+    // Pass only Player 1 to the primary stage so its plugin renders a
+    // single-player lane. Players 2..N get their own secondary stages
+    // below — see buildSecondaryStages().
+    players: players.slice(0, 1).map((p) => ({
       id: p.id,
       name: p.name,
       instrument: p.instrument
     }))
   });
+
+  // Build a stage per additional player. Failures are non-fatal — the
+  // primary stage continues running even if a secondary plugin can't
+  // initialize.
+  await buildSecondaryStages();
+
   resizeVizCanvas();
 
   if (opts?.preserveTransport) {
@@ -2777,6 +2944,28 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
       dpr: window.devicePixelRatio || 1,
       state: transport,
     });
+
+    // Drive every secondary stage with the same transport state so they
+    // stay tempo-locked to Player 1. Each runs its own Visualizer
+    // instance against its own canvas.
+    const dpr = window.devicePixelRatio || 1;
+    for (const stage of secondaryStages) {
+      if (!stage.viz) continue;
+      try {
+        stage.viz.update(dt, transport);
+        stage.viz.render({
+          canvas: stage.canvas,
+          ctx2d: stage.ctx2d,
+          width: stage.canvas.width / dpr,
+          height: stage.canvas.height / dpr,
+          dpr,
+          state: transport,
+        });
+      } catch (e) {
+        // Individual stage failures shouldn't kill the whole RAF loop.
+        logConsole("debugging", `secondary stage ${stage.playerId} render failed: ${String(e)}`);
+      }
+    }
 
     // Render the melodic instrument tab/piano-roll below the main visualizer.
     if (tabRenderer && transport.t !== undefined) {
