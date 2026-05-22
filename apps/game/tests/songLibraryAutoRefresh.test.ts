@@ -86,16 +86,17 @@ describe("song-library auto-refresh on show", () => {
   });
 
   it("refresh() is reachable from boot-time showSongLibraryStep call", () => {
-    // The boot-time call at the bottom of the file:
-    //   showSongLibraryStep();
-    //   toggleFocusBtn.disabled = true;
-    // ensures the panel populates on app launch. If this line is removed,
-    // first paint shows the initial "(not loaded)" text until the user
-    // navigates somewhere and back.
+    // The boot-time call ensures the panel populates on app launch. It MUST
+    // be wrapped in a `queueMicrotask` (or equivalent deferred scheduler)
+    // because `showSongLibraryStep` transitively reads `let players`, which
+    // is declared further down the file -- calling it synchronously at
+    // module top-level triggers a TDZ ReferenceError that silently halts
+    // the rest of module init (and leaves the Refresh button + filesystem
+    // watcher unwired). See the matching dist-bundle runtime test.
     const src = loadMain();
     expect(src).toMatch(
-      /\nshowSongLibraryStep\s*\(\s*\)\s*;\s*\n\s*toggleFocusBtn\.disabled\s*=\s*true\s*;/,
-      "boot-time showSongLibraryStep() call must remain after the function definition"
+      /queueMicrotask\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?showSongLibraryStep\s*\(\s*\)\s*;[\s\S]*?\}\s*\)\s*;/,
+      "boot-time showSongLibraryStep() call must be wrapped in queueMicrotask to avoid TDZ"
     );
   });
 

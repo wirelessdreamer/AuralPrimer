@@ -1286,7 +1286,20 @@ toggleFocusBtn.addEventListener("click", () => {
   showSongLibraryStep();
 });
 
-showSongLibraryStep();
+// Defer the boot-time library-step call to a microtask so module evaluation
+// finishes initializing every `let`/`const` declared further down the file
+// (notably `let players`, which `syncPlaySurfaceMode` reaches via
+// `shouldUseWideSoloKeysLayout` -> `players.length`). Calling
+// showSongLibraryStep() synchronously here triggered a silent TDZ
+// `ReferenceError: Cannot access 'players' before initialization` that
+// halted the rest of module init -- so the Refresh button handler was
+// never wired up, the `listen("songs_folder_changed", ...)` block at the
+// bottom never registered, and the Play Songs panel stayed stuck at the
+// initial "(not loaded)" status forever. Deferring with queueMicrotask
+// lets the rest of this file run to completion before the call fires.
+queueMicrotask(() => {
+  showSongLibraryStep();
+});
 toggleFocusBtn.disabled = true;
 
 // Player/track selection scaffold (multi-lane-ready)
