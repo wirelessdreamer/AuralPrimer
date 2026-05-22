@@ -226,7 +226,7 @@ main {
 
 .menuGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-top: 14px;
 }
@@ -251,6 +251,12 @@ main {
 
 .menuCard--danger:hover {
   border-color: rgba(255, 136, 156, 0.7);
+}
+
+.menuCard--info {
+  cursor: default;
+  border-color: rgba(120, 180, 255, 0.32);
+  background: linear-gradient(180deg, rgba(20, 32, 54, 0.7), rgba(14, 22, 38, 0.78));
 }
 
 .menuTitle {
@@ -964,71 +970,6 @@ li {
   background: rgba(255, 40, 94, 0.12);
   border: 1px solid rgba(255, 92, 122, 0.32);
   color: rgba(255, 220, 226, 0.95);
-}
-
-.importAuditWrap {
-  overflow-x: auto;
-  margin-top: 8px;
-}
-
-.importAuditTable {
-  width: 100%;
-  min-width: 540px;
-  border-collapse: collapse;
-}
-
-.importAuditTable th,
-.importAuditTable td {
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  text-align: left;
-  vertical-align: top;
-}
-
-.importAuditTable thead th {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.65);
-}
-
-.importAuditTable tbody th {
-  white-space: nowrap;
-}
-
-.importAuditStatus {
-  display: inline-block;
-  min-width: 58px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  text-align: center;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.importAuditStatus--found {
-  color: #7ef0ad;
-  background: rgba(25, 206, 118, 0.16);
-  border: 1px solid rgba(25, 206, 118, 0.35);
-}
-
-.importAuditStatus--missing {
-  color: #ffb0b0;
-  background: rgba(255, 93, 93, 0.14);
-  border: 1px solid rgba(255, 93, 93, 0.35);
-}
-
-.importAuditStatus--na {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.importAuditNotes {
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 0.88rem;
 }
 
 /* ─── Instrument selector ────────────────────────────────────── */

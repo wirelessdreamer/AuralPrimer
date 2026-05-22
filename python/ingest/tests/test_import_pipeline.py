@@ -1193,3 +1193,90 @@ def test_import_song_id_changes_when_drum_engine_changes(tmp_path: Path) -> None
     manifest_b = json.loads((out_b / "manifest.json").read_text("utf-8"))
 
     assert manifest_a["song_id"] != manifest_b["song_id"]
+
+
+def _write_ieee_float_wav(path: Path, *, sr: int, duration_sec: float, channels: int = 2) -> None:
+    """Write a 32-bit IEEE float WAV (format code 3) — the format that broke
+    ``wave.open`` with ``wave.Error: unknown format: 3`` on Ableton master bounces."""
+
+    n_frames = int(sr * duration_sec)
+    bits_per_sample = 32
+    bytes_per_sample = bits_per_sample // 8
+    block_align = channels * bytes_per_sample
+    byte_rate = sr * block_align
+    data_size = n_frames * block_align
+
+    # fmt chunk size 16 (standard PCM-sized chunk reused with format code 3 — what
+    # Python's wave module sees and rejects.)
+    fmt_chunk = struct.pack(
+        "<HHIIHH",
+        3,  # IEEE_FLOAT
+        channels,
+        sr,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+    )
+    fmt_chunk_size = len(fmt_chunk)
+    riff_size = 4 + (8 + fmt_chunk_size) + (8 + data_size)
+
+    with path.open("wb") as f:
+        f.write(b"RIFF")
+        f.write(struct.pack("<I", riff_size))
+        f.write(b"WAVE")
+        f.write(b"fmt ")
+        f.write(struct.pack("<I", fmt_chunk_size))
+        f.write(fmt_chunk)
+        f.write(b"data")
+        f.write(struct.pack("<I", data_size))
+        for i in range(n_frames):
+            t = float(i) / float(sr)
+            sample = 0.4 * math.sin(2.0 * math.pi * 440.0 * t)
+            for _ in range(channels):
+                f.write(struct.pack("<f", float(sample)))
+
+
+def test_decode_to_wav_falls_back_to_ffmpeg_for_ieee_float_wav(tmp_path: Path) -> None:
+    """Regression: DAW master bounces are routinely WAV format code 3 (IEEE 32-bit
+    float). Python's stdlib wave module rejects them with ``unknown format: 3`` and
+    the import previously aborted at the decode_audio stage. _decode_to_wav must
+    detect that case and re-encode via ffmpeg so the pipeline keeps running."""
+
+    from aural_ingest import cli
+
+    if cli._resolve_ffmpeg_path() is None:
+        pytest.skip("ffmpeg not available on this host; non-PCM WAV fallback requires ffmpeg")
+
+    src = tmp_path / "float32.wav"
+    _write_ieee_float_wav(src, sr=44_100, duration_sec=0.5, channels=2)
+    dst = tmp_path / "out.wav"
+
+    duration, sr = cli._decode_to_wav(src, dst, target_sr=48_000)
+
+    assert dst.is_file()
+    assert sr == 48_000
+    assert duration == pytest.approx(0.5, abs=0.05)
+
+    # The output must be a real PCM16 wav that the stdlib wave module accepts.
+    with wave.open(str(dst), "rb") as w:
+        assert w.getsampwidth() == 2
+        assert w.getnchannels() == 1
+        assert w.getframerate() == 48_000
+
+
+def test_decode_to_wav_rejects_ieee_float_wav_without_ffmpeg(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without ffmpeg available, a non-PCM WAV must surface a clear error instead
+    of leaking ``wave.Error: unknown format: 3`` to the caller."""
+
+    from aural_ingest import cli
+
+    src = tmp_path / "float32.wav"
+    _write_ieee_float_wav(src, sr=44_100, duration_sec=0.25, channels=1)
+    dst = tmp_path / "out.wav"
+
+    monkeypatch.setattr(cli, "_resolve_ffmpeg_path", lambda: None)
+
+    with pytest.raises(RuntimeError, match="ffmpeg"):
+        cli._decode_to_wav(src, dst, target_sr=48_000)

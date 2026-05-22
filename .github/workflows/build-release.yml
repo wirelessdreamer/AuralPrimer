@@ -41,25 +41,88 @@ jobs:
             libssl-dev \
             build-essential
 
-      # Build Python sidecar (placeholder)
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Build python sidecar (placeholder)
+      # Python sidecar build.
+      #
+      # The full PyInstaller spec at python/ingest/aural_ingest.spec collects
+      # heavy ML deps (torch / torchaudio / transformers / basic_pitch /
+      # demucs) so this step is expensive and best-effort in CI. We mark it
+      # `continue-on-error` so a missing/broken dep does not block the Tauri
+      # bundles. The portable build (`npm run portable:build`) is still the
+      # canonical end-to-end path that requires a fresh sidecar.
+      - name: Install Python deps (sidecar build)
         shell: bash
+        continue-on-error: true
         run: |
-          echo "TODO: build python/ingest into OS-specific sidecar executable"
-          echo "- Use PyInstaller or Nuitka"
-          echo "- Place output into apps/desktop/src-tauri/bin/ (or configured resources dir)"
+          python -m pip install --upgrade pip
+          if [ -f python/ingest/requirements-dev.txt ]; then
+            pip install -r python/ingest/requirements-dev.txt
+          fi
+          pip install pyinstaller
 
-      # Build Tauri app
-      - name: Build Tauri app
-        run: npm -w @auralprimer/desktop run tauri:build
+      - name: Build aural_ingest sidecar (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        continue-on-error: true
+        run: |
+          cd python/ingest
+          python -m PyInstaller --noconfirm --clean aural_ingest.spec
+          mkdir -p ../../dist/sidecar
+          if [ -f dist/aural_ingest ]; then
+            cp dist/aural_ingest ../../dist/sidecar/aural_ingest
+            chmod +x ../../dist/sidecar/aural_ingest
+          fi
+          # Stage into both Tauri app bins so externalBin can find it.
+          for app in apps/desktop/src-tauri apps/game/src-tauri; do
+            mkdir -p ../../$app/binaries
+            if [ -f ../../dist/sidecar/aural_ingest ]; then
+              cp ../../dist/sidecar/aural_ingest ../../$app/binaries/aural_ingest-x86_64-unknown-linux-gnu
+            fi
+          done
 
-      - name: Upload artifacts (placeholder)
+      - name: Build aural_ingest sidecar (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # Use the existing PowerShell launcher; it handles spec resolution,
+          # output staging, and Tauri-binaries sync for both apps.
+          npm run portable:sidecar -- -SyncTauriBinaries -TauriAppRoots apps/desktop/src-tauri,apps/game/src-tauri
+
+      # Tauri builds — produce both products. We deliberately do not collapse
+      # these into a single bundle (`spec.md §1.1`).
+      - name: Build AuralStudio (apps/desktop)
+        run: npm run studio:build
+
+      - name: Build AuralPrimer (apps/game)
+        run: npm run game:build
+
+      - name: Upload AuralStudio artifacts
         uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: auralstudio-${{ matrix.os }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/**
+          if-no-files-found: ignore
+
+      - name: Upload AuralPrimer artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: auralprimer-${{ matrix.os }}
           path: |
-            apps/desktop/src-tauri/target/release/bundle/**
+            apps/game/src-tauri/target/release/bundle/**
+          if-no-files-found: ignore
+
+      - name: Upload aural_ingest sidecar
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aural-ingest-sidecar-${{ matrix.os }}
+          path: |
+            dist/sidecar/**
+          if-no-files-found: ignore

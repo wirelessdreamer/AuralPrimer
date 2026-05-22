@@ -168,3 +168,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -Ffmpe
 - Bundled visualizers live under Tauri resources at runtime.
 - User visualizers are under app data directory.
 - If you cannot install system packages (no sudo), you can still run `npm test` and frontend builds, but not Tauri compile/run.
+
+## Working in this repo (quick orientation)
+
+If you are picking the repo back up:
+
+1. Read `README.md` for the docs index, then skim `wip.md`'s top "Status snapshot" entry for what is in flight today.
+2. `spec.md` is authoritative for product behavior; do not silently drift from it. Spec changes are explicit edits and get called out in the PR/commit.
+3. Development is **TDD-first** (see `spec.md §2.0` and `docs/testing-strategy.md`). Add or update tests before code; if a behavior intentionally changes, refresh the relevant golden fixture in the same change.
+4. After completing any implementation task, **update `wip.md`** to keep checkboxes and the snapshot honest. This is restated at the bottom of `wip.md`.
+5. Benchmarks live under `benchmarks/` and run via `npm run bench:frontend|python|rust|hardware`. Threshold policy is defined in `benchmarks/thresholds.yml` and is currently warn-only — see `docs/research-decision-gates.md`.
+6. The portable build is the canonical end-to-end smoke (`npm run portable:build`); it enforces a sidecar-freshness guard and stages the `demucs_6` modelpack with manifest validation.
+7. App boundaries: `apps/desktop` is AuralStudio (authoring/import), `apps/game` is AuralPrimer (gameplay/runtime). `spec.md §1.1` defines the non-negotiable split — flag any change that crosses it.
