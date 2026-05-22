@@ -1,3 +1,4 @@
+import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 import type { Visualizer, VisualizerModule, VizInitContext, FrameContext, TransportState } from "@auralprimer/viz-sdk";
 
 // NOTE: The host does not yet provide chord/key data to plugins.
@@ -63,8 +64,11 @@ class NashvilleVisualizer implements Visualizer {
     const secPerBeat = 60 / Math.max(1e-6, bpm);
     const secPerBar = secPerBeat * Math.max(1, beatsPerBar);
 
-    // View: show ~8 bars ahead (clamped by canvas width).
-    const pxPerSecond = 140;
+    // View: show ~8 bars ahead (clamped by canvas width). The host
+    // multiplier widens or compresses the chord lane uniformly with the
+    // other instrument visualizers; tempo-lock preserved.
+    const scrollMul = clampScrollSpeedMultiplier(frame.state.scrollSpeedMultiplier);
+    const pxPerSecond = 140 * scrollMul;
     const windowSec = (frame.width - originX) / pxPerSecond;
     const t = frame.state.t;
     const t0 = t;

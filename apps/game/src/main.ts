@@ -256,6 +256,22 @@ root.innerHTML = `
               <button id="addPlayer">Add</button>
             </div>
 
+            <div class="row" id="scrollSpeedRow">
+              <label class="meta" for="scrollSpeedSlider">Note spacing</label>
+              <input
+                id="scrollSpeedSlider"
+                type="range"
+                min="0.5"
+                max="3"
+                step="0.05"
+                value="1"
+                aria-label="Scroll speed multiplier"
+                style="flex:1"
+              />
+              <span id="scrollSpeedValue" class="meta" style="min-width:3.5em;text-align:right">1.00x</span>
+              <button id="scrollSpeedReset" title="Reset to 1.00x">Reset</button>
+            </div>
+
             <div class="row">
               <button id="vizStart">Start visualizer</button>
               <button id="vizStop" disabled>Stop</button>
@@ -682,6 +698,9 @@ const audioOutputDeviceRefreshBtn = document.getElementById("audioOutputDeviceRe
 const audioOutputDeviceApplyBtn = document.getElementById("audioOutputDeviceApply") as HTMLButtonElement;
 const playbackRateInput = document.getElementById("playbackRate") as HTMLInputElement;
 const playbackRateApplyBtn = document.getElementById("playbackRateApply") as HTMLButtonElement;
+const scrollSpeedSlider = document.getElementById("scrollSpeedSlider") as HTMLInputElement;
+const scrollSpeedValueEl = document.getElementById("scrollSpeedValue") as HTMLSpanElement;
+const scrollSpeedResetBtn = document.getElementById("scrollSpeedReset") as HTMLButtonElement;
 const metronomeEnabledInput = document.getElementById("metronomeEnabled") as HTMLInputElement;
 const metronomeVolumeInput = document.getElementById("metronomeVolume") as HTMLInputElement;
 
@@ -2820,6 +2839,59 @@ playbackRateApplyBtn.addEventListener("click", () => {
   transportController.setPlaybackRate(r);
   transport = transportController.getState();
   setAudioStatus(`playbackRate set: ${r.toFixed(2)}x`);
+});
+
+// Scroll-speed (visual note-spacing) controls. Applies uniformly across all
+// instrument visualizers. Tempo-lock is preserved -- notes still hit at the
+// correct beat times; the multiplier only changes how many pixels each
+// second of song time occupies on the canvas. Persisted in localStorage
+// (per-webview-data-dir) so the setting survives app restarts without
+// needing a Rust round-trip.
+const SCROLL_SPEED_STORAGE_KEY = "auralprimer.scrollSpeedMultiplier";
+
+function readPersistedScrollSpeed(): number {
+  try {
+    const raw = window.localStorage.getItem(SCROLL_SPEED_STORAGE_KEY);
+    if (raw === null) return 1;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return 1;
+    return Math.min(3, Math.max(0.5, n));
+  } catch {
+    // localStorage may be unavailable in some embedded webviews; default safely.
+    return 1;
+  }
+}
+
+function persistScrollSpeed(value: number): void {
+  try {
+    window.localStorage.setItem(SCROLL_SPEED_STORAGE_KEY, String(value));
+  } catch {
+    // Best-effort -- session-only is acceptable.
+  }
+}
+
+function applyScrollSpeed(value: number, opts: { persist: boolean } = { persist: true }): void {
+  const clamped = Math.min(3, Math.max(0.5, Number.isFinite(value) && value > 0 ? value : 1));
+  transportController.setScrollSpeedMultiplier(clamped);
+  transport = transportController.getState();
+  scrollSpeedSlider.value = String(clamped);
+  scrollSpeedValueEl.textContent = `${clamped.toFixed(2)}x`;
+  if (opts.persist) {
+    persistScrollSpeed(clamped);
+  }
+}
+
+// Restore persisted value on boot.
+applyScrollSpeed(readPersistedScrollSpeed(), { persist: false });
+
+// Live-update on slider input (every drag tick) so the visualizer responds
+// immediately as the user drags. "change" would only fire on release.
+scrollSpeedSlider.addEventListener("input", () => {
+  applyScrollSpeed(Number(scrollSpeedSlider.value));
+});
+
+scrollSpeedResetBtn.addEventListener("click", () => {
+  applyScrollSpeed(1);
 });
 
 // Metronome controls

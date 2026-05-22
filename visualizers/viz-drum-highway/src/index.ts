@@ -1,3 +1,4 @@
+import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 import type { FrameContext, TransportState, Visualizer, VisualizerModule, VizInitContext } from "@auralprimer/viz-sdk";
 
 type SongNote = {
@@ -180,7 +181,12 @@ class DrumHighwayVisualizer implements Visualizer {
     const kickLaneY = hitY - kickLaneH * 0.5;
     const laneAreaW = w - padX * 2;
     const laneW = (laneAreaW - laneGap * (laneCount - 1)) / laneCount;
-    const scrollPxPerSec = clamp(Math.round(h * 0.36), 190, 320);
+    // Host-provided uniform scroll-speed multiplier (default 1.0). Higher
+    // values spread notes further apart on screen; lower values compress
+    // them. Tempo-lock is preserved because the multiplier only changes
+    // pixel-per-second density, not note timing. See packages/viz-sdk.
+    const scrollMul = clampScrollSpeedMultiplier(state.scrollSpeedMultiplier);
+    const scrollPxPerSec = clamp(Math.round(h * 0.36), 190, 320) * scrollMul;
     const lookAheadSec = Math.max(1.6, (hitY - padTravelTopY) / scrollPxPerSec);
     const lookBehindSec = 0.22;
 

@@ -37,7 +37,8 @@ export class TransportController {
       isPlaying: false,
       playbackRate: 1,
       bpm: opts.bpm ?? 120,
-      timeSignature: opts.timeSignature ?? [4, 4]
+      timeSignature: opts.timeSignature ?? [4, 4],
+      scrollSpeedMultiplier: 1
     };
   }
 
@@ -84,6 +85,17 @@ export class TransportController {
     const r = Number.isFinite(rate) && rate > 0 ? rate : 1;
     this.timebase.setPlaybackRate(r);
     this.state = { ...this.state, playbackRate: r };
+  }
+
+  /**
+   * Set the visual scroll-speed multiplier applied across all instrument
+   * visualizers. Does not affect audio playback or note timing -- only how
+   * far each second of song time spreads across the canvas. See
+   * `TransportState.scrollSpeedMultiplier` in @auralprimer/viz-sdk.
+   */
+  setScrollSpeedMultiplier(mul: number): void {
+    const m = Number.isFinite(mul) && mul > 0 ? mul : 1;
+    this.state = { ...this.state, scrollSpeedMultiplier: m };
   }
 
   /** Enable/disable following external clock (e.g., MIDI clock). */

@@ -1,3 +1,4 @@
+import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 import type { Visualizer, VisualizerModule, VizInitContext, FrameContext, TransportState } from "@auralprimer/viz-sdk";
 
 class BeatsVisualizer implements Visualizer {
@@ -31,7 +32,11 @@ class BeatsVisualizer implements Visualizer {
 
     // Beat grid (placeholder: 1 beat per second)
     const secondsPerBeat = 1;
-    const pxPerSecond = 120;
+    // Host-provided uniform scroll-speed multiplier (default 1.0). Higher
+    // values spread notes further apart on screen; lower values compress
+    // them. Tempo-lock is preserved -- only pixel density changes.
+    const scrollMul = clampScrollSpeedMultiplier(frame.state.scrollSpeedMultiplier);
+    const pxPerSecond = 120 * scrollMul;
     const originX = 20;
     const midY = Math.floor(frame.height * 0.5);
 
