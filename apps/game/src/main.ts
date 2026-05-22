@@ -225,13 +225,8 @@ root.innerHTML = `
             </div>
           </section>
 
-          <section class="panel">
-            <div class="hud" id="globalHud">
-              <div class="hudLabel">Key / Mode</div>
-              <div class="hudValue" id="hudKeyMode">C major</div>
-            </div>
-
-            <div class="panelHeader">
+          <section class="panel bandSetupPanel">
+            <div class="panelHeader bandSetupHeader">
               <h2>Band Setup</h2>
               <div class="row" style="margin:0">
                 <span class="meta">proprietary_rhythm_archive style player setup</span>
@@ -239,107 +234,119 @@ root.innerHTML = `
               </div>
             </div>
 
-            <div class="songSetupMeta">
-              <div id="selectedSongLabel" class="setupSongLabel">(select a song from the library)</div>
-              <div id="selectedSongPath" class="meta setupSongPath"></div>
-            </div>
+            <div class="bandSetupBody">
+              <aside class="bandSetupRail" aria-label="Band setup controls">
+                <div class="hud" id="globalHud">
+                  <div class="hudLabel">Key / Mode</div>
+                  <div class="hudValue" id="hudKeyMode">C major</div>
+                </div>
 
-            <div class="row">
-              <label class="meta">Visualizer</label>
-              <select id="pluginSelect"></select>
-              <button id="pluginRefresh">Refresh</button>
-            </div>
+                <div class="songSetupMeta">
+                  <div id="selectedSongLabel" class="setupSongLabel">(select a song from the library)</div>
+                  <div id="selectedSongPath" class="meta setupSongPath"></div>
+                </div>
 
-            <div class="row">
-              <label class="meta">Players</label>
-              <div class="grow" id="players"></div>
-              <button id="addPlayer">Add</button>
-            </div>
+                <div class="row">
+                  <label class="meta">Visualizer</label>
+                  <select id="pluginSelect"></select>
+                  <button id="pluginRefresh">Refresh</button>
+                </div>
 
-            <div class="row" id="scrollSpeedRow">
-              <label class="meta" for="scrollSpeedSlider">Note spacing</label>
-              <input
-                id="scrollSpeedSlider"
-                type="range"
-                min="0.5"
-                max="3"
-                step="0.05"
-                value="1"
-                aria-label="Scroll speed multiplier"
-                style="flex:1"
-              />
-              <span id="scrollSpeedValue" class="meta" style="min-width:3.5em;text-align:right">1.00x</span>
-              <button id="scrollSpeedReset" title="Reset to 1.00x">Reset</button>
-            </div>
+                <div class="row">
+                  <label class="meta">Players</label>
+                  <div class="grow" id="players"></div>
+                  <button id="addPlayer">Add</button>
+                </div>
 
-            <div class="row">
-              <button id="vizStart">Start visualizer</button>
-              <button id="vizStop" disabled>Stop</button>
-            </div>
+                <div class="row" id="scrollSpeedRow">
+                  <label class="meta" for="scrollSpeedSlider">Note spacing</label>
+                  <input
+                    id="scrollSpeedSlider"
+                    type="range"
+                    min="0.5"
+                    max="3"
+                    step="0.05"
+                    value="1"
+                    aria-label="Scroll speed multiplier"
+                    style="flex:1"
+                  />
+                  <span id="scrollSpeedValue" class="meta" style="min-width:3.5em;text-align:right">1.00x</span>
+                  <button id="scrollSpeedReset" title="Reset to 1.00x">Reset</button>
+                </div>
 
-            <canvas id="viz" width="800" height="240"></canvas>
-            <div id="playLyrics" class="playLyrics" hidden aria-live="polite" aria-atomic="true">
-              <div id="playLyricsCurrent" class="playLyricsCurrent"></div>
-              <div id="playLyricsNext" class="playLyricsNext"></div>
-            </div>
-            <pre id="vizStatus">(not running)</pre>
+                <div class="row">
+                  <button id="vizStart">Start visualizer</button>
+                  <button id="vizStop" disabled>Stop</button>
+                </div>
 
-            <div id="instrumentSelector" class="instrumentSelector" style="display:none">
-              <span class="meta">Instrument:</span>
-            </div>
-            <div id="tabContainer" class="tabContainer" style="display:none"></div>
+                <h3>Transport</h3>
+                <div class="row">
+                  <button id="audioLoad" disabled>Reload audio</button>
+                  <button id="audioPlay" disabled>Play</button>
+                  <button id="audioPause" disabled>Pause</button>
+                  <button id="audioStop" disabled>Stop</button>
+                </div>
+                <div class="row">
+                  <label class="meta">Backend</label>
+                  <select id="audioBackend" disabled>
+                    <option value="native">Native (Rust)</option>
+                  </select>
+                </div>
+                <div class="row">
+                  <label class="meta">Output host</label>
+                  <select id="audioOutputHost"></select>
+                  <button id="audioOutputHostRefresh">Refresh</button>
+                  <button id="audioOutputHostApply">Apply</button>
+                </div>
+                <div class="row">
+                  <label class="meta">Output device</label>
+                  <select id="audioOutputDevice"></select>
+                  <button id="audioOutputDeviceRefresh">Refresh</button>
+                  <button id="audioOutputDeviceApply">Apply</button>
+                </div>
+                <div class="row">
+                  <label class="meta">Slowdown</label>
+                  <input id="playbackRate" type="number" min="0.25" max="2" step="0.05" value="1" />
+                  <button id="playbackRateApply">Set rate</button>
+                </div>
+                <div class="row">
+                  <label class="meta">Metronome</label>
+                  <label><input id="metronomeEnabled" type="checkbox" /> enabled</label>
+                  <label class="meta">vol</label>
+                  <input id="metronomeVolume" type="range" min="0" max="1" step="0.05" value="0.25" />
+                </div>
+                <div class="row">
+                  <label class="meta">Seek (sec)</label>
+                  <input id="audioSeek" type="number" min="0" step="0.25" value="0" />
+                  <button id="audioSeekGo" disabled>Go</button>
+                </div>
+                <div class="row">
+                  <label class="meta">Loop</label>
+                  <input id="loopT0" type="number" min="0" step="0.25" value="0" />
+                  <input id="loopT1" type="number" min="0" step="0.25" value="4" />
+                  <button id="loopSet" disabled>Set</button>
+                  <button id="loopClear" disabled>Clear</button>
+                </div>
+                <pre id="audioStatus">(no audio)</pre>
+              </aside>
 
-            <h3>Transport</h3>
-            <div class="row">
-              <button id="audioLoad" disabled>Reload audio</button>
-              <button id="audioPlay" disabled>Play</button>
-              <button id="audioPause" disabled>Pause</button>
-              <button id="audioStop" disabled>Stop</button>
-            </div>
-            <div class="row">
-              <label class="meta">Backend</label>
-              <select id="audioBackend" disabled>
-                <option value="native">Native (Rust)</option>
-              </select>
-            </div>
-            <div class="row">
-              <label class="meta">Output host</label>
-              <select id="audioOutputHost"></select>
-              <button id="audioOutputHostRefresh">Refresh</button>
-              <button id="audioOutputHostApply">Apply</button>
-            </div>
-            <div class="row">
-              <label class="meta">Output device</label>
-              <select id="audioOutputDevice"></select>
-              <button id="audioOutputDeviceRefresh">Refresh</button>
-              <button id="audioOutputDeviceApply">Apply</button>
-            </div>
-            <div class="row">
-              <label class="meta">Slowdown</label>
-              <input id="playbackRate" type="number" min="0.25" max="2" step="0.05" value="1" />
-              <button id="playbackRateApply">Set rate</button>
-            </div>
-            <div class="row">
-              <label class="meta">Metronome</label>
-              <label><input id="metronomeEnabled" type="checkbox" /> enabled</label>
-              <label class="meta">vol</label>
-              <input id="metronomeVolume" type="range" min="0" max="1" step="0.05" value="0.25" />
-            </div>
-            <div class="row">
-              <label class="meta">Seek (sec)</label>
-              <input id="audioSeek" type="number" min="0" step="0.25" value="0" />
-              <button id="audioSeekGo" disabled>Go</button>
-            </div>
-            <div class="row">
-              <label class="meta">Loop</label>
-              <input id="loopT0" type="number" min="0" step="0.25" value="0" />
-              <input id="loopT1" type="number" min="0" step="0.25" value="4" />
-              <button id="loopSet" disabled>Set</button>
-              <button id="loopClear" disabled>Clear</button>
-            </div>
-            <pre id="audioStatus">(no audio)</pre>
-            <div class="startRow">
-              <button id="playStart" class="playStartBtn" disabled>Start</button>
+              <div class="bandSetupStage">
+                <canvas id="viz" width="800" height="240"></canvas>
+                <div id="playLyrics" class="playLyrics" hidden aria-live="polite" aria-atomic="true">
+                  <div id="playLyricsCurrent" class="playLyricsCurrent"></div>
+                  <div id="playLyricsNext" class="playLyricsNext"></div>
+                </div>
+                <pre id="vizStatus">(not running)</pre>
+
+                <div id="instrumentSelector" class="instrumentSelector" style="display:none">
+                  <span class="meta">Instrument:</span>
+                </div>
+                <div id="tabContainer" class="tabContainer" style="display:none"></div>
+
+                <div class="startRow">
+                  <button id="playStart" class="playStartBtn" disabled>Start</button>
+                </div>
+              </div>
             </div>
           </section>
         </div>
