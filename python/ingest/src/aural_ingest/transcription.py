@@ -51,6 +51,8 @@ KNOWN_MELODIC_METHODS: tuple[str, ...] = (
     "piano_transkun_clean",
     "piano_pti",
     "piano_pti_clean",
+    "piano_pti_consensus",
+    "piano_pti_consensus_clean",
     "piano_hft",
     "piano_hft_clean",
     "piano_d3rm",
@@ -92,6 +94,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
             ],
             "keys": [
                 "piano_auto",
+                "piano_pti_consensus_clean",
                 "piano_pti_clean",
                 "piano_polyphonic_clean",
                 "melodic_octave_fix",
@@ -123,6 +126,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
             "bass": ["basic_pitch", "melodic_yin_octave_hps_fix", "melodic_octave_fix"],
             "keys": [
                 "piano_d3rm_clean",
+                "piano_pti_consensus_clean",
                 "piano_pti_clean",
                 "piano_hft_clean",
                 "piano_transkun_clean",
@@ -152,6 +156,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "piano_auto",
                 "piano_polyphonic_clean",
                 "piano_transkun_clean",
+                "piano_pti_consensus_clean",
                 "piano_pti_clean",
                 "piano_hft_clean",
                 "piano_d3rm_clean",
@@ -963,6 +968,11 @@ def build_default_melodic_algorithm_registry(
         # ordering, which let the always-firing heuristic shadow the learned
         # models.
         for producer in (
+            # Consensus filter first: same model as piano_pti_clean but
+            # gated by a second pass on the full mix, which kills the
+            # stem-bleed hallucinations that pti+cleanup alone can't
+            # always catch on Demucs-separated keys stems.
+            _piano_pti_consensus_clean,
             _piano_pti_clean,
             _piano_hft_clean,
             _piano_transkun_clean,
@@ -1004,6 +1014,18 @@ def build_default_melodic_algorithm_registry(
             notes = piano_pti.transcribe(in_path, instrument=_inst)
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
+    def _piano_pti_consensus(stem_path: Path) -> list[MelodicNote]:
+        # Two PTI passes (stem + full mix) intersected by onset+pitch.
+        # Mix discovery walks up from <pack>/audio/stems/keys.wav to
+        # <pack>/audio/mix.{wav,mp3,ogg}; if no mix is present the wrapper
+        # silently falls back to the stem-only result.
+        return piano_pti.transcribe_consensus(stem_path, instrument=_inst)
+
+    def _piano_pti_consensus_clean(stem_path: Path) -> list[MelodicNote]:
+        with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
+            notes = piano_pti.transcribe_consensus(in_path, instrument=_inst)
+        return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+
     def _piano_hft(stem_path: Path) -> list[MelodicNote]:
         return piano_hft.transcribe(stem_path, instrument=_inst)
 
@@ -1028,6 +1050,8 @@ def build_default_melodic_algorithm_registry(
         "piano_transkun_clean": _piano_transkun_clean,
         "piano_pti": _piano_pti,
         "piano_pti_clean": _piano_pti_clean,
+        "piano_pti_consensus": _piano_pti_consensus,
+        "piano_pti_consensus_clean": _piano_pti_consensus_clean,
         "piano_hft": _piano_hft,
         "piano_hft_clean": _piano_hft_clean,
         "piano_d3rm": _piano_d3rm,
