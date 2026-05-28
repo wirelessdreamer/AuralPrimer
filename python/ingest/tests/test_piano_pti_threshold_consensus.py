@@ -28,6 +28,32 @@ from aural_ingest.transcription import MelodicNote  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
+# _device (GPU-by-default standard)
+# ---------------------------------------------------------------------------
+
+
+def test_device_honors_explicit_override(monkeypatch):
+    monkeypatch.setenv("AURAL_PIANO_DEVICE", "cpu")
+    assert piano_pti._device() == "cpu"
+    monkeypatch.setenv("AURAL_PIANO_DEVICE", "cuda:1")
+    assert piano_pti._device() == "cuda:1"
+
+
+def test_device_defaults_to_cuda_when_available(monkeypatch):
+    monkeypatch.delenv("AURAL_PIANO_DEVICE", raising=False)
+    import torch
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert piano_pti._device() == "cuda"
+
+
+def test_device_falls_back_to_cpu_when_no_gpu(monkeypatch):
+    monkeypatch.delenv("AURAL_PIANO_DEVICE", raising=False)
+    import torch
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert piano_pti._device() == "cpu"
+
+
+# ---------------------------------------------------------------------------
 # _parse_threshold
 # ---------------------------------------------------------------------------
 

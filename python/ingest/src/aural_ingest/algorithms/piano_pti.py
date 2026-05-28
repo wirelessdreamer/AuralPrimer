@@ -44,7 +44,23 @@ def _checkpoint_path() -> str | None:
 
 
 def _device() -> str:
-    return os.environ.get("AURAL_PIANO_DEVICE", "cpu").strip() or "cpu"
+    """Pick the inference device for PTI.
+
+    Honors an explicit ``AURAL_PIANO_DEVICE`` override; otherwise defaults to
+    CUDA when a GPU is available (the project standard -- matches the demucs
+    separation path), falling back to CPU. PTI on the RTX 5090 is ~5-10x
+    faster than CPU, so defaulting to cuda avoids the multi-hour CPU runs.
+    """
+    override = os.environ.get("AURAL_PIANO_DEVICE", "").strip()
+    if override:
+        return override
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
 
 
 @contextlib.contextmanager
