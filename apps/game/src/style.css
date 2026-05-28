@@ -633,8 +633,15 @@ label.meta {
   flex: 0 0 auto;
 }
 
-/* Caps pills, if injected at runtime via insertAdjacentElement above #viz,
-   land inside .bandSetupStage. Keep them compact above the canvas. */
+/* Song capabilities strip lives in the rail (injected after .songSetupMeta).
+   Don't let it shrink in the column flex, and match the rail's spacing. */
+.bandSetupRail > .caps {
+  flex: 0 0 auto;
+  margin: 8px 0 4px;
+}
+
+/* Fallback path only: if the rail markup is missing the caps land in the
+   stage instead -- keep them compact above the canvas. */
 .bandSetupStage > .caps,
 .bandSetupStage .playSurface > .caps {
   flex: 0 0 auto;

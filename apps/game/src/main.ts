@@ -679,8 +679,16 @@ const addPlayerBtn = document.getElementById("addPlayer") as HTMLButtonElement;
 const capsEl = document.createElement("div");
 capsEl.id = "songCaps";
 capsEl.className = "caps";
-// Insert just above the per-player stages container.
-playerStagesEl.insertAdjacentElement("beforebegin", capsEl);
+// Live in the left rail (just below the song-info block) rather than the
+// stage. Above the canvas it steals vertical space from the gameplay
+// highway; in the rail it fills the otherwise-empty lower area. Fall back
+// to the stage if the rail markup ever changes.
+const railSongMetaEl = document.querySelector(".bandSetupRail .songSetupMeta");
+if (railSongMetaEl) {
+  railSongMetaEl.insertAdjacentElement("afterend", capsEl);
+} else {
+  playerStagesEl.insertAdjacentElement("beforebegin", capsEl);
+}
 
 const playSurfaceEl = document.createElement("div");
 playSurfaceEl.id = "playSurface";
