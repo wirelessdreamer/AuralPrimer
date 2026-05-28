@@ -193,8 +193,8 @@ def merge_consensus(
     stem_notes: list[MelodicNote],
     mix_notes: list[MelodicNote],
     *,
-    onset_tolerance_sec: float = 0.05,
-    pitch_tolerance_semitones: int = 1,
+    onset_tolerance_sec: float = 0.10,
+    pitch_tolerance_semitones: int = 2,
 ) -> list[MelodicNote]:
     """Keep stem notes that have a matching onset in the mix transcription.
 
@@ -272,8 +272,8 @@ def transcribe_consensus(
     *,
     instrument: str = "keys",
     mix_path: Path | None = None,
-    onset_tolerance_sec: float = 0.05,
-    pitch_tolerance_semitones: int = 1,
+    onset_tolerance_sec: float = 0.10,
+    pitch_tolerance_semitones: int = 2,
 ) -> list[MelodicNote]:
     """Run PTI on both the keys stem and the full mix, intersect onsets.
 

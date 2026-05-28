@@ -149,26 +149,37 @@ def test_consensus_drops_stem_only_hallucinations():
 
 
 def test_consensus_respects_onset_tolerance():
-    # 60ms gap is outside the default 50ms window -> no match.
+    # Default window is 100ms. A 120ms gap is outside it with an explicit
+    # tighter tolerance, but inside the default.
     stem = [_note(1.000, 60)]
-    mix = [_note(1.060, 60)]
+    mix = [_note(1.120, 60)]
 
     out_strict = piano_pti.merge_consensus(stem, mix, onset_tolerance_sec=0.05)
     assert out_strict == []
 
-    out_loose = piano_pti.merge_consensus(stem, mix, onset_tolerance_sec=0.1)
+    out_loose = piano_pti.merge_consensus(stem, mix, onset_tolerance_sec=0.15)
     assert len(out_loose) == 1
 
 
-def test_consensus_allows_one_semitone_pitch_slack_by_default():
-    # The mix transcription often picks the same onset at +/- 1 semitone
-    # due to inharmonicity / pitch-bend; that should still count as a match.
+def test_consensus_default_onset_window_is_100ms():
+    # Pin the tuned default: 80ms matches, 120ms does not (the Psalm 5
+    # sweep showed 100ms/2semi lands within ~4% of the reference, vs the
+    # original 50ms/1semi which dropped 76% of real notes).
     stem = [_note(1.0, 60)]
-    mix = [_note(1.0, 61)]
+    assert len(piano_pti.merge_consensus(stem, [_note(1.080, 60)])) == 1
+    assert piano_pti.merge_consensus(stem, [_note(1.120, 60)]) == []
 
-    out = piano_pti.merge_consensus(stem, mix)
-    assert len(out) == 1
-    assert out[0].pitch == 60  # stem wins
+
+def test_consensus_allows_two_semitone_pitch_slack_by_default():
+    # The mix transcription often picks the same onset a semitone or two
+    # off due to inharmonicity / masking; within 2 semitones still matches.
+    stem = [_note(1.0, 60)]
+    assert len(piano_pti.merge_consensus(stem, [_note(1.0, 62)])) == 1
+    # 3 semitones is outside the default and must NOT match.
+    assert piano_pti.merge_consensus(stem, [_note(1.0, 63)]) == []
+    # And the stem note's own pitch wins.
+    out = piano_pti.merge_consensus(stem, [_note(1.0, 61)])
+    assert len(out) == 1 and out[0].pitch == 60
 
 
 def test_consensus_rejects_octave_mismatches():
