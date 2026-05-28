@@ -1,4 +1,4 @@
-import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
+import { beatGridLines, clamp, clampScrollSpeedMultiplier, scrollWindow } from "@auralprimer/viz-sdk";
 import type { Visualizer, VisualizerModule, VizInitContext, FrameContext, TransportState } from "@auralprimer/viz-sdk";
 
 // NOTE: The host does not yet provide chord/key data to plugins.
@@ -10,10 +10,6 @@ function defaultRomanForBar(barIdx: number): Roman {
   // A simple, familiar loop.
   const loop: Roman[] = ["I", "IV", "V", "vi"];
   return loop[Math.abs(barIdx) % loop.length] as Roman;
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
 }
 
 class NashvilleVisualizer implements Visualizer {
@@ -69,18 +65,21 @@ class NashvilleVisualizer implements Visualizer {
     // other instrument visualizers; tempo-lock preserved.
     const scrollMul = clampScrollSpeedMultiplier(frame.state.scrollSpeedMultiplier);
     const pxPerSecond = 140 * scrollMul;
-    const windowSec = (frame.width - originX) / pxPerSecond;
+    const laneW = frame.width - originX;
+    const { windowSec } = scrollWindow({
+      heightPx: laneW,
+      basePxPerSec: 140,
+      scrollMul
+    });
     const t = frame.state.t;
-    const t0 = t;
-    const t1 = t + windowSec;
 
-    const firstBar = Math.floor(t0 / secPerBar);
-    const lastBar = Math.ceil(t1 / secPerBar);
-
-    // Vertical bar lines + roman numerals.
-    for (let bar = firstBar; bar <= lastBar; bar++) {
+    // Vertical bar lines + roman numerals. Drive the shared beat-grid helper
+    // one bar per "beat" (tempo scaled by beatsPerBar) so every returned line
+    // is a bar boundary and barIndex is the bar number.
+    for (const line of beatGridLines({ t, windowSec, bpm: bpm / Math.max(1, beatsPerBar), beatsPerBar: 1 })) {
+      const bar = line.barIndex;
       const bt = bar * secPerBar;
-      const x = originX + (bt - t) * pxPerSecond;
+      const x = originX + line.x01 * laneW;
       const isDownbeatNow = t >= bt && t < bt + 0.1;
       const roman = defaultRomanForBar(bar);
 

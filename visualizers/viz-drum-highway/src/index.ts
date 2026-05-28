@@ -1,4 +1,4 @@
-import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
+import { beatGridLines, clamp, clampScrollSpeedMultiplier, roundRectPath, scrollWindow } from "@auralprimer/viz-sdk";
 import type { FrameContext, TransportState, Visualizer, VisualizerModule, VizInitContext } from "@auralprimer/viz-sdk";
 
 type SongNote = {
@@ -55,10 +55,6 @@ const PAD_LANE_BG: Record<PadLaneId, string> = {
 const KICK_COLOR = "#e6f069";
 const KICK_BG = "rgba(230,240,105,0.08)";
 
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
-}
-
 function toFinite(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
@@ -69,21 +65,6 @@ function snap(v: number): number {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
-}
-
-function roundRectPath(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-  const rr = clamp(r, 0, Math.min(w, h) * 0.5);
-  g.beginPath();
-  g.moveTo(x + rr, y);
-  g.lineTo(x + w - rr, y);
-  g.quadraticCurveTo(x + w, y, x + w, y + rr);
-  g.lineTo(x + w, y + h - rr);
-  g.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
-  g.lineTo(x + rr, y + h);
-  g.quadraticCurveTo(x, y + h, x, y + h - rr);
-  g.lineTo(x, y + rr);
-  g.quadraticCurveTo(x, y, x + rr, y);
-  g.closePath();
 }
 
 function midiToLane(pitch: number): LaneId | null {
@@ -187,7 +168,15 @@ class DrumHighwayVisualizer implements Visualizer {
     // pixel-per-second density, not note timing. See packages/viz-sdk.
     const scrollMul = clampScrollSpeedMultiplier(state.scrollSpeedMultiplier);
     const scrollPxPerSec = clamp(Math.round(h * 0.36), 190, 320) * scrollMul;
-    const lookAheadSec = Math.max(1.6, (hitY - padTravelTopY) / scrollPxPerSec);
+    // Visible window derived from the pad-travel pixel span via the shared
+    // helper, then floored at 1.6s so very fast scroll speeds still show
+    // enough look-ahead.
+    const { windowSec: padTravelWindowSec } = scrollWindow({
+      heightPx: hitY - padTravelTopY,
+      basePxPerSec: clamp(Math.round(h * 0.36), 190, 320),
+      scrollMul
+    });
+    const lookAheadSec = Math.max(1.6, padTravelWindowSec);
     const lookBehindSec = 0.22;
 
     const laneBounds = (laneIdx: number): { x: number; w: number; center: number } => {
@@ -256,17 +245,25 @@ class DrumHighwayVisualizer implements Visualizer {
     roundRectPath(g, snap(padX), snap(kickLaneY), laneAreaW, kickLaneH, 8);
     g.stroke();
 
-    const firstSubdivision = Math.floor((state.t - lookBehindSec) / subdivisionSec) - 1;
-    const lastSubdivision = Math.ceil((state.t + lookAheadSec) / subdivisionSec) + 1;
-    for (let si = firstSubdivision; si <= lastSubdivision; si += 1) {
-      const lineT = si * subdivisionSec;
+    // Subdivision gridlines (half-beats) over the visible look-behind/ahead
+    // window. Drive the shared beat-grid helper at twice the tempo so each
+    // "beat" it returns is one subdivision, and at measureBeats*2 per bar so
+    // its downbeats land on measure starts.
+    const gridLines = beatGridLines({
+      t: state.t - lookBehindSec,
+      windowSec: lookBehindSec + lookAheadSec,
+      bpm: bpm * 2,
+      beatsPerBar: measureBeats * 2
+    });
+    for (const line of gridLines) {
+      const lineT = line.tSec;
       const dt = lineT - state.t;
       if (dt < -lookBehindSec || dt > lookAheadSec) continue;
       const y = timelineY(dt);
       if (y < padTravelTopY || y > bottomY) continue;
+      const si = Math.round(lineT / subdivisionSec);
       const isBeat = si % 2 === 0;
-      const beatIndex = Math.round(si / 2);
-      const isMeasure = isBeat && ((beatIndex % measureBeats + measureBeats) % measureBeats === 0);
+      const isMeasure = line.isDownbeat;
 
       g.strokeStyle = isMeasure
         ? "rgba(214,240,255,0.36)"
@@ -284,7 +281,7 @@ class DrumHighwayVisualizer implements Visualizer {
         g.font = "700 10px monospace";
         g.textAlign = "left";
         g.textBaseline = "bottom";
-        g.fillText(`${Math.floor(beatIndex / measureBeats) + 1}`, padX - 24, y - 3);
+        g.fillText(`${line.barIndex + 1}`, padX - 24, y - 3);
       }
     }
 

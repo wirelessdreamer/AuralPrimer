@@ -1,4 +1,4 @@
-import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
+import { beatGridLines, clampScrollSpeedMultiplier, scrollWindow } from "@auralprimer/viz-sdk";
 import type { Visualizer, VisualizerModule, VizInitContext, FrameContext, TransportState } from "@auralprimer/viz-sdk";
 
 class BeatsVisualizer implements Visualizer {
@@ -44,21 +44,24 @@ class BeatsVisualizer implements Visualizer {
     g.lineWidth = 1;
 
     const t = frame.state.t;
-    const windowSec = (frame.width - originX) / pxPerSecond;
-    const t0 = t;
-    const t1 = t + windowSec;
+    const { windowSec } = scrollWindow({
+      heightPx: frame.width - originX,
+      basePxPerSec: 120,
+      scrollMul
+    });
+    const laneW = frame.width - originX;
 
-    const firstBeat = Math.floor(t0 / secondsPerBeat);
-    const lastBeat = Math.ceil(t1 / secondsPerBeat);
-
-    for (let b = firstBeat; b <= lastBeat; b++) {
-      const bt = b * secondsPerBeat;
-      const x = originX + (bt - t) * pxPerSecond;
+    // Placeholder grid is 1 beat per second, independent of tempo: drive the
+    // shared gridline math at 60 bpm (60/60 = 1 sec/beat). Downbeats are
+    // unused here, so beatsPerBar is irrelevant.
+    for (const line of beatGridLines({ t, windowSec, bpm: 60, beatsPerBar: 4 })) {
+      const x = originX + line.x01 * laneW;
       g.beginPath();
       g.moveTo(x, midY - 60);
       g.lineTo(x, midY + 60);
       g.stroke();
 
+      const b = Math.round(line.tSec / secondsPerBeat);
       g.fillStyle = "rgba(255,255,255,0.6)";
       g.font = "12px system-ui";
       g.fillText(String(b), x + 4, midY - 70);
