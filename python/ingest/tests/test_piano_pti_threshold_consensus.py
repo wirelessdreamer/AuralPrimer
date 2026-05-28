@@ -283,3 +283,52 @@ def test_find_mix_audio_returns_none_when_layout_unrecognized(tmp_path):
     odd.write_bytes(b"")
 
     assert piano_pti._find_mix_audio(odd) is None
+
+
+# ---------------------------------------------------------------------------
+# Regression: consensus_clean must resolve the mix from the ORIGINAL stem
+# location, not the denoised temp path (which lives outside the songpack and
+# would silently collapse consensus back to a stem-only pass).
+# ---------------------------------------------------------------------------
+
+
+def test_consensus_clean_resolves_mix_despite_denoise_temp_path(tmp_path, monkeypatch):
+    import contextlib
+    from aural_ingest.algorithms import piano_pti as pti_mod, piano_denoise, piano_cleanup
+    from aural_ingest.transcription import build_default_melodic_algorithm_registry
+
+    # SongPack-shaped layout: audio/stems/keys.wav + audio/mix.wav.
+    audio = tmp_path / "audio"
+    stems = audio / "stems"
+    stems.mkdir(parents=True)
+    stem = stems / "keys.wav"
+    stem.write_bytes(b"")
+    mix = audio / "mix.wav"
+    mix.write_bytes(b"")
+
+    # Simulate denoise being active: it yields a temp file OUTSIDE the pack.
+    denoised = tmp_path / "denoised_tmp.wav"
+    denoised.write_bytes(b"")
+
+    captured: dict = {}
+
+    def fake_consensus(in_path, *, instrument="keys", mix_path=None, **kw):
+        captured["in_path"] = Path(in_path)
+        captured["mix_path"] = mix_path
+        return []
+
+    @contextlib.contextmanager
+    def fake_denoise(_p):
+        yield denoised
+
+    monkeypatch.setattr(pti_mod, "transcribe_consensus", fake_consensus)
+    monkeypatch.setattr(piano_denoise, "maybe_denoised_stem", fake_denoise)
+    monkeypatch.setattr(piano_cleanup, "cleanup_notes", lambda notes, **kw: notes)
+
+    registry = build_default_melodic_algorithm_registry(instrument="keys")
+    registry["piano_pti_consensus_clean"](stem)
+
+    # The denoised temp is what gets transcribed...
+    assert captured["in_path"] == denoised
+    # ...but the mix is resolved from the real stem dir, NOT lost to the temp.
+    assert captured["mix_path"] == mix

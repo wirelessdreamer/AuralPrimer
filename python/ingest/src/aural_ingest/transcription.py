@@ -1022,8 +1022,13 @@ def build_default_melodic_algorithm_registry(
         return piano_pti.transcribe_consensus(stem_path, instrument=_inst)
 
     def _piano_pti_consensus_clean(stem_path: Path) -> list[MelodicNote]:
+        # Resolve the mix from the ORIGINAL stem location before denoising:
+        # maybe_denoised_stem may hand back a temp path whose parent isn't
+        # the songpack's audio/stems/ dir, which would defeat mix discovery
+        # and silently collapse consensus back to a stem-only pass.
+        mix_path = piano_pti._find_mix_audio(stem_path)
         with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
-            notes = piano_pti.transcribe_consensus(in_path, instrument=_inst)
+            notes = piano_pti.transcribe_consensus(in_path, instrument=_inst, mix_path=mix_path)
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
     def _piano_hft(stem_path: Path) -> list[MelodicNote]:
