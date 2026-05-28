@@ -51,6 +51,24 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     expect(src).toMatch(/pxPerSecond\s*=\s*[^;]*\*\s*scrollMul/);
   });
 
+  it("tabRenderer (keys/bass/guitar piano-roll + tab) scales its window by the multiplier", () => {
+    const src = read("apps/game/src/tabRenderer.ts");
+    // Reads the clamped multiplier in BOTH render paths.
+    expect(src).toMatch(/clampScrollSpeedMultiplier\(opts\.scrollSpeedMultiplier\)/);
+    // Tab path shrinks the visible window so higher multiplier = more spacing.
+    expect(src).toMatch(/const\s+windowSec\s*=\s*this\.windowSec\s*\/\s*scrollMul/);
+    // Piano-roll path shrinks look-ahead/behind the same way.
+    expect(src).toMatch(/const\s+lookAheadSec\s*=\s*this\.pianoLookAheadSec\s*\/\s*scrollMul/);
+    expect(src).toMatch(/const\s+lookBehindSec\s*=\s*this\.pianoLookBehindSec\s*\/\s*scrollMul/);
+  });
+
+  it("game passes transport.scrollSpeedMultiplier into tabRenderer.render", () => {
+    const src = read("apps/game/src/main.ts");
+    expect(src).toMatch(
+      /tabRenderer\.render\([\s\S]*?scrollSpeedMultiplier:\s*transport\.scrollSpeedMultiplier/
+    );
+  });
+
   it("transportController initializes scrollSpeedMultiplier to 1.0 and exposes a setter", () => {
     const src = read("apps/game/src/transportController.ts");
     expect(src).toMatch(/scrollSpeedMultiplier:\s*1/);

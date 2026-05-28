@@ -6,6 +6,7 @@
  * 2) Piano-roll view for keys and generic melodic tracks
  */
 
+import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 import type { InstrumentRole, MelodicNote, MelodicTrackSelection } from "./chartLoader";
 
 export type Tuning = {
@@ -28,6 +29,13 @@ export type PianoRenderOptions = {
   bpm?: number;
   timeSignature?: [number, number];
   liveInputNotes?: PianoLiveInputNote[];
+  /**
+   * Host "Note spacing" multiplier (TransportState.scrollSpeedMultiplier).
+   * Higher = notes more spread out. Applied by shrinking the visible
+   * look-ahead window so each second of song time occupies more pixels,
+   * matching how the viz-* highway plugins scale. Tempo-lock preserved.
+   */
+  scrollSpeedMultiplier?: number;
 };
 
 export type PianoLiveInputNote = {
@@ -421,19 +429,23 @@ export class TabRenderer {
     }
 
     if (this.tuning) {
-      this.renderTab(timeSec);
+      this.renderTab(timeSec, opts);
       return;
     }
 
     this.renderPianoRoll(timeSec, opts);
   }
 
-  private renderTab(t: number): void {
+  private renderTab(t: number, opts: PianoRenderOptions = {}): void {
     const { ctx, canvas, tuning, track } = this;
     if (!tuning || !track) return;
 
     const w = canvas.width;
     const h = canvas.height;
+    // Shrink the visible window as spacing increases (higher multiplier
+    // => fewer seconds across the same width => notes further apart).
+    const scrollMul = clampScrollSpeedMultiplier(opts.scrollSpeedMultiplier);
+    const windowSec = this.windowSec / scrollMul;
     const numStrings = tuning.strings.length;
     const yPad = 20;
     const stringSpacing = (h - yPad * 2) / Math.max(1, numStrings - 1);
@@ -457,7 +469,7 @@ export class TabRenderer {
     ctx.stroke();
 
     const tStart = t - 0.5;
-    const tEnd = t + this.windowSec;
+    const tEnd = t + windowSec;
     const color = ROLE_COLORS[this.role];
     const glow = ROLE_GLOW_COLORS[this.role];
 
@@ -470,10 +482,10 @@ export class TabRenderer {
       const fretInfo = pitchToFret(note.pitch, tuning);
       if (!fretInfo) continue;
 
-      const x = hitX + ((note.t_on - t) / this.windowSec) * (w - hitX);
+      const x = hitX + ((note.t_on - t) / windowSec) * (w - hitX);
       const y = yPad + fretInfo.string * stringSpacing;
       const dist = Math.abs(note.t_on - t);
-      const alpha = dist < 0.1 ? 1.0 : Math.max(0.3, 1.0 - dist / this.windowSec);
+      const alpha = dist < 0.1 ? 1.0 : Math.max(0.3, 1.0 - dist / windowSec);
 
       ctx.save();
       ctx.globalAlpha = alpha * 0.58;
@@ -519,7 +531,12 @@ export class TabRenderer {
     const hitY = rollBottom;
     const keyboardWidth = Math.max(60, w - layoutPadX * 2);
     const keyboard = buildKeyboardLayout(layoutPadX, keyboardWidth);
-    const pxPerSec = rollHeight / this.pianoLookAheadSec;
+    // Shrink the look-ahead/behind windows as spacing increases so each
+    // second occupies more pixels (matches the viz-* highway scaling).
+    const scrollMul = clampScrollSpeedMultiplier(opts.scrollSpeedMultiplier);
+    const lookAheadSec = this.pianoLookAheadSec / scrollMul;
+    const lookBehindSec = this.pianoLookBehindSec / scrollMul;
+    const pxPerSec = rollHeight / lookAheadSec;
     const activeKeys = new Map<number, number>();
     const liveKeys = new Map<number, { intensity: number; heldBySustain: boolean }>();
     const noteStyle = this.keySignature?.noteLabelStyle ?? "dual";
@@ -555,8 +572,8 @@ export class TabRenderer {
     const bpm = Number.isFinite(opts.bpm) && (opts.bpm as number) > 0 ? (opts.bpm as number) : 120;
     const beatsPerBar = Math.max(1, opts.timeSignature?.[0] ?? 4);
     const subdivisionSec = (60 / bpm) * 0.5;
-    const firstSubdivision = Math.floor((t - this.pianoLookBehindSec) / subdivisionSec) - 1;
-    const lastSubdivision = Math.ceil((t + this.pianoLookAheadSec) / subdivisionSec) + 1;
+    const firstSubdivision = Math.floor((t - lookBehindSec) / subdivisionSec) - 1;
+    const lastSubdivision = Math.ceil((t + lookAheadSec) / subdivisionSec) + 1;
 
     for (let subdivision = firstSubdivision; subdivision <= lastSubdivision; subdivision += 1) {
       const lineTime = subdivision * subdivisionSec;
@@ -594,14 +611,14 @@ export class TabRenderer {
     ctx.stroke();
 
     for (const note of track.notes) {
-      if (note.t_off < t - this.pianoLookBehindSec || note.t_on > t + this.pianoLookAheadSec) continue;
+      if (note.t_off < t - lookBehindSec || note.t_on > t + lookAheadSec) continue;
 
       const key = keyboard.byMidi.get(note.pitch);
       if (!key) continue;
 
       const velocity = velocityToUnit(note.velocity);
       const dt = note.t_on - t;
-      const approach = clamp(1 - dt / this.pianoLookAheadSec, 0, 1);
+      const approach = clamp(1 - dt / lookAheadSec, 0, 1);
       const noteTop = hitY - (note.t_off - t) * pxPerSec;
       const noteBottom = hitY - (note.t_on - t) * pxPerSec;
       const visibleTop = clamp(noteTop, rollTop, hitY);

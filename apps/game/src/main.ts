@@ -2980,7 +2980,8 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
       tabRenderer.render(transport.t, {
         bpm: transport.bpm,
         timeSignature: transport.timeSignature,
-        liveInputNotes: midiInputTracker.snapshot().activeNotes
+        liveInputNotes: midiInputTracker.snapshot().activeNotes,
+        scrollSpeedMultiplier: transport.scrollSpeedMultiplier
       });
     }
 
