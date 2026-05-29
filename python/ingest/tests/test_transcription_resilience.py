@@ -104,6 +104,8 @@ def test_default_import_dir_path_restores_expanded_drum_note_diversity(
     args.title = "Fixture Recovery"
     args.artist = ""
     args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_silence_gate_disabled = True
     args.melodic_method = "auto"
     args.shifts = 1
     args.multi_filter = False

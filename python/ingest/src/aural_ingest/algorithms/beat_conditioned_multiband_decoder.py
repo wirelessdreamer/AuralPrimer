@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter
+import math
 from pathlib import Path
+from typing import Any
 
 from aural_ingest.algorithms import adaptive_beat_grid, aural_onset
 from aural_ingest.algorithms._common import (
@@ -29,11 +32,14 @@ class BeatConditionedMultibandDecoderAlgorithm(TranscriptionAlgorithm):
     name = "beat_conditioned_multiband_decoder"
 
     def transcribe(self, stem_path: Path) -> list[DrumEvent]:
-        candidates = detect_candidates(stem_path)
+        candidates, debug = _detect_candidates(stem_path, collect_debug=False)
         if candidates:
             events = candidates_to_events(candidates, stem_path=stem_path)
             if events:
                 return events
+
+        if debug.get("raw_seed_count", 0) > 0:
+            return []
 
         return fallback_events_from_classes(
             stem_path,
@@ -221,9 +227,132 @@ def _emit_candidate(
     )
 
 
+def _rms(samples: list[float]) -> float:
+    if not samples:
+        return 0.0
+    return (sum(x * x for x in samples) / float(len(samples))) ** 0.5
+
+
+def _window(samples: list[float], sr: int, start_sec: float, end_sec: float) -> list[float]:
+    if not samples or sr <= 0:
+        return []
+    start = max(0, int(round(start_sec * sr)))
+    end = min(len(samples), int(round(end_sec * sr)))
+    if end <= start:
+        return []
+    return samples[start:end]
+
+
+def _onset_context(samples: list[float], sr: int, time_sec: float) -> dict[str, float]:
+    pre = _window(samples, sr, time_sec - 0.05, time_sec - 0.008)
+    post = _window(samples, sr, time_sec, time_sec + 0.035)
+    pre_rms = _rms(pre)
+    post_rms = _rms(post)
+    post_peak = max((abs(x) for x in post), default=0.0)
+    rise_ratio = post_rms / max(pre_rms, 1e-6)
+    rise_db = 20.0 * math.log10(max(post_rms, 1e-9) / max(pre_rms, 1e-9))
+    return {
+        "pre_rms": pre_rms,
+        "post_rms": post_rms,
+        "post_peak": post_peak,
+        "rise_ratio": rise_ratio,
+        "rise_db": rise_db,
+    }
+
+
+def _candidate_summary(candidate: DrumCandidate) -> dict[str, Any]:
+    return {
+        "time": round(float(candidate.time), 6),
+        "class": candidate.drum_class,
+        "strength": round(float(candidate.strength), 6),
+        "confidence": round(float(candidate.confidence), 6),
+        "source": candidate.source,
+    }
+
+
+def _count_by_class(candidates: list[DrumCandidate]) -> dict[str, int]:
+    return dict(Counter(c.drum_class for c in candidates))
+
+
+def _weak_decoder_reject_reason(
+    drum_class: str,
+    *,
+    onset: dict[str, float],
+    feat: dict[str, float],
+    support_strength: float,
+    bucket_score: float,
+    novelty_hit: float,
+) -> str | None:
+    post_rms = onset.get("post_rms", 0.0)
+    post_peak = onset.get("post_peak", 0.0)
+    rise_db = onset.get("rise_db", 0.0)
+
+    if post_peak < 0.004 and post_rms < 0.0015:
+        return "no_local_drum_body"
+
+    if post_peak < 0.012 and post_rms < 0.003 and support_strength < 0.16:
+        return "no_local_drum_body"
+
+    # Piano/guitar leakage into a drum stem often has relative high-band
+    # dominance and sharpness, so the decoder must require absolute local
+    # body before turning a weak high-band peak into a gameplay hat note.
+    if drum_class in {"hh_open", "crash", "ride"}:
+        if post_peak < 0.018 and post_rms < 0.006:
+            return "weak_hat_body"
+        if post_peak < 0.055 and post_rms < 0.012 and support_strength < 0.20:
+            return "weak_hat_body"
+        if rise_db < 1.0 and post_peak < 0.08 and bucket_score < 0.52:
+            return "hat_tail_without_attack"
+
+    if drum_class == "hh_closed":
+        if post_peak < 0.018 and post_rms < 0.006:
+            return "weak_hat_body"
+        if post_peak < 0.035 and post_rms < 0.008 and support_strength < 0.20:
+            return "weak_hat_body"
+
+    if drum_class == "snare":
+        if post_peak < 0.018 and post_rms < 0.006:
+            return "weak_snare_body"
+        if post_peak < 0.040 and post_rms < 0.010 and support_strength < 0.18:
+            return "weak_snare_body"
+        if novelty_hit < 0.02 and post_peak < 0.055 and feat.get("rms", 0.0) > post_rms * 4.0:
+            return "snare_forward_window_bleed"
+
+    if drum_class in {"tom_high", "tom_low", "tom_floor"}:
+        if post_peak < 0.040 and post_rms < 0.010 and support_strength < 0.18:
+            return "weak_tom_body"
+
+    if drum_class == "kick":
+        if post_peak < 0.006 and post_rms < 0.002:
+            return "weak_kick_body"
+        if post_peak < 0.020 and post_rms < 0.006 and support_strength < 0.16:
+            return "weak_kick_body"
+
+    return None
+
+
 def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
+    candidates, _debug = _detect_candidates(stem_path, collect_debug=False)
+    return candidates
+
+
+def detect_candidates_with_debug(stem_path: Path) -> tuple[list[DrumCandidate], dict[str, Any]]:
+    return _detect_candidates(stem_path, collect_debug=True)
+
+
+def _detect_candidates(stem_path: Path, *, collect_debug: bool) -> tuple[list[DrumCandidate], dict[str, Any]]:
     support_a = aural_onset.detect_candidates(stem_path)
     support_b = adaptive_beat_grid.detect_candidates(stem_path)
+    debug: dict[str, Any] = {
+        "detectors": {
+            "aural_onset": {"count": len(support_a), "classes": _count_by_class(support_a)},
+            "adaptive_beat_grid": {"count": len(support_b), "classes": _count_by_class(support_b)},
+            "hybrid_main_peak": {"count": 0, "classes": {}},
+            "hybrid_hat_peak": {"count": 0, "classes": {}},
+        },
+        "raw_seed_count": len(support_a) + len(support_b),
+        "decisions": [],
+    }
 
     samples, sr = preprocess_audio(
         stem_path,
@@ -232,7 +361,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         high_pass_hz=35.0,
     )
     if not samples or sr <= 0:
-        return []
+        return [], debug
 
     hop = 320
     hop_sec = hop / float(sr)
@@ -252,7 +381,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         frame_size=1024,
     )
     if not env:
-        return []
+        return [], debug
 
     low_env = normalize_series([(0.7 * a) + (0.3 * b) for a, b in zip(env["low"], env["sub"])])
     snare_env = normalize_series([(0.45 * a) + (1.0 * b) for a, b in zip(env["mid"], env["crack"])])
@@ -261,7 +390,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
 
     n = min(len(low_env), len(snare_env), len(high_env), len(cym_env))
     if n < 4:
-        return []
+        return [], debug
 
     low_n = normalize_series(onset_novelty(low_env[:n]))
     snare_n = normalize_series(onset_novelty(snare_env[:n]))
@@ -298,34 +427,46 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
     step = _choose_grid_step(period_sec, len(peaks_main) + len(peaks_hat), duration_sec, beat_conf)
 
     seed_candidates: list[DrumCandidate] = [*support_a, *support_b]
+    hybrid_main_candidates: list[DrumCandidate] = []
+    hybrid_hat_candidates: list[DrumCandidate] = []
     for idx, strength in peaks_main:
-        seed_candidates.append(
-            DrumCandidate(
-                time=frame_to_time(idx, hop, sr),
-                drum_class=_rough_peak_class(
-                    low=_local_value(low_n, idx),
-                    snare=_local_value(snare_n, idx),
-                    high=_local_value(high_n, idx),
-                    cym=_local_value(cym_n, idx),
-                ),
-                strength=float(strength),
-                confidence=clamp((0.35 + (0.65 * strength)), 0.0, 1.0),
-                source="hybrid_main_peak",
-            )
+        candidate = DrumCandidate(
+            time=frame_to_time(idx, hop, sr),
+            drum_class=_rough_peak_class(
+                low=_local_value(low_n, idx),
+                snare=_local_value(snare_n, idx),
+                high=_local_value(high_n, idx),
+                cym=_local_value(cym_n, idx),
+            ),
+            strength=float(strength),
+            confidence=clamp((0.35 + (0.65 * strength)), 0.0, 1.0),
+            source="hybrid_main_peak",
         )
+        hybrid_main_candidates.append(candidate)
+        seed_candidates.append(candidate)
     for idx, strength in peaks_hat:
-        seed_candidates.append(
-            DrumCandidate(
-                time=frame_to_time(idx, hop, sr),
-                drum_class="hh_closed",
-                strength=float(strength),
-                confidence=clamp((0.4 + (0.6 * strength)), 0.0, 1.0),
-                source="hybrid_hat_peak",
-            )
+        candidate = DrumCandidate(
+            time=frame_to_time(idx, hop, sr),
+            drum_class="hh_closed",
+            strength=float(strength),
+            confidence=clamp((0.4 + (0.6 * strength)), 0.0, 1.0),
+            source="hybrid_hat_peak",
         )
+        hybrid_hat_candidates.append(candidate)
+        seed_candidates.append(candidate)
+
+    debug["detectors"]["hybrid_main_peak"] = {
+        "count": len(hybrid_main_candidates),
+        "classes": _count_by_class(hybrid_main_candidates),
+    }
+    debug["detectors"]["hybrid_hat_peak"] = {
+        "count": len(hybrid_hat_candidates),
+        "classes": _count_by_class(hybrid_hat_candidates),
+    }
+    debug["raw_seed_count"] = len(seed_candidates)
 
     if not seed_candidates:
-        return []
+        return [], debug
 
     clusters = merge_candidate_clusters(seed_candidates, window_sec=0.028)
     decoded: list[DrumCandidate] = []
@@ -337,6 +478,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         raw_time = _weighted_time(cluster)
         refined_time, grid_align = _grid_alignment(raw_time, step if beat_conf >= 0.12 else 0.0)
         feat = timbral_features(samples, sr, refined_time)
+        onset = _onset_context(samples, sr, refined_time)
         idx = max(0, min(n - 1, time_to_frame(raw_time, hop, sr)))
 
         votes = _bucket_votes(cluster)
@@ -430,6 +572,63 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         core_bucket, core_score = core_ranking[0]
         secondary_core_bucket, secondary_core_score = core_ranking[1]
 
+        decision: dict[str, Any] | None = None
+        if collect_debug:
+            decision = {
+                "time": round(float(refined_time), 6),
+                "raw_time": round(float(raw_time), 6),
+                "cluster": [_candidate_summary(c) for c in cluster],
+                "votes": {key: round(float(value), 6) for key, value in votes.items()},
+                "scores": {
+                    "kick": round(float(kick_score), 6),
+                    "snare": round(float(snare_score), 6),
+                    "hat": round(float(hat_score), 6),
+                    "cymbal": round(float(cym_score), 6),
+                    "tom": round(float(tom_score), 6),
+                },
+                "features": {key: round(float(value), 6) for key, value in feat.items()},
+                "onset": {key: round(float(value), 6) for key, value in onset.items()},
+                "emitted": [],
+                "rejected": [],
+            }
+            debug["decisions"].append(decision)
+
+        def emit_with_validation(
+            *,
+            drum_class: str,
+            bucket: str,
+            score: float,
+            strength: float,
+            novelty_hit: float,
+        ) -> None:
+            reject_reason = _weak_decoder_reject_reason(
+                drum_class,
+                onset=onset,
+                feat=feat,
+                support_strength=_bucket_strength(cluster, bucket),
+                bucket_score=score,
+                novelty_hit=novelty_hit,
+            )
+            record = {
+                "class": drum_class,
+                "bucket": bucket,
+                "score": round(float(score), 6),
+                "strength": round(float(strength), 6),
+                "reject_reason": reject_reason,
+            }
+            if reject_reason is None:
+                _emit_candidate(
+                    decoded,
+                    time_sec=refined_time,
+                    drum_class=drum_class,
+                    score=score,
+                    strength=strength,
+                )
+                if decision is not None:
+                    decision["emitted"].append(record)
+            elif decision is not None:
+                decision["rejected"].append(record)
+
         emit_core = core_score >= 0.34 or max(votes["kick"], votes["snare"], votes["tom"]) >= 0.3
         if core_bucket == "kick" and low_dom < 0.16 and votes["kick"] < 0.18:
             emit_core = False
@@ -441,14 +640,16 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         if emit_core:
             if core_bucket == "tom":
                 drum_class = classify_tom(feat)
+                novelty_hit = max(low_hit, snare_hit)
             else:
                 drum_class = core_bucket
-            _emit_candidate(
-                decoded,
-                time_sec=refined_time,
+                novelty_hit = low_hit if core_bucket == "kick" else snare_hit
+            emit_with_validation(
                 drum_class=drum_class,
+                bucket=core_bucket,
                 score=core_score,
                 strength=max(_bucket_strength(cluster, core_bucket), core_score),
+                novelty_hit=novelty_hit,
             )
             if _should_emit_secondary_core(
                 primary_bucket=core_bucket,
@@ -464,12 +665,12 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                 sharp=sharp,
                 zcr=zcr,
             ):
-                _emit_candidate(
-                    decoded,
-                    time_sec=refined_time,
+                emit_with_validation(
                     drum_class=secondary_core_bucket,
+                    bucket=secondary_core_bucket,
                     score=secondary_core_score,
                     strength=max(_bucket_strength(cluster, secondary_core_bucket), secondary_core_score),
+                    novelty_hit=low_hit if secondary_core_bucket == "kick" else snare_hit,
                 )
 
         hat_family_score = max(hat_score, cym_score)
@@ -483,10 +684,14 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                 )
                 hat_strength = max(_bucket_strength(cluster, "cymbal"), cym_score)
                 hat_conf = cym_score
+                hat_bucket = "cymbal"
+                novelty_hit = max(high_hit, cym_hit)
             else:
                 hat_class = "hh_open" if high_decay >= 0.28 else "hh_closed"
                 hat_strength = max(_bucket_strength(cluster, "hi_hat"), hat_score)
                 hat_conf = hat_score
+                hat_bucket = "hi_hat"
+                novelty_hit = high_hit
 
             if _should_emit_hat_overlay(
                 emit_core=emit_core,
@@ -496,15 +701,17 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                 high_hit=high_hit,
                 high_dom=high_dom,
             ):
-                _emit_candidate(
-                    decoded,
-                    time_sec=refined_time,
+                emit_with_validation(
                     drum_class=hat_class,
+                    bucket=hat_bucket,
                     score=hat_conf,
                     strength=hat_strength,
+                    novelty_hit=novelty_hit,
                 )
 
-    return decoded
+    debug["fused_candidate_count"] = len(decoded)
+    debug["fused_classes"] = _count_by_class(decoded)
+    return decoded, debug
 
 
 ALGORITHM = BeatConditionedMultibandDecoderAlgorithm()

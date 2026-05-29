@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter
+import math
 from pathlib import Path
+from typing import Any
 
 from aural_ingest.algorithms import aural_onset, dsp_bandpass_improved, dsp_spectral_flux
 from aural_ingest.algorithms._common import (
@@ -20,11 +23,14 @@ class CombinedFilterAlgorithm(TranscriptionAlgorithm):
     name = "combined_filter"
 
     def transcribe(self, stem_path: Path) -> list[DrumEvent]:
-        candidates = detect_candidates(stem_path)
+        candidates, debug = _detect_candidates(stem_path, collect_debug=False)
         if candidates:
             events = candidates_to_events(candidates, stem_path=stem_path)
             if events:
                 return events
+
+        if debug.get("raw_candidate_count", 0) > 0:
+            return []
 
         return fallback_events_from_classes(
             stem_path,
@@ -110,14 +116,154 @@ def _effective_source_weight(
     return base_weight
 
 
+def _rms(samples: list[float]) -> float:
+    if not samples:
+        return 0.0
+    return (sum(x * x for x in samples) / float(len(samples))) ** 0.5
+
+
+def _window(samples: list[float], sr: int, start_sec: float, end_sec: float) -> list[float]:
+    if not samples or sr <= 0:
+        return []
+    start = max(0, int(round(start_sec * sr)))
+    end = min(len(samples), int(round(end_sec * sr)))
+    if end <= start:
+        return []
+    return samples[start:end]
+
+
+def _onset_context(samples: list[float], sr: int, time_sec: float) -> dict[str, float]:
+    """Measure whether this time has a local attack, not merely residual tail.
+
+    The child detectors can fire on slowly modulated separator residue. A real
+    drum hit should show some local post-vs-pre energy rise, a strong local
+    peak, or enough sharpness to justify accepting the candidate.
+    """
+
+    pre = _window(samples, sr, time_sec - 0.05, time_sec - 0.008)
+    post = _window(samples, sr, time_sec, time_sec + 0.035)
+    pre_rms = _rms(pre)
+    post_rms = _rms(post)
+    peak = max((abs(x) for x in post), default=0.0)
+    ratio = post_rms / max(pre_rms, 1e-6)
+    rise_db = 20.0 * math.log10(max(post_rms, 1e-9) / max(pre_rms, 1e-9))
+    return {
+        "pre_rms": pre_rms,
+        "post_rms": post_rms,
+        "post_peak": peak,
+        "rise_ratio": ratio,
+        "rise_db": rise_db,
+    }
+
+
+def _class_activity(features: dict[str, float], drum_class: str) -> float:
+    if drum_class == "kick":
+        return max(features.get("sub", 0.0), features.get("low", 0.0))
+    if drum_class == "snare":
+        return max(features.get("mid", 0.0), features.get("snare_crack", 0.0))
+    if drum_class in {"hh_closed", "hh_open", "crash", "ride"}:
+        return max(features.get("high", 0.0), features.get("air", 0.0))
+    if drum_class in {"tom_high", "tom_low", "tom_floor"}:
+        return max(features.get("low", 0.0), features.get("mid", 0.0))
+    return features.get("rms", 0.0)
+
+
+def _weak_onset_reject_reason(
+    drum_class: str,
+    features: dict[str, float] | None,
+    onset: dict[str, float] | None,
+) -> str | None:
+    if features is None or onset is None:
+        return None
+
+    activity = _class_activity(features, drum_class)
+    # Use the short post-onset window for body/peak tests. `timbral_features`
+    # intentionally looks 100 ms forward, which can include the next real hit
+    # and falsely validate a pre-hit residual candidate.
+    rms = onset.get("post_rms", features.get("rms", 0.0))
+    peak = onset.get("post_peak", features.get("peak", 0.0))
+    sharpness = features.get("sharpness", 0.0)
+    rise_ratio = onset.get("rise_ratio", 0.0)
+    rise_db = onset.get("rise_db", 0.0)
+
+    if peak < 0.015 and rms < 0.006 and activity < 0.0015:
+        return "no_local_hit_body"
+
+    # Kick is the rhythmic backbone and can be low-frequency with modest
+    # high-band sharpness, so keep the stricter attack check focused on
+    # classes most prone to Psalm 19-style residual/tail false positives.
+    guarded_classes = {"snare", "hh_open", "crash", "ride", "tom_high", "tom_low", "tom_floor"}
+    if drum_class not in guarded_classes:
+        return None
+
+    has_attack = rise_ratio >= 1.45 or rise_db >= 3.2 or sharpness >= 2.25
+    has_body = peak >= 0.045 or rms >= 0.014
+    has_class_band = activity >= 0.0018
+
+    if drum_class in {"crash", "ride", "hh_open"}:
+        has_body = peak >= 0.055 or rms >= 0.016
+        has_class_band = activity >= 0.0024
+        if peak < 0.03 and rms < 0.012:
+            return "weak_cymbal_body"
+
+    if not has_class_band:
+        return "weak_class_band"
+    if not has_attack and not has_body:
+        return "weak_onset_evidence"
+    if drum_class in {"crash", "ride"} and rise_db < 1.0 and peak < 0.08:
+        return "cymbal_tail_without_attack"
+    return None
+
+
+def _candidate_summary(candidate: DrumCandidate) -> dict[str, Any]:
+    return {
+        "time": round(candidate.time, 6),
+        "class": candidate.drum_class,
+        "strength": round(float(candidate.strength), 6),
+        "confidence": round(float(candidate.confidence), 6),
+        "source": candidate.source,
+    }
+
+
+def _count_by_class(candidates: list[DrumCandidate]) -> dict[str, int]:
+    return dict(Counter(c.drum_class for c in candidates))
+
+
 def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
+    candidates, _debug = _detect_candidates(stem_path, collect_debug=False)
+    return candidates
+
+
+def detect_candidates_with_debug(stem_path: Path) -> tuple[list[DrumCandidate], dict[str, Any]]:
+    return _detect_candidates(stem_path, collect_debug=True)
+
+
+def _detect_candidates(stem_path: Path, *, collect_debug: bool) -> tuple[list[DrumCandidate], dict[str, Any]]:
     base_a = dsp_bandpass_improved.detect_candidates(stem_path)
     base_b = dsp_spectral_flux.detect_candidates(stem_path)
     support = aural_onset.detect_candidates(stem_path)
 
     all_candidates = [*base_a, *base_b, *support]
+    debug: dict[str, Any] = {
+        "raw_candidate_count": len(all_candidates),
+        "detectors": {
+            "dsp_bandpass_improved": {
+                "count": len(base_a),
+                "classes": _count_by_class(base_a),
+            },
+            "dsp_spectral_flux": {
+                "count": len(base_b),
+                "classes": _count_by_class(base_b),
+            },
+            "aural_onset": {
+                "count": len(support),
+                "classes": _count_by_class(support),
+            },
+        },
+        "decisions": [],
+    }
     if not all_candidates:
-        return []
+        return [], debug
 
     samples, sr = preprocess_audio(
         stem_path,
@@ -139,6 +285,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         weighted_time_acc = 0.0
         weighted_time_w = 0.0
         feat: dict[str, float] | None = None
+        onset: dict[str, float] | None = None
 
         for c in cluster:
             base_w = _source_weight(c.source)
@@ -159,6 +306,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
 
         if samples and sr > 0:
             feat = timbral_features(samples, sr, cluster_time)
+            onset = _onset_context(samples, sr, cluster_time)
             low = feat["low"]
             mid = feat["mid"] + feat["snare_crack"]
             high = feat["high"] + (0.7 * feat["air"])
@@ -190,6 +338,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
 
         fallback = _fallback_candidate(cluster)
         selected_class = top_class
+        kick_attack_correction = False
 
         support_sources = {c.source for c in cluster if c.drum_class == top_class}
         required_margin = 0.08 if len(support_sources) >= 2 else 0.12
@@ -220,6 +369,23 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                 else:
                     selected_class = "tom_low"
 
+            # Broadband kick attacks often contain enough high-frequency
+            # noise to fool the high-band detectors into crash/open-hat. If
+            # the onset is sharp, has meaningful sub support, and the high
+            # energy decays quickly, treat it as a kick attack rather than a
+            # cymbal. This targets the recognizer error directly: the child
+            # detectors see a real onset, but the fusion class is wrong.
+            if (
+                selected_class in {"crash", "ride", "hh_open", "hh_closed"}
+                and onset is not None
+                and feat["sub"] >= 0.004
+                and feat["sub"] >= feat["high"] * 0.42
+                and feat["high_decay"] < 0.30
+                and onset.get("rise_db", 0.0) >= 6.0
+            ):
+                selected_class = "kick"
+                kick_attack_correction = True
+
             if selected_class == "hh_closed" and feat["high_decay"] > 0.24:
                 selected_class = "hh_open"
             elif selected_class == "snare" and feat["high"] > feat["mid"] * 1.18 and feat["high_decay"] > 0.42:
@@ -234,15 +400,44 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         chosen_strength = max((c.strength for c in cluster if c.drum_class == selected_class), default=fallback.strength)
         confidence = clamp(top_score / max(1e-9, total_vote + 0.25), 0.0, 1.0)
 
-        fused.append(
-            DrumCandidate(
-                time=cluster_time,
-                drum_class=selected_class,
-                strength=chosen_strength,
-                confidence=confidence,
-                source="combined_filter",
+        reject_reason = _weak_onset_reject_reason(selected_class, feat, onset)
+        decision: dict[str, Any] | None = None
+        if collect_debug:
+            decision = {
+                "time": round(cluster_time, 6),
+                "cluster": [_candidate_summary(c) for c in cluster],
+                "class_scores": {
+                    key: round(float(value), 6)
+                    for key, value in sorted(class_scores.items(), key=lambda item: item[1], reverse=True)
+                },
+                "top_class": top_class,
+                "selected_class": selected_class,
+                "fallback_class": fallback.drum_class,
+                "margin": round(float(margin), 6),
+                "features": {
+                    key: round(float(value), 6)
+                    for key, value in (feat or {}).items()
+                },
+                "onset": {
+                    key: round(float(value), 6)
+                    for key, value in (onset or {}).items()
+                },
+                "emitted": reject_reason is None,
+                "reject_reason": reject_reason,
+                "runner_up": None,
+            }
+            debug["decisions"].append(decision)
+
+        if reject_reason is None:
+            fused.append(
+                DrumCandidate(
+                    time=cluster_time,
+                    drum_class=selected_class,
+                    strength=chosen_strength,
+                    confidence=confidence,
+                    source="combined_filter",
+                )
             )
-        )
 
         # Multi-label overlapping-hit emitter (path 9 of
         # docs/research-deep-dive-adt-2026-05-07.md). When the second-
@@ -258,11 +453,16 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
         # clears its own class floor.
         if len(ranked) >= 2:
             runner_up_class, runner_up_score = ranked[1]
+            runner_up_reject_reason: str | None = None
             if (
                 runner_up_score >= _class_floor(runner_up_class)
                 and runner_up_score >= 0.7 * top_score
                 and runner_up_class != selected_class
                 and not _same_physical_group(selected_class, runner_up_class)
+                and not (
+                    kick_attack_correction
+                    and runner_up_class in {"snare", "hh_closed", "hh_open", "crash", "ride"}
+                )
             ):
                 # Require a real source-detector vote for the runner-up
                 # (not a synthesized feat-based boost) to avoid emitting
@@ -273,6 +473,7 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                     if c.drum_class == runner_up_class and c.source != "combined_filter"
                 }
                 if runner_up_sources:
+                    runner_up_reject_reason = _weak_onset_reject_reason(runner_up_class, feat, onset)
                     runner_up_strength = max(
                         (c.strength for c in cluster if c.drum_class == runner_up_class),
                         default=fallback.strength,
@@ -280,17 +481,28 @@ def detect_candidates(stem_path: Path) -> list[DrumCandidate]:
                     runner_up_conf = clamp(
                         runner_up_score / max(1e-9, total_vote + 0.25), 0.0, 1.0
                     )
-                    fused.append(
-                        DrumCandidate(
-                            time=cluster_time,
-                            drum_class=runner_up_class,
-                            strength=runner_up_strength,
-                            confidence=runner_up_conf,
-                            source="combined_filter",
+                    if runner_up_reject_reason is None:
+                        fused.append(
+                            DrumCandidate(
+                                time=cluster_time,
+                                drum_class=runner_up_class,
+                                strength=runner_up_strength,
+                                confidence=runner_up_conf,
+                                source="combined_filter",
+                            )
                         )
-                    )
+                    if decision is not None:
+                        decision["runner_up"] = {
+                            "class": runner_up_class,
+                            "score": round(float(runner_up_score), 6),
+                            "sources": sorted(runner_up_sources),
+                            "emitted": runner_up_reject_reason is None,
+                            "reject_reason": runner_up_reject_reason,
+                        }
 
-    return fused
+    debug["fused_candidate_count"] = len(fused)
+    debug["fused_classes"] = _count_by_class(fused)
+    return fused, debug
 
 
 _PHYSICAL_GROUPS: dict[str, str] = {

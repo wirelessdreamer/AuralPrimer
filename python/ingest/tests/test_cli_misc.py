@@ -2,12 +2,25 @@ import importlib.machinery
 import json
 from pathlib import Path
 import sys
+import struct
 import types
+import wave
 
 
 def _write_json(path: Path, obj: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj), encoding="utf-8")
+
+
+def _write_mono_wav(path: Path, samples: list[float], sr: int = 48_000) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sr)
+        for sample in samples:
+            v = max(-1.0, min(1.0, float(sample)))
+            wav_file.writeframesraw(struct.pack("<h", int(v * 32767.0)))
 
 
 def test_parse_config_arg_variants(tmp_path: Path) -> None:
@@ -72,6 +85,58 @@ def test_cmd_info_returns_manifest_payload(tmp_path: Path, capsys) -> None:
     assert payload["manifest"] == manifest
 
 
+def test_cmd_audit_drums_reports_stem_energy_by_lane(tmp_path: Path, capsys) -> None:
+    from aural_ingest import cli
+
+    songpack = tmp_path / "Psalm.songpack"
+    samples = [0.0] * 48_000
+    for idx in range(24_000, 24_600):
+        samples[idx] = 0.5
+
+    _write_mono_wav(songpack / "audio" / "stems" / "drums.wav", samples)
+    _write_json(
+        songpack / "manifest.json",
+        {
+            "title": "Psalm Fixture",
+            "profile": "full",
+            "pipeline": {
+                "transcription": {
+                    "transcription_profile": "gameplay_default",
+                    "drum_source_kind": "separated_drums",
+                    "drum_filter": "combined_filter",
+                    "drum_filter_used": "combined_filter",
+                    "drum_silence_gate": {"events_in": 2, "events_out": 1, "dropped": 1},
+                }
+            },
+        },
+    )
+    _write_json(
+        songpack / "features" / "events.json",
+        {
+            "onsets": [
+                {"t": 0.1, "note": 38, "velocity": 90, "instrument": "drums"},
+                {"t": 0.5, "note": 36, "velocity": 100, "instrument": "drums"},
+            ]
+        },
+    )
+
+    args = type("Args", (), {})()
+    args.songpack_dir = str(songpack)
+    args.window_ms = 20.0
+    args.threshold_dbfs = None
+
+    assert cli.cmd_audit_drums(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["manifest"]["stem_silence_gate_present"] is True
+    assert payload["manifest"]["stem_silence_gate"]["dropped"] == 1
+    assert payload["events"]["count"] == 2
+    assert payload["events"]["by_lane"] == {"kick": 1, "snare": 1}
+    assert payload["stem_energy"]["available"] is True
+    assert payload["stem_energy"]["below_thresholds"]["-50"]["count"] == 1
+    assert payload["stem_energy"]["below_thresholds"]["-50"]["by_lane"] == {"snare": 1}
+
+
 def test_cmd_validate_detects_invalid_notes_mid(tmp_path: Path, capsys) -> None:
     from aural_ingest import cli
 
@@ -115,6 +180,7 @@ def test_build_parser_knows_core_commands() -> None:
     assert p.parse_args(["stages"]).cmd == "stages"
     assert p.parse_args(["validate", "x"]).cmd == "validate"
     assert p.parse_args(["info", "x"]).cmd == "info"
+    assert p.parse_args(["audit-drums", "x"]).cmd == "audit-drums"
     assert p.parse_args(["runtime-check"]).cmd == "runtime-check"
     assert p.parse_args(["benchmark-drums", "stem.wav", "reference.json"]).cmd == "benchmark-drums"
     assert p.parse_args(["refine-piano", "--audio", "keys.wav", "--source-midi", "suno.mid"]).cmd == "refine-piano"
@@ -647,6 +713,9 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
 
     def fake_cmd_import(args):
         seen["drum_filter"] = args.drum_filter
+        seen["drum_silence_gate_dbfs"] = args.drum_silence_gate_dbfs
+        seen["drum_silence_gate_window_ms"] = args.drum_silence_gate_window_ms
+        seen["drum_silence_gate_disabled"] = args.drum_silence_gate_disabled
         seen["melodic_method"] = args.melodic_method
         seen["beat_analysis_mode"] = args.beat_analysis_mode
         seen["stem_separation_provider"] = args.stem_separation_provider
@@ -666,6 +735,9 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
     args.artist = "a"
     args.duration_sec = None
     args.drum_filter = "dsp_bandpass_improved"
+    args.drum_silence_gate_dbfs = -42.0
+    args.drum_silence_gate_window_ms = 45.0
+    args.drum_silence_gate_disabled = True
     args.melodic_method = "basic_pitch"
     args.beat_analysis_mode = "high_accuracy"
     args.stem_separation_provider = "none"
@@ -676,6 +748,9 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
     assert cli.cmd_import_dir(args) == 0
     assert seen == {
         "drum_filter": "dsp_bandpass_improved",
+        "drum_silence_gate_dbfs": -42.0,
+        "drum_silence_gate_window_ms": 45.0,
+        "drum_silence_gate_disabled": True,
         "melodic_method": "basic_pitch",
         "beat_analysis_mode": "high_accuracy",
         "stem_separation_provider": "none",

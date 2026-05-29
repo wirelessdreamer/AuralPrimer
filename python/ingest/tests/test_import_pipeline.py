@@ -927,6 +927,65 @@ def test_import_unknown_drum_filter_falls_back_to_default_engine_and_records_war
     assert manifest["recognition"]["drums"]["used_engine"] == "combined_filter"
 
 
+def test_import_auto_drum_filter_uses_transcription_profile_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    src = tmp_path / "src.wav"
+    _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
+    out = tmp_path / "ProfileDrums.songpack"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import DrumEvent
+
+    calls: list[str] = []
+
+    def beat_conditioned(_stem: Path) -> list[DrumEvent]:
+        calls.append("beat_conditioned_multiband_decoder")
+        return [DrumEvent(time=0.1, note=36, velocity=90)]
+
+    def combined(_stem: Path) -> list[DrumEvent]:
+        calls.append("combined_filter")
+        return [DrumEvent(time=0.2, note=38, velocity=90)]
+
+    monkeypatch.setattr(
+        cli,
+        "build_default_drum_algorithm_registry",
+        lambda: {
+            "beat_conditioned_multiband_decoder": beat_conditioned,
+            "combined_filter": combined,
+        },
+    )
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(src)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = "{}"
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "auto"
+    args.melodic_method = "auto"
+    args.beat_analysis_mode = "standard"
+    args.stem_separation_provider = "none"
+    args.stem_separation_provider_path = None
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import(args) == 0
+
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    tr = manifest["pipeline"]["transcription"]
+    assert calls == ["beat_conditioned_multiband_decoder"]
+    assert tr["drum_engine_selection"] == "profile"
+    assert tr["drum_filter_requested"] == "auto"
+    assert tr["drum_filter"] == "profile"
+    assert tr["drum_filter_used"] == "beat_conditioned_multiband_decoder"
+    assert tr["drum_profile_engines"][0] == "beat_conditioned_multiband_decoder"
+    assert manifest["recognition"]["drums"]["normalized_engine"] == "profile"
+    assert manifest["recognition"]["drums"]["used_engine"] == "beat_conditioned_multiband_decoder"
+
+
 def test_import_auto_melodic_no_longer_requires_external_basic_pitch_model(tmp_path: Path) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)

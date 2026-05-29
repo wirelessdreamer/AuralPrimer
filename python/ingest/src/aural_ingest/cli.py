@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import contextlib
 import hashlib
 import importlib
@@ -40,6 +41,7 @@ from aural_ingest.transcription import (
     available_mt3_modelpacks,
     build_default_drum_algorithm_registry,
     build_default_melodic_algorithm_registry,
+    drum_engines_for_profile,
     drum_engine_metadata,
     is_mt3_drum_engine,
     resolve_drum_engine,
@@ -48,6 +50,7 @@ from aural_ingest.transcription import (
     transcribe_all_melodic_stems,
     transcribe_melodic,
     transcribe_drums,
+    transcribe_drums_with_profile,
     validate_drum_events_against_stem_silence,
     validate_melodic_method,
     validate_transcription_profile,
@@ -1410,6 +1413,35 @@ MIDI_CHANNEL_KEYS = 3
 MIDI_CHANNEL_MELODIC = 4  # legacy fallback
 MIDI_CHANNEL_DRUMS = 9
 MIDI_CHANNEL_STRUCTURE = 15
+DRUM_AUDIT_DEFAULT_THRESHOLDS_DBFS: tuple[float, ...] = (-50.0, -45.0, -40.0)
+DRUM_AUDIT_DBFS_FLOOR: float = -120.0
+DRUM_NOTE_LABELS: dict[int, str] = {
+    35: "kick",
+    36: "kick",
+    38: "snare",
+    40: "snare",
+    41: "tom_floor",
+    42: "hh_closed",
+    46: "hh_open",
+    47: "tom_low",
+    49: "crash",
+    50: "tom_high",
+    51: "ride",
+}
+DRUM_CLASS_TO_CANONICAL_NOTE: dict[str, int] = {
+    "kick": 36,
+    "snare": 38,
+    "hh_closed": 42,
+    "hh_open": 46,
+    "crash": 49,
+    "ride": 51,
+    "tom_high": 50,
+    "tom_low": 47,
+    "tom_floor": 41,
+    "hi_hat": 42,
+    "toms": 47,
+    "cymbals": 49,
+}
 
 # Map instrument roles to MIDI channels.
 _INSTRUMENT_MIDI_CHANNELS: dict[str, int] = {
@@ -1732,7 +1764,13 @@ def _resolve_transcription_options(
 ) -> tuple[dict[str, Any] | None, str | None]:
     if config is None:
         config = {}
-    raw_drum_filter = getattr(args, "drum_filter", DEFAULT_DRUM_FILTER)
+    raw_drum_filter = (
+        getattr(args, "drum_filter", None)
+        if getattr(args, "drum_filter", None) is not None
+        else config.get("drum_filter", config.get("drum_engine", "auto"))
+    )
+    raw_drum_filter_text = "" if raw_drum_filter is None else str(raw_drum_filter).strip().lower()
+    drum_engine_selection = "profile" if raw_drum_filter_text in {"", "auto"} else "explicit"
     normalized_drum_filter, warnings = resolve_drum_engine(raw_drum_filter)
 
     raw_melodic_method = getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD)
@@ -1863,9 +1901,15 @@ def _resolve_transcription_options(
 
     return {
         "drum_engine_requested": raw_drum_filter,
-        "drum_engine": normalized_drum_filter,
+        "drum_engine": "profile" if drum_engine_selection == "profile" else normalized_drum_filter,
         "drum_filter_requested": raw_drum_filter,
-        "drum_filter": normalized_drum_filter,
+        "drum_filter": "profile" if drum_engine_selection == "profile" else normalized_drum_filter,
+        "drum_engine_selection": drum_engine_selection,
+        "drum_profile_engines": (
+            drum_engines_for_profile(transcription_profile)
+            if drum_engine_selection == "profile"
+            else []
+        ),
         "drum_source_kind": requested_drum_stem_kind,
         "drum_source_path": str(requested_drum_stem) if requested_drum_stem is not None else None,
         "drum_source_sha256": _sha256_file(requested_drum_stem) if requested_drum_stem is not None else None,
@@ -1890,7 +1934,7 @@ def _resolve_transcription_options(
 
 
 def _add_transcription_options(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--drum-filter", "--drum-engine", dest="drum_filter", default=DEFAULT_DRUM_FILTER)
+    p.add_argument("--drum-filter", "--drum-engine", dest="drum_filter", default=None)
     p.add_argument("--drum-stem-path")
     p.add_argument("--melodic-method", default=DEFAULT_MELODIC_METHOD)
     p.add_argument("--transcription-profile", default=DEFAULT_TRANSCRIPTION_PROFILE)
@@ -2082,6 +2126,280 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
         if value not in out:
             out.append(value)
     return out
+
+
+def _drum_lane_label(note: int | None, fallback: str | None = None) -> str:
+    if note is not None:
+        return DRUM_NOTE_LABELS.get(int(note), f"note_{int(note)}")
+    return fallback or "unknown"
+
+
+def _dbfs(value: float) -> float:
+    if value <= 0.0:
+        return DRUM_AUDIT_DBFS_FLOOR
+    return max(DRUM_AUDIT_DBFS_FLOOR, 20.0 * math.log10(value))
+
+
+def _percentile(values: list[float], pct: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(float(ordered[0]), 2)
+    pos = max(0.0, min(1.0, pct)) * float(len(ordered) - 1)
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return round(float(ordered[lo]), 2)
+    frac = pos - float(lo)
+    interpolated = (ordered[lo] * (1.0 - frac)) + (ordered[hi] * frac)
+    return round(float(interpolated), 2)
+
+
+def _local_rms_peak_dbfs_at(
+    samples: list[float],
+    sr: int,
+    time_sec: float,
+    half_window_samples: int,
+) -> tuple[float, float]:
+    if not samples or sr <= 0 or half_window_samples <= 0:
+        return DRUM_AUDIT_DBFS_FLOOR, DRUM_AUDIT_DBFS_FLOOR
+    center = int(round(float(time_sec) * sr))
+    lo = max(0, center - half_window_samples)
+    hi = min(len(samples), center + half_window_samples)
+    if hi <= lo:
+        return DRUM_AUDIT_DBFS_FLOOR, DRUM_AUDIT_DBFS_FLOOR
+    seg = samples[lo:hi]
+    rms = math.sqrt(sum(x * x for x in seg) / float(len(seg)))
+    peak = max((abs(x) for x in seg), default=0.0)
+    return round(_dbfs(rms), 2), round(_dbfs(peak), 2)
+
+
+def _songpack_transcription_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    pipeline = manifest.get("pipeline")
+    if not isinstance(pipeline, dict):
+        return {}
+    transcription = pipeline.get("transcription")
+    return transcription if isinstance(transcription, dict) else {}
+
+
+def _songpack_stem_silence_gate_meta(transcription: dict[str, Any]) -> dict[str, Any] | None:
+    for key in ("stem_silence_gate", "drum_silence_gate"):
+        value = transcription.get(key)
+        if isinstance(value, dict):
+            return value
+
+    engine_meta = transcription.get("drum_engine_meta")
+    if isinstance(engine_meta, dict):
+        value = engine_meta.get("stem_silence_gate")
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _resolve_songpack_drum_stem(root: Path, manifest: dict[str, Any]) -> Path | None:
+    transcription = _songpack_transcription_manifest(manifest)
+    candidates: list[Path] = []
+    raw_source = transcription.get("drum_source_path")
+    if isinstance(raw_source, str) and raw_source.strip():
+        raw_path = Path(raw_source)
+        candidates.append(raw_path if raw_path.is_absolute() else root / raw_path)
+
+    candidates.extend(
+        [
+            root / "audio" / "stems" / "drums.wav",
+            root / "audio" / "stems" / "Drums.wav",
+        ]
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _load_songpack_drum_events(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    events_path = root / "features" / "events.json"
+    if events_path.is_file():
+        payload = json.loads(events_path.read_text("utf-8"))
+        raw_onsets = payload.get("onsets", []) if isinstance(payload, dict) else []
+        events: list[dict[str, Any]] = []
+        for onset in raw_onsets:
+            if not isinstance(onset, dict):
+                continue
+            instrument = str(onset.get("instrument", "drums")).strip().lower()
+            if instrument and instrument != "drums":
+                continue
+            try:
+                time_sec = float(onset.get("t"))
+                note = int(onset.get("note"))
+            except (TypeError, ValueError):
+                continue
+            events.append(
+                {
+                    "time": time_sec,
+                    "note": note,
+                    "lane": _drum_lane_label(note),
+                    "velocity": int(onset.get("velocity", 0) or 0),
+                }
+            )
+        return events, {"source": "events_json", "path": str(events_path)}
+
+    midi_path = root / "features" / "notes.mid"
+    if midi_path.is_file():
+        reference_events, reference_meta = load_drum_reference(midi_path)
+        events = [
+            {
+                "time": float(event.time),
+                "note": DRUM_CLASS_TO_CANONICAL_NOTE.get(event.drum_class),
+                "lane": event.drum_class,
+                "velocity": None,
+            }
+            for event in reference_events
+        ]
+        return events, {"source": "notes_mid", "path": str(midi_path), "midi_meta": reference_meta}
+
+    return [], {"source": "none", "path": None}
+
+
+def _counter_by_key(events: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counter: Counter[str] = Counter()
+    for event in events:
+        value = event.get(key)
+        if value is None:
+            value = "unknown"
+        counter[str(value)] += 1
+    return dict(sorted(counter.items(), key=lambda item: item[0]))
+
+
+def cmd_audit_drums(args: argparse.Namespace) -> int:
+    root = Path(args.songpack_dir)
+    manifest_path = root / "manifest.json"
+    if not root.exists() or not root.is_dir():
+        print(json.dumps({"ok": False, "error": f"songpack directory does not exist: {root}"}, sort_keys=True))
+        return 1
+    if not manifest_path.is_file():
+        print(json.dumps({"ok": False, "error": "missing manifest.json"}, sort_keys=True))
+        return 1
+
+    try:
+        manifest = json.loads(manifest_path.read_text("utf-8"))
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": f"failed to read manifest.json: {exc}"}, sort_keys=True))
+        return 1
+    if not isinstance(manifest, dict):
+        print(json.dumps({"ok": False, "error": "manifest.json must contain an object"}, sort_keys=True))
+        return 1
+
+    events, event_source = _load_songpack_drum_events(root)
+    pipeline = manifest.get("pipeline")
+    pipeline = pipeline if isinstance(pipeline, dict) else {}
+    transcription = _songpack_transcription_manifest(manifest)
+    stem_gate = _songpack_stem_silence_gate_meta(transcription)
+    stem_path = _resolve_songpack_drum_stem(root, manifest)
+    threshold_values = list(getattr(args, "threshold_dbfs", None) or DRUM_AUDIT_DEFAULT_THRESHOLDS_DBFS)
+    thresholds = sorted(float(value) for value in threshold_values)
+    window_ms = float(getattr(args, "window_ms", DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS))
+    half_window_samples = 0
+
+    payload: dict[str, Any] = {
+        "ok": True,
+        "songpack": str(root),
+        "event_source": event_source,
+        "manifest": {
+            "title": manifest.get("title"),
+            "profile": manifest.get("profile") or pipeline.get("profile"),
+            "transcription_profile": transcription.get("transcription_profile"),
+            "drum_source_kind": transcription.get("drum_source_kind"),
+            "drum_filter": transcription.get("drum_filter"),
+            "drum_filter_requested": transcription.get("drum_filter_requested"),
+            "drum_filter_used": transcription.get("drum_filter_used"),
+            "drum_engine_selection": transcription.get("drum_engine_selection"),
+            "stem_silence_gate_present": isinstance(stem_gate, dict),
+            "stem_silence_gate": stem_gate if isinstance(stem_gate, dict) else None,
+        },
+        "events": {
+            "count": len(events),
+            "by_note": _counter_by_key(events, "note"),
+            "by_lane": _counter_by_key(events, "lane"),
+        },
+        "drum_stem": {
+            "path": str(stem_path) if stem_path is not None else None,
+            "exists": bool(stem_path is not None and stem_path.is_file()),
+        },
+        "stem_energy": {
+            "window_ms": window_ms,
+            "thresholds_dbfs": thresholds,
+            "available": False,
+            "skip_reason": None,
+        },
+    }
+
+    if stem_path is None or not stem_path.is_file():
+        payload["stem_energy"]["skip_reason"] = "stem_unavailable"
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+    if not events:
+        payload["stem_energy"]["skip_reason"] = "no_drum_events"
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+
+    try:
+        from aural_ingest.algorithms._common import read_wav_mono_normalized
+
+        samples, sr = read_wav_mono_normalized(stem_path)
+    except Exception as exc:
+        payload["stem_energy"]["skip_reason"] = f"stem_load_failed: {exc}"
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+
+    if not samples or sr <= 0:
+        payload["stem_energy"]["skip_reason"] = "stem_load_failed"
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+
+    half_window_samples = max(1, int(round((window_ms / 1000.0) * sr)))
+    measurements: list[dict[str, Any]] = []
+    for event in events:
+        rms_dbfs, peak_dbfs = _local_rms_peak_dbfs_at(samples, sr, event["time"], half_window_samples)
+        measurements.append(
+            {
+                "time": round(float(event["time"]), 6),
+                "note": event.get("note"),
+                "lane": event.get("lane"),
+                "rms_dbfs": rms_dbfs,
+                "peak_dbfs": peak_dbfs,
+            }
+        )
+
+    rms_values = [float(item["rms_dbfs"]) for item in measurements]
+    below_thresholds: dict[str, Any] = {}
+    for threshold in thresholds:
+        below = [item for item in measurements if float(item["rms_dbfs"]) < threshold]
+        below_thresholds[f"{threshold:g}"] = {
+            "count": len(below),
+            "by_note": _counter_by_key(below, "note"),
+            "by_lane": _counter_by_key(below, "lane"),
+        }
+
+    payload["stem_energy"].update(
+        {
+            "available": True,
+            "sample_rate": sr,
+            "half_window_samples": half_window_samples,
+            "rms_dbfs_percentiles": {
+                "min": _percentile(rms_values, 0.0),
+                "p01": _percentile(rms_values, 0.01),
+                "p05": _percentile(rms_values, 0.05),
+                "p50": _percentile(rms_values, 0.50),
+                "p95": _percentile(rms_values, 0.95),
+                "max": _percentile(rms_values, 1.0),
+            },
+            "below_thresholds": below_thresholds,
+            "quietest_events": sorted(measurements, key=lambda item: float(item["rms_dbfs"]))[:12],
+        }
+    )
+    print(json.dumps(payload, sort_keys=True))
+    return 0
 
 
 def cmd_stages(_args: argparse.Namespace) -> int:
@@ -2818,12 +3136,20 @@ def cmd_import(args: argparse.Namespace) -> int:
         return 4
 
     drum_registry = build_default_drum_algorithm_registry()
-    drum_result = transcribe_drums(
-        drum_source,
-        requested_engine=tr_opts["drum_filter_requested"],
-        algorithm_registry=drum_registry,
-        logger=log,
-    )
+    if tr_opts.get("drum_engine_selection") == "profile":
+        drum_result = transcribe_drums_with_profile(
+            drum_source,
+            profile=tr_opts.get("transcription_profile"),
+            algorithm_registry=drum_registry,
+            logger=log,
+        )
+    else:
+        drum_result = transcribe_drums(
+            drum_source,
+            requested_engine=tr_opts["drum_filter_requested"],
+            algorithm_registry=drum_registry,
+            logger=log,
+        )
     if is_mt3_drum_engine(tr_opts["drum_filter_requested"]) and drum_result.used_algorithm is None:
         log("requested MT3 drum engine did not produce a chart; aborting import")
         return 4
@@ -3066,8 +3392,11 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
             title=args.title,
             artist=args.artist,
             duration_sec=args.duration_sec,
-            drum_filter=getattr(args, "drum_filter", DEFAULT_DRUM_FILTER),
+            drum_filter=getattr(args, "drum_filter", "auto"),
             drum_stem_path=getattr(args, "drum_stem_path", None),
+            drum_silence_gate_dbfs=getattr(args, "drum_silence_gate_dbfs", None),
+            drum_silence_gate_window_ms=getattr(args, "drum_silence_gate_window_ms", None),
+            drum_silence_gate_disabled=bool(getattr(args, "drum_silence_gate_disabled", False)),
             melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
             transcription_profile=getattr(args, "transcription_profile", DEFAULT_TRANSCRIPTION_PROFILE),
             beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
@@ -3102,8 +3431,11 @@ def cmd_import_unsupported_chart_format(args: argparse.Namespace) -> int:
         title=args.title or unsupported_chart_format.stem,
         artist=args.artist,
         duration_sec=args.duration_sec,
-        drum_filter=getattr(args, "drum_filter", DEFAULT_DRUM_FILTER),
+        drum_filter=getattr(args, "drum_filter", "auto"),
         drum_stem_path=getattr(args, "drum_stem_path", None),
+        drum_silence_gate_dbfs=getattr(args, "drum_silence_gate_dbfs", None),
+        drum_silence_gate_window_ms=getattr(args, "drum_silence_gate_window_ms", None),
+        drum_silence_gate_disabled=bool(getattr(args, "drum_silence_gate_disabled", False)),
         melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
         transcription_profile=getattr(args, "transcription_profile", DEFAULT_TRANSCRIPTION_PROFILE),
         beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
@@ -3129,6 +3461,18 @@ def build_parser() -> argparse.ArgumentParser:
     s_info = sub.add_parser("info")
     s_info.add_argument("songpack_dir")
     s_info.set_defaults(func=cmd_info)
+
+    s_audit_drums = sub.add_parser("audit-drums")
+    s_audit_drums.add_argument("songpack_dir")
+    s_audit_drums.add_argument("--window-ms", type=float, default=DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS)
+    s_audit_drums.add_argument(
+        "--threshold-dbfs",
+        type=float,
+        action="append",
+        dest="threshold_dbfs",
+        help="Low-energy threshold to report; repeat to provide multiple thresholds.",
+    )
+    s_audit_drums.set_defaults(func=cmd_audit_drums)
 
     s_runtime = sub.add_parser("runtime-check")
     s_runtime.set_defaults(func=cmd_runtime_check)
