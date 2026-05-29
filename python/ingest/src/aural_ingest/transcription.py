@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 from typing import Any, Callable, Iterable
 
+from aural_ingest.device import select_device
 from aural_ingest.mt3_compat import ensure_mt3_transformers_compat, suppress_mt3_runtime_warnings
 
 KNOWN_HEURISTIC_DRUM_FILTERS: tuple[str, ...] = (
@@ -314,6 +315,8 @@ class MelodicTranscriptionResult:
     used_method: str | None
     attempted_methods: list[str]
     warnings: list[str]
+    used_score: float | None = None
+    attempt_scores: dict[str, float] = field(default_factory=dict)
 
 
 MelodicTranscriber = Callable[[Path], list[MelodicNote]]
@@ -328,6 +331,153 @@ class InstrumentTranscriptionResult:
     attempted_methods: list[str]
     warnings: list[str]
     stem_path: str | None = None
+    used_score: float | None = None
+    attempt_scores: dict[str, float] = field(default_factory=dict)
+
+
+# Minimum plausibility score a producer's output must clear to be accepted
+# immediately. Below this, the orchestrators keep looking for a better
+# producer and only fall back to the best-scoring non-empty result.
+MIN_TRANSCRIPTION_SCORE = 0.5
+
+
+def _event_onset(event: Any) -> float:
+    """Onset time of a MelodicNote (``t_on``) or DrumEvent (``time``)."""
+    if hasattr(event, "t_on"):
+        return float(getattr(event, "t_on", 0.0))
+    return float(getattr(event, "time", 0.0))
+
+
+def _event_pitch(event: Any) -> int | None:
+    """MIDI pitch of a MelodicNote (``pitch``); None when not pitch-meaningful."""
+    if hasattr(event, "pitch"):
+        return int(getattr(event, "pitch"))
+    return None
+
+
+def _stem_active_seconds(stem_path: Path) -> tuple[float, float, list[tuple[float, float]]]:
+    """Estimate the active (non-silent) duration of a stem.
+
+    Returns ``(active_seconds, total_seconds, silent_windows)`` where
+    ``silent_windows`` is a list of ``(start, end)`` time ranges (seconds)
+    judged silent by an RMS floor. Returns ``(0.0, 0.0, [])`` when the audio
+    can't be read.
+    """
+    from aural_ingest.algorithms._common import frame_rms_series, read_wav_mono_normalized
+
+    try:
+        samples, sr = read_wav_mono_normalized(stem_path)
+    except Exception:
+        return 0.0, 0.0, []
+    if not samples or sr <= 0:
+        return 0.0, 0.0, []
+
+    frame = max(1, int(0.05 * sr))
+    hop = frame
+    rms = frame_rms_series(samples, frame, hop)
+    if not rms:
+        return 0.0, 0.0, []
+    peak = max(rms)
+    if peak <= 0.0:
+        return 0.0, 0.0, []
+    floor = max(1e-4, peak * 0.05)
+    hop_sec = hop / float(sr)
+    total = len(rms) * hop_sec
+    active = 0.0
+    silent_windows: list[tuple[float, float]] = []
+    for idx, value in enumerate(rms):
+        start = idx * hop_sec
+        if value >= floor:
+            active += hop_sec
+        else:
+            silent_windows.append((start, start + hop_sec))
+    return active, total, silent_windows
+
+
+def _octave_spread_score(pitches: list[int]) -> float:
+    """0..1 sanity score from the pitch spread.
+
+    A plausible melodic/poly part spans a few octaves; a hallucinating model
+    sprays notes across the full keyboard (or collapses to a single repeated
+    pitch). Penalize both extremes.
+    """
+    if not pitches:
+        return 0.0
+    spread = (max(pitches) - min(pitches)) / 12.0  # octaves
+    if spread <= 0.0:
+        # Single repeated pitch -- suspicious unless there's only one note.
+        return 1.0 if len(pitches) <= 1 else 0.4
+    if spread <= 4.0:
+        return 1.0
+    # Decay past 4 octaves; ~7 octaves (full keyboard) -> ~0.4.
+    return max(0.2, 1.0 - (spread - 4.0) * 0.2)
+
+
+def score_transcription(events: list[Any], stem_path: Path | None = None) -> float:
+    """Plausibility score in ``[0, 1]`` for a transcription result.
+
+    Combines (where information is available):
+      * note density vs the stem's active (non-silent) duration,
+      * octave-spread sanity (melodic/poly notes only),
+      * the fraction of notes whose onset lands in a silent stem region.
+
+    With no stem, scores from octave-spread plus a coarse density check
+    against the transcription's own time span. An empty result scores 0.
+    """
+    if not events:
+        return 0.0
+
+    onsets = [_event_onset(e) for e in events]
+    pitches = [p for p in (_event_pitch(e) for e in events) if p is not None]
+
+    components: list[float] = []
+
+    if pitches:
+        components.append(_octave_spread_score(pitches))
+
+    active_sec = total_sec = 0.0
+    silent_windows: list[tuple[float, float]] = []
+    if stem_path is not None:
+        active_sec, total_sec, silent_windows = _stem_active_seconds(stem_path)
+
+    # Only trust the stem-energy reference when the stem reads as reliably
+    # active. Mostly-silent stems (click tracks, near-silent or unreadable
+    # audio) make the RMS-based density/silence map pathological, so we fall
+    # back to the self-consistent span-based density check below.
+    stem_reliable = total_sec > 0.0 and (active_sec / total_sec) >= 0.25
+
+    if stem_reliable:
+        # Notes per active second. Real parts rarely exceed ~25 onsets/sec;
+        # well above that signals onset-spam hallucination.
+        density = len(events) / active_sec
+        if density <= 12.0:
+            density_score = 1.0
+        else:
+            density_score = max(0.1, 1.0 - (density - 12.0) * 0.05)
+        components.append(density_score)
+
+        # Fraction of onsets landing in silent stem regions.
+        if silent_windows:
+            silent = 0
+            for t in onsets:
+                for lo, hi in silent_windows:
+                    if lo <= t < hi:
+                        silent += 1
+                        break
+            silent_frac = silent / float(len(onsets))
+            components.append(max(0.0, 1.0 - silent_frac))
+    else:
+        # No reliable stem energy reference: density against the result's own
+        # time span.
+        span = max(onsets) - min(onsets) if len(onsets) > 1 else 0.0
+        if span > 0.0:
+            density = len(events) / span
+            density_score = 1.0 if density <= 12.0 else max(0.1, 1.0 - (density - 12.0) * 0.05)
+            components.append(density_score)
+
+    if not components:
+        return 0.5
+    return max(0.0, min(1.0, sum(components) / len(components)))
 
 
 def is_mt3_drum_engine(engine_id: str | None) -> bool:
@@ -654,7 +804,7 @@ def _transcribe_drums_mt3_events(
                 model = load_model(
                     str(resolved["model_id"]),
                     checkpoint_path=str(checkpoint_path),
-                    device="cpu",
+                    device=select_device("AURAL_MT3_DEVICE"),
                     auto_download=False,
                 )
                 midi = model.transcribe(audio.astype("float32"), sr=sr)
@@ -967,6 +1117,18 @@ def build_default_melodic_algorithm_registry(
         # is unavailable or returns nothing. Reversed from the original
         # ordering, which let the always-firing heuristic shadow the learned
         # models.
+        #
+        # Scored gate: instead of returning the first non-empty producer,
+        # score each candidate's plausibility and accept the first that clears
+        # MIN_TRANSCRIPTION_SCORE; otherwise fall back to the best-scoring
+        # non-empty candidate. Per-producer failures + scores are recorded on
+        # ``_piano_auto.last_run`` so transcribe_melodic can surface them.
+        warnings: list[str] = []
+        attempted: list[str] = []
+        scores: dict[str, float] = {}
+        best: tuple[float, list[MelodicNote]] | None = None
+        chosen: list[MelodicNote] = []
+        chosen_score: float | None = None
         for producer in (
             # Consensus filter first: same model as piano_pti_clean but
             # gated by a second pass on the full mix, which kills the
@@ -990,13 +1152,32 @@ def build_default_melodic_algorithm_registry(
             _basic_pitch,
             _pyin,
         ):
+            name = getattr(producer, "__name__", "producer").lstrip("_")
+            attempted.append(name)
             try:
                 notes = producer(stem_path)
-            except Exception:
+            except Exception as exc:
+                warnings.append(f"piano_auto producer '{name}' failed: {exc!r}")
                 continue
-            if notes:
-                return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
-        return []
+            if not notes:
+                continue
+            cleaned = piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
+            score = score_transcription(cleaned, stem_path)
+            scores[name] = round(score, 4)
+            if best is None or score > best[0]:
+                best = (score, cleaned)
+            if score >= MIN_TRANSCRIPTION_SCORE:
+                chosen, chosen_score = cleaned, score
+                break
+        if not chosen and best is not None:
+            chosen, chosen_score = best[1], best[0]
+        _piano_auto.last_run = {
+            "warnings": warnings,
+            "attempted": attempted,
+            "scores": scores,
+            "used_score": chosen_score,
+        }
+        return chosen
 
     def _piano_transkun(stem_path: Path) -> list[MelodicNote]:
         return piano_transkun.transcribe(stem_path, instrument=_inst)
@@ -1631,6 +1812,24 @@ def transcribe_drums_dsp(
 ) -> DrumTranscriptionResult:
     normalized, warnings = resolve_drum_engine(requested_filter)
     attempted: list[str] = []
+    scores: dict[str, float] = {}
+    best: tuple[float, str, list[DrumEvent]] | None = None
+    taxonomy_resolved = validate_drum_taxonomy(taxonomy)
+
+    def _build(algorithm_id: str, events: list[DrumEvent], score: float | None) -> DrumTranscriptionResult:
+        mapped_events = remap_drum_events_to_taxonomy(events, taxonomy_resolved)
+        return DrumTranscriptionResult(
+            events=mapped_events,
+            used_algorithm=algorithm_id,
+            attempted_algorithms=attempted,
+            warnings=warnings,
+            meta={
+                "backend": "heuristic",
+                "taxonomy": taxonomy_resolved,
+                "used_score": round(score, 4) if score is not None else None,
+                "attempt_scores": scores,
+            },
+        )
 
     for algorithm_id in drum_fallback_chain(normalized):
         attempted.append(algorithm_id)
@@ -1645,30 +1844,36 @@ def transcribe_drums_dsp(
         try:
             events = fn(stem_path)
         except Exception as e:
-            msg = f"drum algorithm '{algorithm_id}' failed: {e}"
+            msg = f"drum algorithm '{algorithm_id}' failed: {e!r}"
             warnings.append(msg)
             if logger:
                 logger(msg)
             continue
 
-        if events:
-            taxonomy_resolved = validate_drum_taxonomy(taxonomy)
-            mapped_events = remap_drum_events_to_taxonomy(events, taxonomy_resolved)
-            return DrumTranscriptionResult(
-                events=mapped_events,
-                used_algorithm=algorithm_id,
-                attempted_algorithms=attempted,
-                warnings=warnings,
-                meta={"backend": "heuristic", "taxonomy": taxonomy_resolved},
-            )
+        if not events:
+            continue
 
-    taxonomy_resolved = validate_drum_taxonomy(taxonomy)
+        score = score_transcription(events, stem_path)
+        scores[algorithm_id] = round(score, 4)
+        if best is None or score > best[0]:
+            best = (score, algorithm_id, events)
+        if score >= MIN_TRANSCRIPTION_SCORE:
+            return _build(algorithm_id, events, score)
+
+    if best is not None:
+        return _build(best[1], best[2], best[0])
+
     return DrumTranscriptionResult(
         events=[],
         used_algorithm=None,
         attempted_algorithms=attempted,
         warnings=warnings,
-        meta={"backend": "heuristic", "taxonomy": taxonomy_resolved},
+        meta={
+            "backend": "heuristic",
+            "taxonomy": taxonomy_resolved,
+            "used_score": None,
+            "attempt_scores": scores,
+        },
     )
 
 
@@ -1812,6 +2017,8 @@ def transcribe_melodic(
         )
 
     attempted: list[str] = []
+    scores: dict[str, float] = {}
+    best: tuple[float, str, list[MelodicNote]] | None = None
     for method in melodic_fallback_chain(normalized, instrument=instrument):
         attempted.append(method)
         fn = algorithm_registry.get(method)
@@ -1825,25 +2032,53 @@ def transcribe_melodic(
         try:
             notes = fn(stem_path)
         except Exception as e:
-            msg = f"melodic method '{method}' failed: {e}"
+            msg = f"melodic method '{method}' failed: {e!r}"
             warnings.append(msg)
             if logger:
                 logger(msg)
             continue
 
-        if notes:
+        # Surface piano_auto's internal per-producer diagnostics.
+        last_run = getattr(fn, "last_run", None)
+        if isinstance(last_run, dict):
+            warnings.extend(last_run.get("warnings", []))
+            for inner_name, inner_score in last_run.get("scores", {}).items():
+                scores[f"{method}.{inner_name}"] = inner_score
+
+        if not notes:
+            continue
+
+        score = score_transcription(notes, stem_path)
+        scores[method] = round(score, 4)
+        if best is None or score > best[0]:
+            best = (score, method, notes)
+        if score >= MIN_TRANSCRIPTION_SCORE:
             return MelodicTranscriptionResult(
                 notes=notes,
                 used_method=method,
                 attempted_methods=attempted,
                 warnings=warnings,
+                used_score=round(score, 4),
+                attempt_scores=scores,
             )
+
+    if best is not None:
+        return MelodicTranscriptionResult(
+            notes=best[2],
+            used_method=best[1],
+            attempted_methods=attempted,
+            warnings=warnings,
+            used_score=round(best[0], 4),
+            attempt_scores=scores,
+        )
 
     return MelodicTranscriptionResult(
         notes=[],
         used_method=None,
         attempted_methods=attempted,
         warnings=warnings,
+        used_score=None,
+        attempt_scores=scores,
     )
 
 
@@ -1950,6 +2185,8 @@ def transcribe_all_melodic_stems(
                 attempted_methods=result.attempted_methods,
                 warnings=result.warnings,
                 stem_path=str(stem_path),
+                used_score=result.used_score,
+                attempt_scores=result.attempt_scores,
             )
         )
 

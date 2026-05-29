@@ -26,6 +26,7 @@ from aural_ingest.drum_benchmark import (
     format_benchmark_summary,
     load_drum_reference,
 )
+from aural_ingest.device import select_device
 from aural_ingest.guitar_split import split_lead_rhythm_guitar_stem
 from aural_ingest.mt3_compat import ensure_mt3_transformers_compat
 from aural_ingest.progress import ProgressEvent, emit, log
@@ -1349,7 +1350,7 @@ def _separate_stems_with_demucs(
         ref_std = ref.std().clamp(min=1e-6)
         wav = (wav - ref_mean) / ref_std
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = select_device("AURAL_DEMUCS_DEVICE")
         sources = apply_model(
             model,
             wav[None],
@@ -3233,18 +3234,24 @@ def cmd_import(args: argparse.Namespace) -> int:
             logger=log,
         )
 
-    # Legacy fallback: transcribe a single melodic track if no instrument stems.
-    melodic_source = lead_stem if lead_stem.is_file() else dst_wav
-    emit(
-        ProgressEvent(type="stage_progress", id="transcribe_drums", progress=0.94, message="analyzing melodic notes")
-    )
-    melodic_registry = build_default_melodic_algorithm_registry()
-    melodic_result = transcribe_melodic(
-        melodic_source,
-        requested_method=tr_opts["melodic_method"],
-        algorithm_registry=melodic_registry,
-        logger=log,
-    )
+    # Legacy fallback: transcribe a single melodic track ONLY when no
+    # per-instrument stems were transcribed. When instrument_results exist
+    # the full-mix pass would be discarded for notes.mid yet still drive
+    # events.json/metadata -- a wasted full transcription -- so we skip it
+    # and build everything from instrument_results instead.
+    melodic_result = None
+    if not instrument_results:
+        melodic_source = lead_stem if lead_stem.is_file() else dst_wav
+        emit(
+            ProgressEvent(type="stage_progress", id="transcribe_drums", progress=0.94, message="analyzing melodic notes")
+        )
+        melodic_registry = build_default_melodic_algorithm_registry()
+        melodic_result = transcribe_melodic(
+            melodic_source,
+            requested_method=tr_opts["melodic_method"],
+            algorithm_registry=melodic_registry,
+            logger=log,
+        )
 
     # Build MIDI output.
     if instrument_results:
@@ -3287,10 +3294,10 @@ def cmd_import(args: argparse.Namespace) -> int:
     tr_opts["drum_attempted_algorithms"] = drum_result.attempted_algorithms
     if drum_result.meta:
         tr_opts["drum_engine_meta"] = drum_result.meta
-    tr_opts["melodic_method_used"] = melodic_result.used_method or tr_opts["melodic_method"]
-    tr_opts["melodic_attempted_methods"] = melodic_result.attempted_methods
+    tr_opts["drum_score"] = drum_result.meta.get("used_score")
+    tr_opts["drum_attempt_scores"] = drum_result.meta.get("attempt_scores", {})
 
-    all_warnings = [*tr_opts.get("warnings", []), *drum_result.warnings, *melodic_result.warnings]
+    all_warnings = [*tr_opts.get("warnings", []), *drum_result.warnings]
     if instrument_results:
         for ir in instrument_results:
             all_warnings.extend(ir.warnings)
@@ -3301,6 +3308,26 @@ def cmd_import(args: argparse.Namespace) -> int:
         tr_opts["instrument_melodic_attempted_methods"] = {
             ir.instrument: ir.attempted_methods for ir in instrument_results
         }
+        tr_opts["instrument_melodic_scores"] = {
+            ir.instrument: ir.used_score for ir in instrument_results
+        }
+        tr_opts["instrument_melodic_attempt_scores"] = {
+            ir.instrument: ir.attempt_scores for ir in instrument_results
+        }
+        # Derive a representative top-level melodic summary from the
+        # per-instrument results (the legacy single-track pass is skipped
+        # when instrument stems exist).
+        primary = instrument_results[0]
+        tr_opts["melodic_method_used"] = primary.used_method or tr_opts["melodic_method"]
+        tr_opts["melodic_attempted_methods"] = primary.attempted_methods
+        tr_opts["melodic_score"] = primary.used_score
+        tr_opts["melodic_attempt_scores"] = primary.attempt_scores
+    else:
+        all_warnings.extend(melodic_result.warnings)
+        tr_opts["melodic_method_used"] = melodic_result.used_method or tr_opts["melodic_method"]
+        tr_opts["melodic_attempted_methods"] = melodic_result.attempted_methods
+        tr_opts["melodic_score"] = melodic_result.used_score
+        tr_opts["melodic_attempt_scores"] = melodic_result.attempt_scores
     tr_opts["warnings"] = list(dict.fromkeys(all_warnings))
 
     manifest["pipeline"]["transcription"] = tr_opts
@@ -3324,16 +3351,21 @@ def cmd_import(args: argparse.Namespace) -> int:
             "source_kind": tr_opts.get("drum_source_kind"),
             "source_path": tr_opts.get("drum_source_path"),
             "attempted_engines": tr_opts.get("drum_attempted_algorithms", []),
+            "score": tr_opts.get("drum_score"),
+            "attempt_scores": tr_opts.get("drum_attempt_scores", {}),
             "warnings": [*drum_result.warnings],
         },
         "melodic": {
             "requested_engine": tr_opts.get("melodic_method"),
             "used_engine": tr_opts.get("melodic_method_used"),
             "attempted_engines": tr_opts.get("melodic_attempted_methods", []),
-            "warnings": [*melodic_result.warnings],
+            "score": tr_opts.get("melodic_score"),
+            "attempt_scores": tr_opts.get("melodic_attempt_scores", {}),
+            "warnings": [*(melodic_result.warnings if melodic_result is not None else [])],
             "instrument_stems": tr_opts.get("instrument_stems_transcribed", []),
             "instrument_engines": tr_opts.get("instrument_melodic_methods_used", {}),
             "instrument_attempted_engines": tr_opts.get("instrument_melodic_attempted_methods", {}),
+            "instrument_scores": tr_opts.get("instrument_melodic_scores", {}),
         },
     }
     _write_json(out / "manifest.json", manifest)

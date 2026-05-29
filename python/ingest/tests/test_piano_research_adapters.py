@@ -71,6 +71,9 @@ def test_piano_pti_runs_api_and_decodes_midi(monkeypatch, tmp_path: Path) -> Non
     checkpoint = tmp_path / "checkpoint.pth"
     checkpoint.write_bytes(b"checkpoint")
     monkeypatch.setenv("AURAL_PIANO_PTI_CHECKPOINT", str(checkpoint))
+    # _device() now flows through select_device(); pin it so the assertion is
+    # deterministic regardless of the host's CUDA availability.
+    monkeypatch.setenv("AURAL_PIANO_DEVICE", "cpu")
 
     class FakePianoTranscription:
         def __init__(self, *, device, checkpoint_path, model_type=None):
