@@ -198,28 +198,54 @@ def evaluate_melodic(
 # Algorithm registry and runner
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Algorithm status catalog (single source of truth)
+# ---------------------------------------------------------------------------
+#
+# Classifies each melodic algorithm module so the benchmark list, docs, and
+# any future tooling agree on which algorithms are "real":
+#   * "production"  -- wired into a default registry / fallback chain.
+#   * "experimental"-- benchmark-only research variants, not in any default
+#                      chain but kept for A/B comparison.
+#   * "archived"    -- superseded; retained on disk but excluded from the
+#                      benchmark sweep (archive candidates for deletion).
+#
+# MELODIC_ALGORITHMS below derives from this dict rather than a hand-kept
+# literal, so they can never drift apart.
+ALGORITHM_STATUS: dict[str, str] = {
+    # --- production (reachable via KNOWN_MELODIC_METHODS registry) ---
+    "melodic_basic_pitch": "production",
+    "melodic_pyin": "production",
+    "melodic_combined": "production",
+    "melodic_octave_fix": "production",
+    "melodic_yin_octave_hps_fix": "production",
+    "melodic_adaptive": "production",
+    "melodic_yin_bass80": "production",
+    "melodic_hpss_combined": "production",
+    "melodic_template_multipass": "production",
+    "melodic_torchcrepe": "production",
+    # --- experimental (benchmark-only research variants) ---
+    "melodic_yin": "experimental",
+    "melodic_onset_yin": "experimental",
+    "melodic_hpss_yin": "experimental",
+    "melodic_fft_hps": "experimental",
+    "melodic_librosa_pyin": "experimental",
+    "melodic_yin_t020": "experimental",
+    "melodic_hpss_onset": "experimental",
+    "melodic_pyin_long": "experimental",
+    "melodic_yin_octave_hps": "experimental",
+    # --- archived (superseded; excluded from the sweep) ---
+    # melodic_crepe: TensorFlow `crepe` wrapper, superseded by the
+    # torch-based melodic_torchcrepe production adapter.
+    "melodic_crepe": "archived",
+}
+
+# Benchmark sweep order: production first, then experimental. Archived
+# algorithms are intentionally excluded.
 MELODIC_ALGORITHMS = [
-    "melodic_basic_pitch",
-    "melodic_pyin",
-    "melodic_yin",
-    "melodic_onset_yin",
-    "melodic_hpss_yin",
-    "melodic_fft_hps",
-    "melodic_librosa_pyin",
-    # --- experiments (round 2) ---
-    "melodic_yin_t020",
-    "melodic_yin_bass80",
-    "melodic_combined",
-    "melodic_hpss_onset",
-    "melodic_pyin_long",
-    # --- experiments (round 3) ---
-    "melodic_octave_fix",
-    "melodic_adaptive",
-    "melodic_hpss_combined",
-    # --- experiments (round 4: template multi-pass) ---
-    "melodic_template_multipass",
-    "melodic_yin_octave_hps",
-    "melodic_yin_octave_hps_fix",
+    name for name, status in ALGORITHM_STATUS.items() if status == "production"
+] + [
+    name for name, status in ALGORITHM_STATUS.items() if status == "experimental"
 ]
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 from aural_ingest.algorithms.piano_midi import decode_midi_notes
+from aural_ingest.device import select_device
 from aural_ingest.transcription import MelodicNote
 
 
@@ -51,16 +52,7 @@ def _device() -> str:
     separation path), falling back to CPU. PTI on the RTX 5090 is ~5-10x
     faster than CPU, so defaulting to cuda avoids the multi-hour CPU runs.
     """
-    override = os.environ.get("AURAL_PIANO_DEVICE", "").strip()
-    if override:
-        return override
-    try:
-        import torch
-        if torch.cuda.is_available():
-            return "cuda"
-    except Exception:
-        pass
-    return "cpu"
+    return select_device("AURAL_PIANO_DEVICE")
 
 
 @contextlib.contextmanager

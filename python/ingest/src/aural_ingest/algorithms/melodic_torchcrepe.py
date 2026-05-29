@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from aural_ingest.algorithms._common import read_wav_mono_normalized
+from aural_ingest.device import select_device
 from aural_ingest.transcription import INSTRUMENT_FREQ_RANGES, MelodicNote
 
 
@@ -128,7 +129,7 @@ def transcribe(
         instrument, INSTRUMENT_FREQ_RANGES["melodic"]
     )
     hop_length = max(1, int(round(float(hop_sec) * float(sr))))
-    device = os.environ.get("AURAL_TORCHCREPE_DEVICE", "cpu").strip() or "cpu"
+    device = select_device("AURAL_TORCHCREPE_DEVICE")
     model = os.environ.get("AURAL_TORCHCREPE_MODEL", "tiny").strip() or "tiny"
     batch_size = int(os.environ.get("AURAL_TORCHCREPE_BATCH_SIZE", "2048") or "2048")
 

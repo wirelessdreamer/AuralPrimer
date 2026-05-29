@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import importlib
-import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from aural_ingest.algorithms.piano_midi import decode_midi_notes
+from aural_ingest.device import select_device
 from aural_ingest.transcription import MelodicNote
 
 
@@ -21,7 +21,7 @@ def _ensure_transkun_available() -> None:
 
 
 def _device() -> str:
-    return os.environ.get("AURAL_PIANO_DEVICE", "cpu").strip() or "cpu"
+    return select_device("AURAL_PIANO_DEVICE")
 
 
 def _summarize_process_error(result: subprocess.CompletedProcess[str]) -> str:

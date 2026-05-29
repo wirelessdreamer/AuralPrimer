@@ -1120,12 +1120,22 @@ def test_import_melodic_fallback_uses_pyin_when_basic_pitch_fails(
         raise RuntimeError("missing model")
 
     def pyin_ok(_stem: Path) -> list[MelodicNote]:
-        return [MelodicNote(t_on=0.0, t_off=0.1, pitch=64, velocity=90)]
+        return [
+            MelodicNote(t_on=0.0, t_off=0.1, pitch=64, velocity=90),
+            MelodicNote(t_on=0.4, t_off=0.5, pitch=62, velocity=88),
+        ]
+
+    # cmd_import builds per-instrument stems (via guitar split) and routes them
+    # through transcribe_all_melodic_stems, which builds its registry from
+    # transcription.build_default_melodic_algorithm_registry(instrument=...).
+    # Patch that so the basic_pitch -> pyin fallback is exercised. The legacy
+    # single-track pass is intentionally skipped when instrument stems exist.
+    import aural_ingest.transcription as transcription
 
     monkeypatch.setattr(
-        cli,
+        transcription,
         "build_default_melodic_algorithm_registry",
-        lambda: {
+        lambda *args, **kwargs: {
             "basic_pitch": basic_fail,
             "pyin": pyin_ok,
         },

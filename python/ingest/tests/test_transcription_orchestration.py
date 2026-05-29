@@ -546,6 +546,10 @@ def test_transcribe_drums_mt3_uses_local_checkpoint_only(tmp_path: Path, monkeyp
 
     from aural_ingest.transcription import _transcribe_drums_mt3_events
 
+    # MT3 device now flows through select_device(); pin it so the assertion is
+    # deterministic regardless of the host's CUDA availability.
+    monkeypatch.setenv("AURAL_MT3_DEVICE", "cpu")
+
     stem = tmp_path / "stem.wav"
     stem.write_bytes(b"x")
 
