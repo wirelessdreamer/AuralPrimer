@@ -1,3 +1,5 @@
+export * from "./draw";
+
 export type TransportState = {
   t: number; // seconds (song time)
   isPlaying: boolean;
