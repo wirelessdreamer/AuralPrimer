@@ -15,6 +15,9 @@ asio = ["cpal/asio"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Shared SongPack manifest parsing + songs-folder watcher (deduped from the
+# near-verbatim copy that used to live in both src-tauri lib.rs files).
+songpack-core = { path = "../../../crates/songpack-core" }
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
@@ -32,16 +35,20 @@ midly = "0.5"
 cpal = "0.15"
 rtrb = "0.3"
 
+# Used to bound the ingest sidecar's event loop with a max-runtime deadline so a
+# wedged / CPU-bound import is killed instead of hanging indefinitely. tauri
+# already runs on a tokio runtime with the time driver enabled; we only need the
+# `time` feature for `tokio::time::timeout`.
+tokio = { version = "1", features = ["time"] }
+
 # Phase 1.5 decode
 # NOTE: Many .ogg files in the wild are Opus, not Vorbis.
 # Symphonia 0.5.5 does not expose an `opus` feature directly on the top-level crate;
 # use all-codecs/formats to ensure broad support.
 symphonia = { version = "0.5", default-features = false, features = ["all-codecs", "all-formats"] }
 
-# Filesystem watcher for the songs folder so external `aural_ingest import`
-# drops light up the library panel automatically. Default features are fine on
-# Windows/macOS/Linux (ReadDirectoryChangesW / FSEvents / inotify).
-notify = "6"
+# NOTE: the songs-folder filesystem watcher (and its `notify` dependency) now
+# lives in the shared `songpack-core` crate.
 
 [dev-dependencies]
 tempfile = "3"

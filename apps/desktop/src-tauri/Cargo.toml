@@ -15,6 +15,11 @@ asio = ["cpal/asio"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Shared SongPack manifest parsing + songs-folder watcher (deduped from the
+# near-verbatim copy that used to live in both src-tauri lib.rs files). This
+# also brings the songs-folder filesystem watcher to the desktop shell, which
+# previously lacked it.
+songpack-core = { path = "../../../crates/songpack-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
@@ -31,6 +36,12 @@ midly = "0.5"
 # Phase 1 native playback engine
 cpal = "0.15"
 rtrb = "0.3"
+
+# Used to bound the ingest sidecar's event loop with a max-runtime deadline so a
+# wedged / CPU-bound import is killed instead of hanging indefinitely. tauri
+# already runs on a tokio runtime with the time driver enabled; we only need the
+# `time` feature for `tokio::time::timeout`.
+tokio = { version = "1", features = ["time"] }
 
 # Phase 1.5 decode
 # NOTE: Many .ogg files in the wild are Opus, not Vorbis.

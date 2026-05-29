@@ -21,6 +21,16 @@ pub mod raw_song;
 pub mod stem_midi;
 pub mod wav_mix;
 
+// Shared SongPack contract logic (manifest parsing + songs-folder watcher).
+// The watcher is re-exported under the `songs_watch` path so the wiring mirrors
+// the game shell.
+use songpack_core::manifest::{
+    parse_manifest_json, read_dir_manifest, read_dir_manifest_raw, read_zip_manifest,
+    read_zip_manifest_raw, ManifestSummary, SongPackScanEntry,
+};
+use songpack_core::songs_watch;
+use songpack_core::songs_watch::SongsWatchState;
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct Settings {
     #[serde(default)]
@@ -71,15 +81,6 @@ struct SongsFolderPaths {
     settings_path: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ManifestSummary {
-    pub schema_version: Option<String>,
-    pub song_id: Option<String>,
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub duration_sec: Option<f64>,
-}
-
 #[derive(Debug, Serialize)]
 pub struct SongPackDetails {
     pub container_path: String,
@@ -108,15 +109,6 @@ pub struct SongPackDetails {
     /// List of chart json paths (relative in zip/dir).
     pub charts: Vec<String>,
 
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SongPackScanEntry {
-    pub container_path: String,
-    pub kind: String,
-    pub ok: bool,
-    pub manifest: Option<ManifestSummary>,
     pub error: Option<String>,
 }
 
@@ -309,76 +301,6 @@ where
     tauri::async_runtime::spawn_blocking(task)
         .await
         .map_err(|e| format!("{label} task failed: {e}"))?
-}
-
-fn parse_manifest_json(raw: &str) -> Result<ManifestSummary, String> {
-    let v: serde_json::Value =
-        serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))?;
-
-    // Keep it flexible: pull out common fields if present.
-    Ok(ManifestSummary {
-        schema_version: v
-            .get("schema_version")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string()),
-        song_id: v
-            .get("song_id")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string()),
-        title: v
-            .get("title")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string()),
-        artist: v
-            .get("artist")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string()),
-        duration_sec: v.get("duration_sec").and_then(|x| x.as_f64()),
-    })
-}
-
-fn read_dir_manifest(songpack_dir: &Path) -> Result<ManifestSummary, String> {
-    let manifest_path = songpack_dir.join("manifest.json");
-    let raw = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("read {}: {e}", manifest_path.display()))?;
-    parse_manifest_json(&raw)
-}
-
-fn read_zip_manifest(songpack_zip: &Path) -> Result<ManifestSummary, String> {
-    let f = fs::File::open(songpack_zip)
-        .map_err(|e| format!("open {}: {e}", songpack_zip.display()))?;
-    let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip open: {e}"))?;
-    let mut file = archive
-        .by_name("manifest.json")
-        .map_err(|e| format!("zip missing manifest.json: {e}"))?;
-    let mut raw = String::new();
-    file.read_to_string(&mut raw)
-        .map_err(|e| format!("zip read manifest.json: {e}"))?;
-    parse_manifest_json(&raw)
-}
-
-fn parse_manifest_raw(raw: &str) -> Result<serde_json::Value, String> {
-    serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))
-}
-
-fn read_dir_manifest_raw(songpack_dir: &Path) -> Result<serde_json::Value, String> {
-    let manifest_path = songpack_dir.join("manifest.json");
-    let raw = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("read {}: {e}", manifest_path.display()))?;
-    parse_manifest_raw(&raw)
-}
-
-fn read_zip_manifest_raw(songpack_zip: &Path) -> Result<serde_json::Value, String> {
-    let f = fs::File::open(songpack_zip)
-        .map_err(|e| format!("open {}: {e}", songpack_zip.display()))?;
-    let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip open: {e}"))?;
-    let mut file = archive
-        .by_name("manifest.json")
-        .map_err(|e| format!("zip missing manifest.json: {e}"))?;
-    let mut raw = String::new();
-    file.read_to_string(&mut raw)
-        .map_err(|e| format!("zip read manifest.json: {e}"))?;
-    parse_manifest_raw(&raw)
 }
 
 fn dir_has_file(root: &Path, rel: &str) -> bool {
@@ -639,7 +561,12 @@ fn set_songs_folder_override(app: AppHandle, songs_folder: String) -> Result<(),
     let paths = get_paths(&app)?;
     let mut settings = load_settings(&paths);
     settings.songs_folder = Some(songs_folder);
-    save_settings(&paths, &settings)
+    save_settings(&paths, &settings)?;
+    // Re-mount the filesystem watcher on the new path so external drops keep
+    // refreshing the library panel. Best-effort: a watcher failure should not
+    // block the user from setting the override.
+    remount_songs_watch_best_effort(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -647,7 +574,34 @@ fn clear_songs_folder_override(app: AppHandle) -> Result<(), String> {
     let paths = get_paths(&app)?;
     let mut settings = load_settings(&paths);
     settings.songs_folder = None;
-    save_settings(&paths, &settings)
+    save_settings(&paths, &settings)?;
+    remount_songs_watch_best_effort(&app);
+    Ok(())
+}
+
+/// Resolve the current songs folder and (re)mount the watcher on it. Logged
+/// failures are non-fatal — the user always retains the manual refresh button.
+fn remount_songs_watch_best_effort(app: &AppHandle) {
+    match get_songs_folder(app.clone()) {
+        Ok(folder) => {
+            let path = PathBuf::from(folder);
+            if let Err(e) = songs_watch::ensure_watch(app, &path) {
+                eprintln!("songs_watch: re-mount failed: {e}");
+            }
+        }
+        Err(e) => eprintln!("songs_watch: cannot resolve songs folder for re-mount: {e}"),
+    }
+}
+
+/// Tauri command counterpart to `remount_songs_watch_best_effort`. The frontend
+/// can call this once on boot to guarantee the watcher is live even if the
+/// `setup()` mount raced ahead of folder creation. Idempotent: returns `Ok(())`
+/// immediately if a watcher on the current path is already running.
+#[tauri::command]
+fn start_songs_folder_watch(app: AppHandle) -> Result<(), String> {
+    let folder = get_songs_folder(app.clone())?;
+    let path = PathBuf::from(folder);
+    songs_watch::ensure_watch(&app, &path)
 }
 
 // -----------------
@@ -1843,13 +1797,30 @@ pub fn run() {
         .manage(MidiClockOutputState::default())
         .manage(MidiClockInputState::default())
         .manage(NativeAudioState::default())
+        .manage(SongsWatchState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             build_main_window(app)?;
 
-            // Restore persisted MIDI clock output selection (best-effort).
+            // Mount the songs-folder watcher as early as possible so external
+            // tools (e.g. `aural_ingest import` from a separate shell) trigger
+            // an automatic library refresh. Best-effort: a failure here just
+            // means the user falls back to the manual refresh button.
             let handle = app.handle();
+            match get_songs_folder(handle.clone()) {
+                Ok(folder) => {
+                    let path = PathBuf::from(folder);
+                    if let Err(e) = songs_watch::ensure_watch(handle, &path) {
+                        eprintln!("songs_watch: initial mount failed: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("songs_watch: cannot resolve songs folder for initial mount: {e}");
+                }
+            }
+
+            // Restore persisted MIDI clock output selection (best-effort).
             if let Ok(Some(sel)) = get_midi_clock_output_port_selection(&handle) {
                 if let Ok(port_id) = midi_clock::resolve_selection_to_port_id(&sel) {
                     let state = app.state::<MidiClockOutputState>();
@@ -1916,6 +1887,7 @@ pub fn run() {
             get_songs_folder,
             set_songs_folder_override,
             clear_songs_folder_override,
+            start_songs_folder_watch,
             // native audio
             native_audio_list_output_hosts,
             native_audio_list_output_devices,
