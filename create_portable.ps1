@@ -50,6 +50,75 @@ function Assert-NotBlank([string]$Value, [string]$Label) {
   }
 }
 
+function Assert-PortableAppNotRunning([string]$AppFriendlyName, [string]$PortableExePath) {
+  # Repacking fails (often cryptically) if the portable app is still open:
+  # the WebView2 user-data lock and the running .exe image are held by the OS,
+  # so Copy-Item over them throws "being used by another process". Detect the
+  # running process up front and emit a clear "close the app first" message.
+  $procBaseName = [System.IO.Path]::GetFileNameWithoutExtension($PortableExePath)
+  $running = @(Get-Process -Name $procBaseName -ErrorAction SilentlyContinue)
+
+  # Match by full executable path when available so we only flag the portable
+  # copy we are about to overwrite, not an unrelated same-named process.
+  $portableFullPath = $null
+  try {
+    $portableFullPath = [System.IO.Path]::GetFullPath($PortableExePath)
+  } catch {
+    $portableFullPath = $PortableExePath
+  }
+
+  $blocking = @()
+  foreach ($proc in $running) {
+    $procPath = $null
+    try { $procPath = $proc.Path } catch { $procPath = $null }
+    if ([string]::IsNullOrWhiteSpace($procPath)) {
+      # Path unavailable (e.g. access denied): be conservative and flag it.
+      $blocking += $proc
+    } elseif ([string]::Equals(
+        [System.IO.Path]::GetFullPath($procPath),
+        $portableFullPath,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+      $blocking += $proc
+    }
+  }
+
+  if ($blocking.Count -gt 0) {
+    $pids = ($blocking | ForEach-Object { $_.Id }) -join ", "
+    throw "$AppFriendlyName is currently running (PID(s): $pids) from '$portableFullPath'. Close the app first, then re-run the portable build (a running app holds the .exe image and the WebView2 lock, so repacking would fail)."
+  }
+}
+
+function Assert-ExeFresherThanDist([string]$AppFriendlyName, [string]$ExePath, [string]$DistDir) {
+  # Guards the exact recurring "stale portable" failure: someone edits the
+  # frontend, rebuilds dist/, but forgets to rebuild the Tauri exe (which
+  # EMBEDS the frontend at compile time). The packaged portable then ships an
+  # old UI. If any file under dist/ is newer than the exe, the exe is stale.
+  if (-not (Test-Path -LiteralPath $ExePath -PathType Leaf)) {
+    throw "$AppFriendlyName executable not found for freshness check: $ExePath"
+  }
+  if (-not (Test-Path -LiteralPath $DistDir -PathType Container)) {
+    # No built frontend to compare against: nothing to enforce.
+    return
+  }
+
+  $distFiles = @(Get-ChildItem -LiteralPath $DistDir -Recurse -File -ErrorAction SilentlyContinue)
+  if ($distFiles.Count -eq 0) {
+    return
+  }
+
+  $exeLastWrite = (Get-Item -LiteralPath $ExePath).LastWriteTimeUtc
+  $newestDist = ($distFiles | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1)
+  $newestDistWrite = $newestDist.LastWriteTimeUtc
+
+  if ($exeLastWrite -lt $newestDistWrite) {
+    throw ("$AppFriendlyName executable is OLDER than its built frontend (dist/). " +
+      "The Tauri exe embeds the frontend at build time, so this would ship a stale UI. " +
+      "Rebuild the app exe after the frontend change. " +
+      "exe='$ExePath' (LastWrite $($exeLastWrite.ToString('o'))) is older than " +
+      "newest dist file '$($newestDist.FullName)' (LastWrite $($newestDistWrite.ToString('o'))).")
+  }
+}
+
 function Resolve-DefaultDemucs6ModelPackZipPath([string]$BasePath) {
   $candidates = @(
     "dist/modelpacks/demucs_6.zip",
@@ -255,6 +324,15 @@ if ($SkipDesktopBuild) {
   $SkipStudioBuild = $true
 }
 
+# Pre-flight: fail fast (before the multi-minute builds) if a portable app is
+# still open. A running app pins its .exe image and the WebView2 user-data lock,
+# so the later Copy-Item over AuralPrimer.exe / AuralStudio.exe would fail with
+# an opaque "file in use" error.
+$preflightPortableGameExe = Join-Path $portableRootAbs "AuralPrimer.exe"
+$preflightPortableStudioExe = Join-Path $portableRootAbs "AuralStudio.exe"
+Assert-PortableAppNotRunning "AuralPrimer" $preflightPortableGameExe
+Assert-PortableAppNotRunning "AuralStudio" $preflightPortableStudioExe
+
 if (-not $SkipGameBuild) {
   Push-Location $repoRootAbs
   try {
@@ -287,6 +365,20 @@ if (-not (Test-Path -LiteralPath $gameExeAbs -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $studioExeAbs -PathType Leaf)) {
   throw "Studio executable not found: $studioExeAbs"
+}
+
+# Frontend-freshness guard: each Tauri exe embeds its compiled frontend
+# (tauri.conf.json frontendDist = ../dist) at build time. If the built dist/
+# is newer than the exe, the exe predates the latest frontend and would ship a
+# stale UI -- the exact recurring "stale portable" failure. Skipped per-app
+# when that app's build was skipped (the caller is reusing a known-good exe).
+$gameDistDir = Resolve-AbsolutePath $repoRootAbs "apps/game/dist"
+$studioDistDir = Resolve-AbsolutePath $repoRootAbs "apps/desktop/dist"
+if (-not $SkipGameBuild) {
+  Assert-ExeFresherThanDist "AuralPrimer" $gameExeAbs $gameDistDir
+}
+if (-not $SkipStudioBuild) {
+  Assert-ExeFresherThanDist "AuralStudio" $studioExeAbs $studioDistDir
 }
 
 $buildSidecarScript = Join-Path $repoRootAbs "build_sidecar.ps1"

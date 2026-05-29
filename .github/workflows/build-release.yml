@@ -100,6 +100,18 @@ jobs:
       - name: Build AuralPrimer (apps/game)
         run: npm run game:build
 
+      # Optional packaged-portable boot smoke test (Windows only). This does NOT
+      # build the portable itself (the canonical `npm run portable:build` is a
+      # heavy, sidecar-dependent step); it only runs IF a portable already
+      # exists at the default/override location. The script SKIPs (exit 0) when
+      # no portable is present, so this never breaks CI. `continue-on-error`
+      # keeps any flake (e.g. no WebView2 on the runner) non-fatal.
+      - name: Packaged-portable boot smoke test (optional, Windows)
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: pwsh
+        run: node scripts/smoke-portable.mjs --timeout-ms 30000
+
       - name: Upload AuralStudio artifacts
         uses: actions/upload-artifact@v4
         if: always()

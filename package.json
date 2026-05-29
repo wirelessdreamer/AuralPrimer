@@ -37,7 +37,8 @@
     "desktop:build:asio": "npm run studio:build:asio",
     "desktop:build:frontend": "npm run studio:build:frontend",
     "portable:sidecar": "node ./scripts/run-powershell.mjs ./build_sidecar.ps1",
-    "portable:build": "node ./scripts/run-powershell.mjs ./create_portable.ps1"
+    "portable:build": "node ./scripts/run-powershell.mjs ./create_portable.ps1",
+    "portable:smoke": "node ./scripts/smoke-portable.mjs"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.16",
