@@ -50,12 +50,31 @@ apps/desktop/src-tauri/.tauri/
 
 # Local portable staging and scratch outputs
 AuralPrimerPortable/
+# Zipped portable output(s): create_portable.ps1 -ZipOutput writes
+# AuralPrimerPortable.zip (and timestamped/variant siblings) next to the dir.
+AuralPrimerPortable*.zip
 .coverage
 python/ingest/.coverage
 python/ingest/coverage.xml
 python/ingest/build/
-tmp_demucs_smoke.wav
-tmp_demucs_smoke_run2.songpack/
+
+# Scratch files (prevent recurrence of the 677GB tmp_pack bloat and stray
+# scratch commits). These are deliberately broad for tmp_ prefixes but the
+# legitimate committed fixtures live under assets/test_fixtures/ (see negations
+# below), so they are never affected.
+tmp_*
+**/tmp_*
+# Root-level scratch screenshots only (root-anchored so nested, intentionally
+# committed images elsewhere are untouched).
+/*.png
+# Scratch SongPacks dumped at the repo root by ad-hoc ingest/demucs runs.
+# Root-anchored so the tracked fixtures under assets/test_fixtures/songpacks/
+# are NOT ignored.
+/*.songpack/
+/*.songpack
+# Belt-and-braces: never ignore the committed SongPack test fixtures even if a
+# broader pattern is added above.
+!assets/test_fixtures/**
 assets/models/mr_mt3/
 assets/models/yourmt3/
 assets/models/piano_pti/

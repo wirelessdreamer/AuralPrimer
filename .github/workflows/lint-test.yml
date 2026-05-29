@@ -32,6 +32,16 @@ jobs:
       - name: TS lint
         run: npm run lint --if-present
 
+      # Build the frontends BEFORE running tests so the dist-bundle runtime
+      # integration test (apps/game/tests/distBundleSongLibrary.integration
+      # .test.ts) loads a freshly compiled bundle instead of silently skipping.
+      # With CI=true set below, that test FAILS (not skips) if dist/ is absent.
+      - name: Build AuralPrimer frontend (apps/game)
+        run: npm -w @auralprimer/game run build
+
+      - name: Build AuralStudio frontend (apps/desktop)
+        run: npm -w @auralprimer/studio run build
+
       - name: Playback Coverage Gate (100%)
         run: npm run test:coverage:playback --if-present
 
@@ -39,6 +49,11 @@ jobs:
         run: npm run test:songpack-fixtures --if-present
 
       - name: TS tests + coverage
+        # CI is provided by GitHub Actions by default; set it explicitly so the
+        # dist-bundle integration test's "fail if dist/ is missing" gate is
+        # active even under non-GitHub runners (e.g. act).
+        env:
+          CI: "true"
         run: npm run test:coverage --if-present
 
       - name: Frontend runtime benchmark artifact
@@ -75,14 +90,44 @@ jobs:
       # Rust (tauri backend)
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust fmt/clippy/tests
+      # Both Tauri crates declare `externalBin: ["binaries/aural_ingest"]`, so
+      # their build scripts fail at compile time ("resource path ... doesn't
+      # exist") unless the sidecar binary is staged. lint-test.yml does NOT
+      # build the (expensive ML) Python sidecar, so stage a zero-byte
+      # placeholder with the host target triple's name. The build script only
+      # checks the file exists; it isn't executed during cargo check/test/clippy.
+      - name: Stage placeholder sidecar for Tauri build scripts
+        shell: bash
         run: |
-          if [ -f apps/desktop/src-tauri/Cargo.toml ]; then
-            cd apps/desktop/src-tauri
-            cargo fmt --all -- --check
-            cargo clippy --all-targets --all-features -- -D warnings
-            cargo test --all
-          else
+          triple="$(rustc -vV | sed -n 's/^host: //p')"
+          for crate in apps/desktop/src-tauri apps/game/src-tauri; do
+            if [ -f "$crate/Cargo.toml" ]; then
+              mkdir -p "$crate/binaries"
+              : > "$crate/binaries/aural_ingest-${triple}"
+            fi
+          done
+
+      - name: Rust fmt/clippy/tests
+        shell: bash
+        run: |
+          # There is no root Cargo workspace, so iterate over every Tauri crate
+          # (AuralStudio = apps/desktop, AuralPrimer = apps/game). Previously
+          # only apps/desktop was linted/tested, leaving the game backend
+          # entirely unchecked in CI.
+          crates=(apps/desktop/src-tauri apps/game/src-tauri)
+          found=0
+          for crate in "${crates[@]}"; do
+            if [ -f "$crate/Cargo.toml" ]; then
+              found=1
+              echo "::group::cargo fmt/clippy/test ($crate)"
+              ( cd "$crate"
+                cargo fmt --all -- --check
+                cargo clippy --all-targets --all-features -- -D warnings
+                cargo test --all )
+              echo "::endgroup::"
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
             echo "No Rust crate yet; skipping"
           fi
 
@@ -91,10 +136,19 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Rust coverage
+        shell: bash
         run: |
-          if [ -f apps/desktop/src-tauri/Cargo.toml ]; then
-            cd apps/desktop/src-tauri
-            cargo llvm-cov --workspace --all-features --lcov --output-path target/coverage/lcov.info --fail-under-lines 75
-          else
+          crates=(apps/desktop/src-tauri apps/game/src-tauri)
+          found=0
+          for crate in "${crates[@]}"; do
+            if [ -f "$crate/Cargo.toml" ]; then
+              found=1
+              echo "::group::cargo llvm-cov ($crate)"
+              ( cd "$crate"
+                cargo llvm-cov --workspace --all-features --lcov --output-path target/coverage/lcov.info --fail-under-lines 75 )
+              echo "::endgroup::"
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
             echo "No Rust crate yet; skipping"
           fi

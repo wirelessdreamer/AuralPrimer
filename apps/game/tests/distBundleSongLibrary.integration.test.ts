@@ -44,9 +44,22 @@ describe("dist bundle Play Songs runtime", () => {
   const mainBundle = distHtmlExists ? findMainBundle() : null;
 
   if (!distHtmlExists || !mainBundle) {
-    // Don't fail in dev when dist/ hasn't been built yet; just skip.
-    // The test runs meaningfully in CI / pre-portable-build hooks.
-    it.skip("dist not built; skipping runtime check (run `npm -w @auralprimer/game run build` first)", () => {});
+    // In CI the frontend is built before tests, so a missing dist/ means the
+    // build step regressed -- FAIL loudly instead of silently skipping (that
+    // silent skip is exactly how the "stale portable / broken bundle" failures
+    // slipped past CI). Locally (no CI env var) we still skip so the suite is
+    // runnable without a prior `npm -w @auralprimer/game run build`.
+    if (process.env.CI) {
+      it("dist bundle must be built before tests run in CI", () => {
+        throw new Error(
+          "apps/game/dist/ is missing in CI. Build the frontend " +
+            "(`npm -w @auralprimer/game run build`) before `npm run test:coverage` " +
+            "so the dist-bundle runtime check actually runs."
+        );
+      });
+    } else {
+      it.skip("dist not built; skipping runtime check (run `npm -w @auralprimer/game run build` first)", () => {});
+    }
     return;
   }
 
