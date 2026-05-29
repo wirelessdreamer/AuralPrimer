@@ -3,11 +3,57 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
 const INGEST_SIDECAR_NAME: &str = "aural_ingest";
+
+/// Default max wall-clock runtime for a single ingest import before the driver
+/// kills the child. Imports are normally minutes; the GPU path is fast and even
+/// the CPU fallback should finish well under this. The deadline exists to catch
+/// a wedged / runaway process (a prior bug let one CPU-bound import hang ~3
+/// hours). Override with `AURALPRIMER_INGEST_TIMEOUT_SEC`.
+const DEFAULT_INGEST_TIMEOUT_SEC: u64 = 30 * 60;
+
+/// Environment variable that overrides [`DEFAULT_INGEST_TIMEOUT_SEC`]. Set to
+/// `0` to disable the deadline entirely (treated as "no limit").
+const INGEST_TIMEOUT_ENV: &str = "AURALPRIMER_INGEST_TIMEOUT_SEC";
+
+/// Resolve the configured max-runtime deadline.
+///
+/// Returns `None` when the deadline is disabled (env var set to `0`), otherwise
+/// `Some(duration)`. Invalid / empty overrides fall back to the default. Kept
+/// pure (takes the env value as an argument) so it is unit-testable without a
+/// real environment or child process.
+fn resolve_max_runtime(env_override: Option<&str>) -> Option<Duration> {
+    let secs = match env_override.map(str::trim) {
+        Some(raw) if !raw.is_empty() => raw.parse::<u64>().unwrap_or(DEFAULT_INGEST_TIMEOUT_SEC),
+        _ => DEFAULT_INGEST_TIMEOUT_SEC,
+    };
+    if secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(secs))
+    }
+}
+
+/// Read the configured deadline from the process environment.
+fn configured_max_runtime() -> Option<Duration> {
+    resolve_max_runtime(std::env::var(INGEST_TIMEOUT_ENV).ok().as_deref())
+}
+
+/// Clear, actionable error surfaced when an import blows past the deadline.
+fn timeout_error_message(limit: Duration) -> String {
+    let minutes = limit.as_secs() / 60;
+    format!(
+        "ingest import exceeded {minutes} min runtime limit and was terminated -- \
+         likely a CPU fallback or a wedged process. Increase or disable the limit \
+         via {INGEST_TIMEOUT_ENV} (seconds; 0 disables) if this import legitimately \
+         needs longer."
+    )
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -263,31 +309,59 @@ fn run_explicit_binary_with_progress(
     let mut stdout_lines: Vec<String> = vec![];
     let mut stderr_lines: Vec<String> = vec![];
 
-    for (kind, line) in rx {
-        match kind {
-            StreamKind::Stdout => {
-                let parsed = serde_json::from_str::<serde_json::Value>(&line).ok();
-                emit_progress(
-                    app,
-                    IngestProgressEvent {
-                        stream: "stdout".to_string(),
-                        line: line.clone(),
-                        parsed,
-                    },
-                );
-                stdout_lines.push(line);
+    // Bound the read loop with the configured max-runtime deadline so a wedged
+    // child cannot hang the import forever. `recv_timeout` returns once the
+    // remaining budget elapses; on that path we kill the child and surface a
+    // clear error rather than blocking on `child.wait()`.
+    let max_runtime = configured_max_runtime();
+    let deadline = max_runtime.map(|d| std::time::Instant::now() + d);
+
+    loop {
+        let recv_result = match deadline {
+            Some(deadline) => {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                rx.recv_timeout(remaining)
+                    .map_err(|e| matches!(e, mpsc::RecvTimeoutError::Timeout))
             }
-            StreamKind::Stderr => {
-                emit_progress(
-                    app,
-                    IngestProgressEvent {
-                        stream: "stderr".to_string(),
-                        line: line.clone(),
-                        parsed: None,
-                    },
-                );
-                stderr_lines.push(line);
+            None => rx.recv().map_err(|_| false),
+        };
+
+        match recv_result {
+            Ok((kind, line)) => match kind {
+                StreamKind::Stdout => {
+                    let parsed = serde_json::from_str::<serde_json::Value>(&line).ok();
+                    emit_progress(
+                        app,
+                        IngestProgressEvent {
+                            stream: "stdout".to_string(),
+                            line: line.clone(),
+                            parsed,
+                        },
+                    );
+                    stdout_lines.push(line);
+                }
+                StreamKind::Stderr => {
+                    emit_progress(
+                        app,
+                        IngestProgressEvent {
+                            stream: "stderr".to_string(),
+                            line: line.clone(),
+                            parsed: None,
+                        },
+                    );
+                    stderr_lines.push(line);
+                }
+            },
+            // `Err(true)` == deadline hit; `Err(false)` == channel closed (both
+            // reader threads finished, i.e. the child's pipes are at EOF).
+            Err(true) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(timeout_error_message(
+                    max_runtime.unwrap_or(Duration::from_secs(DEFAULT_INGEST_TIMEOUT_SEC)),
+                ));
             }
+            Err(false) => break,
         }
     }
 
@@ -324,7 +398,7 @@ fn run_tauri_sidecar_with_progress(
         }
     };
 
-    let (mut rx, _child) = match command.spawn() {
+    let (mut rx, child) = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
             let reason = format!("failed to spawn Tauri sidecar {INGEST_SIDECAR_NAME}: {error}");
@@ -339,8 +413,29 @@ fn run_tauri_sidecar_with_progress(
     let mut stderr_lines: Vec<String> = vec![];
     let mut exit_code = -1;
 
-    tauri::async_runtime::block_on(async {
-        while let Some(event) = rx.recv().await {
+    // Bound the event loop with the configured max-runtime deadline. Without
+    // this, the loop blocks on `rx.recv()` until the child self-terminates --
+    // a wedged / CPU-bound import then hangs unbounded. tauri's async runtime
+    // is a tokio runtime with the time driver enabled, so `tokio::time::timeout`
+    // works inside `block_on`. `Some(child)` is taken (consumed by `kill`) on
+    // the timeout path.
+    let max_runtime = configured_max_runtime();
+    let mut child = Some(child);
+
+    let timed_out = tauri::async_runtime::block_on(async {
+        loop {
+            let event = match max_runtime {
+                Some(limit) => match tokio::time::timeout(limit, rx.recv()).await {
+                    Ok(event) => event,
+                    Err(_) => return true, // deadline elapsed
+                },
+                None => rx.recv().await,
+            };
+
+            let Some(event) = event else {
+                return false; // channel closed: child finished on its own
+            };
+
             match event {
                 CommandEvent::Stdout(bytes) => {
                     let line = String::from_utf8_lossy(&bytes)
@@ -380,6 +475,18 @@ fn run_tauri_sidecar_with_progress(
         }
     });
 
+    if timed_out {
+        if let Some(child) = child.take() {
+            let _ = child.kill();
+        }
+        return Err(timeout_error_message(
+            max_runtime.unwrap_or(Duration::from_secs(DEFAULT_INGEST_TIMEOUT_SEC)),
+        ));
+    }
+    // Normal completion: the channel closed, so the child has exited. Drop the
+    // handle without killing.
+    drop(child);
+
     Ok(IngestImportResult {
         ok: exit_code == 0,
         exit_code,
@@ -393,7 +500,10 @@ fn run_tauri_sidecar_with_progress(
     })
 }
 
-fn run_explicit_binary_capture(binary: &str, args: &[String]) -> Result<IngestRuntimeCheckResult, String> {
+fn run_explicit_binary_capture(
+    binary: &str,
+    args: &[String],
+) -> Result<IngestRuntimeCheckResult, String> {
     let output = Command::new(binary)
         .args(args)
         .output()
@@ -418,7 +528,10 @@ fn run_explicit_binary_capture(binary: &str, args: &[String]) -> Result<IngestRu
     })
 }
 
-fn run_tauri_sidecar_capture(app: &AppHandle, args: &[String]) -> Result<IngestRuntimeCheckResult, String> {
+fn run_tauri_sidecar_capture(
+    app: &AppHandle,
+    args: &[String],
+) -> Result<IngestRuntimeCheckResult, String> {
     let command = match app.shell().sidecar(INGEST_SIDECAR_NAME) {
         Ok(command) => command.args(args.to_vec()),
         Err(error) => {
@@ -508,7 +621,11 @@ pub fn run_ingest_runtime_check(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_ingest_args, explicit_binary, IngestImportRequest, IngestSubcommand};
+    use super::{
+        build_ingest_args, explicit_binary, resolve_max_runtime, timeout_error_message,
+        IngestImportRequest, IngestSubcommand, DEFAULT_INGEST_TIMEOUT_SEC,
+    };
+    use std::time::Duration;
 
     fn req_base() -> IngestImportRequest {
         IngestImportRequest {
@@ -584,6 +701,49 @@ mod tests {
         assert_eq!(
             explicit_binary(&req).as_deref(),
             Some("C:/tools/custom_ingest.exe")
+        );
+    }
+
+    #[test]
+    fn resolve_max_runtime_defaults_when_unset_or_blank() {
+        let default = Duration::from_secs(DEFAULT_INGEST_TIMEOUT_SEC);
+        assert_eq!(resolve_max_runtime(None), Some(default));
+        assert_eq!(resolve_max_runtime(Some("")), Some(default));
+        assert_eq!(resolve_max_runtime(Some("   ")), Some(default));
+    }
+
+    #[test]
+    fn resolve_max_runtime_parses_override_seconds() {
+        assert_eq!(resolve_max_runtime(Some("60")), Some(Duration::from_secs(60)));
+        assert_eq!(
+            resolve_max_runtime(Some("  120 ")),
+            Some(Duration::from_secs(120))
+        );
+    }
+
+    #[test]
+    fn resolve_max_runtime_zero_disables_the_deadline() {
+        assert_eq!(resolve_max_runtime(Some("0")), None);
+    }
+
+    #[test]
+    fn resolve_max_runtime_invalid_override_falls_back_to_default() {
+        let default = Duration::from_secs(DEFAULT_INGEST_TIMEOUT_SEC);
+        assert_eq!(resolve_max_runtime(Some("not-a-number")), Some(default));
+        assert_eq!(resolve_max_runtime(Some("-5")), Some(default));
+    }
+
+    #[test]
+    fn timeout_error_message_states_the_limit_and_override_knob() {
+        let msg = timeout_error_message(Duration::from_secs(30 * 60));
+        assert!(msg.contains("30 min"), "must state the limit in minutes: {msg}");
+        assert!(
+            msg.contains("AURALPRIMER_INGEST_TIMEOUT_SEC"),
+            "must point at the override env var: {msg}"
+        );
+        assert!(
+            msg.to_lowercase().contains("cpu fallback") || msg.to_lowercase().contains("wedged"),
+            "must explain the likely cause: {msg}"
         );
     }
 }

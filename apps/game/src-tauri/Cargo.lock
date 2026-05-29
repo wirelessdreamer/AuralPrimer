@@ -190,17 +190,18 @@ dependencies = [
  "hex",
  "midir",
  "midly",
- "notify",
  "rtrb",
  "serde",
  "serde_json",
  "sha2",
+ "songpack-core",
  "symphonia",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-shell",
  "tempfile",
+ "tokio",
  "zip",
 ]
 
@@ -3725,6 +3726,17 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "songpack-core"
+version = "0.0.0"
+dependencies = [
+ "notify",
+ "serde",
+ "serde_json",
+ "tauri",
+ "zip",
 ]
 
 [[package]]
