@@ -4,13 +4,7 @@ import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
 import { TransportController } from "./transportController";
 import type { TransportTimebase } from "./audioBackend";
 import { HtmlAudioTimebase } from "./htmlAudioTimebase";
-import {
-  NativeAudioTimebase,
-  type NativeAudioDeviceInfo,
-  type NativeAudioDeviceSelection,
-  type NativeAudioHostInfo,
-  type NativeAudioHostSelection
-} from "./nativeAudioTimebase";
+import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { Metronome } from "./metronome";
 import { extractKeyModeFromManifest } from "./hud";
 import { PREFERRED_MODEL_PACKS } from "./models/preferredModelPacks";
@@ -27,6 +21,7 @@ import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMi
 import { loadRefinementsForRoles } from "./refinementLoader";
 import { TabRenderer } from "./tabRenderer";
 import { initScrollSpeedController } from "./scrollSpeedController";
+import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
@@ -710,12 +705,7 @@ const loopSetBtn = document.getElementById("loopSet") as HTMLButtonElement;
 const loopClearBtn = document.getElementById("loopClear") as HTMLButtonElement;
 const audioStatusEl = document.getElementById("audioStatus") as HTMLPreElement;
 const audioBackendSelect = document.getElementById("audioBackend") as HTMLSelectElement;
-const audioOutputHostSelect = document.getElementById("audioOutputHost") as HTMLSelectElement;
-const audioOutputHostRefreshBtn = document.getElementById("audioOutputHostRefresh") as HTMLButtonElement;
-const audioOutputHostApplyBtn = document.getElementById("audioOutputHostApply") as HTMLButtonElement;
-const audioOutputDeviceSelect = document.getElementById("audioOutputDevice") as HTMLSelectElement;
-const audioOutputDeviceRefreshBtn = document.getElementById("audioOutputDeviceRefresh") as HTMLButtonElement;
-const audioOutputDeviceApplyBtn = document.getElementById("audioOutputDeviceApply") as HTMLButtonElement;
+// audio output host + device picker DOM + wiring lives in audioOutputPanel.ts
 const playbackRateInput = document.getElementById("playbackRate") as HTMLInputElement;
 const playbackRateApplyBtn = document.getElementById("playbackRateApply") as HTMLButtonElement;
 // scrollSpeed slider DOM + wiring lives in scrollSpeedController.ts
@@ -821,13 +811,8 @@ if (!haveTauri()) {
   midiOutRawHexInput.disabled = true;
   midiOutRawSendBtn.disabled = true;
 
-  audioOutputHostSelect.disabled = true;
-  audioOutputHostRefreshBtn.disabled = true;
-  audioOutputHostApplyBtn.disabled = true;
-
-  audioOutputDeviceSelect.disabled = true;
-  audioOutputDeviceRefreshBtn.disabled = true;
-  audioOutputDeviceApplyBtn.disabled = true;
+  // audio output panel disables itself at boot-time refreshAll() when
+  // !haveTauri(), so no explicit call needed here.
 }
 
 function renderPlugins() {
@@ -1166,8 +1151,13 @@ let transportController = new TransportController(currentTimebase, {
   timeSignature: [4, 4]
 });
 const nativeTimebase = currentTimebase instanceof NativeAudioTimebase ? currentTimebase : null;
-let audioOutputHosts: NativeAudioHostInfo[] = [];
-let audioOutputDevices: NativeAudioDeviceInfo[] = [];
+// audio output host + device picker (DOM + wiring + state in audioOutputPanel.ts)
+const audioOutputPanel: AudioOutputPanelHandle = initAudioOutputPanel({
+  nativeTimebase,
+  haveTauri,
+  setAudioStatus,
+  escapeHtml,
+});
 
 let currentPlaybackRate = 1;
 const htmlFallbackAudioEl = document.createElement("audio");
@@ -2314,172 +2304,7 @@ function setAudioStatus(msg: string) {
 // Ensure the UI reflects the desktop-only backend.
 audioBackendSelect.value = "native";
 
-function sameOutputHostSelection(
-  a: NativeAudioHostSelection | null | undefined,
-  b: NativeAudioHostSelection | null | undefined
-): boolean {
-  if (!a && !b) return true;
-  if (!a || !b) return false;
-  return a.id === b.id;
-}
-
-function sameOutputDeviceSelection(
-  a: NativeAudioDeviceSelection | null | undefined,
-  b: NativeAudioDeviceSelection | null | undefined
-): boolean {
-  if (!a && !b) return true;
-  if (!a || !b) return false;
-  return a.name === b.name && a.channels === b.channels && a.sample_rate_hz === b.sample_rate_hz;
-}
-
-function formatOutputDeviceLabel(d: NativeAudioDeviceSelection): string {
-  const srKhz = (d.sample_rate_hz / 1000).toFixed(1);
-  return `${d.name} (${d.channels}ch, ${srKhz}kHz)`;
-}
-
-async function refreshAudioOutputHosts() {
-  if (!nativeTimebase || !haveTauri()) {
-    audioOutputHostSelect.innerHTML = `<option value="">System default</option>`;
-    audioOutputHostSelect.disabled = true;
-    audioOutputHostRefreshBtn.disabled = true;
-    audioOutputHostApplyBtn.disabled = true;
-    return;
-  }
-
-  audioOutputHostRefreshBtn.disabled = true;
-  try {
-    const [hosts, selected] = await Promise.all([
-      nativeTimebase.listOutputHosts(),
-      nativeTimebase.getSelectedOutputHost()
-    ]);
-    audioOutputHosts = hosts;
-
-    const options = [
-      `<option value="">System default</option>`,
-      ...audioOutputHosts.map((h, idx) => {
-        const defaultTag = h.is_default ? " [default]" : "";
-        return `<option value="${idx}">${escapeHtml(h.name + defaultTag)}</option>`;
-      })
-    ];
-    audioOutputHostSelect.innerHTML = options.join("\n");
-
-    const selectedIdx = audioOutputHosts.findIndex((h) => sameOutputHostSelection(h, selected));
-    audioOutputHostSelect.value = selectedIdx >= 0 ? String(selectedIdx) : "";
-    audioOutputHostSelect.disabled = false;
-    audioOutputHostApplyBtn.disabled = false;
-  } catch (e) {
-    audioOutputHosts = [];
-    audioOutputHostSelect.innerHTML = `<option value="">System default</option>`;
-    audioOutputHostSelect.value = "";
-    audioOutputHostSelect.disabled = true;
-    audioOutputHostApplyBtn.disabled = true;
-    setAudioStatus(`output host refresh failed: ${String(e)}`);
-  } finally {
-    audioOutputHostRefreshBtn.disabled = false;
-  }
-}
-
-async function applyAudioOutputHostSelection() {
-  if (!nativeTimebase) return;
-
-  const raw = audioOutputHostSelect.value.trim();
-  const idx = raw === "" ? Number.NaN : Number(raw);
-  const selected =
-    Number.isFinite(idx) && idx >= 0 && idx < audioOutputHosts.length ? audioOutputHosts[idx] : null;
-  const label = selected ? selected.name : "System default";
-
-  audioOutputHostApplyBtn.disabled = true;
-  audioOutputHostRefreshBtn.disabled = true;
-  audioOutputHostSelect.disabled = true;
-  setAudioStatus(`switching output host to ${label}...`);
-
-  try {
-    await nativeTimebase.setOutputHost(selected);
-    await refreshAudioOutputHosts();
-    await refreshAudioOutputDevices();
-    const latencySec = nativeTimebase.getOutputLatencySec?.();
-    const latencyMsg =
-      typeof latencySec === "number" && Number.isFinite(latencySec)
-        ? ` (est latency ${(latencySec * 1000).toFixed(1)}ms)`
-        : "";
-    setAudioStatus(`output host set: ${label}${latencyMsg}`);
-  } catch (e) {
-    setAudioStatus(`output host switch failed: ${String(e)}`);
-    await refreshAudioOutputHosts();
-  }
-}
-
-async function refreshAudioOutputDevices() {
-  if (!nativeTimebase || !haveTauri()) {
-    audioOutputDeviceSelect.innerHTML = `<option value="">System default</option>`;
-    audioOutputDeviceSelect.disabled = true;
-    audioOutputDeviceRefreshBtn.disabled = true;
-    audioOutputDeviceApplyBtn.disabled = true;
-    return;
-  }
-
-  audioOutputDeviceRefreshBtn.disabled = true;
-  try {
-    const [devices, selected] = await Promise.all([
-      nativeTimebase.listOutputDevices(),
-      nativeTimebase.getSelectedOutputDevice()
-    ]);
-    audioOutputDevices = devices;
-
-    const options = [
-      `<option value="">System default</option>`,
-      ...audioOutputDevices.map((d, idx) => {
-        const label = formatOutputDeviceLabel(d);
-        const defaultTag = d.is_default ? " [default]" : "";
-        return `<option value="${idx}">${escapeHtml(label + defaultTag)}</option>`;
-      })
-    ];
-    audioOutputDeviceSelect.innerHTML = options.join("\n");
-
-    const selectedIdx = audioOutputDevices.findIndex((d) => sameOutputDeviceSelection(d, selected));
-    audioOutputDeviceSelect.value = selectedIdx >= 0 ? String(selectedIdx) : "";
-    audioOutputDeviceSelect.disabled = false;
-    audioOutputDeviceApplyBtn.disabled = false;
-  } catch (e) {
-    audioOutputDevices = [];
-    audioOutputDeviceSelect.innerHTML = `<option value="">System default</option>`;
-    audioOutputDeviceSelect.value = "";
-    audioOutputDeviceSelect.disabled = true;
-    audioOutputDeviceApplyBtn.disabled = true;
-    setAudioStatus(`output device refresh failed: ${String(e)}`);
-  } finally {
-    audioOutputDeviceRefreshBtn.disabled = false;
-  }
-}
-
-async function applyAudioOutputDeviceSelection() {
-  if (!nativeTimebase) return;
-
-  const raw = audioOutputDeviceSelect.value.trim();
-  const idx = raw === "" ? Number.NaN : Number(raw);
-  const selected =
-    Number.isFinite(idx) && idx >= 0 && idx < audioOutputDevices.length ? audioOutputDevices[idx] : null;
-  const label = selected ? formatOutputDeviceLabel(selected) : "System default";
-
-  audioOutputDeviceApplyBtn.disabled = true;
-  audioOutputDeviceRefreshBtn.disabled = true;
-  audioOutputDeviceSelect.disabled = true;
-  setAudioStatus(`switching output device to ${label}...`);
-
-  try {
-    await nativeTimebase.setOutputDevice(selected);
-    const latencySec = nativeTimebase.getOutputLatencySec?.();
-    const latencyMsg =
-      typeof latencySec === "number" && Number.isFinite(latencySec)
-        ? ` (est latency ${(latencySec * 1000).toFixed(1)}ms)`
-        : "";
-    setAudioStatus(`output device set: ${label}${latencyMsg} (saved preference)`);
-  } catch (e) {
-    setAudioStatus(`output device switch failed: ${String(e)}`);
-  } finally {
-    await refreshAudioOutputDevices();
-  }
-}
+// audio host/device helpers + refresh/apply functions live in audioOutputPanel.ts
 
 function setVizStatus(msg: string) {
   vizStatusEl.textContent = msg;
@@ -3032,21 +2857,7 @@ vizStopBtn.addEventListener("click", () => stopVisualizer());
 
 // Backend switching intentionally removed: desktop build uses Rust native audio engine only.
 
-audioOutputHostRefreshBtn.addEventListener("click", () => {
-  void refreshAudioOutputHosts();
-});
-
-audioOutputHostApplyBtn.addEventListener("click", () => {
-  void applyAudioOutputHostSelection();
-});
-
-audioOutputDeviceRefreshBtn.addEventListener("click", () => {
-  void refreshAudioOutputDevices();
-});
-
-audioOutputDeviceApplyBtn.addEventListener("click", () => {
-  void applyAudioOutputDeviceSelection();
-});
+// audio output click handlers live inside audioOutputPanel.ts
 
 // Playback rate controls
 
@@ -3497,8 +3308,7 @@ setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.snapshot())
 // Populate MIDI ports.
 void refreshMidiInputPorts();
 void refreshMidiOutputPorts();
-void refreshAudioOutputHosts();
-void refreshAudioOutputDevices();
+void audioOutputPanel.refreshAll();
 
 // Ensure we stop background threads on window close.
 window.addEventListener("beforeunload", () => {
