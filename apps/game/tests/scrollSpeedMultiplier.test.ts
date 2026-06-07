@@ -75,27 +75,42 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     expect(src).toMatch(/setScrollSpeedMultiplier\s*\(\s*mul\s*:\s*number\s*\)/);
   });
 
-  it("game UI has a slider that calls applyScrollSpeed + persists via localStorage", () => {
+  it("game UI template contains the slider/value/reset elements with the SDK clamp range", () => {
+    // The DOM template is still authored in main.ts even though the
+    // wiring lives in scrollSpeedController.ts.
     const src = read("apps/game/src/main.ts");
-    // Slider exists in template
     expect(src).toMatch(/id="scrollSpeedSlider"/);
     expect(src).toMatch(/id="scrollSpeedValue"/);
     expect(src).toMatch(/id="scrollSpeedReset"/);
-    // Range bounds + step match the SDK clamp range
     expect(src).toMatch(/min="0\.5"[\s\S]*max="3"/);
-    // Slider 'input' event drives applyScrollSpeed (live update during drag)
+  });
+
+  it("main.ts calls initScrollSpeedController with transportController + onChange", () => {
+    // Pins the bootstrap step that wires the controller. If a future
+    // refactor drops the onChange callback, the cached transport state
+    // stops seeing slider changes -- catch that here.
+    const src = read("apps/game/src/main.ts");
+    expect(src).toMatch(/import\s*\{\s*initScrollSpeedController\s*\}\s*from\s*["']\.\/scrollSpeedController["']/);
     expect(src).toMatch(
-      /scrollSpeedSlider\.addEventListener\(\s*["']input["'][\s\S]*?applyScrollSpeed/
+      /initScrollSpeedController\(\s*\{[\s\S]*?transportController[\s\S]*?onChange[\s\S]*?\}\s*\)/
     );
-    // Reset button restores 1.0x
+  });
+
+  it("scrollSpeedController owns the slider/reset event listeners + localStorage round-trip", () => {
+    const src = read("apps/game/src/scrollSpeedController.ts");
+    // Slider 'input' event drives the apply function (live update during drag).
     expect(src).toMatch(
-      /scrollSpeedResetBtn\.addEventListener\(\s*["']click["'][\s\S]*?applyScrollSpeed\(\s*1\s*\)/
+      /slider\.addEventListener\(\s*["']input["'][\s\S]*?applyScrollSpeed/
     );
-    // localStorage round-trip lives keyed under a namespaced key
+    // Reset button restores 1.0x.
+    expect(src).toMatch(
+      /resetBtn\.addEventListener\(\s*["']click["'][\s\S]*?applyScrollSpeed\(\s*1\s*\)/
+    );
+    // localStorage round-trip lives keyed under a namespaced key.
     expect(src).toMatch(/auralprimer\.scrollSpeedMultiplier/);
     // Boot-time restore call so the persisted value is applied before the
     // user touches the slider.
-    expect(src).toMatch(/applyScrollSpeed\(\s*readPersistedScrollSpeed\(\s*\)/);
+    expect(src).toMatch(/applyScrollSpeed\(\s*readPersisted\(\s*\)/);
   });
 
   it("clampScrollSpeedMultiplier rejects bad inputs at the type boundary", async () => {

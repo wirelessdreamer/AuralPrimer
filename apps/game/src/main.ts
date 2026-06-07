@@ -26,6 +26,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, applyRefinementsToMelodicTracks, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
 import { validateRefinement, type RefinementFile } from "@auralprimer/songpack/refinement";
 import { TabRenderer } from "./tabRenderer";
+import { initScrollSpeedController } from "./scrollSpeedController";
 import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
@@ -717,9 +718,7 @@ const audioOutputDeviceRefreshBtn = document.getElementById("audioOutputDeviceRe
 const audioOutputDeviceApplyBtn = document.getElementById("audioOutputDeviceApply") as HTMLButtonElement;
 const playbackRateInput = document.getElementById("playbackRate") as HTMLInputElement;
 const playbackRateApplyBtn = document.getElementById("playbackRateApply") as HTMLButtonElement;
-const scrollSpeedSlider = document.getElementById("scrollSpeedSlider") as HTMLInputElement;
-const scrollSpeedValueEl = document.getElementById("scrollSpeedValue") as HTMLSpanElement;
-const scrollSpeedResetBtn = document.getElementById("scrollSpeedReset") as HTMLButtonElement;
+// scrollSpeed slider DOM + wiring lives in scrollSpeedController.ts
 const metronomeEnabledInput = document.getElementById("metronomeEnabled") as HTMLInputElement;
 const metronomeVolumeInput = document.getElementById("metronomeVolume") as HTMLInputElement;
 
@@ -3096,57 +3095,17 @@ playbackRateApplyBtn.addEventListener("click", () => {
   setAudioStatus(`playbackRate set: ${r.toFixed(2)}x`);
 });
 
-// Scroll-speed (visual note-spacing) controls. Applies uniformly across all
-// instrument visualizers. Tempo-lock is preserved -- notes still hit at the
-// correct beat times; the multiplier only changes how many pixels each
-// second of song time occupies on the canvas. Persisted in localStorage
-// (per-webview-data-dir) so the setting survives app restarts without
-// needing a Rust round-trip.
-const SCROLL_SPEED_STORAGE_KEY = "auralprimer.scrollSpeedMultiplier";
-
-function readPersistedScrollSpeed(): number {
-  try {
-    const raw = window.localStorage.getItem(SCROLL_SPEED_STORAGE_KEY);
-    if (raw === null) return 1;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n <= 0) return 1;
-    return Math.min(3, Math.max(0.5, n));
-  } catch {
-    // localStorage may be unavailable in some embedded webviews; default safely.
-    return 1;
-  }
-}
-
-function persistScrollSpeed(value: number): void {
-  try {
-    window.localStorage.setItem(SCROLL_SPEED_STORAGE_KEY, String(value));
-  } catch {
-    // Best-effort -- session-only is acceptable.
-  }
-}
-
-function applyScrollSpeed(value: number, opts: { persist: boolean } = { persist: true }): void {
-  const clamped = Math.min(3, Math.max(0.5, Number.isFinite(value) && value > 0 ? value : 1));
-  transportController.setScrollSpeedMultiplier(clamped);
-  transport = transportController.getState();
-  scrollSpeedSlider.value = String(clamped);
-  scrollSpeedValueEl.textContent = `${clamped.toFixed(2)}x`;
-  if (opts.persist) {
-    persistScrollSpeed(clamped);
-  }
-}
-
-// Restore persisted value on boot.
-applyScrollSpeed(readPersistedScrollSpeed(), { persist: false });
-
-// Live-update on slider input (every drag tick) so the visualizer responds
-// immediately as the user drags. "change" would only fire on release.
-scrollSpeedSlider.addEventListener("input", () => {
-  applyScrollSpeed(Number(scrollSpeedSlider.value));
-});
-
-scrollSpeedResetBtn.addEventListener("click", () => {
-  applyScrollSpeed(1);
+// Scroll-speed (Note spacing) controller — DOM + persistence + transport
+// wiring live in scrollSpeedController.ts. The init call here preserves
+// the original module-init ordering (must run after transportController
+// exists, before the visualizer starts).
+initScrollSpeedController({
+  transportController,
+  onChange: () => {
+    // Refresh the cached transport state so consumers (tabRenderer.render,
+    // viz frame state) see the new multiplier on the next frame.
+    transport = transportController.getState();
+  },
 });
 
 // Metronome controls
