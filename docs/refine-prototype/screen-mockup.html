@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Refine — Studio Screen Mockup (Keys)</title>
+<style>
+  :root {
+    --bg: #07090f;
+    --panel: #0f1620;
+    --panel2: #131b29;
+    --line: #1f2a44;
+    --line2: #2a3553;
+    --text: #e2e8f0;
+    --dim: #94a3b8;
+    --dim2: #64748b;
+    --accent: #3EE6A8;
+    --c1: #9BA3AC;
+    --c2: #F59E0B;
+    --c3: #3EE6A8;
+    --c4: #38BDF8;
+    --c5: #A78BFA;
+    --in-key: #1d3447;
+    --borrowed: #4a2d1f;
+    --modal: #3a1f4a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; height: 100vh; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+
+  /* TOP BAR */
+  .topbar {
+    height: 56px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 0 22px; background: #0a0e16; border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .topbar .crumbs { color: var(--dim); font-size: 13px; }
+  .topbar .crumbs .title { color: var(--text); font-weight: 600; margin-left: 6px; }
+  .topbar .crumbs .inst { color: var(--accent); margin-left: 6px; }
+  .topbar .crumbs .back { color: var(--dim2); cursor: pointer; margin-right: 12px; }
+  .topbar .center { display: flex; gap: 10px; align-items: center; }
+  .topbar .seg {
+    display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; overflow: hidden;
+  }
+  .topbar .seg button {
+    background: transparent; border: 0; color: var(--dim); padding: 7px 14px; cursor: pointer;
+    font: 12px system-ui; letter-spacing: 0.3px;
+  }
+  .topbar .seg button.on { background: var(--panel2); color: var(--text); }
+  .topbar .btn {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    border-radius: 7px; padding: 7px 14px; font: 12px system-ui; cursor: pointer;
+  }
+  .topbar .btn.primary { border-color: var(--accent); color: var(--accent); background: rgba(62,230,168,0.07); }
+  .topbar .right { display: flex; gap: 14px; align-items: center; justify-content: flex-end; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--line); font-size: 12px;
+  }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .conf-bar { display: inline-flex; gap: 2px; }
+  .conf-bar i { width: 8px; height: 8px; border-radius: 50%; background: var(--line2); display: inline-block; }
+  .conf-bar i.lit { background: var(--accent); }
+
+  /* GRID */
+  .grid {
+    flex: 1; min-height: 0;
+    display: grid;
+    grid-template-columns: 280px 56px 1fr 36px 320px;
+    grid-template-rows: 1fr 124px;
+    grid-template-areas:
+      "left chord timeline heat right"
+      "left chord keyboard keyboard right";
+  }
+
+  /* LEFT RAIL — Worklist */
+  .left {
+    grid-area: left; background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .section-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .section {
+    padding: 6px 14px 4px;
+  }
+  .section .head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--text); padding: 4px 0; cursor: pointer;
+  }
+  .section .head .chev { color: var(--dim2); font-size: 10px; width: 10px; }
+  .section .head .name { flex: 1; font-weight: 500; }
+  .section .head .badge {
+    font-size: 10px; color: var(--dim); padding: 2px 6px; background: var(--panel2); border-radius: 4px;
+  }
+  .section .head .badge.clean { color: var(--accent); border: 1px solid rgba(62,230,168,0.25); background: transparent; }
+  .hotspots { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 6px 16px; }
+  .hot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; color: var(--text);
+  }
+  .hot.active { background: rgba(62,230,168,0.10); border: 1px solid rgba(62,230,168,0.35); }
+  .hot.done { color: var(--dim); }
+  .hot.done .icon { opacity: 0.4; }
+  .hot .icon { width: 16px; text-align: center; color: var(--c2); font-size: 11px; }
+  .hot .label { flex: 1; }
+  .hot .time { font: 10px ui-monospace, Consolas, monospace; color: var(--dim); }
+  .hot .check { color: var(--accent); font-size: 11px; }
+  .progress { padding: 14px 16px; border-top: 1px solid var(--line); background: var(--panel2); }
+  .progress .row { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); margin-bottom: 6px; }
+  .progress .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .progress .bar i { display: block; height: 100%; background: var(--accent); }
+  .progress .auto { font-size: 11px; color: var(--dim2); margin-top: 8px; }
+
+  /* CHORD RIBBON */
+  .chord {
+    grid-area: chord; background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column-reverse; /* time flows up */
+    position: relative; overflow: hidden;
+  }
+  .chord-block {
+    flex: 1 1 0; min-height: 32px;
+    border-top: 1px solid var(--line2);
+    display: flex; align-items: center; justify-content: center;
+    font: 11px ui-monospace, Consolas, monospace;
+    color: var(--text); position: relative;
+  }
+  .chord-block.in-key   { background: var(--in-key); }
+  .chord-block.borrowed { background: var(--borrowed); }
+  .chord-block.modal    { background: var(--modal); }
+
+  /* TIMELINE (center) */
+  .timeline {
+    grid-area: timeline; background: #0c121d; position: relative; overflow: hidden;
+  }
+  .tl-canvas { width: 100%; height: 100%; display: block; }
+  .tl-footer {
+    position: absolute; left: 14px; right: 14px; bottom: 10px;
+    display: flex; gap: 18px; align-items: center;
+    background: rgba(10,14,22,0.86); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 12px; font-size: 11px; color: var(--dim);
+  }
+  .tl-footer input[type=range] { width: 140px; }
+  .tl-footer label { display: flex; align-items: center; gap: 6px; }
+  .tl-footer input[type=checkbox] { accent-color: var(--accent); }
+
+  /* HEATMAP */
+  .heat {
+    grid-area: heat; background: var(--panel);
+    border-left: 1px solid var(--line);
+    display: flex; flex-direction: column-reverse;
+    position: relative; overflow: hidden;
+  }
+  .heat-cell { flex: 1 1 0; min-height: 2px; border-top: 1px solid rgba(0,0,0,0.18); }
+  .heat-cursor {
+    position: absolute; left: -2px; right: -2px;
+    border-top: 1px solid var(--accent); border-bottom: 1px solid var(--accent);
+    background: rgba(62,230,168,0.10);
+  }
+
+  /* RIGHT RAIL */
+  .right { grid-area: right; background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; overflow: hidden; }
+  .right .card {
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+  }
+  .right .card h4 {
+    margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--dim); font-weight: 600;
+  }
+  .audition .seg { width: 100%; display: grid; grid-template-columns: 1fr 1fr; background: var(--panel2); border-radius: 7px; padding: 3px; gap: 3px; }
+  .audition .seg button {
+    background: transparent; border: 0; color: var(--dim); padding: 7px; border-radius: 5px; cursor: pointer; font: 12px system-ui;
+  }
+  .audition .seg button.on { background: var(--bg); color: var(--text); }
+  .audition .controls { display: flex; gap: 8px; margin-top: 12px; }
+  .audition .controls .play {
+    flex: 1; background: var(--accent); color: #07120c; border: 0; font-weight: 600;
+    padding: 10px 14px; border-radius: 7px; cursor: pointer;
+  }
+  .audition .controls .ab {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    padding: 10px 14px; border-radius: 7px; cursor: pointer; font: 12px ui-monospace, Consolas, monospace;
+  }
+
+  .palette { display: flex; flex-direction: column; gap: 6px; }
+  .swatch {
+    display: grid; grid-template-columns: 20px 16px 1fr auto;
+    align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px;
+    background: var(--panel2); border: 1px solid var(--line); cursor: pointer;
+    font-size: 12px;
+  }
+  .swatch.active { background: rgba(62,230,168,0.07); border-color: var(--accent); }
+  .swatch .num { font: 11px ui-monospace, Consolas, monospace; color: var(--dim); text-align: center; }
+  .swatch.active .num { color: var(--text); }
+  .swatch .chip { width: 14px; height: 14px; border-radius: 4px; }
+  .swatch .label { color: var(--text); }
+  .swatch .star { color: var(--accent); }
+  .swatch .score {
+    font: 11px ui-monospace, Consolas, monospace; color: var(--dim);
+    display: flex; gap: 4px; align-items: center;
+  }
+  .swatch .score .dots { display: inline-flex; gap: 2px; }
+  .swatch .score .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--line2); display: inline-block; }
+  .swatch .score .dots i.lit { background: var(--accent); }
+
+  .intensity { display: flex; gap: 4px; }
+  .intensity label {
+    flex: 1; text-align: center; padding: 7px 0;
+    background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 5px; cursor: pointer; font-size: 11px;
+  }
+  .intensity input { display: none; }
+  .intensity label:has(input:checked) { border-color: var(--accent); color: var(--accent); background: rgba(62,230,168,0.05); }
+
+  .actions { padding: 14px 16px; margin-top: auto; border-top: 1px solid var(--line); display: flex; gap: 8px; }
+  .actions .accept {
+    flex: 2; background: var(--accent); color: #07120c; border: 0; font-weight: 600;
+    padding: 11px; border-radius: 7px; cursor: pointer; font-size: 13px;
+  }
+  .actions .skip {
+    flex: 1; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    padding: 11px; border-radius: 7px; cursor: pointer; font-size: 13px;
+  }
+
+  .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); margin-top: 6px; }
+  .meta-row strong { color: var(--text); font-weight: 500; }
+
+  /* KEYBOARD */
+  .kb { grid-area: keyboard; background: #060810; border-top: 1px solid var(--line); position: relative; }
+  .kb svg { width: 100%; height: 100%; display: block; }
+
+  kbd {
+    font: 10px ui-monospace, Consolas, monospace; padding: 1px 5px; border-radius: 3px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="crumbs">
+    <span class="back">◀ Library</span>
+    <span>Refine</span>
+    <span class="title">Psalm 5 — Every Morning</span>
+    <span class="inst">· Keys</span>
+  </div>
+  <div class="center">
+    <div class="seg">
+      <button class="on">Solo</button>
+      <button>In-mix</button>
+    </div>
+    <button class="btn primary">▶ Loop region</button>
+    <button class="btn">A | B</button>
+  </div>
+  <div class="right">
+    <div class="pill"><span class="dot" style="background: var(--c2);"></span> region confidence
+      <span class="conf-bar"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i><i></i></span>
+      <span style="color: var(--dim);">65%</span>
+    </div>
+    <button class="btn">⌨ shortcuts</button>
+  </div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="grid">
+
+  <!-- LEFT RAIL: Worklist -->
+  <aside class="left">
+    <div class="section-list">
+      <div class="section">
+        <div class="head"><span class="chev">▸</span><span class="name">Intro</span><span class="badge clean">clean</span></div>
+      </div>
+      <div class="section">
+        <div class="head"><span class="chev">▾</span><span class="name">Verse 1</span><span class="badge">2 spots</span></div>
+        <div class="hotspots">
+          <div class="hot active"><span class="icon">♂</span><span class="label">Octave ghosts</span><span class="time">14.85s</span></div>
+          <div class="hot"><span class="icon">▢</span><span class="label">Density outlier</span><span class="time">22.10s</span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="head"><span class="chev">▾</span><span class="name">Chorus</span><span class="badge">3 spots</span></div>
+        <div class="hotspots">
+          <div class="hot done"><span class="icon" style="color: var(--accent);">✓</span><span class="label">Off-chord cluster</span><span class="time">39.40s</span></div>
+          <div class="hot done"><span class="icon" style="color: var(--accent);">✓</span><span class="label">Density outlier</span><span class="time">47.21s</span></div>
+          <div class="hot"><span class="icon">♭</span><span class="label">Off-chord cluster</span><span class="time">54.80s</span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="head"><span class="chev">▾</span><span class="name">Verse 2</span><span class="badge">2 spots</span></div>
+        <div class="hotspots">
+          <div class="hot"><span class="icon">♭</span><span class="label">Off-chord cluster</span><span class="time">66.10s</span></div>
+          <div class="hot"><span class="icon">▤</span><span class="label">Bass-line gap</span><span class="time">74.55s</span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="head"><span class="chev">▾</span><span class="name">Bridge</span><span class="badge">4 spots</span></div>
+        <div class="hotspots">
+          <div class="hot done"><span class="icon" style="color: var(--accent);">✓</span><span class="label">Density outlier</span><span class="time">85.00s</span></div>
+          <div class="hot done"><span class="icon" style="color: var(--accent);">✓</span><span class="label">Octave ghosts</span><span class="time">88.40s</span></div>
+          <div class="hot"><span class="icon">♭</span><span class="label">Off-chord cluster</span><span class="time">93.15s</span></div>
+          <div class="hot"><span class="icon">▢</span><span class="label">Density outlier</span><span class="time">101.30s</span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="head"><span class="chev">▾</span><span class="name">Chorus 2</span><span class="badge">2 spots</span></div>
+        <div class="hotspots">
+          <div class="hot done"><span class="icon" style="color: var(--accent);">✓</span><span class="label">Off-chord cluster</span><span class="time">111.20s</span></div>
+          <div class="hot done"><span class="icon" style="color: var(--accent);">✓</span><span class="label">Density outlier</span><span class="time">119.45s</span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="head"><span class="chev">▸</span><span class="name">Outro</span><span class="badge clean">clean</span></div>
+      </div>
+    </div>
+    <div class="progress">
+      <div class="row"><span>Reviewed</span><strong style="color: var(--text);">7 / 13</strong></div>
+      <div class="bar"><i style="width: 54%;"></i></div>
+      <div class="auto">5 auto-accepted · 2 explicitly accepted</div>
+    </div>
+  </aside>
+
+  <!-- CHORD RIBBON -->
+  <div class="chord" id="chord">
+    <!-- chord blocks injected by JS, bottom-up time order via column-reverse -->
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="timeline">
+    <canvas class="tl-canvas" id="timeline" width="900" height="700"></canvas>
+    <div class="tl-footer">
+      <label>Spacing <input type="range" min="0.5" max="3" step="0.05" value="2.40"><span style="font-family: ui-monospace, Consolas, monospace; color: var(--text);">2.40×</span></label>
+      <label><input type="checkbox" checked> Auto-scroll: follow playhead</label>
+      <span style="margin-left: auto; font-family: ui-monospace, Consolas, monospace;">t = 16.40 / 178.20 s</span>
+    </div>
+  </div>
+
+  <!-- HEATMAP -->
+  <div class="heat" id="heat">
+    <!-- heat cells + cursor injected by JS -->
+  </div>
+
+  <!-- RIGHT RAIL -->
+  <aside class="right">
+
+    <div class="card audition">
+      <h4>Audition</h4>
+      <div class="seg">
+        <button class="on">Solo</button>
+        <button>In-mix</button>
+      </div>
+      <div class="controls">
+        <button class="play">▶ Loop region (14.85 – 18.23)</button>
+        <button class="ab">A | B</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Candidates  <span style="float: right; color: var(--dim); font-weight: 400; text-transform: none; letter-spacing: 0;">press <kbd>1</kbd>–<kbd>5</kbd></span></h4>
+      <div class="palette" id="palette"></div>
+    </div>
+
+    <div class="card">
+      <h4>Region info</h4>
+      <div class="meta-row"><span>Type</span><strong>Octave ghosts</strong></div>
+      <div class="meta-row"><span>Chord</span><strong>Bb major</strong></div>
+      <div class="meta-row"><span>Confidence</span><strong>65%</strong></div>
+      <div class="meta-row"><span>Section</span><strong>Verse 1</strong></div>
+      <div class="meta-row"><span>Auto-pick</span><strong style="color: var(--accent);">3 · cons 100/2</strong></div>
+    </div>
+
+    <div class="card">
+      <h4>Diff intensity</h4>
+      <div class="intensity">
+        <label><input type="radio" name="i" checked><span>Surgical</span></label>
+        <label><input type="radio" name="i"><span>Full</span></label>
+        <label><input type="radio" name="i"><span>Quiet</span></label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="accept">Accept ↵</button>
+      <button class="skip">Skip →</button>
+    </div>
+  </aside>
+
+  <!-- KEYBOARD -->
+  <div class="kb">
+    <svg id="kb" preserveAspectRatio="none" viewBox="0 0 1760 124"></svg>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+/* ────────────────────────────────────────────────────────────
+   Synthetic Psalm 5 data (Keys) for the mockup
+   ──────────────────────────────────────────────────────────── */
+
+const SONG_DUR = 178.2;
+const PLAYHEAD = 16.40;
+const REGION = { tStart: 14.85, tEnd: 18.23, type: 'octave_ghost' };
+
+// Chord ribbon — chord blocks (time-ordered, BOTTOM-UP since the column reverses)
+const CHORDS = [
+  { t0: 0,     t1: 11.5, label: 'Bb',  cls: 'in-key' },
+  { t0: 11.5,  t1: 23.0, label: 'Bb',  cls: 'in-key' },
+  { t0: 23.0,  t1: 34.5, label: 'Eb',  cls: 'in-key' },
+  { t0: 34.5,  t1: 46.0, label: 'Gm',  cls: 'in-key' },
+  { t0: 46.0,  t1: 57.5, label: 'F',   cls: 'in-key' },
+  { t0: 57.5,  t1: 69.0, label: 'Bb',  cls: 'in-key' },
+  { t0: 69.0,  t1: 80.5, label: 'F',   cls: 'in-key' },
+  { t0: 80.5,  t1: 92.0, label: 'Db',  cls: 'borrowed' },
+  { t0: 92.0,  t1: 103.5,label: 'Eb',  cls: 'in-key' },
+  { t0: 103.5, t1: 115.0,label: 'Gm',  cls: 'in-key' },
+  { t0: 115.0, t1: 126.5,label: 'F',   cls: 'in-key' },
+  { t0: 126.5, t1: 138.0,label: 'Bb',  cls: 'in-key' },
+  { t0: 138.0, t1: 149.5,label: 'Eb',  cls: 'in-key' },
+  { t0: 149.5, t1: 161.0,label: 'F',   cls: 'in-key' },
+  { t0: 161.0, t1: 178.2,label: 'Bb',  cls: 'in-key' },
+];
+
+// Build chord blocks
+const chordEl = document.getElementById('chord');
+for (const c of CHORDS) {
+  const block = document.createElement('div');
+  block.className = `chord-block ${c.cls}`;
+  block.style.flexGrow = (c.t1 - c.t0).toFixed(2);
+  block.textContent = c.label;
+  chordEl.appendChild(block);
+}
+
+// Heatmap cells (one per ~2s, color = uncertainty, opacity = review state)
+const HEAT_CELLS = 70;
+const REVIEWED_FRACTION = 0.54;
+const heatEl = document.getElementById('heat');
+const heatData = [];
+for (let i = 0; i < HEAT_CELLS; i++) {
+  const t = (i / HEAT_CELLS) * SONG_DUR;
+  // Synthetic uncertainty: peaks during Verse1, Chorus, Bridge hot spots
+  let u = 0.18;
+  if (t > 12 && t < 36)  u = 0.7 + Math.random() * 0.2;       // Verse 1
+  if (t > 36 && t < 60)  u = 0.5 + Math.random() * 0.25;      // Chorus
+  if (t > 80 && t < 108) u = 0.55 + Math.random() * 0.3;      // Bridge
+  if (t > 108 && t < 132) u = 0.45 + Math.random() * 0.2;     // Chorus 2
+  const reviewed = (i / HEAT_CELLS) < REVIEWED_FRACTION;
+  // Visible cursor area
+  const isCursor = t >= PLAYHEAD - 6 && t <= PLAYHEAD + 12;
+  heatData.push({ u, reviewed, isCursor });
+}
+function heatColor(u) {
+  // red → amber → green ramp
+  if (u > 0.7) return '#dc2626';
+  if (u > 0.5) return '#ea580c';
+  if (u > 0.35) return '#d97706';
+  if (u > 0.2) return '#65a30d';
+  return '#16a34a';
+}
+for (const c of heatData) {
+  const cell = document.createElement('div');
+  cell.className = 'heat-cell';
+  cell.style.background = heatColor(c.u);
+  cell.style.opacity = c.reviewed ? 0.28 : 0.95;
+  heatEl.appendChild(cell);
+}
+// Heat cursor — band marking current visible timeline window
+// (positioned via JS after layout)
+requestAnimationFrame(() => {
+  const cursor = document.createElement('div');
+  cursor.className = 'heat-cursor';
+  const total = heatEl.clientHeight;
+  // visible window ~6s ahead of playhead, 0.5s behind. Convert to %.
+  const windowSec = 6.5;
+  const yFromBottom = (PLAYHEAD - 0.5) / SONG_DUR * total;
+  const heightPx = windowSec / SONG_DUR * total;
+  cursor.style.bottom = yFromBottom + 'px';
+  cursor.style.height = heightPx + 'px';
+  heatEl.appendChild(cursor);
+});
+
+
+// Candidate palette
+const CANDIDATES = [
+  { id: '1', label: 'stem-only',         color: '#9BA3AC', score: 0.40, scoreDots: 2 },
+  { id: '2', label: 'consensus 50/1',    color: '#F59E0B', score: 0.55, scoreDots: 3 },
+  { id: '3', label: 'consensus 100/2',   color: '#3EE6A8', score: 0.78, scoreDots: 4, isDefault: true },
+  { id: '4', label: 'denoise + cons.',   color: '#38BDF8', score: 0.74, scoreDots: 4 },
+  { id: '5', label: 'chord-snapped',     color: '#A78BFA', score: 0.71, scoreDots: 4 },
+];
+const paletteEl = document.getElementById('palette');
+for (const c of CANDIDATES) {
+  const div = document.createElement('div');
+  div.className = 'swatch' + (c.isDefault ? ' active' : '');
+  div.innerHTML = `
+    <span class="num">${c.id}</span>
+    <span class="chip" style="background:${c.color};"></span>
+    <span class="label">${c.label}${c.isDefault ? ' <span class="star">★</span>' : ''}</span>
+    <span class="score">
+      <span class="dots">
+        ${Array.from({length: 5}, (_, i) => `<i class="${i < c.scoreDots ? 'lit' : ''}"></i>`).join('')}
+      </span>
+      ${c.score.toFixed(2)}
+    </span>
+  `;
+  paletteEl.appendChild(div);
+}
+
+/* ────────────────────────────────────────────────────────────
+   Timeline canvas — vertical falling notes, sized to its container
+   ──────────────────────────────────────────────────────────── */
+
+const tlCanvas = document.getElementById('timeline');
+const tlCtx = tlCanvas.getContext('2d');
+
+function resizeTimeline() {
+  const rect = tlCanvas.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  tlCanvas.width = Math.floor(rect.width * dpr);
+  tlCanvas.height = Math.floor(rect.height * dpr);
+  tlCanvas.style.width = rect.width + 'px';
+  tlCanvas.style.height = rect.height + 'px';
+  tlCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawTimeline();
+}
+
+const PITCH_LO = 36, PITCH_HI = 96; // C2..C7
+
+// Synthetic notes — a believable phrase + the diff overlay inside the active region
+function buildSyntheticNotes() {
+  const notes = [];
+  // Base verse line: Bb major arpeggios + bass walk
+  const start = 0;
+  for (let t = start; t < 50; t += 0.5) {
+    // Bass walk
+    const bassPitch = [50, 53, 55, 53][Math.floor(t * 2) % 4];
+    notes.push({ t_on: t, t_off: t + 0.45, pitch: bassPitch, velocity: 78, state: 'kept' });
+    // Treble melody
+    const treblePitch = [70, 72, 75, 74, 72][Math.floor(t * 2.4) % 5];
+    notes.push({ t_on: t + 0.05, t_off: t + 0.30, pitch: treblePitch, velocity: 85, state: 'kept' });
+    // Inner voice (harmony)
+    if (Math.floor(t * 2) % 2 === 0) {
+      notes.push({ t_on: t + 0.05, t_off: t + 0.40, pitch: 62, velocity: 65, state: 'kept' });
+    }
+  }
+  // Inside REGION (14.85..18.23): add octave-ghost diffs (removed by candidate 3)
+  notes.push({ t_on: 15.05, t_off: 15.35, pitch: 82, velocity: 38, state: 'removed' });
+  notes.push({ t_on: 17.05, t_off: 17.50, pitch: 82, velocity: 40, state: 'removed' });
+  notes.push({ t_on: 16.10, t_off: 16.55, pitch: 79, velocity: 42, state: 'removed' });
+  // One added note (suggested by current candidate)
+  notes.push({ t_on: 17.60, t_off: 18.10, pitch: 67, velocity: 80, state: 'added' });
+  // One velocity change
+  notes.push({ t_on: 15.78, t_off: 16.08, pitch: 75, velocity: 96, state: 'velocity', deltaV: 12 });
+  return notes;
+}
+
+const NOTES = buildSyntheticNotes();
+const SCROLL_MUL = 2.40;
+const VIZ_WINDOW_BASE = 7.0;
+const visibleWindowSec = VIZ_WINDOW_BASE / SCROLL_MUL; // ~2.92 s — but we want more for the mockup
+// For visualization purposes, show ~6.5 s window so the region is comfortably visible
+const VISIBLE_WINDOW = 6.5;
+
+function drawTimeline() {
+  const W = parseFloat(tlCanvas.style.width);
+  const H = parseFloat(tlCanvas.style.height);
+  if (!W || !H) return;
+  const KB_RESERVED_BOTTOM = 0; // keyboard is separate now
+  const TOP_PAD = 28;
+  const BOTTOM_PAD = 48; // for the floating footer
+  const rollTop = TOP_PAD;
+  const rollBottom = H - BOTTOM_PAD;
+  const rollH = rollBottom - rollTop;
+  const pxPerSec = rollH / VISIBLE_WINDOW;
+  const xPad = 18;
+  const numPitches = PITCH_HI - PITCH_LO + 1;
+  const keyW = (W - 2 * xPad) / numPitches;
+
+  // Background
+  tlCtx.fillStyle = '#0c121d';
+  tlCtx.fillRect(0, 0, W, H);
+
+  // Active region tint
+  const yRegStart = rollBottom - (REGION.tStart - PLAYHEAD) * pxPerSec;
+  const yRegEnd   = rollBottom - (REGION.tEnd   - PLAYHEAD) * pxPerSec;
+  tlCtx.fillStyle = 'rgba(62,230,168,0.05)';
+  tlCtx.fillRect(0, yRegEnd, W, yRegStart - yRegEnd);
+
+  // Beat grid (every 0.5s)
+  tlCtx.strokeStyle = 'rgba(255,255,255,0.04)';
+  tlCtx.lineWidth = 1;
+  const firstBeat = Math.floor((PLAYHEAD - 0.5) * 2) / 2;
+  for (let t = firstBeat; t < PLAYHEAD + VISIBLE_WINDOW; t += 0.5) {
+    const y = rollBottom - (t - PLAYHEAD) * pxPerSec;
+    if (y < rollTop || y > rollBottom) continue;
+    tlCtx.beginPath();
+    tlCtx.moveTo(0, y); tlCtx.lineTo(W, y); tlCtx.stroke();
+  }
+  // Measure lines (every 2s in this fake song)
+  tlCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+  for (let t = Math.floor(PLAYHEAD); t < PLAYHEAD + VISIBLE_WINDOW; t += 2) {
+    const y = rollBottom - (t - PLAYHEAD) * pxPerSec;
+    if (y < rollTop || y > rollBottom) continue;
+    tlCtx.beginPath();
+    tlCtx.moveTo(0, y); tlCtx.lineTo(W, y); tlCtx.stroke();
+  }
+
+  // Region brackets
+  tlCtx.strokeStyle = 'rgba(62,230,168,0.55)';
+  tlCtx.lineWidth = 1.5;
+  if (yRegStart > rollTop && yRegStart < rollBottom) {
+    tlCtx.beginPath(); tlCtx.moveTo(xPad - 6, yRegStart); tlCtx.lineTo(W - xPad + 6, yRegStart); tlCtx.stroke();
+  }
+  if (yRegEnd > rollTop && yRegEnd < rollBottom) {
+    tlCtx.beginPath(); tlCtx.moveTo(xPad - 6, yRegEnd); tlCtx.lineTo(W - xPad + 6, yRegEnd); tlCtx.stroke();
+  }
+
+  // Magnitude chip above the region top bracket
+  const chip = '+1 / −3 / Δv:1';
+  tlCtx.font = '11px ui-monospace, Consolas, monospace';
+  const tw = tlCtx.measureText(chip).width;
+  const cw = tw + 30;
+  const cx = W / 2 - cw / 2;
+  const cy = Math.max(yRegEnd - 22, 4);
+  tlCtx.fillStyle = '#101622';
+  tlCtx.strokeStyle = '#3EE6A8';
+  tlCtx.lineWidth = 1;
+  roundRect(tlCtx, cx, cy, cw, 20, 10, true, true);
+  tlCtx.fillStyle = '#3EE6A8';
+  roundRect(tlCtx, cx + 6, cy + 4, 8, 12, 2, true, false);
+  tlCtx.fillStyle = '#e2e8f0';
+  tlCtx.textAlign = 'left';
+  tlCtx.textBaseline = 'middle';
+  tlCtx.fillText(chip, cx + 20, cy + 10);
+
+  // Section divider above Verse 1 (at t = 11.5 → would be above the active region)
+  if (PLAYHEAD < 11.5 + VISIBLE_WINDOW) {
+    const y = rollBottom - (11.5 - PLAYHEAD) * pxPerSec;
+    if (y > rollTop && y < rollBottom) {
+      tlCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+      tlCtx.lineWidth = 1;
+      tlCtx.beginPath();
+      tlCtx.moveTo(0, y); tlCtx.lineTo(W, y); tlCtx.stroke();
+      tlCtx.fillStyle = 'rgba(226,232,240,0.55)';
+      tlCtx.font = '600 10px system-ui';
+      tlCtx.textAlign = 'right';
+      tlCtx.fillText('VERSE 1 →', W - 6, y - 4);
+    }
+  }
+
+  // Draw notes
+  function px(p) { return xPad + (p - PITCH_LO) * keyW + keyW / 2; }
+  const curColor = '#3EE6A8';
+
+  for (const note of NOTES) {
+    if (note.t_off < PLAYHEAD - 0.3) continue;
+    if (note.t_on > PLAYHEAD + VISIBLE_WINDOW + 1) continue;
+
+    const yOn  = rollBottom - (note.t_on  - PLAYHEAD) * pxPerSec;
+    const yOff = rollBottom - (note.t_off - PLAYHEAD) * pxPerSec;
+    if (yOn < rollTop && yOff < rollTop) continue;
+    if (yOn > rollBottom + 4 && yOff > rollBottom + 4) continue;
+
+    const x = px(note.pitch) - keyW * 0.45;
+    const w = keyW * 0.9;
+    const yTop = Math.max(yOff, rollTop);
+    const yBot = Math.min(yOn, rollBottom);
+    const h = Math.max(4, yBot - yTop);
+
+    // Surgical mode: outside region = default color; inside region = diff styling
+    const insideRegion = (note.t_on >= REGION.tStart - 0.1 && note.t_on <= REGION.tEnd + 0.1);
+
+    if (!insideRegion || note.state === 'kept') {
+      tlCtx.fillStyle = curColor;
+      roundRect(tlCtx, x, yTop, w, h, 3, true, false);
+      continue;
+    }
+    if (note.state === 'added') {
+      tlCtx.fillStyle = 'rgba(62,230,168,0.55)';
+      roundRect(tlCtx, x, yTop, w, h, 3, true, false);
+      tlCtx.strokeStyle = '#3EE6A8';
+      tlCtx.lineWidth = 2;
+      roundRect(tlCtx, x, yTop, w, h, 3, false, true);
+      continue;
+    }
+    if (note.state === 'removed') {
+      tlCtx.save();
+      tlCtx.beginPath();
+      roundRect(tlCtx, x, yTop, w, h, 3, false, false);
+      tlCtx.clip();
+      tlCtx.fillStyle = 'rgba(62,230,168,0.22)';
+      tlCtx.fillRect(x, yTop, w, h);
+      tlCtx.strokeStyle = 'rgba(62,230,168,0.55)';
+      tlCtx.lineWidth = 1;
+      for (let i = -h; i < w + h; i += 6) {
+        tlCtx.beginPath();
+        tlCtx.moveTo(x + i, yTop); tlCtx.lineTo(x + i + h, yTop + h); tlCtx.stroke();
+      }
+      tlCtx.restore();
+      tlCtx.save();
+      tlCtx.setLineDash([3, 2]);
+      tlCtx.strokeStyle = 'rgba(62,230,168,0.85)';
+      roundRect(tlCtx, x, yTop, w, h, 3, false, true);
+      tlCtx.restore();
+      continue;
+    }
+    if (note.state === 'velocity') {
+      tlCtx.fillStyle = curColor;
+      roundRect(tlCtx, x, yTop, w, h, 3, true, false);
+      tlCtx.fillStyle = '#3EE6A8';
+      tlCtx.font = '12px sans-serif';
+      tlCtx.textAlign = 'right';
+      tlCtx.textBaseline = 'middle';
+      tlCtx.fillText(note.deltaV > 0 ? '▲' : '▼', x - 2, yTop + h / 2);
+    }
+  }
+
+  // Playhead at bottom
+  tlCtx.strokeStyle = '#fff';
+  tlCtx.lineWidth = 2;
+  tlCtx.beginPath();
+  tlCtx.moveTo(0, rollBottom); tlCtx.lineTo(W, rollBottom); tlCtx.stroke();
+
+  // "now" tag
+  tlCtx.fillStyle = '#fff';
+  tlCtx.font = '600 9px system-ui';
+  tlCtx.textAlign = 'left';
+  tlCtx.textBaseline = 'bottom';
+  tlCtx.fillText('NOW · t = ' + PLAYHEAD.toFixed(2) + 's', 6, rollBottom - 4);
+}
+
+function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+window.addEventListener('resize', resizeTimeline);
+requestAnimationFrame(resizeTimeline);
+
+/* ────────────────────────────────────────────────────────────
+   Keyboard (88 keys, A0..C8) drawn as SVG, lit by current notes
+   ──────────────────────────────────────────────────────────── */
+
+(function drawKeyboard() {
+  const svg = document.getElementById('kb');
+  const WHITE_W = 1760 / 52;
+  const WHITE_H = 124;
+  const BLACK_W = WHITE_W * 0.62;
+  const BLACK_H = WHITE_H * 0.62;
+  let xWhite = 0;
+  const blackOffsets = [1, 3, -1, 6, 8, 10, -1]; // semitone classes for black keys per octave
+  const blackOf = (pc) => [1, 3, 6, 8, 10].includes(pc);
+  // Highlights from the active region's "current" notes near playhead
+  const lit = {};
+  for (const n of NOTES) {
+    if (n.state === 'removed') continue;
+    if (n.t_on <= PLAYHEAD && n.t_off >= PLAYHEAD - 0.1) {
+      lit[n.pitch] = true;
+    }
+  }
+
+  // 88 keys: MIDI 21 (A0) .. MIDI 108 (C8)
+  const items = [];
+  for (let midi = 21; midi <= 108; midi++) {
+    const pc = midi % 12;
+    items.push({ midi, pc, isBlack: blackOf(pc) });
+  }
+  // Render whites first
+  let wIdx = 0;
+  for (const it of items) {
+    if (it.isBlack) continue;
+    const x = wIdx * WHITE_W;
+    const fill = lit[it.midi] ? '#3EE6A8' : '#e2e8f0';
+    svg.insertAdjacentHTML('beforeend',
+      `<rect x="${x.toFixed(2)}" y="1" width="${WHITE_W.toFixed(2)}" height="${WHITE_H - 2}" fill="${fill}" stroke="#000" stroke-width="0.6"/>`);
+    wIdx++;
+  }
+  // Render blacks
+  wIdx = 0;
+  let prevWasWhite = false;
+  for (const it of items) {
+    if (!it.isBlack) {
+      const x = wIdx * WHITE_W;
+      // Black keys live between whites — use position of last white
+      // Re-emit between the boundary using offset half-width
+      wIdx++;
+      prevWasWhite = true;
+      continue;
+    }
+    // Place black centered on the boundary just-passed
+    const bx = wIdx * WHITE_W - BLACK_W / 2;
+    const fill = lit[it.midi] ? '#3EE6A8' : '#181f2e';
+    svg.insertAdjacentHTML('beforeend',
+      `<rect x="${bx.toFixed(2)}" y="0" width="${BLACK_W.toFixed(2)}" height="${BLACK_H}" fill="${fill}" stroke="#000" stroke-width="0.5"/>`);
+  }
+})();
+
+</script>
+</body>
+</html>
