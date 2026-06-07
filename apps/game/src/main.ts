@@ -33,8 +33,9 @@ import {
 } from "./playersPanel";
 import { INSTRUMENT_LABELS, type Instrument } from "./instrumentTypes";
 import { initLyricsPanel, type LyricsPanelHandle } from "./lyricsPanel";
+import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
-import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
+// MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
@@ -707,38 +708,7 @@ const playbackRateApplyBtn = document.getElementById("playbackRateApply") as HTM
 const metronomeEnabledInput = document.getElementById("metronomeEnabled") as HTMLInputElement;
 const metronomeVolumeInput = document.getElementById("metronomeVolume") as HTMLInputElement;
 
-const midiFollowEnabledInput = document.getElementById("midiFollowEnabled") as HTMLInputElement;
-const midiInPortSelect = document.getElementById("midiInPort") as HTMLSelectElement;
-const midiInRefreshBtn = document.getElementById("midiInRefresh") as HTMLButtonElement;
-const midiInConnectBtn = document.getElementById("midiInConnect") as HTMLButtonElement;
-const midiInDisconnectBtn = document.getElementById("midiInDisconnect") as HTMLButtonElement;
-const midiTempoScaleInput = document.getElementById("midiTempoScale") as HTMLInputElement;
-const midiInSysexEnabledInput = document.getElementById("midiInSysexEnabled") as HTMLInputElement;
-const midiInPanicBtn = document.getElementById("midiInPanic") as HTMLButtonElement;
-const midiStatusEl = document.getElementById("midiStatus") as HTMLPreElement;
-const midiInActiveNotesEl = document.getElementById("midiInActiveNotes") as HTMLPreElement;
-const midiInEventsEl = document.getElementById("midiInEvents") as HTMLPreElement;
-
-const midiOutEnabledInput = document.getElementById("midiOutEnabled") as HTMLInputElement;
-const midiOutPortSelect = document.getElementById("midiOutPort") as HTMLSelectElement;
-const midiOutRefreshBtn = document.getElementById("midiOutRefresh") as HTMLButtonElement;
-const midiOutSelectBtn = document.getElementById("midiOutSelect") as HTMLButtonElement;
-const midiOutStartBtn = document.getElementById("midiOutStart") as HTMLButtonElement;
-const midiOutContinueBtn = document.getElementById("midiOutContinue") as HTMLButtonElement;
-const midiOutStopBtn = document.getElementById("midiOutStop") as HTMLButtonElement;
-const midiOutSysexEnabledInput = document.getElementById("midiOutSysexEnabled") as HTMLInputElement;
-const midiMsgChannelInput = document.getElementById("midiMsgChannel") as HTMLInputElement;
-const midiMsgNoteInput = document.getElementById("midiMsgNote") as HTMLInputElement;
-const midiMsgVelocityInput = document.getElementById("midiMsgVelocity") as HTMLInputElement;
-const midiMsgNoteOnBtn = document.getElementById("midiMsgNoteOn") as HTMLButtonElement;
-const midiMsgNoteOffBtn = document.getElementById("midiMsgNoteOff") as HTMLButtonElement;
-const midiMsgAllNotesOffBtn = document.getElementById("midiMsgAllNotesOff") as HTMLButtonElement;
-const midiMsgCcInput = document.getElementById("midiMsgCc") as HTMLInputElement;
-const midiMsgCcValueInput = document.getElementById("midiMsgCcValue") as HTMLInputElement;
-const midiMsgCcSendBtn = document.getElementById("midiMsgCcSend") as HTMLButtonElement;
-const midiOutRawHexInput = document.getElementById("midiOutRawHex") as HTMLInputElement;
-const midiOutRawSendBtn = document.getElementById("midiOutRawSend") as HTMLButtonElement;
-const midiOutStatusEl = document.getElementById("midiOutStatus") as HTMLPreElement;
+// All MIDI panel DOM + wiring lives in midiPanel.ts (Phase 2.F).
 
 const modelsRefreshBtn = document.getElementById("modelsRefresh") as HTMLButtonElement;
 const preferredModelsEl = document.getElementById("preferredModels") as HTMLDivElement;
@@ -783,33 +753,7 @@ if (!haveTauri()) {
   songLibraryPanel.disableFolderControls();
   playStartBtn.disabled = true;
 
-  midiInPortSelect.disabled = true;
-  midiInRefreshBtn.disabled = true;
-  midiInConnectBtn.disabled = true;
-  midiInDisconnectBtn.disabled = true;
-  midiTempoScaleInput.disabled = true;
-  midiInSysexEnabledInput.disabled = true;
-  midiInPanicBtn.disabled = true;
-
-  midiOutEnabledInput.disabled = true;
-  midiOutPortSelect.disabled = true;
-  midiOutRefreshBtn.disabled = true;
-  midiOutSelectBtn.disabled = true;
-  midiOutStartBtn.disabled = true;
-  midiOutContinueBtn.disabled = true;
-  midiOutStopBtn.disabled = true;
-  midiOutSysexEnabledInput.disabled = true;
-  midiMsgChannelInput.disabled = true;
-  midiMsgNoteInput.disabled = true;
-  midiMsgVelocityInput.disabled = true;
-  midiMsgNoteOnBtn.disabled = true;
-  midiMsgNoteOffBtn.disabled = true;
-  midiMsgAllNotesOffBtn.disabled = true;
-  midiMsgCcInput.disabled = true;
-  midiMsgCcValueInput.disabled = true;
-  midiMsgCcSendBtn.disabled = true;
-  midiOutRawHexInput.disabled = true;
-  midiOutRawSendBtn.disabled = true;
+  midiPanel.disableAll();
 
   // audio output panel disables itself at boot-time refreshAll() when
   // !haveTauri(), so no explicit call needed here.
@@ -1044,6 +988,18 @@ const audioOutputPanel: AudioOutputPanelHandle = initAudioOutputPanel({
   escapeHtml,
 });
 
+const midiPanel: MidiPanelHandle = initMidiPanel({
+  transportController,
+  haveTauri,
+  escapeHtml,
+  // Keep the cached transport state's bpm in sync when the external clock
+  // publishes a new tempo, so consumers reading `transport.bpm` (e.g. the
+  // tick loop, lyric renderer) see it on the next frame.
+  onExternalBpmChange: (bpm) => {
+    transport = { ...transport, bpm };
+  },
+});
+
 let currentPlaybackRate = 1;
 const htmlFallbackAudioEl = document.createElement("audio");
 htmlFallbackAudioEl.preload = "auto";
@@ -1083,7 +1039,7 @@ async function tryFallbackToHtmlPlayback(songpackPath: string): Promise<boolean>
     await startVisualizer();
   }
   await transportController.play();
-  await midiOutStartOrContinue();
+  await midiPanel.outStartOrContinue();
   setAudioStatus(`playing (fallback): ${songpackPath}`);
   return true;
 }
@@ -1178,7 +1134,7 @@ async function resumeFromPauseMenu() {
   try {
     await transportController.play();
     transport = transportController.getState();
-    await midiOutStartOrContinue();
+    await midiPanel.outStartOrContinue();
     setAudioStatus(selectedSongPackPath ? `playing: ${selectedSongPackPath}` : "resumed");
     logConsole("gamestate", "pause menu -> resume");
   } catch (e) {
@@ -1736,347 +1692,6 @@ const playersPanel: PlayersPanelHandle = initPlayersPanel({
 
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
 
-type MidiPortInfo = {
-  id: number;
-  name: string;
-  stable_id?: string;
-  backend?: string;
-};
-
-type MidiOutputSelection = { id: number; name: string; stable_id?: string | null };
-type MidiInputSelection = { id: number; name: string; stable_id?: string | null };
-
-type MidiInputSavedSettings = {
-  port: MidiInputSelection | null;
-  tempo_scale: number;
-  allow_sysex: boolean;
-};
-
-let midiConnected = false;
-let midiOutSysexEnabled = false;
-const midiInputTracker = new MidiInputStateTracker();
-let midiInputEventLines: string[] = [];
-
-function setMidiStatus(msg: string) {
-  midiStatusEl.textContent = msg;
-}
-
-function setMidiInputActiveNotesStatus(msg: string) {
-  midiInActiveNotesEl.textContent = msg;
-}
-
-function setMidiInputEventsStatus(msg: string) {
-  midiInEventsEl.textContent = msg;
-}
-
-function appendMidiInputEventLine(line: string) {
-  const s = line.trim();
-  if (!s) return;
-  midiInputEventLines.push(s);
-  if (midiInputEventLines.length > 14) {
-    midiInputEventLines = midiInputEventLines.slice(-14);
-  }
-  setMidiInputEventsStatus(midiInputEventLines.join("\n"));
-}
-
-function midiUiChannelToZeroBased(channelFromUi: number): number {
-  const ch = Math.floor(channelFromUi);
-  if (!Number.isFinite(ch) || ch < 1 || ch > 16) {
-    throw new Error("MIDI channel must be 1-16");
-  }
-  return ch - 1;
-}
-
-function requireMidiDataByte(name: string, value: number): number {
-  const v = Math.floor(value);
-  if (!Number.isFinite(v) || v < 0 || v > 127) {
-    throw new Error(`${name} must be 0-127`);
-  }
-  return v;
-}
-
-function parseRawMidiHexBytes(raw: string): number[] {
-  const tokens = raw
-    .trim()
-    .split(/[\s,]+/)
-    .filter((t) => t.length > 0);
-  if (!tokens.length) {
-    throw new Error("Enter one or more hex bytes (example: 90 3C 64)");
-  }
-
-  return tokens.map((tok) => {
-    const clean = tok.startsWith("0x") || tok.startsWith("0X") ? tok.slice(2) : tok;
-    if (!/^[0-9a-fA-F]{1,2}$/.test(clean)) {
-      throw new Error(`Invalid hex byte: ${tok}`);
-    }
-    const v = Number.parseInt(clean, 16);
-    if (!Number.isFinite(v) || v < 0 || v > 255) {
-      throw new Error(`Invalid hex byte: ${tok}`);
-    }
-    return v;
-  });
-}
-
-// Lyrics generation (creating features/lyrics.json from a plain-text file) is
-// content creation and lives in AuralStudio. If a SongPack is missing
-// features/lyrics.json the gameplay app simply renders without lyrics.
-
-function setMidiOutStatus(msg: string) {
-  midiOutStatusEl.textContent = msg;
-}
-
-function midiPortBackendLabel(ports: MidiPortInfo[]): string {
-  return ports.find((p) => p.backend?.trim())?.backend?.trim() || "native";
-}
-
-function renderMidiPortOptions(ports: MidiPortInfo[], emptyLabel: string): string {
-  if (!ports.length) {
-    return `<option value="" selected>${escapeHtml(emptyLabel)}</option>`;
-  }
-  return ports
-    .map((p) => {
-      const titleParts = [
-        p.backend ? `backend=${p.backend}` : "",
-        p.stable_id ? `id=${p.stable_id}` : "",
-      ].filter(Boolean);
-      const title = titleParts.length ? ` title="${escapeHtml(titleParts.join(" "))}"` : "";
-      return `<option value="${p.id}"${title}>${escapeHtml(p.name)}</option>`;
-    })
-    .join("\n");
-}
-
-function findSavedMidiPortMatch(
-  ports: MidiPortInfo[],
-  saved: MidiInputSelection | MidiOutputSelection | null
-): MidiPortInfo | undefined {
-  if (!saved) return undefined;
-  if (saved.stable_id?.trim()) {
-    const stableMatch = ports.find((p) => p.stable_id === saved.stable_id);
-    if (stableMatch) return stableMatch;
-  }
-  return ports.find((p) => p.id === saved.id && p.name === saved.name)
-    ?? ports.find((p) => p.name === saved.name);
-}
-
-function midiPortNamesPreview(ports: MidiPortInfo[], maxPorts = 4): string {
-  const names = ports.slice(0, maxPorts).map((p) => p.name.trim()).filter(Boolean);
-  const suffix = ports.length > names.length ? `, +${ports.length - names.length} more` : "";
-  return names.length ? `${names.join(", ")}${suffix}` : "(unnamed ports)";
-}
-
-async function refreshMidiInputPorts() {
-  const previousDisabled = midiInRefreshBtn.disabled;
-  try {
-    midiInRefreshBtn.disabled = true;
-    setMidiStatus("midi input: refreshing ports...");
-    const ports = await invoke<MidiPortInfo[]>("list_midi_input_ports");
-    midiInPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI inputs found");
-
-    let savedWarning = "";
-    try {
-      const saved = await invoke<MidiInputSavedSettings>("midi_clock_input_get_saved_settings");
-      midiTempoScaleInput.value = String(saved.tempo_scale ?? 1);
-      midiInSysexEnabledInput.checked = Boolean(saved.allow_sysex);
-
-      const match = findSavedMidiPortMatch(ports, saved.port);
-      if (match) {
-        midiInPortSelect.value = String(match.id);
-      }
-    } catch (settingsError) {
-      savedWarning = `; saved settings ignored: ${String(settingsError)}`;
-    }
-
-    if (!ports.length) {
-      midiInPortSelect.value = "";
-      setMidiStatus(
-        "midi input: 0 ports found via native MIDI backend. Windows uses WinRT; macOS uses CoreMIDI; Linux uses ALSA. If another app sees the keyboard, close apps that may hold the port, replug the keyboard, then refresh."
-      );
-      return;
-    }
-
-    const backend = midiPortBackendLabel(ports);
-    const selectedName = midiInPortSelect.selectedOptions[0]?.textContent?.trim();
-    setMidiStatus(
-      `midi input: ${ports.length} port(s) found via ${backend}: ${midiPortNamesPreview(ports)}${selectedName ? `; selected ${selectedName}` : ""}${savedWarning}`
-    );
-  } catch (e) {
-    midiInPortSelect.innerHTML = renderMidiPortOptions([], "MIDI input refresh failed");
-    midiInPortSelect.value = "";
-    setMidiStatus(`midi input ports error: ${String(e)}`);
-  } finally {
-    midiInRefreshBtn.disabled = previousDisabled;
-  }
-}
-
-async function refreshMidiOutputPorts() {
-  try {
-    const ports = await invoke<MidiPortInfo[]>("list_midi_output_ports");
-    midiOutPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI outputs found");
-
-    // Best-effort: apply saved selection.
-    const [saved, savedSysex] = await Promise.all([
-      invoke<MidiOutputSelection | null>("midi_clock_output_get_saved_port"),
-      invoke<boolean>("midi_output_get_saved_allow_sysex")
-    ]);
-    midiOutSysexEnabled = Boolean(savedSysex);
-    midiOutSysexEnabledInput.checked = midiOutSysexEnabled;
-
-    const match = findSavedMidiPortMatch(ports, saved);
-    if (match) {
-      midiOutPortSelect.value = String(match.id);
-    }
-  } catch (e) {
-    midiOutPortSelect.innerHTML = renderMidiPortOptions([], "MIDI output refresh failed");
-    midiOutPortSelect.value = "";
-    setMidiOutStatus(`midi output ports error: ${String(e)}`);
-  }
-}
-
-async function selectMidiOutputPortAndPersist() {
-  const portId = Number(midiOutPortSelect.value);
-  if (!Number.isFinite(portId)) {
-    setMidiOutStatus("midi output: no port selected");
-    return;
-  }
-  await invoke("midi_clock_output_select_port_and_persist", { portId });
-  await invoke("midi_output_set_allow_sysex_and_persist", { enabled: midiOutSysexEnabled });
-  setMidiOutStatus(`midi output: selected port=${portId} sysex=${midiOutSysexEnabled ? "on" : "off"}`);
-}
-
-let midiOutEnabled = false;
-let midiOutRunning = false;
-let midiOutEverStarted = false;
-let lastMidiOutBpmSent = 0;
-let lastMidiOutBpmSentAtMs = 0;
-
-async function midiOutSetBpmIfNeeded(bpm: number) {
-  if (!midiOutEnabled) return;
-  if (!Number.isFinite(bpm) || bpm <= 0) return;
-
-  const now = performance.now();
-  // Throttle updates; and avoid spamming tiny fluctuations.
-  if (now - lastMidiOutBpmSentAtMs < 200 && Math.abs(bpm - lastMidiOutBpmSent) < 0.05) return;
-
-  await invoke("midi_clock_output_set_bpm", { bpm });
-  lastMidiOutBpmSent = bpm;
-  lastMidiOutBpmSentAtMs = now;
-}
-
-async function midiOutSeek(tSec: number) {
-  if (!midiOutEnabled) return;
-  if (!Number.isFinite(tSec) || tSec < 0) return;
-  await invoke("midi_clock_output_seek", { tSec });
-}
-
-async function midiOutStartOrContinue() {
-  if (!midiOutEnabled) return;
-  // Ensure port selection is applied.
-  await selectMidiOutputPortAndPersist();
-
-  const st = transportController.getState();
-  await midiOutSetBpmIfNeeded(st.bpm);
-  await midiOutSeek(st.t);
-
-  if (midiOutRunning) return;
-
-  if (!midiOutEverStarted || st.t <= 0.0001) {
-    await invoke("midi_clock_output_start");
-    midiOutEverStarted = true;
-    midiOutRunning = true;
-    setMidiOutStatus("midi clock out: START");
-  } else {
-    await invoke("midi_clock_output_continue");
-    midiOutRunning = true;
-    setMidiOutStatus("midi clock out: CONTINUE");
-  }
-}
-
-async function midiOutStop() {
-  if (!midiOutEnabled) return;
-  await invoke("midi_clock_output_stop");
-  midiOutRunning = false;
-  midiOutEverStarted = true;
-  setMidiOutStatus("midi clock out: STOP");
-}
-
-async function setMidiOutSysex(enabled: boolean, persist: boolean): Promise<void> {
-  midiOutSysexEnabled = Boolean(enabled);
-  midiOutSysexEnabledInput.checked = midiOutSysexEnabled;
-
-  if (persist) {
-    await invoke("midi_output_set_allow_sysex_and_persist", { enabled: midiOutSysexEnabled });
-  } else {
-    await invoke("midi_output_set_allow_sysex", { enabled: midiOutSysexEnabled });
-  }
-}
-
-async function sendMidiNoteOnFromUi() {
-  const channel = midiUiChannelToZeroBased(Number(midiMsgChannelInput.value));
-  const note = requireMidiDataByte("note", Number(midiMsgNoteInput.value));
-  const velocity = requireMidiDataByte("velocity", Number(midiMsgVelocityInput.value));
-  await invoke("midi_output_send_note_on", { channel, note, velocity });
-  setMidiOutStatus(`midi out note on: ch${channel + 1} note=${note} vel=${velocity}`);
-}
-
-async function sendMidiNoteOffFromUi() {
-  const channel = midiUiChannelToZeroBased(Number(midiMsgChannelInput.value));
-  const note = requireMidiDataByte("note", Number(midiMsgNoteInput.value));
-  const velocity = requireMidiDataByte("velocity", Number(midiMsgVelocityInput.value));
-  await invoke("midi_output_send_note_off", { channel, note, velocity });
-  setMidiOutStatus(`midi out note off: ch${channel + 1} note=${note} vel=${velocity}`);
-}
-
-async function sendMidiCcFromUi() {
-  const channel = midiUiChannelToZeroBased(Number(midiMsgChannelInput.value));
-  const controller = requireMidiDataByte("cc", Number(midiMsgCcInput.value));
-  const value = requireMidiDataByte("cc value", Number(midiMsgCcValueInput.value));
-  await invoke("midi_output_send_control_change", { channel, controller, value });
-  setMidiOutStatus(`midi out cc: ch${channel + 1} cc=${controller} value=${value}`);
-}
-
-async function sendMidiAllNotesOffFromUi() {
-  const channel = midiUiChannelToZeroBased(Number(midiMsgChannelInput.value));
-  await invoke("midi_output_all_notes_off", { channel });
-  setMidiOutStatus(`midi out: all notes off ch${channel + 1}`);
-}
-
-async function sendMidiRawFromUi() {
-  const bytes = parseRawMidiHexBytes(midiOutRawHexInput.value);
-  await invoke("midi_output_send_raw", { bytes });
-  setMidiOutStatus(`midi out raw: ${bytes.map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ")}`);
-}
-
-async function connectMidiClockInput() {
-  const portId = Number(midiInPortSelect.value);
-  const tempoScale = Number(midiTempoScaleInput.value);
-  const allowSysex = midiInSysexEnabledInput.checked;
-  if (!Number.isFinite(portId)) {
-    setMidiStatus("midi input: no port selected; refresh after connecting the keyboard");
-    return;
-  }
-  await invoke("midi_clock_input_start_and_persist", { portId, tempoScale, allowSysex });
-  midiConnected = true;
-  const portName = midiInPortSelect.selectedOptions[0]?.textContent?.trim() || `port ${portId}`;
-  setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.clear()));
-  setMidiStatus(`midi input connected: ${portName} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
-}
-
-async function disconnectMidiClockInput() {
-  await invoke("midi_clock_input_stop");
-  midiConnected = false;
-  transportController.setExternalClockRunning(false);
-  setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.clear()));
-  setMidiStatus("midi input disconnected");
-}
-
-async function shutdownMidiOutputService() {
-  // Always safe; it just joins the thread if it exists.
-  try {
-    await invoke("midi_clock_output_shutdown");
-  } catch {
-    // ignore
-  }
-}
 
 let lastLoadedAudio: { blob: Blob; mime: string } | null = null;
 let lastLoadedSongPackPath: string | null = null;
@@ -2481,7 +2096,7 @@ async function startSelectedSongSession() {
       loadAudioFromSelectedSongPack,
       startVisualizer,
       playTransport: () => transportController.play(),
-      startMidiOut: midiOutStartOrContinue,
+      startMidiOut: midiPanel.outStartOrContinue,
       isNativePlaybackInactiveError,
       tryFallbackToHtmlPlayback,
       onPrimaryStartError: (err) => errorConsole("play", "start session failed", err),
@@ -2562,7 +2177,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
 
     // If MIDI clock out is enabled, keep its BPM tracking the transport.
     // (Transport bpm will be influenced by external clock if follow is enabled.)
-    void midiOutSetBpmIfNeeded(transport.bpm);
+    void midiPanel.outSetBpmIfNeeded(transport.bpm);
 
     metronome.update(transport);
 
@@ -2603,7 +2218,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
       tabRenderer.render(transport.t, {
         bpm: transport.bpm,
         timeSignature: transport.timeSignature,
-        liveInputNotes: midiInputTracker.snapshot().activeNotes,
+        liveInputNotes: midiPanel.inputActiveNotes().activeNotes,
         scrollSpeedMultiplier: transport.scrollSpeedMultiplier
       });
     }
@@ -2683,143 +2298,6 @@ metronomeVolumeInput.addEventListener("input", () => {
 
 // MIDI follow defaults to enabled.
 transportController.setFollowExternalClock(true);
-midiFollowEnabledInput.addEventListener("change", () => {
-  transportController.setFollowExternalClock(midiFollowEnabledInput.checked);
-  setMidiStatus(`follow external clock: ${midiFollowEnabledInput.checked ? "on" : "off"}`);
-});
-
-midiInRefreshBtn.addEventListener("click", () => {
-  void refreshMidiInputPorts();
-});
-
-midiInConnectBtn.addEventListener("click", () => {
-  void connectMidiClockInput().catch((e) => setMidiStatus(String(e)));
-});
-
-midiInDisconnectBtn.addEventListener("click", () => {
-  void disconnectMidiClockInput().catch((e) => setMidiStatus(String(e)));
-});
-
-midiInSysexEnabledInput.addEventListener("change", () => {
-  if (midiConnected) {
-    void connectMidiClockInput().catch((e) => setMidiStatus(String(e)));
-  } else {
-    setMidiStatus(`midi input SysEx: ${midiInSysexEnabledInput.checked ? "enabled (on next connect)" : "disabled"}`);
-  }
-});
-
-midiInPanicBtn.addEventListener("click", () => {
-  setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.clear()));
-  appendMidiInputEventLine("input monitor cleared");
-});
-
-midiOutEnabledInput.addEventListener("change", () => {
-  midiOutEnabled = midiOutEnabledInput.checked;
-  if (midiOutEnabled) {
-    setMidiOutStatus("midi clock out: enabled");
-    void refreshMidiOutputPorts();
-  } else {
-    // Stop sending clock when disabled.
-    void midiOutStop();
-    setMidiOutStatus("midi clock out: disabled");
-  }
-});
-
-midiOutRefreshBtn.addEventListener("click", () => {
-  void refreshMidiOutputPorts();
-});
-
-midiOutSelectBtn.addEventListener("click", () => {
-  void selectMidiOutputPortAndPersist().catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiOutSysexEnabledInput.addEventListener("change", () => {
-  void setMidiOutSysex(midiOutSysexEnabledInput.checked, true).catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiOutStartBtn.addEventListener("click", () => {
-  midiOutEnabledInput.checked = true;
-  midiOutEnabled = true;
-  void midiOutStartOrContinue().catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiOutContinueBtn.addEventListener("click", () => {
-  midiOutEnabledInput.checked = true;
-  midiOutEnabled = true;
-  midiOutEverStarted = true;
-  void selectMidiOutputPortAndPersist()
-    .then(() => invoke("midi_clock_output_continue"))
-    .then(() => {
-      midiOutRunning = true;
-      setMidiOutStatus("midi clock out: CONTINUE");
-    })
-    .catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiOutStopBtn.addEventListener("click", () => {
-  void midiOutStop().catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiMsgNoteOnBtn.addEventListener("click", () => {
-  void sendMidiNoteOnFromUi().catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiMsgNoteOffBtn.addEventListener("click", () => {
-  void sendMidiNoteOffFromUi().catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiMsgCcSendBtn.addEventListener("click", () => {
-  void sendMidiCcFromUi().catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiMsgAllNotesOffBtn.addEventListener("click", () => {
-  void sendMidiAllNotesOffFromUi().catch((e) => setMidiOutStatus(String(e)));
-});
-
-midiOutRawSendBtn.addEventListener("click", () => {
-  void sendMidiRawFromUi().catch((e) => setMidiOutStatus(String(e)));
-});
-
-// MIDI clock event listeners (from Rust)
-void listen("midi_clock_start", () => {
-  transportController.setExternalClockRunning(true);
-  setMidiStatus("midi clock: START");
-});
-
-void listen("midi_clock_stop", () => {
-  transportController.setExternalClockRunning(false);
-  setMidiStatus("midi clock: STOP");
-});
-
-void listen<{ bpm: number; raw_bpm: number; tempo_scale: number }>("midi_clock_bpm", (ev) => {
-  transportController.setExternalClockBpm(ev.payload.bpm);
-  // Keep transport bpm in sync even before ticks advance.
-  transport = { ...transport, bpm: ev.payload.bpm };
-});
-
-void listen<{ dt_sec: number }>("midi_clock_tick", (ev) => {
-  // Advance transport based on device tick timing.
-  transportController.pushExternalClockDelta(ev.payload.dt_sec);
-});
-
-void listen<{ t_sec: number }>("midi_clock_seek", (ev) => {
-  transportController.seekFromExternalClock(ev.payload.t_sec);
-  setMidiStatus(`midi clock: SEEK ${ev.payload.t_sec.toFixed(2)}s`);
-});
-
-void listen<MidiInputMessageEvent>("midi_input_message", (ev) => {
-  if (ev.payload.message_type !== "clock") {
-    const snapshot = midiInputTracker.apply(ev.payload);
-    setMidiInputActiveNotesStatus(formatMidiActiveNotes(snapshot));
-    appendMidiInputEventLine(formatMidiInputMessage(ev.payload));
-  }
-
-  window.dispatchEvent(
-    new CustomEvent<MidiInputMessageEvent>("auralprimer:midi-input", {
-      detail: ev.payload,
-    })
-  );
-});
 
 // proprietary_archive_import and ingest progress events are emitted by AuralStudio's import flows;
 // the gameplay app does not subscribe to them.
@@ -2838,7 +2316,7 @@ audioPlayBtn.addEventListener("click", () => {
   void transportController.play()
     .then(() => {
       logConsole("play", "play started");
-      return midiOutStartOrContinue();
+      return midiPanel.outStartOrContinue();
     })
     .catch((e) => setAudioStatus(String(e)));
 });
@@ -2988,16 +2466,13 @@ pluginRefreshBtn.addEventListener("click", () => {
 // Populate plugin list on startup.
 void refreshPlugins();
 
-setMidiInputActiveNotesStatus(formatMidiActiveNotes(midiInputTracker.snapshot()));
-
-// Populate MIDI ports.
-void refreshMidiInputPorts();
-void refreshMidiOutputPorts();
+// Initial MIDI active-notes status + port lists handled by midiPanel itself.
+void midiPanel.refreshAll();
 void audioOutputPanel.refreshAll();
 
 // Ensure we stop background threads on window close.
 window.addEventListener("beforeunload", () => {
-  void shutdownMidiOutputService();
+  void midiPanel.outShutdown();
   // Best-effort: stop native audio thread if it was initialized.
   try {
     void invoke("native_audio_shutdown");
