@@ -20,3 +20,7 @@ export * from "./validateLoadedSongPack";
 export * from "./canonicalJson";
 export * from "./canonicalizeSongPack";
 export * from "./buildSongPackZip";
+
+// Refinement (Studio Refine workspace data contract + game-side overlay)
+export * from "./refinement";
+export * from "./refineCandidates";

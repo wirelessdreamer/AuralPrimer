@@ -480,6 +480,51 @@ export type MelodicTrackSelection = {
   notes: MelodicNote[];
 };
 
+import {
+  applyRefinementOverlay,
+  type RefinementFile,
+  type RefinementInstrument,
+} from "@auralprimer/songpack/refinement";
+
+/**
+ * Map an instrument role to the refinement file's instrument tag. The
+ * generic "melodic" track role is matched by a refinement targeting the
+ * same generic bucket; otherwise the per-instrument refinement wins.
+ */
+function refinementMatchesRole(
+  refInstrument: RefinementInstrument,
+  role: InstrumentRole,
+): boolean {
+  return refInstrument === role;
+}
+
+/**
+ * Apply a list of per-instrument refinement overlays to the melodic
+ * tracks produced from `features/notes.mid`. Each refinement targets a
+ * single instrument; tracks whose role does not match any refinement are
+ * returned unchanged. Pure function — does not mutate inputs.
+ *
+ * Multiple refinements with the same instrument are applied in array
+ * order; later refinements operate on the result of earlier ones (this
+ * shouldn't happen in practice since the SongPack convention is one
+ * refinement file per instrument, but the loader handles it deterministically).
+ */
+export function applyRefinementsToMelodicTracks(
+  tracks: ReadonlyArray<MelodicTrackSelection>,
+  refinements: ReadonlyArray<RefinementFile>,
+): MelodicTrackSelection[] {
+  if (refinements.length === 0) return tracks.map((t) => ({ ...t, notes: [...t.notes] }));
+  return tracks.map((t) => {
+    let notes = t.notes;
+    for (const ref of refinements) {
+      if (refinementMatchesRole(ref.instrument, t.role)) {
+        notes = applyRefinementOverlay(notes, ref);
+      }
+    }
+    return { ...t, notes };
+  });
+}
+
 /** Channel → instrument role mapping matching the ingest pipeline. */
 const CHANNEL_TO_ROLE: Record<number, InstrumentRole> = {
   0: "bass",

@@ -23,7 +23,8 @@ import {
 import { BUILTIN_PLUGINS, type PluginDescriptor, loadPlugin, scanBundledPlugins, scanUserPlugins } from "./plugins";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
+import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, applyRefinementsToMelodicTracks, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
+import { validateRefinement, type RefinementFile } from "@auralprimer/songpack/refinement";
 import { TabRenderer } from "./tabRenderer";
 import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
@@ -1403,9 +1404,19 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
     const midiBytes = new Uint8Array(midi.bytes);
 
     // Extract melodic instrument tracks alongside drums.
-    selectedMelodicTracks = selectMelodicTracksFromMidiBytes(midiBytes);
+    const baseMelodicTracks = selectMelodicTracksFromMidiBytes(midiBytes);
+    // Apply per-instrument refinement overlays from features/refinement.<role>.json
+    // if present. Best-effort: missing or invalid refinement files are
+    // logged and skipped; the base notes.mid track is rendered unchanged.
+    const refinements = await loadRefinementsForRoles(
+      containerPath,
+      baseMelodicTracks.map((t) => t.role),
+    );
+    selectedMelodicTracks = applyRefinementsToMelodicTracks(baseMelodicTracks, refinements);
     if (selectedMelodicTracks.length > 0) {
-      logConsole("play", `found ${selectedMelodicTracks.length} melodic track(s): ${selectedMelodicTracks.map(t => t.role).join(", ")}`);
+      const refRoles = refinements.map((r) => r.instrument);
+      const suffix = refRoles.length > 0 ? ` (refinement: ${refRoles.join(", ")})` : "";
+      logConsole("play", `found ${selectedMelodicTracks.length} melodic track(s): ${selectedMelodicTracks.map(t => t.role).join(", ")}${suffix}`);
     }
 
     return selectDrumChartFromMidiBytes(midiBytes);
@@ -1419,6 +1430,45 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
 function asObjectRecord(v: unknown): Record<string, unknown> | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   return v as Record<string, unknown>;
+}
+
+/**
+ * Best-effort load of per-instrument refinement overlays from a SongPack.
+ *
+ * For each role in `roles`, attempts `features/refinement.<role>.json`.
+ * Missing files return null silently (the common case — no refinement
+ * authored yet). Invalid files log a warning and are skipped so a broken
+ * refinement never prevents the base notes.mid track from rendering.
+ *
+ * Returns only the valid refinements that successfully matched a role.
+ */
+async function loadRefinementsForRoles(
+  containerPath: string,
+  roles: ReadonlyArray<InstrumentRole>,
+): Promise<RefinementFile[]> {
+  const out: RefinementFile[] = [];
+  for (const role of roles) {
+    const relPath = `features/refinement.${role}.json`;
+    let raw: unknown;
+    try {
+      raw = await invoke<unknown>("read_songpack_json", { containerPath, relPath });
+    } catch {
+      // Missing file is the common case; do not log.
+      continue;
+    }
+    if (raw == null) continue;
+    const result = validateRefinement(raw);
+    if (!result.ok) {
+      warnConsole(
+        "play",
+        `refinement.${role}.json failed validation; ignoring`,
+        result.errors,
+      );
+      continue;
+    }
+    out.push(result.value);
+  }
+  return out;
 }
 
 function applyInstrumentHintsFromToken(
