@@ -32,6 +32,7 @@ import {
   type PlayersPanelHandle,
 } from "./playersPanel";
 import { INSTRUMENT_LABELS, type Instrument } from "./instrumentTypes";
+import { initLyricsPanel, type LyricsPanelHandle } from "./lyricsPanel";
 import type { ManifestSummary } from "./manifestTypes";
 import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
@@ -864,102 +865,15 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function findActiveLyricLineIndex(lines: LyricsFile["lines"], t: number): number {
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (t >= line.start && t <= line.end) return i;
-  }
-  let idx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (t >= lines[i].start) idx = i;
-  }
-  return idx;
-}
-
-function computeLyricHighlightCharIndex(line: LyricsFile["lines"][number], t: number): number {
-  const text = line.text ?? "";
-  const chunks = line.chunks ?? [];
-  if (!chunks.length) {
-    const dur = Math.max(0.001, line.end - line.start);
-    const p = clamp((t - line.start) / dur, 0, 1);
-    return Math.round(p * text.length);
-  }
-
-  let idx = -1;
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    if (t >= chunk.start && t <= chunk.end) {
-      const dur = Math.max(0.001, chunk.end - chunk.start);
-      const p = clamp((t - chunk.start) / dur, 0, 1);
-      const span = Math.max(0, chunk.char_end - chunk.char_start);
-      return chunk.char_start + Math.round(p * span);
-    }
-    if (t >= chunk.end) idx = i;
-  }
-  if (idx >= 0) return chunks[idx].char_end;
-  return 0;
-}
-
-let lastPlaybackLyricsState = "__hidden";
-
-function clearPlaybackLyrics(): void {
-  if (lastPlaybackLyricsState === "__hidden") return;
-  playLyricsEl.hidden = true;
-  playLyricsCurrentEl.innerHTML = "";
-  playLyricsNextEl.textContent = "";
-  lastPlaybackLyricsState = "__hidden";
-}
-
+// Lyrics rendering lives in lyricsPanel.ts. Host calls
+// lyricsPanel.render(t, currentLyrics, currentPluginId) in the tick loop
+// and lyricsPanel.clear() when the visualizer stops.
+const lyricsPanel: LyricsPanelHandle = initLyricsPanel();
 function renderPlaybackLyrics(t: number): void {
-  if (!currentLyrics?.lines?.length) {
-    clearPlaybackLyrics();
-    return;
-  }
-  if (currentSelectedPlugin().id === "viz-lyrics") {
-    clearPlaybackLyrics();
-    return;
-  }
-
-  const lines = currentLyrics.lines;
-  const previewLeadSec = 3;
-  const postLineHoldSec = 1.5;
-  const idx = findActiveLyricLineIndex(lines, t);
-
-  if (idx < 0) {
-    const firstLine = lines[0];
-    if (firstLine.start - t > previewLeadSec) {
-      clearPlaybackLyrics();
-      return;
-    }
-    const previewState = `preview|${firstLine.text}`;
-    if (lastPlaybackLyricsState === previewState) return;
-    playLyricsEl.hidden = false;
-    playLyricsCurrentEl.innerHTML = "";
-    playLyricsNextEl.textContent = firstLine.text ?? "";
-    lastPlaybackLyricsState = previewState;
-    return;
-  }
-
-  const line = lines[idx];
-  if (idx === lines.length - 1 && t > line.end + postLineHoldSec) {
-    clearPlaybackLyrics();
-    return;
-  }
-
-  const text = line.text ?? "";
-  const splitAt = clamp(computeLyricHighlightCharIndex(line, t), 0, text.length);
-  const currentHtml = [
-    `<span class="playLyricsDone">${escapeHtml(text.slice(0, splitAt))}</span>`,
-    `<span class="playLyricsRest">${escapeHtml(text.slice(splitAt))}</span>`
-  ].join("");
-  const nextText = lines[idx + 1]?.text ?? "";
-  const renderState = `${idx}|${splitAt}|${currentHtml}|${nextText}`;
-  if (lastPlaybackLyricsState === renderState) return;
-
-  playLyricsEl.hidden = false;
-  playLyricsCurrentEl.innerHTML = currentHtml;
-  playLyricsNextEl.textContent = nextText;
-  lastPlaybackLyricsState = renderState;
+  lyricsPanel.render(t, currentLyrics, currentSelectedPlugin()?.id ?? null);
+}
+function clearPlaybackLyrics(): void {
+  lyricsPanel.clear();
 }
 
 function yesNo(v: boolean): string {
