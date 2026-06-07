@@ -23,6 +23,15 @@ import { TabRenderer } from "./tabRenderer";
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
+import {
+  initPlayersPanel,
+  defaultPluginIdForInstrument,
+  DEFAULT_PLUGIN_ID,
+  DRUM_HIGHWAY_PLUGIN_ID,
+  type Player,
+  type PlayersPanelHandle,
+} from "./playersPanel";
+import { INSTRUMENT_LABELS, type Instrument } from "./instrumentTypes";
 import type { ManifestSummary } from "./manifestTypes";
 import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
@@ -653,8 +662,10 @@ const vizStopBtn = document.getElementById("vizStop") as HTMLButtonElement;
 
 const playLayoutEl = document.getElementById("playLayout") as HTMLDivElement;
 const toggleFocusBtn = document.getElementById("toggleFocus") as HTMLButtonElement;
+// #players list is rendered by playersPanel.ts but applyInstrumentAvailability
+// still queries .playerChip across it, so keep the reference handle here.
 const playersEl = document.getElementById("players") as HTMLDivElement;
-const addPlayerBtn = document.getElementById("addPlayer") as HTMLButtonElement;
+// #addPlayer button is owned by playersPanel.ts (click handler lives there).
 
 const capsEl = document.createElement("div");
 capsEl.id = "songCaps";
@@ -1091,31 +1102,7 @@ setSelectedSongSetupLabel(null, null);
 
 let availablePlugins: PluginDescriptor[] = [...BUILTIN_PLUGINS];
 let loadedPluginDispose: (() => void) | null = null;
-const DEFAULT_PLUGIN_ID = "viz-beats";
-const DRUM_HIGHWAY_PLUGIN_ID = "viz-drum-highway";
-const NASHVILLE_PLUGIN_ID = "viz-nashville";
-const LYRICS_PLUGIN_ID = "viz-lyrics";
-
-// Default visualizer per instrument for secondary stages. Player 1 still
-// flows through the rail's plugin select (manual override); players 2..N
-// pick their visualizer from this table based on their instrument. Drums
-// gets the highway, vocals gets lyrics, harmonic instruments get the
-// Nashville chord lane, fallback to beats.
-function defaultPluginIdForInstrument(inst: Instrument | undefined): string {
-  switch (inst) {
-    case "drums":
-      return DRUM_HIGHWAY_PLUGIN_ID;
-    case "vocals":
-      return LYRICS_PLUGIN_ID;
-    case "bass":
-    case "lead_guitar":
-    case "rhythm_guitar":
-    case "keys":
-      return NASHVILLE_PLUGIN_ID;
-    default:
-      return DEFAULT_PLUGIN_ID;
-  }
-}
+// Plugin id constants + defaultPluginIdForInstrument live in playersPanel.ts.
 let pluginSelectionMode: "auto" | "user" = "auto";
 
 let transport: TransportState = {
@@ -1352,15 +1339,7 @@ queueMicrotask(() => {
 toggleFocusBtn.disabled = true;
 
 // Player/track selection scaffold (multi-lane-ready)
-type Instrument = "lead_guitar" | "rhythm_guitar" | "bass" | "drums" | "keys" | "vocals";
-const INSTRUMENT_LABELS: Record<Instrument, string> = {
-  lead_guitar: "Lead Guitar",
-  rhythm_guitar: "Rhythm Guitar",
-  bass: "Bass",
-  drums: "Drums",
-  keys: "Keys",
-  vocals: "Vocals"
-};
+// Instrument type + INSTRUMENT_LABELS live in instrumentTypes.ts.
 
 async function readDrumChartSelection(containerPath: string, details: SongPackDetails): Promise<DrumChartSelection | null> {
   selectedMelodicTracks = [];
@@ -1657,7 +1636,7 @@ function applyInstrumentAvailability(
       if (firstEnabled) {
         sel.value = firstEnabled.value;
         if (chipId) {
-          players = players.map((p) => (p.id === chipId ? { ...p, instrument: firstEnabled.value as Instrument } : p));
+          playersPanel.setPlayerInstrument(chipId, firstEnabled.value as Instrument);
         }
       }
     }
@@ -1752,29 +1731,10 @@ function renderPluginsWithAvailability(details: SongPackDetails | null) {
   }
 }
 
-type Player = { id: string; name: string; instrument: Instrument };
-let players: Player[] = [{ id: "p1", name: "Player 1", instrument: "drums" }];
-
-function primaryPlayerInstrument(): Instrument | null {
-  return players[0]?.instrument ?? null;
-}
-
-function preferredMelodicRoleForPlayers(): InstrumentRole | null {
-  switch (primaryPlayerInstrument()) {
-    case "bass":
-      return "bass";
-    case "rhythm_guitar":
-      return "rhythm_guitar";
-    case "lead_guitar":
-      return "lead_guitar";
-    case "keys":
-      return "keys";
-    case "vocals":
-      return "melodic";
-    default:
-      return null;
-  }
-}
+// Player state + render + handlers + plugin-id-per-instrument live in
+// playersPanel.ts. Cross-cutting fns that read players but touch other
+// state (selectedMelodicTracks, pluginSelect, viz lifecycle) stay here
+// and reach the players list through the panel handle.
 
 function findMelodicTrack(role: InstrumentRole | null): MelodicTrackSelection | null {
   if (!role) return null;
@@ -1782,13 +1742,13 @@ function findMelodicTrack(role: InstrumentRole | null): MelodicTrackSelection | 
 }
 
 function shouldPromoteMelodicSurface(): boolean {
-  return primaryPlayerInstrument() === "keys" && Boolean(findMelodicTrack("keys"));
+  return playersPanel.getPrimaryInstrument() === "keys" && Boolean(findMelodicTrack("keys"));
 }
 
 function shouldUseWideSoloKeysLayout(): boolean {
   return currentRoute === "play"
     && !playLayoutEl.classList.contains("isLibraryOnly")
-    && players.length === 1
+    && playersPanel.getPlayers().length === 1
     && shouldPromoteMelodicSurface();
 }
 
@@ -1806,7 +1766,7 @@ function syncMelodicTrackSelectionFromPlayers(): void {
     return;
   }
 
-  const preferredTrack = findMelodicTrack(preferredMelodicRoleForPlayers());
+  const preferredTrack = findMelodicTrack(playersPanel.getPreferredMelodicRole());
   const activeTrack = findMelodicTrack(activeTabInstrument);
   const nextTrack = preferredTrack ?? activeTrack ?? selectedMelodicTracks[0] ?? null;
   if (!nextTrack) {
@@ -1823,10 +1783,6 @@ function selectedPluginId(): string | null {
   return availablePlugins[idx]?.id ?? null;
 }
 
-function preferredPluginIdForPlayers(): string {
-  return players[0]?.instrument === "drums" ? DRUM_HIGHWAY_PLUGIN_ID : DEFAULT_PLUGIN_ID;
-}
-
 function setPluginSelectionById(pluginId: string | null): boolean {
   if (!pluginId) return false;
   const idx = availablePlugins.findIndex((p) => p.id === pluginId);
@@ -1840,97 +1796,29 @@ function setPluginSelectionById(pluginId: string | null): boolean {
 
 function syncPreferredPluginSelection(): boolean {
   if (pluginSelectionMode !== "auto") return false;
-  return setPluginSelectionById(preferredPluginIdForPlayers());
+  return setPluginSelectionById(playersPanel.getPreferredPluginIdForPlayers());
 }
 
-function resetPlayersForSongSetup() {
-  pluginSelectionMode = "auto";
-  players = [{ id: "p1", name: "Player 1", instrument: "drums" }];
-  rerenderPlayersAndApplyAvailability();
-  syncPreferredPluginSelection();
-}
-
-function renderPlayers(): void {
-  playersEl.innerHTML = `
-    <div class="playersGrid">
-      ${players
-        .map((p) => {
-          const options = (Object.keys(INSTRUMENT_LABELS) as Instrument[])
-            .map((inst) => `<option value="${inst}" ${p.instrument === inst ? "selected" : ""}>${INSTRUMENT_LABELS[inst]}</option>`)
-            .join("\n");
-          return `
-            <div class="playerChip" data-player-id="${p.id}">
-              <span class="playerName">${escapeHtml(p.name)}</span>
-              <select class="playerInstrument" aria-label="Instrument for ${escapeHtml(p.name)}">
-                ${options}
-              </select>
-              <button class="removePlayer" title="Remove player" ${players.length <= 1 ? "disabled" : ""}>Ã—</button>
-            </div>
-          `;
-        })
-        .join("\n")}
-    </div>
-  `;
-
-  for (const chip of Array.from(playersEl.querySelectorAll<HTMLElement>(".playerChip"))) {
-    const id = chip.getAttribute("data-player-id");
-    if (!id) continue;
-
-    const sel = chip.querySelector<HTMLSelectElement>("select.playerInstrument");
-    sel?.addEventListener("change", () => {
-      const inst = sel.value as Instrument;
-      pluginSelectionMode = "auto";
-      players = players.map((p) => (p.id === id ? { ...p, instrument: inst } : p));
-      syncMelodicTrackSelectionFromPlayers();
-      const pluginChanged = syncPreferredPluginSelection();
-      if (pluginChanged) {
-        restartVisualizerForPluginSelection();
-      }
-      window.dispatchEvent(
-        new CustomEvent("auralprimer:players-updated", {
-          detail: { players },
-        })
-      );
-    });
-
-    const remove = chip.querySelector<HTMLButtonElement>("button.removePlayer");
-    remove?.addEventListener("click", () => {
-      if (players.length <= 1) return;
-      const previousPluginId = selectedPluginId();
-      players = players.filter((p) => p.id !== id);
-      rerenderPlayersAndApplyAvailability();
-      if (selectedPluginId() !== previousPluginId) {
-        restartVisualizerForPluginSelection();
-      }
-    });
-  }
-}
-
-// Ensure instruments/plugin availability is applied even if players are added after song selection.
-function rerenderPlayersAndApplyAvailability() {
-  renderPlayers();
-  applyInstrumentAvailability(selectedSongPackDetails, selectedDrumChartSelection, selectedSongPackCharts);
-  syncPreferredPluginSelection();
-  syncMelodicTrackSelectionFromPlayers();
-  // If a visualizer session is already live, rebuild the player 2..N stages
-  // so the user sees the added/removed player immediately.
-  if (viz) {
-    void buildSecondaryStages().catch((e) => {
-      logConsole("debugging", `secondary stages rebuild failed: ${String(e)}`);
-    });
-  }
-}
-
-addPlayerBtn.addEventListener("click", () => {
-  const nextIdx = players.length + 1;
-  const id = `p${nextIdx}`;
-  const defaultInst: Instrument =
-    nextIdx === 2 ? "lead_guitar" : nextIdx === 3 ? "bass" : nextIdx === 4 ? "rhythm_guitar" : "keys";
-  players = [...players, { id, name: `Player ${nextIdx}`, instrument: defaultInst }];
-  rerenderPlayersAndApplyAvailability();
+const playersPanel: PlayersPanelHandle = initPlayersPanel({
+  escapeHtml,
+  setPluginSelectionModeAuto: () => {
+    pluginSelectionMode = "auto";
+  },
+  applyInstrumentAvailability: () => {
+    applyInstrumentAvailability(selectedSongPackDetails, selectedDrumChartSelection, selectedSongPackCharts);
+  },
+  syncPreferredPluginSelection,
+  syncMelodicTrackSelectionFromPlayers,
+  restartVisualizerForPluginSelection: () => restartVisualizerForPluginSelection(),
+  rebuildSecondaryStagesIfRunning: () => {
+    if (viz) {
+      void buildSecondaryStages().catch((e) => {
+        logConsole("debugging", `secondary stages rebuild failed: ${String(e)}`);
+      });
+    }
+  },
+  getSelectedPluginId: selectedPluginId,
 });
-
-rerenderPlayersAndApplyAvailability();
 
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
 
@@ -2351,7 +2239,7 @@ function disposeSecondaryStages(): void {
 // frame from the host tick loop.
 async function buildSecondaryStages(): Promise<void> {
   disposeSecondaryStages();
-  const extras = players.slice(1);
+  const extras = playersPanel.getPlayers().slice(1);
   if (extras.length === 0) return;
 
   for (const player of extras) {
@@ -2566,7 +2454,7 @@ async function selectSongPack(containerPath: string) {
     audioLoadBtn.disabled = false;
     setSelectedSongSetupLabel(details, containerPath);
     toggleFocusBtn.disabled = false;
-    resetPlayersForSongSetup();
+    playersPanel.resetForSongSetup();
     showBandSetupStep();
     if (songChanged || lastLoadedSongPackPath !== containerPath) {
       playStartBtn.disabled = true;
@@ -2724,7 +2612,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     // Pass only Player 1 to the primary stage so its plugin renders a
     // single-player lane. Players 2..N get their own secondary stages
     // below — see buildSecondaryStages().
-    players: players.slice(0, 1).map((p) => ({
+    players: playersPanel.getPlayers().slice(0, 1).map((p) => ({
       id: p.id,
       name: p.name,
       instrument: p.instrument

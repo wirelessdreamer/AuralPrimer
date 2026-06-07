@@ -26,6 +26,7 @@ function read(rel: string): string {
 
 describe("per-player visualizer stages (Player 2..N)", () => {
   const mainSrc = read("apps/game/src/main.ts");
+  const panelSrc = read("apps/game/src/playersPanel.ts");
   const styleSrc = read("apps/game/src/style.css");
 
   it("template wraps #viz in a #playerStages grid container", () => {
@@ -50,16 +51,17 @@ describe("per-player visualizer stages (Player 2..N)", () => {
   });
 
   it("defaultPluginIdForInstrument maps each instrument to a visualizer", () => {
-    expect(mainSrc).toMatch(/function\s+defaultPluginIdForInstrument\s*\(/);
-    // Spot-check the obvious mappings so a future refactor can't silently
-    // collapse them to a single fallback.
-    expect(mainSrc).toMatch(/case\s+"drums"\s*:\s*\n?\s*return\s+DRUM_HIGHWAY_PLUGIN_ID/);
-    expect(mainSrc).toMatch(/case\s+"vocals"\s*:\s*\n?\s*return\s+LYRICS_PLUGIN_ID/);
+    // Phase 2.B moved this helper + the plugin id constants into playersPanel.ts.
+    expect(panelSrc).toMatch(/function\s+defaultPluginIdForInstrument\s*\(/);
+    expect(panelSrc).toMatch(/case\s+"drums"\s*:\s*\n?\s*return\s+DRUM_HIGHWAY_PLUGIN_ID/);
+    expect(panelSrc).toMatch(/case\s+"vocals"\s*:\s*\n?\s*return\s+LYRICS_PLUGIN_ID/);
   });
 
   it("buildSecondaryStages exists and iterates players past Player 1", () => {
     expect(mainSrc).toMatch(/async\s+function\s+buildSecondaryStages\s*\(/);
-    expect(mainSrc).toMatch(/players\.slice\(\s*1\s*\)/);
+    // After Phase 2.B the players list lives in playersPanel; main.ts reads
+    // it through the panel handle.
+    expect(mainSrc).toMatch(/playersPanel\.getPlayers\(\)\.slice\(\s*1\s*\)/);
   });
 
   it("each secondary stage gets its own canvas appended to playerStagesEl", () => {
@@ -71,7 +73,7 @@ describe("per-player visualizer stages (Player 2..N)", () => {
   it("primary stage init now passes ONLY Player 1 (not the full players array)", () => {
     // Each stage renders one player's lane. The primary stage gets
     // players[0]; secondary stages get [player] in buildSecondaryStages.
-    expect(mainSrc).toMatch(/players:\s*players\.slice\(\s*0\s*,\s*1\s*\)\.map/);
+    expect(mainSrc).toMatch(/players:\s*playersPanel\.getPlayers\(\)\.slice\(\s*0\s*,\s*1\s*\)\.map/);
     expect(mainSrc).toMatch(
       /players:\s*\[\{\s*id:\s*player\.id\s*,\s*name:\s*player\.name\s*,\s*instrument:\s*player\.instrument\s*\}\s*\]/
     );
@@ -90,8 +92,11 @@ describe("per-player visualizer stages (Player 2..N)", () => {
   it("rerenderPlayersAndApplyAvailability rebuilds stages while viz is running", () => {
     // Adding / removing a player mid-session must rebuild secondary stages
     // immediately, not require the user to stop+restart the visualizer.
+    // After Phase 2.B the panel calls back into main.ts via the
+    // rebuildSecondaryStagesIfRunning dep, which guards on `viz` and runs
+    // buildSecondaryStages.
     expect(mainSrc).toMatch(
-      /if\s*\(\s*viz\s*\)[\s\S]{0,200}?buildSecondaryStages\s*\(\s*\)/
+      /rebuildSecondaryStagesIfRunning\s*:\s*\(\s*\)\s*=>\s*\{[\s\S]*?if\s*\(\s*viz\s*\)[\s\S]{0,200}?buildSecondaryStages\s*\(\s*\)/
     );
   });
 
