@@ -120,33 +120,38 @@ describe("main.ts wiring (source-level pin)", () => {
     expect(src).toMatch(/from\s+["']\.\/chartLoader["']/);
   });
 
-  it("imports validateRefinement + RefinementFile from songpack/refinement (deep, browser-safe)", () => {
-    expect(src).toMatch(/validateRefinement[^\n]*RefinementFile/);
-    // Must NOT use the top-level barrel — that pulls discoverSongPacks (which
-    // imports node:fs) into the game bundle and breaks Vite build. The deep
-    // path bypasses the barrel.
-    expect(src).toMatch(/from\s+["']@auralprimer\/songpack\/refinement["']/);
+  it("main.ts imports loadRefinementsForRoles from its extracted module", () => {
+    // After Phase 2.E the loader lives in apps/game/src/refinementLoader.ts.
+    // main.ts should only import the public entry, not the songpack types.
+    expect(src).toMatch(/import\s*\{\s*loadRefinementsForRoles\s*\}\s*from\s*["']\.\/refinementLoader["']/);
+    expect(src).not.toMatch(/from\s+["']@auralprimer\/songpack\/refinement["']/);
   });
 
-  it("defines loadRefinementsForRoles using read_songpack_json", () => {
-    expect(src).toMatch(/async\s+function\s+loadRefinementsForRoles\s*\(/);
-    // Plumbs through the existing Tauri command + the per-instrument filename convention.
-    expect(src).toMatch(/read_songpack_json/);
-    expect(src).toMatch(/features\/refinement\.\$\{role\}\.json/);
-  });
-
-  it("applies the refinements before assigning selectedMelodicTracks", () => {
-    // The notes.mid load must call applyRefinementsToMelodicTracks so the
-    // base track is overlaid before being handed to the rest of the app.
+  it("main.ts calls loadRefinementsForRoles + applies overlay before assigning selectedMelodicTracks", () => {
     expect(src).toMatch(
       /selectedMelodicTracks\s*=\s*applyRefinementsToMelodicTracks\s*\(\s*baseMelodicTracks\s*,\s*refinements\s*\)/
     );
+    // The loader call must pass a warn callback so invalid files don't get
+    // silently swallowed (they shouldn't be fatal, but they must surface).
+    expect(src).toMatch(
+      /loadRefinementsForRoles\s*\([\s\S]*?warn\s*:\s*warnConsole[\s\S]*?\)/
+    );
   });
 
-  it("invalid refinement files are caught and skipped, not fatal", () => {
-    // The loader must use validateRefinement and warn on .ok === false, never
-    // throw — a broken refinement should never block the base notes.mid track.
-    expect(src).toMatch(/validateRefinement\s*\(\s*raw\s*\)/);
-    expect(src).toMatch(/result\.ok/);
+  it("refinementLoader module wires the read_songpack_json + validateRefinement flow", () => {
+    const loaderSrc = read("apps/game/src/refinementLoader.ts");
+    expect(loaderSrc).toMatch(/async\s+function\s+loadRefinementsForRoles\s*\(/);
+    expect(loaderSrc).toMatch(/read_songpack_json/);
+    expect(loaderSrc).toMatch(/features\/refinement\.\$\{role\}\.json/);
+    expect(loaderSrc).toMatch(/validateRefinement\s*\(\s*raw\s*\)/);
+    // Invalid files warn + continue, never throw.
+    expect(loaderSrc).toMatch(/result\.ok/);
+    expect(loaderSrc).toMatch(/deps\.warn\s*\(/);
+  });
+
+  it("refinementLoader uses the browser-safe deep import (not the songpack barrel)", () => {
+    const loaderSrc = read("apps/game/src/refinementLoader.ts");
+    expect(loaderSrc).toMatch(/from\s+["']@auralprimer\/songpack\/refinement["']/);
+    expect(loaderSrc).not.toMatch(/from\s+["']@auralprimer\/songpack["']/);
   });
 });

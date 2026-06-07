@@ -24,7 +24,7 @@ import { BUILTIN_PLUGINS, type PluginDescriptor, loadPlugin, scanBundledPlugins,
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, applyRefinementsToMelodicTracks, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
-import { validateRefinement, type RefinementFile } from "@auralprimer/songpack/refinement";
+import { loadRefinementsForRoles } from "./refinementLoader";
 import { TabRenderer } from "./tabRenderer";
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
@@ -1410,6 +1410,7 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
     const refinements = await loadRefinementsForRoles(
       containerPath,
       baseMelodicTracks.map((t) => t.role),
+      { warn: warnConsole },
     );
     selectedMelodicTracks = applyRefinementsToMelodicTracks(baseMelodicTracks, refinements);
     if (selectedMelodicTracks.length > 0) {
@@ -1431,44 +1432,7 @@ function asObjectRecord(v: unknown): Record<string, unknown> | null {
   return v as Record<string, unknown>;
 }
 
-/**
- * Best-effort load of per-instrument refinement overlays from a SongPack.
- *
- * For each role in `roles`, attempts `features/refinement.<role>.json`.
- * Missing files return null silently (the common case — no refinement
- * authored yet). Invalid files log a warning and are skipped so a broken
- * refinement never prevents the base notes.mid track from rendering.
- *
- * Returns only the valid refinements that successfully matched a role.
- */
-async function loadRefinementsForRoles(
-  containerPath: string,
-  roles: ReadonlyArray<InstrumentRole>,
-): Promise<RefinementFile[]> {
-  const out: RefinementFile[] = [];
-  for (const role of roles) {
-    const relPath = `features/refinement.${role}.json`;
-    let raw: unknown;
-    try {
-      raw = await invoke<unknown>("read_songpack_json", { containerPath, relPath });
-    } catch {
-      // Missing file is the common case; do not log.
-      continue;
-    }
-    if (raw == null) continue;
-    const result = validateRefinement(raw);
-    if (!result.ok) {
-      warnConsole(
-        "play",
-        `refinement.${role}.json failed validation; ignoring`,
-        result.errors,
-      );
-      continue;
-    }
-    out.push(result.value);
-  }
-  return out;
-}
+// loadRefinementsForRoles lives in refinementLoader.ts (Phase 2.E).
 
 function applyInstrumentHintsFromToken(
   tokenRaw: string,
