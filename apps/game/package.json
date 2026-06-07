@@ -21,6 +21,7 @@
     "@auralprimer/viz-lyrics": "*",
     "@auralprimer/viz-nashville": "*",
     "@auralprimer/viz-sdk": "*",
+    "@auralprimer/viz-tab": "*",
     "@tauri-apps/plugin-dialog": "^2.4.2"
   }
 }

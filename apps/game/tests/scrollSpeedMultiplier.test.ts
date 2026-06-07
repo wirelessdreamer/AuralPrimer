@@ -52,7 +52,8 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
   });
 
   it("tabRenderer (keys/bass/guitar piano-roll + tab) scales its window by the multiplier", () => {
-    const src = read("apps/game/src/tabRenderer.ts");
+    // Phase 2.G moved the TabRenderer implementation into the viz-tab package.
+    const src = read("visualizers/viz-tab/src/index.ts");
     // Reads the clamped multiplier in BOTH render paths.
     expect(src).toMatch(/clampScrollSpeedMultiplier\(opts\.scrollSpeedMultiplier\)/);
     // Tab path shrinks the visible window so higher multiplier = more spacing.
