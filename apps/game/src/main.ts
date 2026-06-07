@@ -22,6 +22,8 @@ import { loadRefinementsForRoles } from "./refinementLoader";
 import { TabRenderer } from "./tabRenderer";
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
+import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
+import type { ManifestSummary } from "./manifestTypes";
 import { MidiInputStateTracker, formatMidiActiveNotes, formatMidiInputMessage, type MidiInputMessageEvent } from "./midiInput";
 import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
@@ -65,27 +67,8 @@ async function pickFiles(extensions: string[], multiple: boolean): Promise<strin
   return [res];
 }
 
-type ManifestSummary = {
-  schema_version?: string;
-  song_id?: string;
-  title?: string;
-  artist?: string;
-  duration_sec?: number;
-};
-
-type SongPackScanEntry = {
-  container_path: string;
-  kind: string;
-  ok: boolean;
-  manifest?: ManifestSummary;
-  error?: string;
-};
-
-function isDemoSongPack(e: SongPackScanEntry): boolean {
-  // Deterministic id for our built-in first-run song.
-  return (e.manifest?.song_id ?? "") === "demo_sine_440hz";
-}
-
+// ManifestSummary lives in ./manifestTypes (shared with songLibraryPanel).
+// SongPackScanEntry + isDemoSongPack moved into songLibraryPanel.ts.
 type SongPackDetails = {
   container_path: string;
   kind: string;
@@ -755,12 +738,10 @@ const modelpackImportBtn = document.getElementById("modelpackImport") as HTMLBut
 // creator) intentionally do not exist in this app. They live in AuralStudio
 // (apps/desktop). See `spec.md §1.1`.
 
-const statusEl = document.getElementById("status") as HTMLPreElement;
-const listEl = document.getElementById("list") as HTMLDivElement;
-const detailsEl = document.getElementById("details") as HTMLDivElement;
+// status/list/details DOM lives in songLibraryPanel.ts
 const selectedSongLabelEl = document.getElementById("selectedSongLabel") as HTMLDivElement;
 const selectedSongPathEl = document.getElementById("selectedSongPath") as HTMLDivElement;
-const refreshBtn = document.getElementById("refresh") as HTMLButtonElement;
+// refresh button lives in songLibraryPanel.ts
 const playStartBtn = document.getElementById("playStart") as HTMLButtonElement;
 const pauseMenuOverlayEl = document.getElementById("pauseMenuOverlay") as HTMLDivElement;
 const pauseMenuKickerEl = pauseMenuOverlayEl.querySelector(".pauseMenuKicker") as HTMLDivElement;
@@ -769,18 +750,25 @@ const pauseMenuCopyEl = document.getElementById("pauseMenuCopy") as HTMLParagrap
 const pauseMenuHintEl = pauseMenuOverlayEl.querySelector(".pauseMenuHint") as HTMLDivElement;
 const pauseMenuResumeBtn = document.getElementById("pauseMenuResume") as HTMLButtonElement;
 const pauseMenuBackBtn = document.getElementById("pauseMenuBack") as HTMLButtonElement;
-const songsFolderInput = document.getElementById("songsFolder") as HTMLInputElement;
-const setOverrideBtn = document.getElementById("setOverride") as HTMLButtonElement;
-const clearOverrideBtn = document.getElementById("clearOverride") as HTMLButtonElement;
+// songsFolder + override DOM lives in songLibraryPanel.ts
 
 pauseMenuOverlayEl.hidden = true;
 pauseMenuOverlayEl.classList.remove("isVisible");
 pauseMenuOverlayEl.setAttribute("aria-hidden", "true");
 
+// Song library panel (left column). Init early so the !haveTauri() disable
+// block below can call disableFolderControls(), and so showSongLibraryStep
+// — invoked at boot via queueMicrotask — has a panel to refresh.
+const songLibraryPanel: SongLibraryPanelHandle = initSongLibraryPanel({
+  selectedSongPackPath: () => selectedSongPackPath,
+  onSongSelected: selectSongPack,
+  haveTauri,
+  escapeHtml,
+});
+
 // Disable desktop-only actions when running without the Tauri runtime.
 if (!haveTauri()) {
-  setOverrideBtn.disabled = true;
-  clearOverrideBtn.disabled = true;
+  songLibraryPanel.disableFolderControls();
   playStartBtn.disabled = true;
 
   midiInPortSelect.disabled = true;
@@ -1006,7 +994,7 @@ function renderDetails(details: SongPackDetails) {
 
   const raw = details.manifest_raw ? JSON.stringify(details.manifest_raw, null, 2) : "(no manifest)";
 
-  detailsEl.innerHTML = `
+  songLibraryPanel.setDetailsHTML(`
     <h3>Details</h3>
     <div class="meta">${escapeHtml(details.kind)} Â· ${escapeHtml(details.container_path)}</div>
 
@@ -1035,7 +1023,7 @@ function renderDetails(details: SongPackDetails) {
 
     <h4>manifest.json</h4>
     <pre>${escapeHtml(raw)}</pre>
-  `;
+  `);
 }
 
 // -----------------
@@ -1096,11 +1084,7 @@ function setSelectedSongSetupLabel(details: SongPackDetails | null, containerPat
 }
 
 function setSelectedSongCard(containerPath: string | null): void {
-  for (const btn of Array.from(listEl.querySelectorAll<HTMLButtonElement>("button.songSelectBtn"))) {
-    const isSelected = containerPath !== null && btn.getAttribute("data-path") === containerPath;
-    btn.classList.toggle("isSelected", isSelected);
-    btn.setAttribute("aria-pressed", isSelected ? "true" : "false");
-  }
+  songLibraryPanel.setSelectedSongCard(containerPath);
 }
 
 setSelectedSongSetupLabel(null, null);
@@ -1326,14 +1310,13 @@ function showSongLibraryStep() {
   } catch {
     // ignore
   }
-  // Always rescan when the library panel is shown. Covers app-start (line
-  // ~1281 module-init call), returning from focus mode / pause menu, and
-  // navigating in from Home or the nav bar. Previously the initial DOM left
-  // statusEl reading "(not loaded)" until the user clicked the Refresh
-  // button or navigated away and back; new SongPacks dropped into the
-  // songs folder by aural_ingest while the app was open also stayed
+  // Always rescan when the library panel is shown. Covers app-start, returning
+  // from focus mode / pause menu, and navigating in from Home or the nav bar.
+  // Previously the initial DOM left statusEl reading "(not loaded)" until the
+  // user clicked Refresh or navigated away and back; new SongPacks dropped
+  // into the songs folder by aural_ingest while the app was open also stayed
   // invisible until that manual refresh.
-  void refresh();
+  void songLibraryPanel.refresh();
 }
 
 function canOpenLoadedSongBackOutPrompt(): boolean {
@@ -2540,7 +2523,7 @@ async function selectSongPack(containerPath: string) {
   selectedDrumChartSelection = null;
   selectedSongPackCharts = null;
   setSelectedSongCard(containerPath);
-  detailsEl.innerHTML = "Loading details...";
+  songLibraryPanel.setDetailsHTML("Loading details...");
   try {
     const details = await invoke<SongPackDetails>("get_songpack_details", {
       containerPath,
@@ -2610,7 +2593,7 @@ async function selectSongPack(containerPath: string) {
       setAudioStatus(`selected songpack: ${containerPath}\naudio ready`);
     }
   } catch (e) {
-    detailsEl.innerHTML = `<pre class="error">${escapeHtml(String(e))}</pre>`;
+    songLibraryPanel.setDetailsHTML(`<pre class="error">${escapeHtml(String(e))}</pre>`);
     setSelectedSongCard(selectedSongPackPath);
   }
 }
@@ -3193,108 +3176,8 @@ resizeVizCanvas();
 renderPreferredModelPacks();
 void refreshModels();
 
-async function refresh() {
-  statusEl.textContent = "Loading...";
-  listEl.innerHTML = "";
-  detailsEl.innerHTML = "";
-
-  try {
-    const songsFolder = await invoke<string>("get_songs_folder");
-    const entries = await invoke<SongPackScanEntry[]>("scan_songpacks");
-
-    // Prefer the built-in demo song first, then alphabetical.
-    entries.sort((a, b) => {
-      const ad = isDemoSongPack(a);
-      const bd = isDemoSongPack(b);
-      if (ad !== bd) return ad ? -1 : 1;
-      const at = (a.manifest?.title ?? "").toLowerCase();
-      const bt = (b.manifest?.title ?? "").toLowerCase();
-      return at.localeCompare(bt);
-    });
-
-    songsFolderInput.value = songsFolder;
-    statusEl.textContent = `songsFolder: ${songsFolder}\ntracks: ${entries.length}`;
-
-    listEl.innerHTML = `
-      <ul class="songLibraryList">
-        ${entries
-          .map((e) => {
-            const title = e.manifest?.title ?? "(missing title)";
-            const artist = e.manifest?.artist ?? "";
-            const ok = e.ok ? "OK" : "INVALID";
-            const err = e.error ? `<pre class="error">${escapeHtml(e.error)}</pre>` : "";
-            const disabled = e.ok ? "" : "disabled";
-            const selected = selectedSongPackPath === e.container_path ? " isSelected" : "";
-            const pressed = selected ? "true" : "false";
-            const cta = e.ok ? "Choose" : "Invalid";
-            return `
-              <li>
-                <button class="songSelectBtn${selected}" data-path="${escapeHtml(e.container_path)}" aria-pressed="${pressed}" ${disabled}>
-                  <span class="songSelectCopy">
-                    <span class="songSelectTitleRow">
-                      <strong class="songSelectTitle">${escapeHtml(title)}</strong>
-                      ${artist ? `<span class="songSelectArtist">${escapeHtml(artist)}</span>` : ""}
-                    </span>
-                    <span class="meta songSelectMeta">${escapeHtml(ok)} Â· ${escapeHtml(e.kind)} Â· ${escapeHtml(e.container_path)}</span>
-                  </span>
-                  <span class="songSelectCta" aria-hidden="true">${escapeHtml(cta)}</span>
-                </button>
-                ${err}
-              </li>
-            `;
-          })
-          .join("\n")}
-      </ul>
-    `;
-
-    for (const btn of Array.from(listEl.querySelectorAll("button.songSelectBtn"))) {
-      btn.addEventListener("click", async (ev) => {
-        const el = ev.currentTarget as HTMLButtonElement;
-        const containerPath = el.getAttribute("data-path");
-        if (!containerPath) return;
-
-        await selectSongPack(containerPath);
-      });
-    }
-  } catch (e) {
-    statusEl.textContent = String(e);
-    listEl.innerHTML = `
-      <p>
-        This view must be run via <code>tauri dev</code> (the browser-only Vite dev server cannot invoke Rust commands).
-      </p>
-    `;
-  }
-}
-
-refreshBtn.addEventListener("click", () => void refresh());
-
-// Auto-refresh the library panel when files/directories appear, change, or
-// are removed under the songs folder (e.g. `aural_ingest import` from a
-// separate shell drops a new .songpack/ directory). The Rust side mounts a
-// `notify`-based watcher during setup() and emits this event after a short
-// debounce; we just re-run the same scan the manual refresh button uses.
-if (haveTauri()) {
-  void listen("songs_folder_changed", () => {
-    void refresh();
-  });
-  // Idempotent backstop in case the watcher's initial mount in setup() raced
-  // ahead of the songs folder being created. If a watcher is already running
-  // on the current path, this returns Ok(()) without doing anything.
-  void invoke("start_songs_folder_watch").catch((e) => {
-    // Best-effort — the user still has the manual refresh button.
-    console.warn("start_songs_folder_watch failed", e);
-  });
-}
-
-setOverrideBtn.addEventListener("click", () => {
-  const v = songsFolderInput.value.trim();
-  if (!v) return;
-  void invoke("set_songs_folder_override", { songsFolder: v }).then(() => refresh());
-});
-
-clearOverrideBtn.addEventListener("click", () => {
-  void invoke("clear_songs_folder_override").then(() => refresh());
-});
+// refresh function + refresh button listener + songs_folder_changed listen
+// block + setOverride/clearOverride handlers all live inside songLibraryPanel.ts.
 
 pluginRefreshBtn.addEventListener("click", () => {
   void refreshPlugins();
@@ -3321,4 +3204,4 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
-void refresh();
+void songLibraryPanel.refresh();

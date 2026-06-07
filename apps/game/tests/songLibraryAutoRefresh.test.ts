@@ -31,9 +31,18 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_TS = resolve(__dirname, "..", "src", "main.ts");
+// Phase 2.C extracted the refresh function + the filesystem-watcher wiring +
+// the songs-folder override handlers into songLibraryPanel.ts. main.ts still
+// owns showSongLibraryStep and the queueMicrotask boot wiring; the panel
+// module owns the rest.
+const PANEL_TS = resolve(__dirname, "..", "src", "songLibraryPanel.ts");
 
 function loadMain(): string {
   return readFileSync(MAIN_TS, "utf-8");
+}
+
+function loadPanel(): string {
+  return readFileSync(PANEL_TS, "utf-8");
 }
 
 function extractFunctionBody(src: string, signature: RegExp): string {
@@ -64,25 +73,25 @@ function extractFunctionBody(src: string, signature: RegExp): string {
 }
 
 describe("song-library auto-refresh on show", () => {
-  it("showSongLibraryStep triggers refresh() so every library entry rescans", () => {
+  it("showSongLibraryStep triggers songLibraryPanel.refresh() so every library entry rescans", () => {
     const src = loadMain();
     const body = extractFunctionBody(src, /function showSongLibraryStep\s*\(\s*\)\s*{/);
-
-    expect(body).toMatch(/\bvoid\s+refresh\s*\(\s*\)\s*;/);
+    // The refresh function lives in songLibraryPanel.ts after Phase 2.C; the
+    // host must reach it via the panel handle.
+    expect(body).toMatch(/\bvoid\s+songLibraryPanel\.refresh\s*\(\s*\)\s*;/);
   });
 
-  it("openPlaySongFlow no longer needs its own refresh() (deduped via showSongLibraryStep)", () => {
-    // If a future change re-adds `void refresh()` to openPlaySongFlow without
-    // also documenting why, refresh runs twice on Play-button click and races
-    // its own previous in-flight invoke. Comment it out (or wrap it) before
-    // re-adding.
+  it("openPlaySongFlow defers refresh to showSongLibraryStep (no double-call)", () => {
+    // If a future change re-adds songLibraryPanel.refresh() to openPlaySongFlow
+    // without also documenting why, refresh runs twice on Play-button click
+    // and races its own previous in-flight invoke. Comment it out (or wrap
+    // it) before re-adding.
     const src = loadMain();
     const body = extractFunctionBody(src, /function openPlaySongFlow\s*\(\s*\)\s*{/);
-
     // showSongLibraryStep MUST be called.
     expect(body).toMatch(/showSongLibraryStep\s*\(\s*\)/);
-    // refresh MUST NOT be called directly here.
-    expect(body).not.toMatch(/\bvoid\s+refresh\s*\(\s*\)\s*;/);
+    // Direct panel refresh MUST NOT be called here.
+    expect(body).not.toMatch(/songLibraryPanel\.refresh\s*\(\s*\)/);
   });
 
   it("refresh() is reachable from boot-time showSongLibraryStep call", () => {
@@ -102,44 +111,46 @@ describe("song-library auto-refresh on show", () => {
 
   it("library refresh keeps the Refresh button as a manual fallback", () => {
     // The Refresh button is the user's escape hatch for cases the auto-call
-    // doesn't cover. Don't remove it.
-    const src = loadMain();
-    expect(src).toMatch(/refreshBtn\.addEventListener\(\s*["']click["']\s*,\s*\(\)\s*=>\s*void\s+refresh\s*\(\s*\)/);
+    // doesn't cover. Don't remove it. After Phase 2.C this listener lives
+    // in songLibraryPanel.ts.
+    const panel = loadPanel();
+    expect(panel).toMatch(/refreshBtn\.addEventListener\(\s*["']click["']\s*,\s*\(\)\s*=>\s*void\s+refresh\s*\(\s*\)/);
   });
 });
 
 describe("song-library auto-refresh on filesystem change", () => {
-  // Use a pre-loaded source for these tests so the regex-heavy assertions
-  // don't re-read main.ts repeatedly.
-  const mainTsPath = join(__dirname, "..", "src", "main.ts");
-  const mainTsSource = readFileSync(mainTsPath, "utf8");
+  // Phase 2.C moved this wiring from main.ts to songLibraryPanel.ts. The
+  // assertions stay identical in spirit; only the file under inspection
+  // changed.
+  const panelTsPath = join(__dirname, "..", "src", "songLibraryPanel.ts");
+  const panelTsSource = readFileSync(panelTsPath, "utf8");
 
   it("listens for songs_folder_changed events from the Rust watcher", () => {
-    expect(mainTsSource).toMatch(/listen\(\s*["']songs_folder_changed["']/);
+    expect(panelTsSource).toMatch(/listen\(\s*["']songs_folder_changed["']/);
   });
 
   it("invokes refresh() inside the songs_folder_changed handler", () => {
     // The handler body should call refresh() so a single Tauri event triggers
     // the same code path as the manual refresh button.
-    const handlerBlockMatch = mainTsSource.match(
+    const handlerBlockMatch = panelTsSource.match(
       /listen\(\s*["']songs_folder_changed["'][^)]*?,\s*\(\s*\)\s*=>\s*\{([\s\S]*?)\}\s*\)/
     );
     expect(handlerBlockMatch).not.toBeNull();
     expect(handlerBlockMatch?.[1] ?? "").toMatch(/refresh\(\)/);
   });
 
-  it("guards the watcher wiring behind haveTauri()", () => {
+  it("guards the watcher wiring behind deps.haveTauri()", () => {
     // We only want to register the listener in the desktop shell, not in the
     // browser-only Vite dev server. The simplest test is to confirm the
     // listen() call sits inside a haveTauri() conditional block.
-    expect(mainTsSource).toMatch(
-      /if\s*\(\s*haveTauri\(\)\s*\)\s*\{[\s\S]*?listen\(\s*["']songs_folder_changed["']/
+    expect(panelTsSource).toMatch(
+      /if\s*\(\s*deps\.haveTauri\(\)\s*\)\s*\{[\s\S]*?listen\(\s*["']songs_folder_changed["']/
     );
   });
 
   it("calls start_songs_folder_watch as a boot-time backstop", () => {
     // Even if the Rust setup() race-loses to a missing folder, the frontend
     // re-arms the watcher idempotently on boot.
-    expect(mainTsSource).toMatch(/invoke\(\s*["']start_songs_folder_watch["']/);
+    expect(panelTsSource).toMatch(/invoke\(\s*["']start_songs_folder_watch["']/);
   });
 });
