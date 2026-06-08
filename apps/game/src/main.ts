@@ -37,6 +37,7 @@ import { initCapsPanel, type CapsPanelHandle, type SongCapabilities, type SongPa
 import { initPluginsPanel, type PluginsPanelHandle } from "./pluginsPanel";
 import { initSongDetailsView, type SongDetailsViewHandle } from "./songDetailsView";
 import { initPlaySurfaceController, type PlaySurfaceControllerHandle } from "./playSurfaceController";
+import { initRouteController, type RouteControllerHandle, type Route } from "./routeController";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -503,8 +504,7 @@ root.innerHTML = `
   }
 }
 
-type Route = "home" | "play" | "learn" | "config";
-let currentRoute: Route = "home";
+// Route type + currentRoute state live in routeController.ts (Phase 2.P).
 
 // Console bridge (mirror frontend logs to Rust via frontend_log) lives in
 // consoleBridge.ts. The init below returns a {log, warn, error} handle; the
@@ -521,69 +521,10 @@ function errorConsole(category: ConsoleLogCategory, message: string, details?: u
   consoleBridge.error(category, message, details);
 }
 
-function setRoute(route: Route) {
-  currentRoute = route;
-  const routes = Array.from(document.querySelectorAll<HTMLElement>(".route"));
-  for (const el of routes) {
-    const r = el.dataset.route as Route | undefined;
-    el.classList.toggle("isActive", r === route);
-  }
-
-  const navMap: Record<Route, string> = {
-    home: "navHome",
-    play: "navPlay",
-    learn: "navLearn",
-    config: "navConfig"
-  };
-
-  for (const [r, id] of Object.entries(navMap) as Array<[Route, string]>) {
-    document.getElementById(id)?.classList.toggle("isActive", r === route);
-  }
-
-  // Keep the experience tidy: stop visuals/audio when leaving Play.
-  if (route !== "play") {
-    pauseMenu.close({ restoreFocus: false });
-    try {
-      stopVisualizer();
-      transportController.pause();
-    } catch {
-      // ignore
-    }
-  }
-
-  syncPlaySurfaceMode();
-
-  // Always scroll to top of content on navigation.
-  document.documentElement.scrollTop = 0;
-  logConsole("gamestate", `route -> ${route}`);
-}
-
-function openPlaySongFlow() {
-  logConsole("gamestate", "open play flow");
-  setRoute("play");
-  // showSongLibraryStep() now calls refresh() internally on every show.
-  showSongLibraryStep();
-}
-
-async function exitApplication() {
-  if (!haveTauri()) {
-    window.close();
-    return;
-  }
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  await getCurrentWindow().close();
-}
-
-document.getElementById("navHome")?.addEventListener("click", () => setRoute("home"));
-document.getElementById("navPlay")?.addEventListener("click", () => openPlaySongFlow());
-document.getElementById("navConfig")?.addEventListener("click", () => setRoute("config"));
-document.getElementById("homePlay")?.addEventListener("click", () => openPlaySongFlow());
-document.getElementById("homeConfig")?.addEventListener("click", () => setRoute("config"));
-document.getElementById("homeExit")?.addEventListener("click", () => {
-  void exitApplication().catch((e) => {
-    errorConsole("debugging", "failed to exit app", e);
-  });
-});
+// setRoute / openPlaySongFlow / exitApplication + the 6 nav button listeners
+// live in routeController.ts (Phase 2.P). The route controller is constructed
+// further down (needs pauseMenu / songLibraryPanel handles which are built
+// later in the boot sequence).
 
 // #hudKeyMode lives in songDetailsView.ts (Phase 2.N).
 
@@ -894,53 +835,16 @@ async function tryFallbackToHtmlPlayback(songpackPath: string): Promise<boolean>
   return true;
 }
 
-// proprietary_rhythm_archive-ish: once a song is loaded, make the Now Playing panel the focus.
-let playFocusMode = false;
-function setPlayFocusMode(enabled: boolean) {
-  playFocusMode = enabled;
-  playLayoutEl.classList.toggle("isFocus", enabled);
-  // Canvas size may change; ensure we resize so the visualizer fills the space.
-  resizeVizCanvas();
-  logConsole("gamestate", `play focus mode -> ${enabled ? "focus" : "normal"}`);
+// setPlayFocusMode + showSongLibraryStep + showBandSetupStep +
+// canOpenLoadedSongBackOutPrompt + #toggleFocus click handler all live in
+// routeController.ts (Phase 2.P). Thin wrappers below preserve the existing
+// call shape so the rest of main.ts didn't need to change name-by-name.
+function showSongLibraryStep(): void {
+  routeController.showSongLibraryStep();
 }
-
-
-function showSongLibraryStep() {
-  pauseMenu.close({ restoreFocus: false });
-  logConsole("gamestate", "show song library step");
-  playLayoutEl.classList.add("isLibraryOnly");
-  setPlayFocusMode(false);
-  syncPlaySurfaceMode();
-  try {
-    stopVisualizer();
-    transportController.pause();
-  } catch {
-    // ignore
-  }
-  // Always rescan when the library panel is shown. Covers app-start, returning
-  // from focus mode / pause menu, and navigating in from Home or the nav bar.
-  // Previously the initial DOM left statusEl reading "(not loaded)" until the
-  // user clicked Refresh or navigated away and back; new SongPacks dropped
-  // into the songs folder by aural_ingest while the app was open also stayed
-  // invisible until that manual refresh.
-  void songLibraryPanel.refresh();
+function showBandSetupStep(): void {
+  routeController.showBandSetupStep();
 }
-
-function canOpenLoadedSongBackOutPrompt(): boolean {
-  return currentRoute === "play" && Boolean(selectedSongPackPath) && lastLoadedSongPackPath === selectedSongPackPath;
-}
-
-function showBandSetupStep() {
-  pauseMenu.close({ restoreFocus: false });
-  logConsole("gamestate", "show band setup step");
-  playLayoutEl.classList.remove("isLibraryOnly");
-  setPlayFocusMode(true);
-  syncPlaySurfaceMode();
-}
-
-toggleFocusBtn.addEventListener("click", () => {
-  showSongLibraryStep();
-});
 
 // Defer the boot-time library-step call to a microtask so module evaluation
 // finishes initializing every `let`/`const` declared further down the file
@@ -1127,7 +1031,26 @@ const playSurfaceController: PlaySurfaceControllerHandle = initPlaySurfaceContro
   playersPanel,
   consoleBridge,
   getSelectedMelodicTracks: () => selectedMelodicTracks,
-  getCurrentRoute: () => currentRoute,
+  getCurrentRoute: () => routeController.getCurrentRoute(),
+});
+
+// Route + step controller. Forward-references: lambdas in the deps invoke
+// `routeController` (for the `getCurrentRoute` thunk in playSurfaceController
+// above) and a handful of host functions declared further down (stopVisualizer,
+// resizeVizCanvas, syncPlaySurfaceMode wrapper). All are called only after
+// boot finishes, so the hoisted refs are safe.
+const routeController: RouteControllerHandle = initRouteController({
+  consoleBridge,
+  pauseMenu,
+  songLibraryPanel,
+  transportController,
+  haveTauri,
+  stopVisualizer: () => stopVisualizer(),
+  resizeVizCanvas: () => resizeVizCanvas(),
+  syncPlaySurfaceMode,
+  isLoadedSongSelected: () =>
+    Boolean(selectedSongPackPath) && lastLoadedSongPackPath === selectedSongPackPath,
+  playLayoutEl,
 });
 
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
@@ -1728,13 +1651,13 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
 
-  if (currentRoute !== "play") return;
+  if (routeController.getCurrentRoute() !== "play") return;
   if (transportController.getState().isPlaying) {
     ev.preventDefault();
     pauseMenu.openPaused();
     return;
   }
-  if (!canOpenLoadedSongBackOutPrompt()) return;
+  if (!routeController.canOpenLoadedSongBackOutPrompt()) return;
 
   ev.preventDefault();
   pauseMenu.show("loaded");

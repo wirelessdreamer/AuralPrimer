@@ -32,10 +32,13 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_TS = resolve(__dirname, "..", "src", "main.ts");
 // Phase 2.C extracted the refresh function + the filesystem-watcher wiring +
-// the songs-folder override handlers into songLibraryPanel.ts. main.ts still
-// owns showSongLibraryStep and the queueMicrotask boot wiring; the panel
-// module owns the rest.
+// the songs-folder override handlers into songLibraryPanel.ts. Phase 2.P moved
+// showSongLibraryStep / openPlaySongFlow / setRoute / etc. into
+// routeController.ts -- main.ts still wraps showSongLibraryStep and owns the
+// queueMicrotask boot wiring, the panel module owns the watcher, and the
+// route controller owns the step-show calls.
 const PANEL_TS = resolve(__dirname, "..", "src", "songLibraryPanel.ts");
+const ROUTE_TS = resolve(__dirname, "..", "src", "routeController.ts");
 
 function loadMain(): string {
   return readFileSync(MAIN_TS, "utf-8");
@@ -43,6 +46,10 @@ function loadMain(): string {
 
 function loadPanel(): string {
   return readFileSync(PANEL_TS, "utf-8");
+}
+
+function loadRoute(): string {
+  return readFileSync(ROUTE_TS, "utf-8");
 }
 
 function extractFunctionBody(src: string, signature: RegExp): string {
@@ -74,11 +81,11 @@ function extractFunctionBody(src: string, signature: RegExp): string {
 
 describe("song-library auto-refresh on show", () => {
   it("showSongLibraryStep triggers songLibraryPanel.refresh() so every library entry rescans", () => {
-    const src = loadMain();
-    const body = extractFunctionBody(src, /function showSongLibraryStep\s*\(\s*\)\s*{/);
-    // The refresh function lives in songLibraryPanel.ts after Phase 2.C; the
-    // host must reach it via the panel handle.
-    expect(body).toMatch(/\bvoid\s+songLibraryPanel\.refresh\s*\(\s*\)\s*;/);
+    // Phase 2.P moved showSongLibraryStep into routeController.ts. The handler
+    // reaches the panel via deps.songLibraryPanel.refresh().
+    const src = loadRoute();
+    const body = extractFunctionBody(src, /function showSongLibraryStep\s*\(\s*\)\s*:\s*void\s*{/);
+    expect(body).toMatch(/\bvoid\s+deps\.songLibraryPanel\.refresh\s*\(\s*\)\s*;/);
   });
 
   it("openPlaySongFlow defers refresh to showSongLibraryStep (no double-call)", () => {
@@ -86,8 +93,8 @@ describe("song-library auto-refresh on show", () => {
     // without also documenting why, refresh runs twice on Play-button click
     // and races its own previous in-flight invoke. Comment it out (or wrap
     // it) before re-adding.
-    const src = loadMain();
-    const body = extractFunctionBody(src, /function openPlaySongFlow\s*\(\s*\)\s*{/);
+    const src = loadRoute();
+    const body = extractFunctionBody(src, /function openPlaySongFlow\s*\(\s*\)\s*:\s*void\s*{/);
     // showSongLibraryStep MUST be called.
     expect(body).toMatch(/showSongLibraryStep\s*\(\s*\)/);
     // Direct panel refresh MUST NOT be called here.
