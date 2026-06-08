@@ -113,29 +113,42 @@ describe("applyRefinementsToMelodicTracks", () => {
 });
 
 describe("main.ts wiring (source-level pin)", () => {
-  const src = read("apps/game/src/main.ts");
+  // Phase 2.T moved the chart-load + refinement-apply pipeline into
+  // songChartLoader.ts. main.ts now just calls readSongChartSelection and
+  // writes the returned drumSelection + melodicTracks. The
+  // applyRefinementsToMelodicTracks + loadRefinementsForRoles imports +
+  // calls all live inside songChartLoader.ts.
+  const main = read("apps/game/src/main.ts");
+  const chartSrc = read("apps/game/src/songChartLoader.ts");
 
-  it("imports applyRefinementsToMelodicTracks from chartLoader", () => {
-    expect(src).toMatch(/applyRefinementsToMelodicTracks/);
-    expect(src).toMatch(/from\s+["']\.\/chartLoader["']/);
+  it("songChartLoader imports applyRefinementsToMelodicTracks from chartLoader", () => {
+    expect(chartSrc).toMatch(/applyRefinementsToMelodicTracks/);
+    expect(chartSrc).toMatch(/from\s+["']\.\/chartLoader["']/);
   });
 
-  it("main.ts imports loadRefinementsForRoles from its extracted module", () => {
-    // After Phase 2.E the loader lives in apps/game/src/refinementLoader.ts.
-    // main.ts should only import the public entry, not the songpack types.
-    expect(src).toMatch(/import\s*\{\s*loadRefinementsForRoles\s*\}\s*from\s*["']\.\/refinementLoader["']/);
-    expect(src).not.toMatch(/from\s+["']@auralprimer\/songpack\/refinement["']/);
+  it("songChartLoader imports loadRefinementsForRoles from its extracted module", () => {
+    expect(chartSrc).toMatch(/import\s*\{\s*loadRefinementsForRoles\s*\}\s*from\s*["']\.\/refinementLoader["']/);
+    expect(chartSrc).not.toMatch(/from\s+["']@auralprimer\/songpack\/refinement["']/);
   });
 
-  it("main.ts calls loadRefinementsForRoles + applies overlay before assigning selectedMelodicTracks", () => {
-    expect(src).toMatch(
-      /selectedMelodicTracks\s*=\s*applyRefinementsToMelodicTracks\s*\(\s*baseMelodicTracks\s*,\s*refinements\s*\)/
+  it("songChartLoader calls loadRefinementsForRoles + applies overlay into melodicTracks", () => {
+    // Compose-and-return shape (Phase 2.T) — caller assigns the result.
+    expect(chartSrc).toMatch(
+      /(?:const|let)\s+melodicTracks\s*=\s*applyRefinementsToMelodicTracks\s*\(\s*baseMelodicTracks\s*,\s*refinements\s*\)/
     );
     // The loader call must pass a warn callback so invalid files don't get
     // silently swallowed (they shouldn't be fatal, but they must surface).
-    expect(src).toMatch(
-      /loadRefinementsForRoles\s*\([\s\S]*?warn\s*:\s*warnConsole[\s\S]*?\)/
+    expect(chartSrc).toMatch(
+      /loadRefinementsForRoles\s*\([\s\S]*?warn\s*:[\s\S]*?\)/
     );
+  });
+
+  it("main.ts wires readSongChartSelection's result into selectedDrumChartSelection + selectedMelodicTracks", () => {
+    // Pins the host's contract: the new pipeline returns both pieces;
+    // main.ts must write both into its module state (no side-effect mutation).
+    expect(main).toMatch(/import\s*\{\s*readSongChartSelection\s*\}\s*from\s*["']\.\/songChartLoader["']/);
+    expect(main).toMatch(/selectedDrumChartSelection\s*=\s*chartSelection\.drumSelection/);
+    expect(main).toMatch(/selectedMelodicTracks\s*=\s*chartSelection\.melodicTracks/);
   });
 
   it("refinementLoader module wires the read_songpack_json + validateRefinement flow", () => {

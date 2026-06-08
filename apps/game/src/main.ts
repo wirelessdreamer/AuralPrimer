@@ -14,8 +14,10 @@ import { type PluginDescriptor, loadPlugin } from "./plugins";
 import { listen } from "@tauri-apps/api/event";
 // @tauri-apps/plugin-dialog import removed -- pickFolder/pickFiles no longer
 // needed (file/folder pickers moved into respective panel modules).
-import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, applyRefinementsToMelodicTracks, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
-import { loadRefinementsForRoles } from "./refinementLoader";
+// MIDI parsing helpers (selectDrumChartFromMidiBytes / selectMelodicTracksFromMidiBytes
+// / parseMidiTracksFromBytes / applyRefinementsToMelodicTracks) are consumed by
+// songChartLoader.ts (Phase 2.T). loadRefinementsForRoles likewise.
+import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "./chartLoader";
 // TabRenderer + the melodic-surface logic live in playSurfaceController.ts (Phase 2.O).
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
@@ -42,6 +44,7 @@ import { initRouteController, type RouteControllerHandle, type Route } from "./r
 import { initAudioTransportPanel, type AudioTransportPanelHandle } from "./audioTransportPanel";
 import { appShellHtml } from "./appShellHtml";
 import { buildVizSongContext } from "./vizSongContext";
+import { readSongChartSelection } from "./songChartLoader";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -106,9 +109,9 @@ type AudioBlob = {
   bytes: number[];
 };
 
-type MidiBlob = {
-  bytes: number[];
-};
+// MidiBlob type moved into songChartLoader.ts -- main.ts no longer invokes
+// `read_songpack_mid` directly.
+
 
 // Import-flow types (proprietary_archive_import, raw-song folder, stem+MIDI, ingest sidecar) and the
 // melodic-method dropdown options live in AuralStudio (apps/desktop). See
@@ -502,43 +505,10 @@ toggleFocusBtn.disabled = true;
 // Player/track selection scaffold (multi-lane-ready)
 // Instrument type + INSTRUMENT_LABELS live in instrumentTypes.ts.
 
-async function readDrumChartSelection(containerPath: string, details: SongPackDetails): Promise<DrumChartSelection | null> {
-  selectedMelodicTracks = [];
-  if (!details.has_notes_mid) {
-    return null;
-  }
-
-  try {
-    const midi = await invoke<MidiBlob>("read_songpack_mid", { containerPath, relPath: "features/notes.mid" });
-    if (!midi.bytes.length) {
-      return null;
-    }
-    const midiBytes = new Uint8Array(midi.bytes);
-
-    // Extract melodic instrument tracks alongside drums.
-    const baseMelodicTracks = selectMelodicTracksFromMidiBytes(midiBytes);
-    // Apply per-instrument refinement overlays from features/refinement.<role>.json
-    // if present. Best-effort: missing or invalid refinement files are
-    // logged and skipped; the base notes.mid track is rendered unchanged.
-    const refinements = await loadRefinementsForRoles(
-      containerPath,
-      baseMelodicTracks.map((t) => t.role),
-      { warn: warnConsole },
-    );
-    selectedMelodicTracks = applyRefinementsToMelodicTracks(baseMelodicTracks, refinements);
-    if (selectedMelodicTracks.length > 0) {
-      const refRoles = refinements.map((r) => r.instrument);
-      const suffix = refRoles.length > 0 ? ` (refinement: ${refRoles.join(", ")})` : "";
-      logConsole("play", `found ${selectedMelodicTracks.length} melodic track(s): ${selectedMelodicTracks.map(t => t.role).join(", ")}${suffix}`);
-    }
-
-    return selectDrumChartFromMidiBytes(midiBytes);
-  } catch (e) {
-    selectedMelodicTracks = [];
-    warnConsole("debugging", `failed to load/parse features/notes.mid from ${containerPath}`, e);
-    return null;
-  }
-}
+// readDrumChartSelection lives in songChartLoader.ts (Phase 2.T) as
+// `readSongChartSelection`, which returns BOTH the drum selection and the
+// melodic tracks instead of mutating selectedMelodicTracks as a side
+// effect. selectSongPack writes both states from the returned object.
 
 // loadRefinementsForRoles lives in refinementLoader.ts (Phase 2.E).
 // Instrument-hint helpers (asObjectRecord + 4 applyInstrumentHintsFrom*)
@@ -868,7 +838,9 @@ async function selectSongPack(containerPath: string) {
         warnConsole("debugging", `failed to read charts for ${containerPath}`, e);
       }
     }
-    selectedDrumChartSelection = await readDrumChartSelection(containerPath, details);
+    const chartSelection = await readSongChartSelection({ containerPath, details, consoleBridge });
+    selectedDrumChartSelection = chartSelection.drumSelection;
+    selectedMelodicTracks = chartSelection.melodicTracks;
 
     // Populate instrument selector with available melodic tracks.
     updateInstrumentSelector();
