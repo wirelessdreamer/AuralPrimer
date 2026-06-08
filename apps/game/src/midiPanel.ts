@@ -57,6 +57,8 @@ export type MidiPanelHandle = {
   outStartOrContinue: () => Promise<void>;
   /** Stop the output clock (called from transport stop). */
   outStop: () => Promise<void>;
+  /** Seek the output clock (called when transport seeks). */
+  outSeek: (tSec: number) => Promise<void>;
   /** Best-effort shutdown of the Rust output worker on beforeunload. */
   outShutdown: () => Promise<void>;
   /** Snapshot of currently-pressed MIDI input notes (for tab renderer overlay). */
@@ -511,6 +513,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     outSetBpmIfNeeded,
     outStartOrContinue,
     outStop,
+    outSeek,
     outShutdown,
     inputActiveNotes: () => tracker.snapshot(),
   };

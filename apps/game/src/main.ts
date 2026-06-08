@@ -7,13 +7,8 @@ import { HtmlAudioTimebase } from "./htmlAudioTimebase";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { Metronome } from "./metronome";
 import { extractKeyModeFromManifest } from "./hud";
-import { PREFERRED_MODEL_PACKS } from "./models/preferredModelPacks";
-import {
-  installModelPackFromPath,
-  installModelPackFromUrl,
-  listInstalledModelPacks,
-  type InstalledModelPack
-} from "./models/modelManager";
+// Modelpack list/install wiring lives in modelsPanel.ts (Phase 2.K).
+import { initModelsPanel, type ModelsPanelHandle } from "./modelsPanel";
 import { BUILTIN_PLUGINS, type PluginDescriptor, loadPlugin, scanBundledPlugins, scanUserPlugins } from "./plugins";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -33,6 +28,8 @@ import {
 } from "./playersPanel";
 import { INSTRUMENT_LABELS, type Instrument } from "./instrumentTypes";
 import { initLyricsPanel, type LyricsPanelHandle } from "./lyricsPanel";
+import { createConsoleBridge, type ConsoleLogCategory } from "./consoleBridge";
+import { initPauseMenu, type PauseMenuHandle } from "./pauseMenu";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -520,66 +517,21 @@ root.innerHTML = `
 }
 
 type Route = "home" | "play" | "learn" | "config";
-
-type ConsoleLogCategory = "gamestate" | "play" | "debugging" | "ingest";
-type ConsoleLogLevel = "log" | "warn" | "error";
 let currentRoute: Route = "home";
 
-function serializeConsoleDetails(details: unknown): string | undefined {
-  if (typeof details === "undefined") {
-    return undefined;
-  }
-  if (typeof details === "string") {
-    return details;
-  }
-  try {
-    return JSON.stringify(details);
-  } catch {
-    return String(details);
-  }
+// Console bridge (mirror frontend logs to Rust via frontend_log) lives in
+// consoleBridge.ts. The init below returns a {log, warn, error} handle; the
+// thin wrapper functions below preserve the existing logConsole/warnConsole/
+// errorConsole call shape so the rest of main.ts doesn't change.
+const consoleBridge = createConsoleBridge({ haveTauri });
+function logConsole(category: ConsoleLogCategory, message: string, details?: unknown): void {
+  consoleBridge.log(category, message, details);
 }
-
-function bridgeConsoleLog(level: ConsoleLogLevel, category: ConsoleLogCategory, message: string, details?: unknown): void {
-  if (!haveTauri()) return;
-  const detailsText = serializeConsoleDetails(details);
-  void invoke("frontend_log", {
-    level,
-    category,
-    message,
-    details: detailsText ?? null
-  }).catch(() => {
-    // avoid recursive logging loops on transport failures
-  });
+function warnConsole(category: ConsoleLogCategory, message: string, details?: unknown): void {
+  consoleBridge.warn(category, message, details);
 }
-
-function logConsole(category: ConsoleLogCategory, message: string, details?: unknown) {
-  const tag = `[${category}] ${message}`;
-  if (typeof details === "undefined") {
-    console.log(tag);
-  } else {
-    console.log(tag, details);
-  }
-  bridgeConsoleLog("log", category, message, details);
-}
-
-function warnConsole(category: ConsoleLogCategory, message: string, details?: unknown) {
-  const tag = `[${category}] ${message}`;
-  if (typeof details === "undefined") {
-    console.warn(tag);
-  } else {
-    console.warn(tag, details);
-  }
-  bridgeConsoleLog("warn", category, message, details);
-}
-
-function errorConsole(category: ConsoleLogCategory, message: string, details?: unknown) {
-  const tag = `[${category}] ${message}`;
-  if (typeof details === "undefined") {
-    console.error(tag);
-  } else {
-    console.error(tag, details);
-  }
-  bridgeConsoleLog("error", category, message, details);
+function errorConsole(category: ConsoleLogCategory, message: string, details?: unknown): void {
+  consoleBridge.error(category, message, details);
 }
 
 function setRoute(route: Route) {
@@ -603,7 +555,7 @@ function setRoute(route: Route) {
 
   // Keep the experience tidy: stop visuals/audio when leaving Play.
   if (route !== "play") {
-    closePauseMenu({ restoreFocus: false });
+    pauseMenu.close({ restoreFocus: false });
     try {
       stopVisualizer();
       transportController.pause();
@@ -710,11 +662,9 @@ const metronomeVolumeInput = document.getElementById("metronomeVolume") as HTMLI
 
 // All MIDI panel DOM + wiring lives in midiPanel.ts (Phase 2.F).
 
-const modelsRefreshBtn = document.getElementById("modelsRefresh") as HTMLButtonElement;
-const preferredModelsEl = document.getElementById("preferredModels") as HTMLDivElement;
-const modelsStatusEl = document.getElementById("modelsStatus") as HTMLPreElement;
-const modelpackPathInput = document.getElementById("modelpackPath") as HTMLInputElement;
-const modelpackImportBtn = document.getElementById("modelpackImport") as HTMLButtonElement;
+// Modelpack DOM (#modelsRefresh / #preferredModels / #modelsStatus /
+// #modelpackPath / #modelpackImport) lives in modelsPanel.ts. The init call
+// is below (needs escapeHtml defined first).
 
 // Import-flow DOM lookups (proprietary_archive_import, sidecar ingest, analysis import, stem+MIDI
 // creator) intentionally do not exist in this app. They live in AuralStudio
@@ -725,18 +675,9 @@ const selectedSongLabelEl = document.getElementById("selectedSongLabel") as HTML
 const selectedSongPathEl = document.getElementById("selectedSongPath") as HTMLDivElement;
 // refresh button lives in songLibraryPanel.ts
 const playStartBtn = document.getElementById("playStart") as HTMLButtonElement;
-const pauseMenuOverlayEl = document.getElementById("pauseMenuOverlay") as HTMLDivElement;
-const pauseMenuKickerEl = pauseMenuOverlayEl.querySelector(".pauseMenuKicker") as HTMLDivElement;
-const pauseMenuTitleEl = document.getElementById("pauseMenuTitle") as HTMLHeadingElement;
-const pauseMenuCopyEl = document.getElementById("pauseMenuCopy") as HTMLParagraphElement;
-const pauseMenuHintEl = pauseMenuOverlayEl.querySelector(".pauseMenuHint") as HTMLDivElement;
-const pauseMenuResumeBtn = document.getElementById("pauseMenuResume") as HTMLButtonElement;
-const pauseMenuBackBtn = document.getElementById("pauseMenuBack") as HTMLButtonElement;
+// Pause-menu DOM + state + behavior live in pauseMenu.ts (Phase 2.J).
+// The init call lives further down (after deps are ready).
 // songsFolder + override DOM lives in songLibraryPanel.ts
-
-pauseMenuOverlayEl.hidden = true;
-pauseMenuOverlayEl.classList.remove("isVisible");
-pauseMenuOverlayEl.setAttribute("aria-hidden", "true");
 
 // Song library panel (left column). Init early so the !haveTauri() disable
 // block below can call disableFolderControls(), and so showSongLibraryStep
@@ -824,33 +765,7 @@ function yesNo(v: boolean): string {
   return v ? "yes" : "no";
 }
 
-function formatModelPackLicense(pack: InstalledModelPack): string {
-  if (typeof pack.license === "string") return pack.license;
-  if (pack.license && typeof pack.license === "object") {
-    const record = pack.license as Record<string, unknown>;
-    for (const key of ["name", "id", "spdx", "text"]) {
-      const value = record[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
-    }
-  }
-  return "not declared";
-}
-
-function formatInstalledModelPacks(installed: InstalledModelPack[]): string {
-  if (!installed.length) return "(no model packs installed)";
-  return installed
-    .map((pack) => {
-      const lines = [
-        `${pack.id}@${pack.version}${pack.ok ? "" : " [invalid]"}`,
-        `  root: ${pack.root_dir}`,
-        `  license: ${formatModelPackLicense(pack)}`
-      ];
-      if (pack.license_path) lines.push(`  license_path: ${pack.license_path}`);
-      if (pack.error) lines.push(`  error: ${pack.error}`);
-      return lines.join("\n");
-    })
-    .join("\n\n");
-}
+// formatModelPackLicense + formatInstalledModelPacks live in modelsPanel.ts.
 
 function setHudKeyMode(manifestRaw: unknown) {
   const km = extractKeyModeFromManifest(manifestRaw);
@@ -932,9 +847,6 @@ let selectedMelodicTracks: MelodicTrackSelection[] = [];
 let tabRenderer: TabRenderer | null = null;
 let activeTabInstrument: InstrumentRole | null = null;
 let selectedSongPackCharts: SongPackChartsByPath | null = null;
-let pauseMenuOpen = false;
-let pauseMenuRestoreFocusEl: HTMLElement | null = null;
-let pauseMenuMode: "paused" | "loaded" = "paused";
 let selectedSongPreloadPromise: Promise<void> | null = null;
 let selectedSongPreloadPath: string | null = null;
 
@@ -1000,6 +912,49 @@ const midiPanel: MidiPanelHandle = initMidiPanel({
   },
 });
 
+// Pause-menu overlay (DOM + state + behavior in pauseMenu.ts). The deps'
+// callbacks are arrow lambdas, so the `let`s they reference (transport,
+// selectedSongPackPath, lastLoadedSongPackPath) only need to exist at
+// CALL time, not init time -- and the function references (transportController,
+// midiPanel, stopAudio, showSongLibraryStep, setAudioStatus, setVizStatus,
+// errorConsole) hoist or are already initialized above.
+const pauseMenu: PauseMenuHandle = initPauseMenu({
+  consoleBridge,
+  onPauseRequest: () => {
+    transportController.pause();
+    transport = transportController.getState();
+    void midiPanel.outStop();
+    setAudioStatus("paused");
+  },
+  onResumeRequest: async () => {
+    if (!selectedSongPackPath || lastLoadedSongPackPath !== selectedSongPackPath) {
+      setAudioStatus("pause menu closed");
+      logConsole("gamestate", "pause menu -> close without resume");
+      return;
+    }
+    try {
+      await transportController.play();
+      transport = transportController.getState();
+      await midiPanel.outStartOrContinue();
+      setAudioStatus(selectedSongPackPath ? `playing: ${selectedSongPackPath}` : "resumed");
+      logConsole("gamestate", "pause menu -> resume");
+    } catch (e) {
+      const err = String(e);
+      setAudioStatus(err);
+      setVizStatus(`resume failed: ${err}`);
+      errorConsole("play", "resume from pause menu failed", e);
+    }
+  },
+  onBackToLibrary: () => {
+    stopAudio();
+    void midiPanel.outStop();
+    void midiPanel.outSeek(0);
+    showSongLibraryStep();
+    setAudioStatus("returned to song selection");
+    logConsole("gamestate", "pause menu -> back to song selection");
+  },
+});
+
 let currentPlaybackRate = 1;
 const htmlFallbackAudioEl = document.createElement("audio");
 htmlFallbackAudioEl.preload = "auto";
@@ -1054,109 +1009,9 @@ function setPlayFocusMode(enabled: boolean) {
   logConsole("gamestate", `play focus mode -> ${enabled ? "focus" : "normal"}`);
 }
 
-function isPauseMenuVisible(): boolean {
-  return pauseMenuOpen || pauseMenuOverlayEl.classList.contains("isVisible") || !pauseMenuOverlayEl.hidden;
-}
-
-function setPauseMenuMode(mode: "paused" | "loaded") {
-  pauseMenuMode = mode;
-  if (mode === "paused") {
-    pauseMenuKickerEl.textContent = "Paused";
-    pauseMenuTitleEl.textContent = "Pause Menu";
-    pauseMenuCopyEl.textContent = "Keep your place and resume, or head back to song selection.";
-    pauseMenuResumeBtn.textContent = "Resume";
-    pauseMenuHintEl.textContent = "Press Esc again to resume instantly.";
-    return;
-  }
-
-  pauseMenuKickerEl.textContent = "Song Ready";
-  pauseMenuTitleEl.textContent = "Back Out?";
-  pauseMenuCopyEl.textContent = "This song is loaded. Stay here, or head back to song selection.";
-  pauseMenuResumeBtn.textContent = "Stay Here";
-  pauseMenuHintEl.textContent = "Press Esc again to close this prompt.";
-}
-
-function closePauseMenu(opts?: { restoreFocus?: boolean }) {
-  const wasVisible = isPauseMenuVisible();
-  pauseMenuOpen = false;
-  pauseMenuMode = "paused";
-  pauseMenuOverlayEl.classList.remove("isVisible");
-  pauseMenuOverlayEl.hidden = true;
-  pauseMenuOverlayEl.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("pauseMenuOpen");
-
-  if (!wasVisible) {
-    pauseMenuRestoreFocusEl = null;
-    return;
-  }
-
-  const restoreFocus = opts?.restoreFocus ?? true;
-  const focusTarget = pauseMenuRestoreFocusEl;
-  pauseMenuRestoreFocusEl = null;
-  if (restoreFocus && focusTarget) {
-    focusTarget.focus();
-  }
-}
-
-function showPauseMenu(mode: "paused" | "loaded" = "paused") {
-  if (isPauseMenuVisible()) return;
-  setPauseMenuMode(mode);
-  pauseMenuOpen = true;
-  pauseMenuRestoreFocusEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  pauseMenuOverlayEl.hidden = false;
-  pauseMenuOverlayEl.classList.add("isVisible");
-  pauseMenuOverlayEl.setAttribute("aria-hidden", "false");
-  document.body.classList.add("pauseMenuOpen");
-  pauseMenuResumeBtn.focus();
-  logConsole("gamestate", "pause menu -> open");
-}
-
-function pauseForPauseMenu() {
-  transportController.pause();
-  transport = transportController.getState();
-  void midiOutStop();
-  setAudioStatus("paused");
-  showPauseMenu("paused");
-}
-
-async function resumeFromPauseMenu() {
-  const mode = pauseMenuMode;
-  closePauseMenu({ restoreFocus: false });
-  if (mode === "loaded") {
-    logConsole("gamestate", "pause menu -> close loaded-song prompt");
-    return;
-  }
-  if (!selectedSongPackPath || lastLoadedSongPackPath !== selectedSongPackPath) {
-    setAudioStatus("pause menu closed");
-    logConsole("gamestate", "pause menu -> close without resume");
-    return;
-  }
-  try {
-    await transportController.play();
-    transport = transportController.getState();
-    await midiPanel.outStartOrContinue();
-    setAudioStatus(selectedSongPackPath ? `playing: ${selectedSongPackPath}` : "resumed");
-    logConsole("gamestate", "pause menu -> resume");
-  } catch (e) {
-    const err = String(e);
-    setAudioStatus(err);
-    setVizStatus(`resume failed: ${err}`);
-    errorConsole("play", "resume from pause menu failed", e);
-  }
-}
-
-function backToSongSelectionFromPauseMenu() {
-  closePauseMenu({ restoreFocus: false });
-  stopAudio();
-  void midiOutStop();
-  void midiOutSeek(0);
-  showSongLibraryStep();
-  setAudioStatus("returned to song selection");
-  logConsole("gamestate", "pause menu -> back to song selection");
-}
 
 function showSongLibraryStep() {
-  closePauseMenu({ restoreFocus: false });
+  pauseMenu.close({ restoreFocus: false });
   logConsole("gamestate", "show song library step");
   playLayoutEl.classList.add("isLibraryOnly");
   setPlayFocusMode(false);
@@ -1181,7 +1036,7 @@ function canOpenLoadedSongBackOutPrompt(): boolean {
 }
 
 function showBandSetupStep() {
-  closePauseMenu({ restoreFocus: false });
+  pauseMenu.close({ restoreFocus: false });
   logConsole("gamestate", "show band setup step");
   playLayoutEl.classList.remove("isLibraryOnly");
   setPlayFocusMode(true);
@@ -2324,45 +2179,39 @@ audioPlayBtn.addEventListener("click", () => {
 audioPauseBtn.addEventListener("click", () => {
   transportController.pause();
   transport = transportController.getState();
-  void midiOutStop();
+  void midiPanel.outStop();
   setAudioStatus("paused");
 });
 
 audioStopBtn.addEventListener("click", () => {
-  closePauseMenu({ restoreFocus: false });
+  pauseMenu.close({ restoreFocus: false });
   stopAudio();
-  void midiOutStop();
-  void midiOutSeek(0);
+  void midiPanel.outStop();
+  void midiPanel.outSeek(0);
   setAudioStatus("stopped");
 });
 
-pauseMenuResumeBtn.addEventListener("click", () => {
-  void resumeFromPauseMenu();
-});
-
-pauseMenuBackBtn.addEventListener("click", () => {
-  backToSongSelectionFromPauseMenu();
-});
+// Resume + back buttons inside the pause-menu overlay are wired by pauseMenu.ts internally.
 
 window.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || ev.repeat) return;
 
-  if (isPauseMenuVisible()) {
+  if (pauseMenu.isVisible()) {
     ev.preventDefault();
-    void resumeFromPauseMenu();
+    void pauseMenu.resume();
     return;
   }
 
   if (currentRoute !== "play") return;
   if (transportController.getState().isPlaying) {
     ev.preventDefault();
-    pauseForPauseMenu();
+    pauseMenu.openPaused();
     return;
   }
   if (!canOpenLoadedSongBackOutPrompt()) return;
 
   ev.preventDefault();
-  showPauseMenu("loaded");
+  pauseMenu.show("loaded");
 });
 
 audioSeekGoBtn.addEventListener("click", () => {
@@ -2372,7 +2221,7 @@ audioSeekGoBtn.addEventListener("click", () => {
     return;
   }
   transportController.seek(t);
-  void midiOutSeek(t);
+  void midiPanel.outSeek(t);
   setAudioStatus(`seek: ${t.toFixed(2)}s`);
 });
 
@@ -2392,69 +2241,14 @@ loopClearBtn.addEventListener("click", () => {
   setAudioStatus("loop cleared");
 });
 
-function renderPreferredModelPacks() {
-  preferredModelsEl.innerHTML = `
-    <ul>
-      ${PREFERRED_MODEL_PACKS.map((p) => {
-        const disabled = p.url ? "" : "disabled";
-        const hint = p.url ? "" : "(no download url configured yet)";
-        return `
-          <li>
-            <div class="row">
-              <div class="grow">
-                <strong>${escapeHtml(p.id)}</strong> <span class="meta">v${escapeHtml(p.version)}</span>
-                <div class="meta">${escapeHtml(p.description ?? "")} ${escapeHtml(hint)}</div>
-              </div>
-              <button class="installPreferred" data-id="${escapeHtml(p.id)}" ${disabled}>Install</button>
-            </div>
-          </li>
-        `;
-      }).join("\n")}
-    </ul>
-  `;
-
-  for (const btn of Array.from(preferredModelsEl.querySelectorAll("button.installPreferred"))) {
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-id");
-      if (!id) return;
-      const pack = PREFERRED_MODEL_PACKS.find((p) => p.id === id);
-      if (!pack) return;
-      void installModelPackFromUrl(pack)
-        .then(() => refreshModels())
-        .catch((e) => {
-          modelsStatusEl.textContent = String(e);
-        });
-    });
-  }
-}
-
-async function refreshModels() {
-  modelsStatusEl.textContent = "Loadingâ€¦";
-  try {
-    const installed = await listInstalledModelPacks();
-    modelsStatusEl.textContent = formatInstalledModelPacks(installed);
-  } catch (e) {
-    modelsStatusEl.textContent = String(e);
-  }
-}
-
-modelsRefreshBtn.addEventListener("click", () => {
-  void refreshModels();
-});
-
-modelpackImportBtn.addEventListener("click", () => {
-  const p = modelpackPathInput.value;
-  void installModelPackFromPath(p)
-    .then(() => refreshModels())
-    .catch((e) => {
-      modelsStatusEl.textContent = String(e);
-    });
-});
+// renderPreferredModelPacks + refreshModels + the modelpack DOM grabs +
+// listeners all live in modelsPanel.ts (Phase 2.K).
+const modelsPanel: ModelsPanelHandle = initModelsPanel({ escapeHtml });
 
 // Initialize sizing for first paint.
 resizeVizCanvas();
-renderPreferredModelPacks();
-void refreshModels();
+modelsPanel.renderPreferred();
+void modelsPanel.refresh();
 
 // refresh function + refresh button listener + songs_folder_changed listen
 // block + setOverride/clearOverride handlers all live inside songLibraryPanel.ts.
