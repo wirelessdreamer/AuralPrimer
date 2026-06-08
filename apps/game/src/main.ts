@@ -9,7 +9,8 @@ import { Metronome } from "./metronome";
 import { extractKeyModeFromManifest } from "./hud";
 // Modelpack list/install wiring lives in modelsPanel.ts (Phase 2.K).
 import { initModelsPanel, type ModelsPanelHandle } from "./modelsPanel";
-import { BUILTIN_PLUGINS, type PluginDescriptor, loadPlugin, scanBundledPlugins, scanUserPlugins } from "./plugins";
+// BUILTIN_PLUGINS + scanBundledPlugins + scanUserPlugins now live inside pluginsPanel.ts.
+import { type PluginDescriptor, loadPlugin } from "./plugins";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, applyRefinementsToMelodicTracks, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
@@ -30,6 +31,10 @@ import { INSTRUMENT_LABELS, type Instrument } from "./instrumentTypes";
 import { initLyricsPanel, type LyricsPanelHandle } from "./lyricsPanel";
 import { createConsoleBridge, type ConsoleLogCategory } from "./consoleBridge";
 import { initPauseMenu, type PauseMenuHandle } from "./pauseMenu";
+// instrumentHints helpers are consumed by capsPanel.ts (Phase 2.L); main.ts
+// no longer calls them directly.
+import { initCapsPanel, type CapsPanelHandle, type SongCapabilities, type SongPackChartsByPath } from "./capsPanel";
+import { initPluginsPanel, type PluginsPanelHandle } from "./pluginsPanel";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -96,27 +101,7 @@ type SongPackDetails = {
   error?: string;
 };
 
-type SongPackChartsByPath = Record<string, unknown>;
-
-type SongCapabilities = {
-  features: {
-    beats: boolean;
-    tempo_map: boolean;
-    sections: boolean;
-    events: boolean;
-    lyrics: boolean;
-    notes_mid: boolean;
-  };
-  audio: {
-    wav: boolean;
-    mp3: boolean;
-    ogg: boolean;
-  };
-  charts: {
-    any: boolean;
-    byInstrument: Partial<Record<Instrument, boolean>>;
-  };
-};
+// SongPackChartsByPath + SongCapabilities live in capsPanel.ts (re-exported above).
 
 type LyricsFile = {
   format: string;
@@ -700,43 +685,7 @@ if (!haveTauri()) {
   // !haveTauri(), so no explicit call needed here.
 }
 
-function renderPlugins() {
-  // Base render; actual availability gating happens once we know selected song details.
-  renderPluginsWithAvailability(selectedSongPackDetails);
-}
-
-async function refreshPlugins() {
-  // Always include package-based built-ins.
-  availablePlugins = [...BUILTIN_PLUGINS];
-
-  try {
-    // Bundled built-ins (resources).
-    const bundled = await scanBundledPlugins();
-
-    // User plugins from configured visualizers folder.
-    const user = await scanUserPlugins();
-
-    // Merge, dedup by id: prefer bundled over package over user.
-    const byId = new Map<string, PluginDescriptor>();
-
-    for (const p of availablePlugins) byId.set(p.id, p);
-    for (const p of bundled) byId.set(p.id, p);
-    for (const p of user) if (!byId.has(p.id)) byId.set(p.id, p);
-
-    availablePlugins = Array.from(byId.values());
-  } catch (e) {
-    // This will fail in browser-only mode (no Tauri). That's ok.
-    setVizStatus(`plugin scan failed (expected in browser-only mode): ${String(e)}`);
-  }
-
-  // Sort: built-ins first, then user.
-  availablePlugins.sort((a, b) => {
-    if (a.source !== b.source) return a.source === "builtin" ? -1 : 1;
-    return a.id.localeCompare(b.id);
-  });
-
-  renderPlugins();
-}
+// renderPlugins + refreshPlugins live in pluginsPanel.ts (Phase 2.M).
 
 function escapeHtml(s: string): string {
   // Avoid hardcoding HTML entity strings here (some tooling auto-decodes them).
@@ -870,10 +819,9 @@ function setSelectedSongCard(containerPath: string | null): void {
 
 setSelectedSongSetupLabel(null, null);
 
-let availablePlugins: PluginDescriptor[] = [...BUILTIN_PLUGINS];
-let loadedPluginDispose: (() => void) | null = null;
+// availablePlugins + pluginSelectionMode now live inside pluginsPanel.ts.
 // Plugin id constants + defaultPluginIdForInstrument live in playersPanel.ts.
-let pluginSelectionMode: "auto" | "user" = "auto";
+let loadedPluginDispose: (() => void) | null = null;
 
 let transport: TransportState = {
   t: 0,
@@ -1104,288 +1052,14 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
   }
 }
 
-function asObjectRecord(v: unknown): Record<string, unknown> | null {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-  return v as Record<string, unknown>;
-}
-
 // loadRefinementsForRoles lives in refinementLoader.ts (Phase 2.E).
+// Instrument-hint helpers (asObjectRecord + 4 applyInstrumentHintsFrom*)
+// live in instrumentHints.ts (Phase 2.L) — imported at top of file.
 
-function applyInstrumentHintsFromToken(
-  tokenRaw: string,
-  byInstrument: SongCapabilities["charts"]["byInstrument"]
-): void {
-  const token = tokenRaw.toLowerCase();
-  if (!token) return;
+// computeSongCapabilities + renderCaps + applyInstrumentAvailability live in
+// capsPanel.ts (Phase 2.L). Use capsPanel.render() / .applyAvailability() / .compute().
 
-  if (/rhythm[_\s-]?guitar|guitar[_\s-]?rhythm|rhythm/.test(token)) byInstrument.rhythm_guitar = true;
-  if (/lead[_\s-]?guitar|guitar[_\s-]?lead|lead/.test(token)) byInstrument.lead_guitar = true;
-  if (/guitar|gtr/.test(token) && !/rhythm/.test(token)) byInstrument.lead_guitar = true;
-  if (/bass/.test(token)) byInstrument.bass = true;
-  if (/keys|piano|synth/.test(token)) byInstrument.keys = true;
-  if (/vocals?|vox|lyrics?/.test(token)) byInstrument.vocals = true;
-  if (
-    /drum|kit|percussion|beat|kick|snare|hihat|hat|cym|ride|tom|bd|sd|hh|cy|rd|ht|lt|ft/.test(token)
-  ) {
-    byInstrument.drums = true;
-  }
-
-  // Common five-fret lane naming in some chart formats.
-  if (/^(g|r|y|b|o|green|red|yellow|blue|orange)$/.test(token)) {
-    byInstrument.lead_guitar = true;
-  }
-}
-
-function applyInstrumentHintsFromChartJson(
-  chartJson: unknown,
-  byInstrument: SongCapabilities["charts"]["byInstrument"]
-): void {
-  const chart = asObjectRecord(chartJson);
-  if (!chart) return;
-
-  if (typeof chart.mode === "string") {
-    applyInstrumentHintsFromToken(chart.mode, byInstrument);
-  }
-  if (typeof chart.instrument === "string") {
-    applyInstrumentHintsFromToken(chart.instrument, byInstrument);
-  }
-  if (Array.isArray(chart.instruments)) {
-    for (const item of chart.instruments) {
-      if (typeof item === "string") {
-        applyInstrumentHintsFromToken(item, byInstrument);
-      }
-    }
-  }
-
-  if (!Array.isArray(chart.targets)) return;
-  for (const target of chart.targets) {
-    const targetObj = asObjectRecord(target);
-    if (!targetObj) continue;
-    if (typeof targetObj.lane === "string") {
-      applyInstrumentHintsFromToken(targetObj.lane, byInstrument);
-    }
-    if (typeof targetObj.instrument === "string") {
-      applyInstrumentHintsFromToken(targetObj.instrument, byInstrument);
-    }
-  }
-}
-
-function applyInstrumentHintsFromMappedRole(
-  roleRaw: string,
-  byInstrument: SongCapabilities["charts"]["byInstrument"]
-): void {
-  switch (roleRaw) {
-    case "drums":
-      byInstrument.drums = true;
-      break;
-    case "bass":
-      byInstrument.bass = true;
-      break;
-    case "lead_guitar":
-      byInstrument.lead_guitar = true;
-      break;
-    case "rhythm_guitar":
-      byInstrument.rhythm_guitar = true;
-      break;
-    case "keys":
-      byInstrument.keys = true;
-      break;
-    case "vocals":
-      byInstrument.vocals = true;
-      break;
-    default:
-      break;
-  }
-}
-
-function applyInstrumentHintsFromManifestRaw(
-  manifestRaw: unknown,
-  byInstrument: SongCapabilities["charts"]["byInstrument"]
-): void {
-  const manifest = asObjectRecord(manifestRaw);
-  if (!manifest) return;
-
-  const source = asObjectRecord(manifest.source);
-  const parts = source ? asObjectRecord(source.parts) : null;
-  const mappedRoles = Array.isArray(parts?.mapped_game_roles) ? parts?.mapped_game_roles : [];
-  for (const role of mappedRoles) {
-    if (typeof role === "string") {
-      applyInstrumentHintsFromMappedRole(role, byInstrument);
-    }
-  }
-
-  const assets = asObjectRecord(manifest.assets);
-  const midi = assets ? asObjectRecord(assets.midi) : null;
-  const midiTracks = Array.isArray(midi?.tracks) ? midi?.tracks : [];
-  for (const track of midiTracks) {
-    const rec = asObjectRecord(track);
-    if (rec && typeof rec.role === "string") {
-      applyInstrumentHintsFromMappedRole(rec.role, byInstrument);
-    }
-  }
-}
-
-function computeSongCapabilities(
-  details: SongPackDetails | null,
-  drumSelection: DrumChartSelection | null,
-  chartsByPath: SongPackChartsByPath | null
-): SongCapabilities {
-  const charts = details?.charts ?? [];
-  const byInstrument: SongCapabilities["charts"]["byInstrument"] = {};
-  const midiDrumsAvailable = Boolean(drumSelection?.events.length);
-
-  // First pass: filename hints.
-  for (const chartPath of charts) {
-    applyInstrumentHintsFromToken(chartPath, byInstrument);
-  }
-
-  // Second pass: chart JSON content hints (mode/targets/instrument fields).
-  for (const [chartPath, chartJson] of Object.entries(chartsByPath ?? {})) {
-    applyInstrumentHintsFromToken(chartPath, byInstrument);
-    applyInstrumentHintsFromChartJson(chartJson, byInstrument);
-  }
-
-  applyInstrumentHintsFromManifestRaw(details?.manifest_raw, byInstrument);
-
-  for (const track of selectedMelodicTracks) {
-    applyInstrumentHintsFromMappedRole(track.role, byInstrument);
-  }
-
-  if (midiDrumsAvailable) {
-    byInstrument.drums = true;
-  }
-
-  // Safety fallback: if charts exist but cannot be classified, treat as drums.
-  const inferredAny = (Object.keys(INSTRUMENT_LABELS) as Instrument[]).some((inst) => Boolean(byInstrument[inst]));
-  if (charts.length > 0 && !inferredAny) {
-    byInstrument.drums = true;
-  }
-
-  return {
-    features: {
-      beats: Boolean(details?.has_beats),
-      tempo_map: Boolean(details?.has_tempo_map),
-      sections: Boolean(details?.has_sections),
-      events: Boolean(details?.has_events),
-      lyrics: Boolean(details?.has_lyrics),
-      notes_mid: Boolean(details?.has_notes_mid),
-    },
-    audio: {
-      wav: Boolean(details?.has_mix_wav),
-      mp3: Boolean(details?.has_mix_mp3),
-      ogg: Boolean(details?.has_mix_ogg),
-    },
-    charts: {
-      any: charts.length > 0 || midiDrumsAvailable,
-      byInstrument,
-    },
-  };
-}
-
-function renderCaps(
-  details: SongPackDetails | null,
-  drumSelection: DrumChartSelection | null,
-  chartsByPath: SongPackChartsByPath | null
-) {
-  const caps = computeSongCapabilities(details, drumSelection, chartsByPath);
-
-  const pill = (label: string, ok: boolean, hint?: string) => {
-    const cls = ok ? "capPill capPill--ok" : "capPill capPill--missing";
-    const title = hint ? ` title="${escapeHtml(hint)}"` : "";
-    return `<span class="${cls}"${title}>${escapeHtml(label)}</span>`;
-  };
-
-  const featurePills = [
-    pill("beats", caps.features.beats, "features/notes.mid (structure track beat pulses)"),
-    pill("tempo", caps.features.tempo_map, "features/notes.mid (SetTempo + TimeSignature meta)"),
-    pill("sections", caps.features.sections, "features/notes.mid (section markers)"),
-    pill("events", caps.features.events, "features/notes.mid (drums ch10 + melodic ch1 notes)"),
-    pill("lyrics", caps.features.lyrics, "features/lyrics.json"),
-    pill("midi", caps.features.notes_mid, "features/notes.mid"),
-  ].join("\n");
-
-  const drumHint = drumSelection
-    ? `features/notes.mid (${drumSelection.mode}, ${drumSelection.reason}, events=${drumSelection.events.length})`
-    : "chart availability (heuristic)";
-  const chartPills = (Object.keys(INSTRUMENT_LABELS) as Instrument[])
-    .map((inst) => {
-      const hint = inst === "drums" ? drumHint : "chart availability (heuristic)";
-      return pill(INSTRUMENT_LABELS[inst], Boolean(caps.charts.byInstrument[inst]), hint);
-    })
-    .join("\n");
-
-  const audioPills = [
-    pill("mix.wav", caps.audio.wav),
-    pill("mix.mp3", caps.audio.mp3),
-    pill("mix.ogg", caps.audio.ogg),
-  ].join("\n");
-
-  capsEl.innerHTML = `
-    <div class="capsRow">
-      <span class="capsLabel">Data</span>
-      <div class="capsPills">${featurePills}</div>
-    </div>
-    <div class="capsRow">
-      <span class="capsLabel">Charts</span>
-      <div class="capsPills">${chartPills}</div>
-    </div>
-    <div class="capsRow">
-      <span class="capsLabel">Audio</span>
-      <div class="capsPills">${audioPills}</div>
-    </div>
-  `;
-}
-
-function applyInstrumentAvailability(
-  details: SongPackDetails | null,
-  drumSelection: DrumChartSelection | null,
-  chartsByPath: SongPackChartsByPath | null
-) {
-  const caps = computeSongCapabilities(details, drumSelection, chartsByPath);
-  for (const chip of Array.from(playersEl.querySelectorAll<HTMLElement>(".playerChip"))) {
-    const chipId = chip.getAttribute("data-player-id");
-    const sel = chip.querySelector<HTMLSelectElement>("select.playerInstrument");
-    if (!sel) continue;
-    for (const opt of Array.from(sel.options)) {
-      const inst = opt.value as Instrument;
-      const has = Boolean(caps.charts.byInstrument[inst]);
-      // We only disable if we have *some* chart data but not for this instrument.
-      // If there are no charts at all, leave enabled (future non-chart gameplay).
-      const disable = caps.charts.any ? !has : false;
-      opt.disabled = disable;
-      opt.textContent = disable ? `${INSTRUMENT_LABELS[inst]} (no chart)` : INSTRUMENT_LABELS[inst];
-    }
-    // If current selection is now disabled, pick first enabled.
-    if (sel.selectedOptions.length && sel.selectedOptions[0].disabled) {
-      const firstEnabled = Array.from(sel.options).find((o) => !o.disabled);
-      if (firstEnabled) {
-        sel.value = firstEnabled.value;
-        if (chipId) {
-          playersPanel.setPlayerInstrument(chipId, firstEnabled.value as Instrument);
-        }
-      }
-    }
-  }
-}
-
-function pluginRequirements(id: string): { ok: (d: SongPackDetails | null) => boolean; reason: string } {
-  // Minimal v1 mapping (can evolve per plugin manifest later)
-  switch (id) {
-    case "viz-lyrics":
-      return {
-        ok: (d) => Boolean(d?.has_lyrics),
-        reason: "Requires features/lyrics.json"
-      };
-    case "viz-drum-highway":
-      return {
-        ok: (d) => Boolean(d?.has_notes_mid),
-        reason: "Requires features/notes.mid"
-      };
-    // Placeholder visualizers: they can run with transport only.
-    default:
-      return { ok: () => true, reason: "" };
-  }
-}
+// pluginRequirements (per-plugin SongPack data gating) lives in pluginsPanel.ts.
 
 function buildVizSongContext(): {
   lyrics?: LyricsFile;
@@ -1431,30 +1105,7 @@ function buildVizSongContext(): {
   };
 }
 
-function renderPluginsWithAvailability(details: SongPackDetails | null) {
-  const previousSelectedId = selectedPluginId();
-
-  // Re-render options with disabled state + hint.
-  pluginSelect.innerHTML = availablePlugins
-    .map((p, idx) => {
-      const req = pluginRequirements(p.id);
-      const ok = req.ok(details);
-      const label = `${p.name} (${p.source})${ok ? "" : " â€” missing data"}`;
-      const disabled = ok ? "" : "disabled";
-      const title = ok || !req.reason ? "" : ` title="${escapeHtml(req.reason)}"`;
-      return `<option value="${idx}" ${disabled}${title}>${escapeHtml(label)}</option>`;
-    })
-    .join("\n");
-
-  setPluginSelectionById(previousSelectedId);
-  syncPreferredPluginSelection();
-
-  // If selected plugin became disabled, choose first enabled.
-  if (pluginSelect.selectedOptions.length && pluginSelect.selectedOptions[0].disabled) {
-    const firstEnabled = Array.from(pluginSelect.options).find((o) => !o.disabled);
-    if (firstEnabled) pluginSelect.value = firstEnabled.value;
-  }
-}
+// renderPluginsWithAvailability lives in pluginsPanel.ts (.render()).
 
 // Player state + render + handlers + plugin-id-per-instrument live in
 // playersPanel.ts. Cross-cutting fns that read players but touch other
@@ -1502,37 +1153,31 @@ function syncMelodicTrackSelectionFromPlayers(): void {
   selectInstrumentTrack(nextTrack.role);
 }
 
-function selectedPluginId(): string | null {
-  const idx = pluginSelect.selectedIndex;
-  if (idx < 0 || idx >= availablePlugins.length) return null;
-  return availablePlugins[idx]?.id ?? null;
-}
+// selectedPluginId / setPluginSelectionById / syncPreferredPluginSelection
+// live in pluginsPanel.ts as getSelectedPluginId / syncPreferred.
 
-function setPluginSelectionById(pluginId: string | null): boolean {
-  if (!pluginId) return false;
-  const idx = availablePlugins.findIndex((p) => p.id === pluginId);
-  if (idx < 0) return false;
-  const option = Array.from(pluginSelect.options).find((o) => o.value === String(idx));
-  if (!option || option.disabled) return false;
-  if (pluginSelect.value === String(idx)) return false;
-  pluginSelect.value = String(idx);
-  return true;
-}
-
-function syncPreferredPluginSelection(): boolean {
-  if (pluginSelectionMode !== "auto") return false;
-  return setPluginSelectionById(playersPanel.getPreferredPluginIdForPlayers());
-}
+// Mutual-dep break: pluginsPanel needs playersPanel.getPreferredPluginIdForPlayers(),
+// and playersPanel needs pluginsPanel.{syncPreferred,getSelectedPluginId,setSelectionModeAuto}.
+// We construct pluginsPanel first against a let-ref that the playersPanel
+// assignment populates. The deferred callbacks only fire after both exist.
+let _playersPanelRef: PlayersPanelHandle | null = null;
+const pluginsPanel: PluginsPanelHandle = initPluginsPanel({
+  pluginSelect,
+  refreshBtn: pluginRefreshBtn,
+  setVizStatus,
+  escapeHtml,
+  getSelectedSongPackDetails: () => selectedSongPackDetails,
+  getPreferredPluginIdForPlayers: () => _playersPanelRef?.getPreferredPluginIdForPlayers() ?? null,
+  onPluginSelectionChange: () => restartVisualizerForPluginSelection(),
+});
 
 const playersPanel: PlayersPanelHandle = initPlayersPanel({
   escapeHtml,
-  setPluginSelectionModeAuto: () => {
-    pluginSelectionMode = "auto";
-  },
+  setPluginSelectionModeAuto: () => pluginsPanel.setSelectionModeAuto(),
   applyInstrumentAvailability: () => {
-    applyInstrumentAvailability(selectedSongPackDetails, selectedDrumChartSelection, selectedSongPackCharts);
+    capsPanel.applyAvailability(selectedSongPackDetails, selectedDrumChartSelection, selectedSongPackCharts);
   },
-  syncPreferredPluginSelection,
+  syncPreferredPluginSelection: () => pluginsPanel.syncPreferred(),
   syncMelodicTrackSelectionFromPlayers,
   restartVisualizerForPluginSelection: () => restartVisualizerForPluginSelection(),
   rebuildSecondaryStagesIfRunning: () => {
@@ -1542,7 +1187,18 @@ const playersPanel: PlayersPanelHandle = initPlayersPanel({
       });
     }
   },
-  getSelectedPluginId: selectedPluginId,
+  getSelectedPluginId: () => pluginsPanel.getSelectedPluginId(),
+});
+_playersPanelRef = playersPanel;
+
+// Caps panel — depends on playersPanel (for instrument writeback) and a
+// live getter for selectedMelodicTracks (mutated by readDrumChartSelection).
+const capsPanel: CapsPanelHandle = initCapsPanel({
+  capsEl,
+  playersEl,
+  playersPanel,
+  getSelectedMelodicTracks: () => selectedMelodicTracks,
+  escapeHtml,
 });
 
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
@@ -1642,9 +1298,10 @@ async function buildSecondaryStages(): Promise<void> {
     }
 
     const pluginId = defaultPluginIdForInstrument(player.instrument);
-    const descriptor = availablePlugins.find((p) => p.id === pluginId)
-      ?? availablePlugins.find((p) => p.id === DEFAULT_PLUGIN_ID)
-      ?? availablePlugins[0];
+    const plugins = pluginsPanel.getAvailable();
+    const descriptor = plugins.find((p) => p.id === pluginId)
+      ?? plugins.find((p) => p.id === DEFAULT_PLUGIN_ID)
+      ?? plugins[0];
     if (!descriptor) {
       canvas.remove();
       continue;
@@ -1817,9 +1474,9 @@ async function selectSongPack(containerPath: string) {
     updateInstrumentSelector();
 
     // Show per-song data availability so users know what’s actually present.
-    renderCaps(details, selectedDrumChartSelection, selectedSongPackCharts);
-    applyInstrumentAvailability(details, selectedDrumChartSelection, selectedSongPackCharts);
-    renderPluginsWithAvailability(details);
+    capsPanel.render(details, selectedDrumChartSelection, selectedSongPackCharts);
+    capsPanel.applyAvailability(details, selectedDrumChartSelection, selectedSongPackCharts);
+    pluginsPanel.render();
 
     // Load lyrics (best-effort)
     try {
@@ -1966,14 +1623,14 @@ function stopAudio() {
 }
 
 function currentSelectedPlugin(): PluginDescriptor {
-  const idx = pluginSelect.selectedIndex;
-  if (idx < 0 || idx >= availablePlugins.length) return availablePlugins[0];
-  return availablePlugins[idx];
+  // Defer to pluginsPanel; the non-null assertion is safe because boot calls
+  // pluginsPanel.refresh() (which always seeds at least BUILTIN_PLUGINS).
+  return pluginsPanel.getCurrent()!;
 }
 
 async function startVisualizer(opts?: { preserveTransport?: boolean }) {
   stopVisualizer({ preserveTransport: opts?.preserveTransport });
-  syncPreferredPluginSelection();
+  pluginsPanel.syncPreferred();
 
   const plugin = currentSelectedPlugin();
   setVizStatus(`Loading pluginâ€¦ (${plugin.id})`);
@@ -2094,10 +1751,8 @@ function restartVisualizerForPluginSelection() {
   });
 }
 
-pluginSelect.addEventListener("change", () => {
-  pluginSelectionMode = "user";
-  restartVisualizerForPluginSelection();
-});
+// #pluginSelect change handler lives inside pluginsPanel.ts (fires
+// onPluginSelectionChange which is wired to restartVisualizerForPluginSelection).
 
 vizStartBtn.addEventListener("click", () => {
   void startVisualizer().catch((e) => {
@@ -2253,12 +1908,9 @@ void modelsPanel.refresh();
 // refresh function + refresh button listener + songs_folder_changed listen
 // block + setOverride/clearOverride handlers all live inside songLibraryPanel.ts.
 
-pluginRefreshBtn.addEventListener("click", () => {
-  void refreshPlugins();
-});
-
-// Populate plugin list on startup.
-void refreshPlugins();
+// #pluginRefresh click handler lives inside pluginsPanel.ts. Populate plugin
+// list on startup (also re-renders #pluginSelect with availability gating).
+void pluginsPanel.refresh();
 
 // Initial MIDI active-notes status + port lists handled by midiPanel itself.
 void midiPanel.refreshAll();
