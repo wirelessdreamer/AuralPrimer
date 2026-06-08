@@ -46,6 +46,7 @@ import { appShellHtml } from "./appShellHtml";
 import { buildVizSongContext } from "./vizSongContext";
 import { readSongChartSelection } from "./songChartLoader";
 import { initSecondaryStagesController, type SecondaryStagesControllerHandle } from "./secondaryStagesController";
+import { initPlaybackRateAndMetronomePanel } from "./playbackRateAndMetronomePanel";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -207,11 +208,10 @@ playSurfaceEl.append(playerStagesEl, playLyricsEl, vizStatusEl, instrumentSelect
 // #audioStatus / #vizStatus live in audioTransportPanel.ts (Phase 2.Q).
 const audioBackendSelect = document.getElementById("audioBackend") as HTMLSelectElement;
 // audio output host + device picker DOM + wiring lives in audioOutputPanel.ts
-const playbackRateInput = document.getElementById("playbackRate") as HTMLInputElement;
-const playbackRateApplyBtn = document.getElementById("playbackRateApply") as HTMLButtonElement;
+// #playbackRate / #playbackRateApply / #metronomeEnabled / #metronomeVolume
+// DOM + listeners all live in playbackRateAndMetronomePanel.ts (Phase 2.V).
 // scrollSpeed slider DOM + wiring lives in scrollSpeedController.ts
-const metronomeEnabledInput = document.getElementById("metronomeEnabled") as HTMLInputElement;
-const metronomeVolumeInput = document.getElementById("metronomeVolume") as HTMLInputElement;
+// #metronomeEnabled / #metronomeVolume DOM lives in playbackRateAndMetronomePanel.ts.
 
 // All MIDI panel DOM + wiring lives in midiPanel.ts (Phase 2.F).
 
@@ -1034,15 +1034,17 @@ vizStopBtn.addEventListener("click", () => stopVisualizer());
 
 // audio output click handlers live inside audioOutputPanel.ts
 
-// Playback rate controls
-
-playbackRateApplyBtn.addEventListener("click", () => {
-  const r = Number(playbackRateInput.value);
-  if (!Number.isFinite(r) || r <= 0) return;
-  currentPlaybackRate = r;
-  transportController.setPlaybackRate(r);
-  transport = transportController.getState();
-  setAudioStatus(`playbackRate set: ${r.toFixed(2)}x`);
+// Playback rate + metronome panel — listeners wired internally; the host
+// hands it the metronome instance + a callback to refresh the cached
+// transport state after every playback-rate change.
+initPlaybackRateAndMetronomePanel({
+  transportController,
+  metronome,
+  setAudioStatus,
+  onPlaybackRateApplied: (r) => {
+    currentPlaybackRate = r;
+    transport = transportController.getState();
+  },
 });
 
 // Scroll-speed (Note spacing) controller — DOM + persistence + transport
@@ -1058,18 +1060,7 @@ initScrollSpeedController({
   },
 });
 
-// Metronome controls
-
-metronomeEnabledInput.addEventListener("change", () => {
-  metronome.setEnabled(metronomeEnabledInput.checked);
-  setAudioStatus(`metronome: ${metronome.getEnabled() ? "on" : "off"}`);
-});
-
-metronomeVolumeInput.addEventListener("input", () => {
-  const v = Number(metronomeVolumeInput.value);
-  if (!Number.isFinite(v)) return;
-  metronome.setVolume(v);
-});
+// Metronome controls live in playbackRateAndMetronomePanel.ts (Phase 2.V).
 
 // MIDI follow defaults to enabled.
 transportController.setFollowExternalClock(true);
