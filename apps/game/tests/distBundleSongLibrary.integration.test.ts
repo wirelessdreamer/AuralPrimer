@@ -97,6 +97,16 @@ describe("dist bundle Play Songs runtime", () => {
     // available". Either path is fine as long as the bundle handles it -- we
     // just need to know whether the bundle's runtime is broken or merely
     // gated on a real Tauri host.
+    // Tauri 2 `@tauri-apps/api/core` reaches for several methods on
+    // __TAURI_INTERNALS__ besides invoke -- chief among them transformCallback,
+    // which the client wraps every invoke() in to register a response
+    // callback. If we only mock `invoke`, transformCallback is undefined and
+    // the SYNCHRONOUS prologue inside `invoke()` throws before our mock is
+    // ever called -- producing "transformCallback is not a function" as an
+    // unhandled rejection on every console-bridge mirror call. Mock the
+    // surface the bundle actually touches.
+    let nextCallbackId = 1;
+    const registeredCallbacks = new Map<number, (arg: unknown) => void>();
     Object.defineProperty(win, "__TAURI_INTERNALS__", {
       configurable: true,
       value: {
@@ -105,7 +115,21 @@ describe("dist bundle Play Songs runtime", () => {
           if (cmd === "get_songs_folder") {
             return Promise.resolve("/tmp/test-songs");
           }
-          if (cmd === "scan_songpacks") {
+          // Endpoints whose contract is "return an array". Mocking null here
+          // makes the host-side .map() / .findIndex() / .flatMap() crash and
+          // surfaces noisy "failed to refresh X" status messages during boot,
+          // obscuring the actual test signal. Return an empty array instead.
+          const arrayShapedInvokes = new Set([
+            "scan_songpacks",
+            "native_audio_list_output_hosts",
+            "native_audio_list_output_devices",
+            "list_midi_input_ports",
+            "list_midi_output_ports",
+            "list_installed_modelpacks",
+            "scan_bundled_visualizers",
+            "scan_visualizers",
+          ]);
+          if (arrayShapedInvokes.has(cmd)) {
             return Promise.resolve([]);
           }
           // Many other invokes happen during module init (model packs, MIDI
@@ -113,7 +137,21 @@ describe("dist bundle Play Songs runtime", () => {
           // throw and obscure the test signal.
           return Promise.resolve(null);
         },
+        // Tauri's invoke() wraps every call in a callback id so the Rust side
+        // can route the response back. In a real Tauri shell this returns a
+        // numeric id and registers a global handler at window[`_<id>`]. Our
+        // mock just returns a stable id; we don't drive actual responses.
+        transformCallback: (cb: (arg: unknown) => void, _once = false): number => {
+          const id = nextCallbackId++;
+          if (typeof cb === "function") registeredCallbacks.set(id, cb);
+          return id;
+        },
+        // Some Tauri code paths call back through ipc with a serialized
+        // payload (e.g. plugin: ipc). No-op is fine for boot-path tests.
         ipc: () => {},
+        // Tauri 2 may call `metadata` to detect runtime features. Empty record
+        // is a safe default.
+        metadata: { plugins: {}, windows: [] },
       },
     });
 
