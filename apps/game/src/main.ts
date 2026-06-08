@@ -38,6 +38,7 @@ import { initPluginsPanel, type PluginsPanelHandle } from "./pluginsPanel";
 import { initSongDetailsView, type SongDetailsViewHandle } from "./songDetailsView";
 import { initPlaySurfaceController, type PlaySurfaceControllerHandle } from "./playSurfaceController";
 import { initRouteController, type RouteControllerHandle, type Route } from "./routeController";
+import { initAudioTransportPanel, type AudioTransportPanelHandle } from "./audioTransportPanel";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -569,17 +570,8 @@ playSurfaceEl.className = "playSurface";
 playerStagesEl.insertAdjacentElement("beforebegin", playSurfaceEl);
 playSurfaceEl.append(playerStagesEl, playLyricsEl, vizStatusEl, instrumentSelectorEl, tabContainerEl);
 
-const audioLoadBtn = document.getElementById("audioLoad") as HTMLButtonElement;
-const audioPlayBtn = document.getElementById("audioPlay") as HTMLButtonElement;
-const audioPauseBtn = document.getElementById("audioPause") as HTMLButtonElement;
-const audioStopBtn = document.getElementById("audioStop") as HTMLButtonElement;
-const audioSeekInput = document.getElementById("audioSeek") as HTMLInputElement;
-const audioSeekGoBtn = document.getElementById("audioSeekGo") as HTMLButtonElement;
-const loopT0Input = document.getElementById("loopT0") as HTMLInputElement;
-const loopT1Input = document.getElementById("loopT1") as HTMLInputElement;
-const loopSetBtn = document.getElementById("loopSet") as HTMLButtonElement;
-const loopClearBtn = document.getElementById("loopClear") as HTMLButtonElement;
-const audioStatusEl = document.getElementById("audioStatus") as HTMLPreElement;
+// Audio transport DOM (Load/Play/Pause/Stop/Seek + loop set/clear) and
+// #audioStatus / #vizStatus live in audioTransportPanel.ts (Phase 2.Q).
 const audioBackendSelect = document.getElementById("audioBackend") as HTMLSelectElement;
 // audio output host + device picker DOM + wiring lives in audioOutputPanel.ts
 const playbackRateInput = document.getElementById("playbackRate") as HTMLInputElement;
@@ -788,6 +780,22 @@ const pauseMenu: PauseMenuHandle = initPauseMenu({
     showSongLibraryStep();
     setAudioStatus("returned to song selection");
     logConsole("gamestate", "pause menu -> back to song selection");
+  },
+});
+
+// Audio transport panel — owns Load/Play/Pause/Stop/Seek + loop set/clear,
+// plus the #audioStatus / #vizStatus elements. Host's load/stop callbacks
+// are passed lazily via lambdas so they can capture function refs declared
+// further down (loadAudioFromSelectedSongPack / stopAudio).
+const audioTransportPanel: AudioTransportPanelHandle = initAudioTransportPanel({
+  transportController,
+  midiPanel,
+  pauseMenu,
+  consoleBridge,
+  onLoadAudio: () => loadAudioFromSelectedSongPack(),
+  onStopAudio: () => stopAudio(),
+  refreshCachedTransport: () => {
+    transport = transportController.getState();
   },
 });
 
@@ -1059,20 +1067,20 @@ const metronome = new Metronome({ enabled: false, volume: 0.25 });
 let lastLoadedAudio: { blob: Blob; mime: string } | null = null;
 let lastLoadedSongPackPath: string | null = null;
 
-function setAudioStatus(msg: string) {
-  audioStatusEl.textContent = msg;
-  logConsole("play", msg);
+// setAudioStatus + setVizStatus live in audioTransportPanel.ts (Phase 2.Q).
+// Thin wrappers below preserve the existing call shape so the rest of main.ts
+// didn't need to change name-by-name.
+function setAudioStatus(msg: string): void {
+  audioTransportPanel.setAudioStatus(msg);
+}
+function setVizStatus(msg: string): void {
+  audioTransportPanel.setVizStatus(msg);
 }
 
 // Ensure the UI reflects the desktop-only backend.
 audioBackendSelect.value = "native";
 
 // audio host/device helpers + refresh/apply functions live in audioOutputPanel.ts
-
-function setVizStatus(msg: string) {
-  vizStatusEl.textContent = msg;
-  logConsole("debugging", msg);
-}
 
 // Import-flow logic (proprietary_archive_import, Suno stem+MIDI creator, analysis import,
 // advanced sidecar ingest) lives in AuralStudio. See `spec.md §1.1`.
@@ -1286,7 +1294,7 @@ async function selectSongPack(containerPath: string) {
     if (songChanged) {
       lastLoadedSongPackPath = null;
     }
-    audioLoadBtn.disabled = false;
+    audioTransportPanel.loadBtn.disabled = false;
     songDetailsView.setSelectedSongSetupLabel(details, containerPath);
     toggleFocusBtn.disabled = false;
     playersPanel.resetForSongSetup();
@@ -1329,7 +1337,7 @@ async function loadAudioFromSelectedSongPack(containerPath?: string) {
   }
 
   setAudioStatus("Loading audioâ€¦");
-  audioLoadBtn.disabled = true;
+  audioTransportPanel.loadBtn.disabled = true;
 
   try {
     const loadResult = await loadSongPackAudioIntoTransport({
@@ -1353,12 +1361,12 @@ async function loadAudioFromSelectedSongPack(containerPath?: string) {
       setAudioStatus(`loaded: ${loadResult.mime} (${loadResult.byteLength} bytes)`);
     }
 
-    audioPlayBtn.disabled = false;
-    audioPauseBtn.disabled = false;
-    audioStopBtn.disabled = false;
-    audioSeekGoBtn.disabled = false;
-    loopSetBtn.disabled = false;
-    loopClearBtn.disabled = false;
+    audioTransportPanel.playBtn.disabled = false;
+    audioTransportPanel.pauseBtn.disabled = false;
+    audioTransportPanel.stopBtn.disabled = false;
+    audioTransportPanel.seekGoBtn.disabled = false;
+    audioTransportPanel.loopSetBtn.disabled = false;
+    audioTransportPanel.loopClearBtn.disabled = false;
 
     // If user hasnâ€™t started a visualizer yet, auto-start the selected one.
     if (!viz && targetSongPackPath === selectedSongPackPath) {
@@ -1374,7 +1382,7 @@ async function loadAudioFromSelectedSongPack(containerPath?: string) {
     setAudioStatus(String(e));
     throw e;
   } finally {
-    audioLoadBtn.disabled = false;
+    audioTransportPanel.loadBtn.disabled = false;
   }
 }
 
@@ -1608,36 +1616,10 @@ transportController.setFollowExternalClock(true);
 
 // Audio controls
 
-audioLoadBtn.addEventListener("click", () => {
-  void loadAudioFromSelectedSongPack().catch((e) => setAudioStatus(String(e)));
-});
+// audioLoadBtn / audioPlayBtn / audioPauseBtn / audioStopBtn / audioSeekGoBtn
+// / loopSetBtn / loopClearBtn click handlers all live inside audioTransportPanel.ts.
 playStartBtn.addEventListener("click", () => {
   void startSelectedSongSession();
-});
-
-audioPlayBtn.addEventListener("click", () => {
-  logConsole("play", "play requested");
-  void transportController.play()
-    .then(() => {
-      logConsole("play", "play started");
-      return midiPanel.outStartOrContinue();
-    })
-    .catch((e) => setAudioStatus(String(e)));
-});
-
-audioPauseBtn.addEventListener("click", () => {
-  transportController.pause();
-  transport = transportController.getState();
-  void midiPanel.outStop();
-  setAudioStatus("paused");
-});
-
-audioStopBtn.addEventListener("click", () => {
-  pauseMenu.close({ restoreFocus: false });
-  stopAudio();
-  void midiPanel.outStop();
-  void midiPanel.outSeek(0);
-  setAudioStatus("stopped");
 });
 
 // Resume + back buttons inside the pause-menu overlay are wired by pauseMenu.ts internally.
@@ -1663,32 +1645,7 @@ window.addEventListener("keydown", (ev) => {
   pauseMenu.show("loaded");
 });
 
-audioSeekGoBtn.addEventListener("click", () => {
-  const t = Number(audioSeekInput.value);
-  if (!Number.isFinite(t)) {
-    warnConsole("play", "seek ignored: invalid value", { value: audioSeekInput.value });
-    return;
-  }
-  transportController.seek(t);
-  void midiPanel.outSeek(t);
-  setAudioStatus(`seek: ${t.toFixed(2)}s`);
-});
-
-loopSetBtn.addEventListener("click", () => {
-  const t0 = Number(loopT0Input.value);
-  const t1 = Number(loopT1Input.value);
-  if (!Number.isFinite(t0) || !Number.isFinite(t1)) return;
-
-  transportController.setLoop({ t0, t1 });
-  transport = transportController.getState();
-  setAudioStatus(`loop set: ${transport.loop?.t0 ?? 0}..${transport.loop?.t1 ?? 0}`);
-});
-
-loopClearBtn.addEventListener("click", () => {
-  transportController.setLoop(undefined);
-  transport = transportController.getState();
-  setAudioStatus("loop cleared");
-});
+// audioSeekGoBtn / loopSetBtn / loopClearBtn handlers all live inside audioTransportPanel.ts.
 
 // renderPreferredModelPacks + refreshModels + the modelpack DOM grabs +
 // listeners all live in modelsPanel.ts (Phase 2.K).
