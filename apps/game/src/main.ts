@@ -12,7 +12,8 @@ import { initModelsPanel, type ModelsPanelHandle } from "./modelsPanel";
 // BUILTIN_PLUGINS + scanBundledPlugins + scanUserPlugins now live inside pluginsPanel.ts.
 import { type PluginDescriptor, loadPlugin } from "./plugins";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+// @tauri-apps/plugin-dialog import removed -- pickFolder/pickFiles no longer
+// needed (file/folder pickers moved into respective panel modules).
 import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, applyRefinementsToMelodicTracks, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
 import { loadRefinementsForRoles } from "./refinementLoader";
 // TabRenderer + the melodic-surface logic live in playSurfaceController.ts (Phase 2.O).
@@ -40,6 +41,7 @@ import { initPlaySurfaceController, type PlaySurfaceControllerHandle } from "./p
 import { initRouteController, type RouteControllerHandle, type Route } from "./routeController";
 import { initAudioTransportPanel, type AudioTransportPanelHandle } from "./audioTransportPanel";
 import { appShellHtml } from "./appShellHtml";
+import { buildVizSongContext } from "./vizSongContext";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -61,29 +63,8 @@ async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promi
   return invoke<T>(cmd, args);
 }
 
-async function pickFolder(): Promise<string | null> {
-  if (!haveTauri()) {
-    throw new Error("Folder picker requires the desktop app (run via `tauri dev`).");
-  }
-  const res = await open({ directory: true, multiple: false });
-  if (res === null) return null;
-  if (Array.isArray(res)) return res[0] ?? null;
-  return res;
-}
-
-async function pickFiles(extensions: string[], multiple: boolean): Promise<string[]> {
-  if (!haveTauri()) {
-    throw new Error("File picker requires the desktop app (run via `tauri dev`).");
-  }
-  const res = await open({
-    directory: false,
-    multiple,
-    filters: [{ name: extensions.join(", "), extensions: extensions.map((e) => e.replace(/^\./, "")) }]
-  });
-  if (res === null) return [];
-  if (Array.isArray(res)) return res;
-  return [res];
-}
+// pickFolder + pickFiles were orphaned by earlier panel extractions
+// (songLibraryPanel, ingest flows moved out). Removed.
 
 // ManifestSummary lives in ./manifestTypes (shared with songLibraryPanel).
 // SongPackScanEntry + isDemoSongPack moved into songLibraryPanel.ts.
@@ -568,48 +549,17 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
 
 // pluginRequirements (per-plugin SongPack data gating) lives in pluginsPanel.ts.
 
-function buildVizSongContext(): {
-  lyrics?: LyricsFile;
-  charts?: SongPackChartsByPath;
-  notes?: Array<{
-    t_on: number;
-    t_off?: number;
-    pitch: number;
-    velocity?: number;
-    channel?: number;
-    trackName?: string;
-  }>;
-} {
-  const drumNotes =
-    selectedDrumChartSelection?.events.map((ev) => ({
-      t_on: ev.t,
-      t_off: ev.t + 0.08,
-      pitch: ev.midi,
-      velocity: 100,
-      channel: 9,
-      trackName: ev.trackName
-    })) ?? [];
-
-  // Include melodic instrument notes for visualizer plugins.
-  const melodicNotes = selectedMelodicTracks.flatMap((track) =>
-    track.notes.map((n) => ({
-      t_on: n.t_on,
-      t_off: n.t_off,
-      pitch: n.pitch,
-      velocity: n.velocity,
-      channel: track.channel,
-      trackName: track.trackName,
-    }))
-  );
-
-  const allNotes = [...drumNotes, ...melodicNotes];
-  allNotes.sort((a, b) => a.t_on - b.t_on);
-
-  return {
-    lyrics: currentLyrics ?? undefined,
-    charts: selectedSongPackCharts ?? undefined,
-    notes: allNotes.length > 0 ? allNotes : undefined
-  };
+// buildVizSongContext lives in vizSongContext.ts (Phase 2.S). Thin wrapper
+// below feeds the four live module-state pieces into the pure compute so
+// the existing call sites (no-arg buildVizSongContextLocal()) didn't need
+// to change shape.
+function buildVizSongContextLocal() {
+  return buildVizSongContext({
+    drumSelection: selectedDrumChartSelection,
+    melodicTracks: selectedMelodicTracks,
+    lyrics: currentLyrics,
+    charts: selectedSongPackCharts,
+  });
 }
 
 // renderPluginsWithAvailability lives in pluginsPanel.ts (.render()).
@@ -829,7 +779,7 @@ async function buildSecondaryStages(): Promise<void> {
       await pviz.init({
         canvas,
         ctx2d,
-        song: buildVizSongContext(),
+        song: buildVizSongContextLocal(),
         players: [{ id: player.id, name: player.name, instrument: player.instrument }],
       });
     } catch (e) {
@@ -1099,7 +1049,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
   await viz.init({
     canvas: vizCanvas,
     ctx2d: vizCtx2d,
-    song: buildVizSongContext(),
+    song: buildVizSongContextLocal(),
     // Pass only Player 1 to the primary stage so its plugin renders a
     // single-player lane. Players 2..N get their own secondary stages
     // below — see buildSecondaryStages().
