@@ -1147,10 +1147,47 @@ async fn ingest_import(
         req.out_songpack_path = Some(default_ingest_out_songpack_path(&app, &req.source_path)?);
     }
 
-    run_blocking_command("analysis import", move || {
+    // Capture the paths before `req` moves into the blocking closure -- we
+    // need them after the sidecar returns to preserve any reference MIDI
+    // the user supplied (Suno gameplay export being the canonical case).
+    let source_path = req.source_path.clone();
+    let out_songpack_path = req
+        .out_songpack_path
+        .clone()
+        .unwrap_or_default();
+
+    let mut result = run_blocking_command("analysis import", move || {
         ingest_sidecar::run_ingest_import_with_progress(req, Some(&app))
     })
-    .await
+    .await?;
+
+    // Best-effort: when the sidecar succeeded on a folder source, copy any
+    // user-supplied MIDI from the source folder into the SongPack's
+    // features/midi/ tree and record them in assets.midi.reference_paths.
+    // The Refine workspace will render these as a guide layer alongside the
+    // sidecar's per-instrument transcription candidates. A failure here
+    // doesn't invalidate the import -- log it on the result and move on.
+    if result.ok && !out_songpack_path.is_empty() {
+        let source = std::path::Path::new(&source_path);
+        let songpack = std::path::Path::new(&out_songpack_path);
+        match raw_song::preserve_source_midis_into_songpack(source, songpack) {
+            Ok(rel_paths) => {
+                result.preserved_reference_midis = rel_paths;
+            }
+            Err(e) => {
+                // Surface the failure to the user via stderr tail without
+                // failing the import -- the SongPack is still valid.
+                if !result.stderr.is_empty() {
+                    result.stderr.push('\n');
+                }
+                result.stderr.push_str(&format!(
+                    "[reference-midi-preserve] {e}"
+                ));
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]

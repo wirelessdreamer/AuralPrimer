@@ -22,6 +22,18 @@ export type IngestImportResult = {
   command: string[];
   stdout: string;
   stderr: string;
+  /**
+   * SongPack-relative paths of any source MIDI files preserved into
+   * `features/midi/` after the sidecar finished. Populated when the source
+   * is a folder that contains user-supplied gameplay MIDI (Suno gameplay
+   * exports being the canonical case) so the Refine workspace can render
+   * them as a guide layer alongside the sidecar's per-instrument
+   * transcription candidates. Empty for single-file imports and folders
+   * without MIDI. `#[serde(default)]` on the Rust side keeps older results
+   * (without this field) parseable, so the runtime fallback to `[]` is the
+   * source of truth for absent values.
+   */
+  preserved_reference_midis?: string[];
 };
 
 async function getInvoke() {

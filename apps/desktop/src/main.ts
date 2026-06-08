@@ -2933,6 +2933,17 @@ async function runIngestImport() {
         });
       }
       appendIngestStatusLine(`import complete (exit ${res.exit_code})`);
+      // Surface any user-supplied reference MIDI we preserved (Suno
+      // gameplay export is the canonical case). The Refine workspace will
+      // render these as a guide layer alongside the sidecar's
+      // per-instrument transcription candidates.
+      const preservedMidis = res.preserved_reference_midis ?? [];
+      if (preservedMidis.length > 0) {
+        appendIngestStatusLine(
+          `preserved ${preservedMidis.length} reference MIDI file(s) for Refine: ` +
+            preservedMidis.join(", ")
+        );
+      }
       void refresh();
     } else {
       const stderr = res.stderr.trim() || "(no stderr)";

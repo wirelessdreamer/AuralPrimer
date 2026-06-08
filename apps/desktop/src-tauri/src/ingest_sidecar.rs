@@ -122,6 +122,14 @@ pub struct IngestImportResult {
     pub command: Vec<String>,
     pub stdout: String,
     pub stderr: String,
+    /// SongPack-relative paths of any source MIDI files copied into
+    /// `features/midi/` after the sidecar finished. Populated by
+    /// `ingest_import` (Tauri command in lib.rs) when the source is a
+    /// folder that contains user-supplied gameplay MIDI -- chiefly Suno
+    /// exports -- so the Refine workspace can render them as a guide
+    /// layer. Empty for single-file imports and folders without MIDI.
+    #[serde(default)]
+    pub preserved_reference_midis: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -380,6 +388,9 @@ fn run_explicit_binary_with_progress(
         },
         stdout: stdout_lines.join("\n"),
         stderr: stderr_lines.join("\n"),
+        // Populated downstream by the Tauri command after the sidecar
+        // succeeds and the source folder has been scanned for MIDI.
+        preserved_reference_midis: Vec::new(),
     })
 }
 
@@ -497,6 +508,9 @@ fn run_tauri_sidecar_with_progress(
         },
         stdout: stdout_lines.join("\n"),
         stderr: stderr_lines.join("\n"),
+        // Populated downstream by the Tauri command after the sidecar
+        // succeeds and the source folder has been scanned for MIDI.
+        preserved_reference_midis: Vec::new(),
     })
 }
 

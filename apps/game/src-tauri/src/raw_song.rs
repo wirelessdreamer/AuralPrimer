@@ -1140,6 +1140,113 @@ mod tests {
 
         fs::remove_dir_all(&root).ok();
     }
+
+    #[test]
+    fn preserve_source_midis_copies_files_and_updates_manifest_reference_paths() {
+        // Mirrors apps/desktop/src-tauri tests. Both crates expose the same
+        // helper because both Tauri shells expose the `ingest_import`
+        // command -- Studio uses it for the new ingest flow, Game uses it
+        // for the in-app import action. Keeping the behavior identical here
+        // catches drift between the two raw_song.rs copies.
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("auralprimer_game_preserve_midis_{unique}"));
+        let source_dir = root.join("source");
+        let songpack_root = root.join("songpack");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        fs::create_dir_all(songpack_root.join("audio")).expect("create songpack audio dir");
+        fs::create_dir_all(songpack_root.join("features")).expect("create songpack features dir");
+
+        let wav = WavPcm16 {
+            sample_rate: 48_000,
+            channels: 2,
+            data: vec![0; 48_000 * 2 * 2],
+        };
+        write_wav_pcm16(&source_dir.join("Suno Track (Drums).wav"), &wav).expect("write drums wav");
+        fs::write(
+            source_dir.join("Suno Track (Drums).mid"),
+            build_tempo_change_test_midi(),
+        )
+        .expect("write drums midi");
+        write_wav_pcm16(&source_dir.join("Suno Track (Bass).wav"), &wav).expect("write bass wav");
+        fs::write(
+            source_dir.join("Suno Track (Bass).mid"),
+            build_tempo_change_test_midi(),
+        )
+        .expect("write bass midi");
+
+        let seed_manifest = serde_json::json!({
+            "title": "Suno Track",
+            "assets": {
+                "audio": { "mix_path": "audio/mix.wav" },
+                "midi": { "notes_path": "features/notes.mid" }
+            }
+        });
+        fs::write(
+            songpack_root.join("manifest.json"),
+            serde_json::to_string_pretty(&seed_manifest).unwrap(),
+        )
+        .expect("seed manifest.json");
+
+        let added = preserve_source_midis_into_songpack(&source_dir, &songpack_root)
+            .expect("preserve source midis");
+        assert_eq!(added.len(), 2, "expected both source MIDIs preserved");
+        assert!(
+            added.iter().all(|p| p.starts_with("features/midi/")),
+            "preserved paths should be SongPack-relative under features/midi: {:?}",
+            added
+        );
+
+        for rel in &added {
+            assert!(
+                songpack_root.join(rel).is_file(),
+                "expected preserved midi at {rel}"
+            );
+        }
+
+        let manifest_raw =
+            fs::read_to_string(songpack_root.join("manifest.json")).expect("read manifest");
+        let manifest: serde_json::Value =
+            serde_json::from_str(&manifest_raw).expect("parse manifest");
+        let refs = manifest
+            .pointer("/assets/midi/reference_paths")
+            .and_then(|v| v.as_array())
+            .expect("assets.midi.reference_paths present + array");
+        let refs_set: BTreeSet<String> = refs
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+        assert_eq!(refs_set.len(), 2);
+        for rel in &added {
+            assert!(refs_set.contains(rel), "manifest refs should include {rel}");
+        }
+        assert_eq!(
+            manifest
+                .pointer("/assets/midi/notes_path")
+                .and_then(|v| v.as_str()),
+            Some("features/notes.mid"),
+            "notes_path the sidecar wrote should survive the merge"
+        );
+
+        let _ = preserve_source_midis_into_songpack(&source_dir, &songpack_root)
+            .expect("preserve again");
+        let manifest_after: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(songpack_root.join("manifest.json")).unwrap())
+                .unwrap();
+        let refs_after = manifest_after
+            .pointer("/assets/midi/reference_paths")
+            .and_then(|v| v.as_array())
+            .expect("refs still present");
+        assert_eq!(
+            refs_after.len(),
+            2,
+            "manifest reference_paths should not duplicate on re-run"
+        );
+
+        fs::remove_dir_all(&root).ok();
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -3687,6 +3794,129 @@ pub fn inspect_raw_song_folder(folder_path: &Path) -> Result<RawSongFolderInspec
         source_midi_offset_pair_count: scan.source_midi_offset_pair_count,
         warnings: scan.warnings,
     })
+}
+
+/// Copy any MIDI files found inside `source_folder` into
+/// `<songpack_root>/features/midi/{copy_id}.mid` and append their relative
+/// paths to `assets.midi.reference_paths` inside the SongPack's manifest.
+///
+/// Used by the Studio ingest-sidecar flow (the "new" import path) to preserve
+/// user-supplied reference MIDI -- Suno's gameplay MIDI export being the
+/// canonical case -- so the Refine workspace can later render it as a guide
+/// layer alongside the sidecar's per-instrument transcription candidates. The
+/// sidecar itself produces no reference MIDI; the source folder is the only
+/// place to recover it.
+///
+/// Behavior:
+///  - Returns an empty Vec when `source_folder` is not a directory or has no
+///    MIDI files. Not an error -- single-file imports and folders without
+///    reference MIDI are valid.
+///  - Names collide gracefully: duplicate base names get `_2`, `_3`, ... .
+///  - Idempotent: paths already present in the manifest's reference_paths
+///    are not duplicated on a re-run.
+///  - Best-effort manifest update: if the manifest is missing or malformed,
+///    the helper still copies the MIDIs and returns the relative paths; only
+///    a write error on the manifest is propagated.
+///
+/// Returns the SongPack-relative paths that were copied this call.
+pub fn preserve_source_midis_into_songpack(
+    source_folder: &Path,
+    songpack_root: &Path,
+) -> Result<Vec<String>, String> {
+    if !source_folder.is_dir() {
+        return Ok(vec![]);
+    }
+    let scan = scan_raw_song_folder(source_folder)?;
+    if scan.midi_files.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let midi_dir = songpack_root.join("features").join("midi");
+    fs::create_dir_all(&midi_dir).map_err(|e| format!("mkdir features/midi: {e}"))?;
+
+    // Same de-dup naming the raw-song importer uses so the two flows produce
+    // identical SongPack layouts for the same Suno export folder.
+    let mut copied_names: BTreeMap<String, usize> = BTreeMap::new();
+    let mut copied_rel_paths: Vec<String> = vec![];
+
+    for m in &scan.midi_files {
+        let bytes = fs::read(m).map_err(|e| format!("read midi {}: {e}", m.display()))?;
+        let base_name = m.file_stem().and_then(|s| s.to_str()).unwrap_or("midi");
+        let base_id = sanitize_id(base_name);
+        let base_id = if base_id.is_empty() {
+            "midi".to_string()
+        } else {
+            base_id
+        };
+        let next_idx = copied_names.entry(base_id.clone()).or_insert(0);
+        *next_idx += 1;
+        let copy_id = if *next_idx == 1 {
+            base_id
+        } else {
+            format!("{}_{}", base_id, *next_idx)
+        };
+        let rel = format!("features/midi/{copy_id}.mid");
+        let dst = songpack_root.join(&rel);
+        fs::write(&dst, &bytes).map_err(|e| format!("write midi copy {}: {e}", dst.display()))?;
+        copied_rel_paths.push(rel);
+    }
+
+    update_manifest_reference_midi_paths(songpack_root, &copied_rel_paths)?;
+    Ok(copied_rel_paths)
+}
+
+/// Merge `new_paths` into `assets.midi.reference_paths` inside
+/// `<songpack_root>/manifest.json`. Creates missing parent objects on the
+/// path. Skips paths already present. No-op if the manifest doesn't exist
+/// or isn't an object root.
+fn update_manifest_reference_midi_paths(
+    songpack_root: &Path,
+    new_paths: &[String],
+) -> Result<(), String> {
+    let manifest_path = songpack_root.join("manifest.json");
+    if !manifest_path.is_file() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("read manifest.json: {e}"))?;
+    let mut manifest: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return Ok(()),
+    };
+    let Some(root_obj) = manifest.as_object_mut() else {
+        return Ok(());
+    };
+    let assets = root_obj
+        .entry("assets")
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(assets_obj) = assets.as_object_mut() else {
+        return Ok(());
+    };
+    let midi = assets_obj
+        .entry("midi")
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(midi_obj) = midi.as_object_mut() else {
+        return Ok(());
+    };
+    let refs_value = midi_obj
+        .entry("reference_paths")
+        .or_insert_with(|| serde_json::json!([]));
+    let Some(refs_arr) = refs_value.as_array_mut() else {
+        return Ok(());
+    };
+    let existing: BTreeSet<String> = refs_arr
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+    for p in new_paths {
+        if !existing.contains(p) {
+            refs_arr.push(serde_json::json!(p));
+        }
+    }
+    let json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("manifest json: {e}"))?;
+    fs::write(&manifest_path, json).map_err(|e| format!("write manifest.json: {e}"))?;
+    Ok(())
 }
 
 fn pad_wavs_to_max_len(wavs: &mut [WavPcm16]) {
