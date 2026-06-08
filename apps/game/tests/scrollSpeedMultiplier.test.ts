@@ -63,11 +63,17 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     expect(src).toMatch(/const\s+lookBehindSec\s*=\s*this\.pianoLookBehindSec\s*\/\s*scrollMul/);
   });
 
-  it("game passes transport.scrollSpeedMultiplier into tabRenderer.render", () => {
-    const src = read("apps/game/src/main.ts");
-    expect(src).toMatch(
-      /tabRenderer\.render\([\s\S]*?scrollSpeedMultiplier:\s*transport\.scrollSpeedMultiplier/
+  it("game passes transport.scrollSpeedMultiplier into the tab frame", () => {
+    // Phase 2.O moved tabRenderer ownership into playSurfaceController; the
+    // tick loop calls playSurfaceController.renderTabFrame(t, frame) with
+    // scrollSpeedMultiplier in the frame.
+    const main = read("apps/game/src/main.ts");
+    expect(main).toMatch(
+      /playSurfaceController\.renderTabFrame\([\s\S]*?scrollSpeedMultiplier:\s*transport\.scrollSpeedMultiplier/
     );
+    // Inside the controller, that frame is forwarded straight to tabRenderer.render.
+    const controller = read("apps/game/src/playSurfaceController.ts");
+    expect(controller).toMatch(/tabRenderer\.render\(t,\s*frame\)/);
   });
 
   it("transportController initializes scrollSpeedMultiplier to 1.0 and exposes a setter", () => {

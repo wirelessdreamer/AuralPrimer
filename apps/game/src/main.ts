@@ -6,7 +6,7 @@ import type { TransportTimebase } from "./audioBackend";
 import { HtmlAudioTimebase } from "./htmlAudioTimebase";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { Metronome } from "./metronome";
-import { extractKeyModeFromManifest } from "./hud";
+// extractKeyModeFromManifest now consumed inside songDetailsView.ts.
 // Modelpack list/install wiring lives in modelsPanel.ts (Phase 2.K).
 import { initModelsPanel, type ModelsPanelHandle } from "./modelsPanel";
 // BUILTIN_PLUGINS + scanBundledPlugins + scanUserPlugins now live inside pluginsPanel.ts.
@@ -15,7 +15,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { selectDrumChartFromMidiBytes, selectMelodicTracksFromMidiBytes, parseMidiTracksFromBytes, applyRefinementsToMelodicTracks, type DrumChartSelection, type MelodicTrackSelection, type InstrumentRole } from "./chartLoader";
 import { loadRefinementsForRoles } from "./refinementLoader";
-import { TabRenderer } from "./tabRenderer";
+// TabRenderer + the melodic-surface logic live in playSurfaceController.ts (Phase 2.O).
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
@@ -35,6 +35,8 @@ import { initPauseMenu, type PauseMenuHandle } from "./pauseMenu";
 // no longer calls them directly.
 import { initCapsPanel, type CapsPanelHandle, type SongCapabilities, type SongPackChartsByPath } from "./capsPanel";
 import { initPluginsPanel, type PluginsPanelHandle } from "./pluginsPanel";
+import { initSongDetailsView, type SongDetailsViewHandle } from "./songDetailsView";
+import { initPlaySurfaceController, type PlaySurfaceControllerHandle } from "./playSurfaceController";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -583,7 +585,7 @@ document.getElementById("homeExit")?.addEventListener("click", () => {
   });
 });
 
-const hudKeyModeEl = document.getElementById("hudKeyMode") as HTMLDivElement;
+// #hudKeyMode lives in songDetailsView.ts (Phase 2.N).
 
 const vizCanvas = document.getElementById("viz") as HTMLCanvasElement;
 const playerStagesEl = document.getElementById("playerStages") as HTMLDivElement;
@@ -655,9 +657,8 @@ const metronomeVolumeInput = document.getElementById("metronomeVolume") as HTMLI
 // creator) intentionally do not exist in this app. They live in AuralStudio
 // (apps/desktop). See `spec.md §1.1`.
 
-// status/list/details DOM lives in songLibraryPanel.ts
-const selectedSongLabelEl = document.getElementById("selectedSongLabel") as HTMLDivElement;
-const selectedSongPathEl = document.getElementById("selectedSongPath") as HTMLDivElement;
+// status/list/details DOM lives in songLibraryPanel.ts; selected-song
+// label + path DOM lives in songDetailsView.ts (Phase 2.N).
 // refresh button lives in songLibraryPanel.ts
 const playStartBtn = document.getElementById("playStart") as HTMLButtonElement;
 // Pause-menu DOM + state + behavior live in pauseMenu.ts (Phase 2.J).
@@ -710,54 +711,8 @@ function clearPlaybackLyrics(): void {
   lyricsPanel.clear();
 }
 
-function yesNo(v: boolean): string {
-  return v ? "yes" : "no";
-}
-
+// yesNo + setHudKeyMode + renderDetails live in songDetailsView.ts (Phase 2.N).
 // formatModelPackLicense + formatInstalledModelPacks live in modelsPanel.ts.
-
-function setHudKeyMode(manifestRaw: unknown) {
-  const km = extractKeyModeFromManifest(manifestRaw);
-  hudKeyModeEl.textContent = `${km.key} ${km.mode}`;
-}
-
-function renderDetails(details: SongPackDetails) {
-  const title = details.manifest_summary?.title ?? "(missing title)";
-  const artist = details.manifest_summary?.artist ?? "";
-
-  const raw = details.manifest_raw ? JSON.stringify(details.manifest_raw, null, 2) : "(no manifest)";
-
-  songLibraryPanel.setDetailsHTML(`
-    <h3>Details</h3>
-    <div class="meta">${escapeHtml(details.kind)} Â· ${escapeHtml(details.container_path)}</div>
-
-    <h4>${escapeHtml(title)} ${escapeHtml(artist)}</h4>
-
-    ${details.error ? `<pre class="error">${escapeHtml(details.error)}</pre>` : ""}
-
-    <h4>Features</h4>
-    <ul>
-      <li>beats: ${escapeHtml(yesNo(details.has_beats))}</li>
-      <li>tempo_map: ${escapeHtml(yesNo(details.has_tempo_map))}</li>
-      <li>sections: ${escapeHtml(yesNo(details.has_sections))}</li>
-      <li>events: ${escapeHtml(yesNo(details.has_events))}</li>
-      <li>lyrics: ${escapeHtml(yesNo(Boolean(details.has_lyrics)))}</li>
-    </ul>
-
-    <h4>Audio</h4>
-    <ul>
-      <li>mix.mp3: ${escapeHtml(yesNo(details.has_mix_mp3))}</li>
-      <li>mix.ogg: ${escapeHtml(yesNo(details.has_mix_ogg))}</li>
-      <li>mix.wav: ${escapeHtml(yesNo(Boolean(details.has_mix_wav)))}</li>
-    </ul>
-
-    <h4>Charts</h4>
-    ${details.charts.length ? `<ul>${details.charts.map((c) => `<li>${escapeHtml(c)}</li>`).join("\n")}</ul>` : "(none)"}
-
-    <h4>manifest.json</h4>
-    <pre>${escapeHtml(raw)}</pre>
-  `);
-}
 
 // -----------------
 // Plugin loader
@@ -793,31 +748,23 @@ let selectedSongPackPath: string | null = null;
 let selectedSongPackDetails: SongPackDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
 let selectedMelodicTracks: MelodicTrackSelection[] = [];
-let tabRenderer: TabRenderer | null = null;
-let activeTabInstrument: InstrumentRole | null = null;
+// tabRenderer + activeTabInstrument now live inside playSurfaceController.
 let selectedSongPackCharts: SongPackChartsByPath | null = null;
 let selectedSongPreloadPromise: Promise<void> | null = null;
 let selectedSongPreloadPath: string | null = null;
 
-function setSelectedSongSetupLabel(details: SongPackDetails | null, containerPath: string | null) {
-  const title = details?.manifest_summary?.title?.trim() || "(no song selected)";
-  const artist = details?.manifest_summary?.artist?.trim() || "";
-  selectedSongLabelEl.textContent = artist ? `${title}  ·  ${artist}` : title;
-  selectedSongPathEl.textContent = containerPath ?? "";
-  playStartBtn.disabled = !containerPath;
-  logConsole("gamestate", "selected song updated", {
-    title,
-    artist,
-    containerPath: containerPath ?? "",
-    playEnabled: Boolean(containerPath),
-  });
-}
+// setSelectedSongSetupLabel lives in songDetailsView.ts (Phase 2.N).
 
 function setSelectedSongCard(containerPath: string | null): void {
   songLibraryPanel.setSelectedSongCard(containerPath);
 }
 
-setSelectedSongSetupLabel(null, null);
+const songDetailsView: SongDetailsViewHandle = initSongDetailsView({
+  songLibraryPanel,
+  consoleBridge,
+  escapeHtml,
+});
+songDetailsView.setSelectedSongSetupLabel(null, null);
 
 // availablePlugins + pluginSelectionMode now live inside pluginsPanel.ts.
 // Plugin id constants + defaultPluginIdForInstrument live in playersPanel.ts.
@@ -1112,45 +1059,15 @@ function buildVizSongContext(): {
 // state (selectedMelodicTracks, pluginSelect, viz lifecycle) stay here
 // and reach the players list through the panel handle.
 
-function findMelodicTrack(role: InstrumentRole | null): MelodicTrackSelection | null {
-  if (!role) return null;
-  return selectedMelodicTracks.find((track) => track.role === role) ?? null;
-}
-
-function shouldPromoteMelodicSurface(): boolean {
-  return playersPanel.getPrimaryInstrument() === "keys" && Boolean(findMelodicTrack("keys"));
-}
-
-function shouldUseWideSoloKeysLayout(): boolean {
-  return currentRoute === "play"
-    && !playLayoutEl.classList.contains("isLibraryOnly")
-    && playersPanel.getPlayers().length === 1
-    && shouldPromoteMelodicSurface();
-}
-
+// findMelodicTrack / shouldPromoteMelodicSurface / shouldUseWideSoloKeysLayout
+// / syncPlaySurfaceMode / syncMelodicTrackSelectionFromPlayers all live in
+// playSurfaceController.ts (Phase 2.O). Wrappers below preserve the existing
+// call shape so the rest of main.ts didn't need to change name-by-name.
 function syncPlaySurfaceMode(): void {
-  const pianoPrimary = shouldPromoteMelodicSurface();
-  const wideSoloKeys = shouldUseWideSoloKeysLayout();
-  playSurfaceEl.classList.toggle("isPianoPrimary", pianoPrimary);
-  playLayoutEl.classList.toggle("isWideSoloKeys", wideSoloKeys);
-  appMainEl.classList.toggle("isWideSoloKeys", wideSoloKeys);
+  playSurfaceController.syncSurfaceMode();
 }
-
 function syncMelodicTrackSelectionFromPlayers(): void {
-  if (selectedMelodicTracks.length === 0) {
-    syncPlaySurfaceMode();
-    return;
-  }
-
-  const preferredTrack = findMelodicTrack(playersPanel.getPreferredMelodicRole());
-  const activeTrack = findMelodicTrack(activeTabInstrument);
-  const nextTrack = preferredTrack ?? activeTrack ?? selectedMelodicTracks[0] ?? null;
-  if (!nextTrack) {
-    syncPlaySurfaceMode();
-    return;
-  }
-
-  selectInstrumentTrack(nextTrack.role);
+  playSurfaceController.syncMelodicTrackSelectionFromPlayers();
 }
 
 // selectedPluginId / setPluginSelectionById / syncPreferredPluginSelection
@@ -1199,6 +1116,18 @@ const capsPanel: CapsPanelHandle = initCapsPanel({
   playersPanel,
   getSelectedMelodicTracks: () => selectedMelodicTracks,
   escapeHtml,
+});
+
+// Play-surface controller — owns the melodic tab/piano-roll surface, the
+// TabRenderer instance, and the pianoPrimary/wideSoloKeys layout toggles.
+const playSurfaceController: PlaySurfaceControllerHandle = initPlaySurfaceController({
+  playSurfaceEl,
+  playLayoutEl,
+  appMainEl,
+  playersPanel,
+  consoleBridge,
+  getSelectedMelodicTracks: () => selectedMelodicTracks,
+  getCurrentRoute: () => currentRoute,
 });
 
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
@@ -1382,69 +1311,11 @@ function stopVisualizer(opts?: { keepStatus?: boolean; preserveTransport?: boole
   vizStopBtn.disabled = true;
 }
 
-const INSTRUMENT_ROLE_LABELS: Record<string, string> = {
-  bass: "Bass",
-  rhythm_guitar: "Rhythm Guitar",
-  lead_guitar: "Lead Guitar",
-  keys: "Keys / Synth",
-  melodic: "Melodic",
-};
+// INSTRUMENT_ROLE_LABELS lives inside playSurfaceController.ts.
 
+// updateInstrumentSelector + selectInstrumentTrack live in playSurfaceController.ts.
 function updateInstrumentSelector(): void {
-  // Clean up old tab renderer.
-  if (tabRenderer) {
-    tabRenderer.dispose();
-    tabRenderer = null;
-  }
-  activeTabInstrument = null;
-
-  // Clear old buttons (keep the label span).
-  const buttons = instrumentSelectorEl.querySelectorAll("button");
-  buttons.forEach((b) => b.remove());
-
-  if (selectedMelodicTracks.length === 0) {
-    instrumentSelectorEl.style.display = "none";
-    tabContainerEl.style.display = "none";
-    syncPlaySurfaceMode();
-    return;
-  }
-
-  instrumentSelectorEl.style.display = "flex";
-  tabContainerEl.style.display = "block";
-
-  for (const track of selectedMelodicTracks) {
-    const btn = document.createElement("button");
-    btn.className = "instrumentBtn";
-    btn.textContent = INSTRUMENT_ROLE_LABELS[track.role] ?? track.trackName;
-    btn.dataset.role = track.role;
-    btn.addEventListener("click", () => {
-      selectInstrumentTrack(track.role);
-    });
-    instrumentSelectorEl.appendChild(btn);
-  }
-
-  syncMelodicTrackSelectionFromPlayers();
-}
-
-function selectInstrumentTrack(role: InstrumentRole): void {
-  const track = selectedMelodicTracks.find((t) => t.role === role);
-  if (!track) return;
-
-  // Update button states.
-  for (const btn of Array.from(instrumentSelectorEl.querySelectorAll<HTMLButtonElement>("button.instrumentBtn"))) {
-    btn.classList.toggle("isActive", btn.dataset.role === role);
-  }
-
-  // Create or update tab renderer.
-  if (!tabRenderer) {
-    tabContainerEl.innerHTML = "";
-    tabRenderer = new TabRenderer(tabContainerEl);
-  }
-  tabRenderer.setTrack(track);
-  activeTabInstrument = role;
-  syncPlaySurfaceMode();
-
-  logConsole("play", `selected instrument: ${role} (${track.notes.length} notes)`);
+  playSurfaceController.updateInstrumentSelector();
 }
 
 async function selectSongPack(containerPath: string) {
@@ -1457,9 +1328,9 @@ async function selectSongPack(containerPath: string) {
     const details = await invoke<SongPackDetails>("get_songpack_details", {
       containerPath,
     });
-    renderDetails(details);
+    songDetailsView.renderDetails(details);
     selectedSongPackDetails = details;
-    setHudKeyMode(details.manifest_raw);
+    songDetailsView.setHudKeyMode(details.manifest_raw);
     if (details.charts.length > 0) {
       try {
         selectedSongPackCharts = await safeInvoke<SongPackChartsByPath>("read_songpack_charts", { containerPath });
@@ -1493,7 +1364,7 @@ async function selectSongPack(containerPath: string) {
       lastLoadedSongPackPath = null;
     }
     audioLoadBtn.disabled = false;
-    setSelectedSongSetupLabel(details, containerPath);
+    songDetailsView.setSelectedSongSetupLabel(details, containerPath);
     toggleFocusBtn.disabled = false;
     playersPanel.resetForSongSetup();
     showBandSetupStep();
@@ -1726,12 +1597,12 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     }
 
     // Render the melodic instrument tab/piano-roll below the main visualizer.
-    if (tabRenderer && transport.t !== undefined) {
-      tabRenderer.render(transport.t, {
+    if (transport.t !== undefined) {
+      playSurfaceController.renderTabFrame(transport.t, {
         bpm: transport.bpm,
         timeSignature: transport.timeSignature,
         liveInputNotes: midiPanel.inputActiveNotes().activeNotes,
-        scrollSpeedMultiplier: transport.scrollSpeedMultiplier
+        scrollSpeedMultiplier: transport.scrollSpeedMultiplier,
       });
     }
 
