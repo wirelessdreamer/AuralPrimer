@@ -339,7 +339,17 @@ if (-not $SkipGameBuild) {
     # `--no-bundle` skips MSI/NSIS installer generation (which can fail on
     # WiX/light.exe environments). The portable build only needs the raw
     # executable from target/release/, so installer bundles are not needed.
-    & npm run game:build -- --no-bundle
+    #
+    # NOTE: we invoke the workspace directly with `npm -w … run … --` instead
+    # of `npm run game:build -- --no-bundle`. The latter expands `game:build`
+    # to `npm -w @auralprimer/game run tauri:build`, then appends ` --no-bundle`
+    # (the `--` separator is dropped). The inner workspace npm parses
+    # `--no-bundle` as an npm option, not a script arg, and discards it --
+    # so MSI bundling runs anyway and fails on WiX/light.exe. With the `--`
+    # preserved here, npm forwards `--no-bundle` to the tauri:build script,
+    # which appends it to `node ./scripts/run-tauri.mjs build`, which passes
+    # it to tauri.cmd.
+    & npm -w '@auralprimer/game' run tauri:build -- --no-bundle
     if ($LASTEXITCODE -ne 0) {
       throw "game:build failed with exit code $LASTEXITCODE"
     }
@@ -351,7 +361,8 @@ if (-not $SkipGameBuild) {
 if (-not $SkipStudioBuild) {
   Push-Location $repoRootAbs
   try {
-    & npm run studio:build -- --no-bundle
+    # Same `--` workaround as game:build above.
+    & npm -w '@auralprimer/studio' run tauri:build -- --no-bundle
     if ($LASTEXITCODE -ne 0) {
       throw "studio:build failed with exit code $LASTEXITCODE"
     }
