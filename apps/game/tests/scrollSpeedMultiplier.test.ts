@@ -83,9 +83,9 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
   });
 
   it("game UI template contains the slider/value/reset elements with the SDK clamp range", () => {
-    // The DOM template is still authored in main.ts even though the
-    // wiring lives in scrollSpeedController.ts.
-    const src = read("apps/game/src/main.ts");
+    // Phase 2.R moved the app-shell HTML template out of main.ts into
+    // appShellHtml.ts. The wiring lives in scrollSpeedController.ts.
+    const src = read("apps/game/src/appShellHtml.ts");
     expect(src).toMatch(/id="scrollSpeedSlider"/);
     expect(src).toMatch(/id="scrollSpeedValue"/);
     expect(src).toMatch(/id="scrollSpeedReset"/);

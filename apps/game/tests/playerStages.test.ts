@@ -28,12 +28,15 @@ describe("per-player visualizer stages (Player 2..N)", () => {
   const mainSrc = read("apps/game/src/main.ts");
   const panelSrc = read("apps/game/src/playersPanel.ts");
   const styleSrc = read("apps/game/src/style.css");
+  // Phase 2.R moved the app-shell HTML template out of main.ts into a
+  // dedicated module. The template assertions read from there now.
+  const shellSrc = read("apps/game/src/appShellHtml.ts");
 
   it("template wraps #viz in a #playerStages grid container", () => {
     // The static canvas stays for Player 1; the wrapper is what new
     // sibling canvases get appended into for Player 2..N.
-    expect(mainSrc).toMatch(/id="playerStages"\s+class="playerStages"/);
-    expect(mainSrc).toMatch(/id="viz"[^>]*data-stage-index="0"/);
+    expect(shellSrc).toMatch(/id="playerStages"\s+class="playerStages"/);
+    expect(shellSrc).toMatch(/id="viz"[^>]*data-stage-index="0"/);
   });
 
   it("main.ts captures a playerStagesEl handle and parents playSurface around it", () => {
