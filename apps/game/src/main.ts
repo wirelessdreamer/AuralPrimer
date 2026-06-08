@@ -45,6 +45,7 @@ import { initAudioTransportPanel, type AudioTransportPanelHandle } from "./audio
 import { appShellHtml } from "./appShellHtml";
 import { buildVizSongContext } from "./vizSongContext";
 import { readSongChartSelection } from "./songChartLoader";
+import { initSecondaryStagesController, type SecondaryStagesControllerHandle } from "./secondaryStagesController";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -298,15 +299,7 @@ let viz: Visualizer | null = null;
 // stage's viz lifecycle lives in the existing `viz` field above; secondary
 // stages live in this array. See per-player stage logic in
 // `startVisualizer` / `stopVisualizer` / `resizeVizCanvas` / tick loop.
-type SecondaryStage = {
-  playerId: string;
-  canvas: HTMLCanvasElement;
-  ctx2d: CanvasRenderingContext2D;
-  viz: Visualizer | null;
-  dispose: (() => void) | null;
-  pluginId: string;
-};
-let secondaryStages: SecondaryStage[] = [];
+// SecondaryStage type + secondaryStages array live in secondaryStagesController.ts (Phase 2.U).
 let vizRaf: number | null = null;
 let lastFrameMs: number | null = null;
 let selectedSongPackPath: string | null = null;
@@ -610,6 +603,17 @@ const playSurfaceController: PlaySurfaceControllerHandle = initPlaySurfaceContro
   getCurrentRoute: () => routeController.getCurrentRoute(),
 });
 
+// Secondary-stages controller — owns the per-player Visualizer instances
+// for Players 2..N. Init AFTER playersPanel + pluginsPanel + playSurfaceController
+// because its deps reach those handles.
+const secondaryStagesController: SecondaryStagesControllerHandle = initSecondaryStagesController({
+  playerStagesEl,
+  playersPanel,
+  pluginsPanel,
+  consoleBridge,
+  getSongContext: () => buildVizSongContextLocal(),
+});
+
 // Route + step controller. Forward-references: lambdas in the deps invoke
 // `routeController` (for the `getCurrentRoute` thunk in playSurfaceController
 // above) and a handful of host functions declared further down (stopVisualizer,
@@ -666,111 +670,17 @@ function resizeVizCanvas() {
 
   viz?.onResize(cssWidth, cssHeight, dpr);
 
-  // Secondary stages share the grid layout so they get the same CSS-driven
-  // size as Player 1's canvas. Mirror the DPR scaling + onResize call.
-  for (const stage of secondaryStages) {
-    const sw = stage.canvas.clientWidth || cssWidth;
-    const sh = stage.canvas.clientHeight || cssHeight;
-    stage.canvas.width = Math.floor(sw * dpr);
-    stage.canvas.height = Math.floor(sh * dpr);
-    stage.ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
-    stage.viz?.onResize(sw, sh, dpr);
-  }
+  // Secondary stages mirror Player 1's DPR-aware resize.
+  secondaryStagesController.resizeAll(cssWidth, cssHeight, dpr);
 }
 
-// Tear down every secondary stage's visualizer + remove its canvas from
-// the DOM. Player 1's static `#viz` canvas is never removed.
+// disposeSecondaryStages + buildSecondaryStages live in secondaryStagesController.ts (Phase 2.U).
+// Thin wrappers preserve the call shape for the rest of main.ts.
 function disposeSecondaryStages(): void {
-  for (const stage of secondaryStages) {
-    try {
-      stage.viz?.dispose();
-    } catch {
-      /* swallow */
-    }
-    if (stage.dispose) {
-      try {
-        stage.dispose();
-      } catch {
-        /* swallow */
-      }
-    }
-    stage.canvas.remove();
-  }
-  secondaryStages = [];
-  playerStagesEl.setAttribute("data-player-count", "1");
+  secondaryStagesController.dispose();
 }
-
-// Build a Visualizer for each player past Player 1. Each gets its own
-// canvas appended to `#playerStages`, its own plugin instance, and an
-// init context where `players` is just that one player (so the plugin
-// renders a single-player lane). The transport state is shared every
-// frame from the host tick loop.
 async function buildSecondaryStages(): Promise<void> {
-  disposeSecondaryStages();
-  const extras = playersPanel.getPlayers().slice(1);
-  if (extras.length === 0) return;
-
-  for (const player of extras) {
-    const canvas = document.createElement("canvas");
-    canvas.className = "playerStage__canvas";
-    canvas.dataset.playerId = player.id;
-    canvas.width = 800;
-    canvas.height = 240;
-    playerStagesEl.appendChild(canvas);
-
-    const ctx2d = canvas.getContext("2d");
-    if (!ctx2d) {
-      canvas.remove();
-      logConsole("debugging", `secondary stage ${player.id}: missing 2d context, skipping`);
-      continue;
-    }
-
-    const pluginId = defaultPluginIdForInstrument(player.instrument);
-    const plugins = pluginsPanel.getAvailable();
-    const descriptor = plugins.find((p) => p.id === pluginId)
-      ?? plugins.find((p) => p.id === DEFAULT_PLUGIN_ID)
-      ?? plugins[0];
-    if (!descriptor) {
-      canvas.remove();
-      continue;
-    }
-
-    let loaded;
-    try {
-      loaded = await loadPlugin(descriptor);
-    } catch (e) {
-      logConsole("debugging", `secondary stage ${player.id}: plugin load failed: ${String(e)}`);
-      canvas.remove();
-      continue;
-    }
-
-    const pviz = loaded.module.createVisualizer();
-    try {
-      await pviz.init({
-        canvas,
-        ctx2d,
-        song: buildVizSongContextLocal(),
-        players: [{ id: player.id, name: player.name, instrument: player.instrument }],
-      });
-    } catch (e) {
-      logConsole("debugging", `secondary stage ${player.id}: init failed: ${String(e)}`);
-      try { pviz.dispose(); } catch { /* swallow */ }
-      loaded.dispose?.();
-      canvas.remove();
-      continue;
-    }
-
-    secondaryStages.push({
-      playerId: player.id,
-      canvas,
-      ctx2d,
-      viz: pviz,
-      dispose: loaded.dispose ?? null,
-      pluginId: descriptor.id,
-    });
-  }
-
-  playerStagesEl.setAttribute("data-player-count", String(1 + secondaryStages.length));
+  await secondaryStagesController.build();
   resizeVizCanvas();
 }
 
@@ -1076,26 +986,9 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     });
 
     // Drive every secondary stage with the same transport state so they
-    // stay tempo-locked to Player 1. Each runs its own Visualizer
-    // instance against its own canvas.
+    // stay tempo-locked to Player 1.
     const dpr = window.devicePixelRatio || 1;
-    for (const stage of secondaryStages) {
-      if (!stage.viz) continue;
-      try {
-        stage.viz.update(dt, transport);
-        stage.viz.render({
-          canvas: stage.canvas,
-          ctx2d: stage.ctx2d,
-          width: stage.canvas.width / dpr,
-          height: stage.canvas.height / dpr,
-          dpr,
-          state: transport,
-        });
-      } catch (e) {
-        // Individual stage failures shouldn't kill the whole RAF loop.
-        logConsole("debugging", `secondary stage ${stage.playerId} render failed: ${String(e)}`);
-      }
-    }
+    secondaryStagesController.renderAll(dt, transport, dpr);
 
     // Render the melodic instrument tab/piano-roll below the main visualizer.
     if (transport.t !== undefined) {

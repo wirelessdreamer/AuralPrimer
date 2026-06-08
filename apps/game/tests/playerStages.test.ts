@@ -28,9 +28,11 @@ describe("per-player visualizer stages (Player 2..N)", () => {
   const mainSrc = read("apps/game/src/main.ts");
   const panelSrc = read("apps/game/src/playersPanel.ts");
   const styleSrc = read("apps/game/src/style.css");
-  // Phase 2.R moved the app-shell HTML template out of main.ts into a
-  // dedicated module. The template assertions read from there now.
+  // Phase 2.R moved the app-shell HTML template out of main.ts.
   const shellSrc = read("apps/game/src/appShellHtml.ts");
+  // Phase 2.U moved the secondary-stage construction + render loop into
+  // its own controller module.
+  const stagesSrc = read("apps/game/src/secondaryStagesController.ts");
 
   it("template wraps #viz in a #playerStages grid container", () => {
     // The static canvas stays for Player 1; the wrapper is what new
@@ -48,9 +50,9 @@ describe("per-player visualizer stages (Player 2..N)", () => {
     expect(mainSrc).toMatch(/playSurfaceEl\.append\(\s*playerStagesEl\s*,/);
   });
 
-  it("main.ts has a SecondaryStage type + secondaryStages array", () => {
-    expect(mainSrc).toMatch(/type\s+SecondaryStage\s*=\s*\{/);
-    expect(mainSrc).toMatch(/let\s+secondaryStages\s*:\s*SecondaryStage\s*\[\s*\]\s*=\s*\[\s*\]/);
+  it("secondaryStagesController owns the SecondaryStage type + array", () => {
+    expect(stagesSrc).toMatch(/type\s+SecondaryStage\s*=\s*\{/);
+    expect(stagesSrc).toMatch(/let\s+secondaryStages\s*:\s*SecondaryStage\s*\[\s*\]\s*=\s*\[\s*\]/);
   });
 
   it("defaultPluginIdForInstrument maps each instrument to a visualizer", () => {
@@ -60,32 +62,35 @@ describe("per-player visualizer stages (Player 2..N)", () => {
     expect(panelSrc).toMatch(/case\s+"vocals"\s*:\s*\n?\s*return\s+LYRICS_PLUGIN_ID/);
   });
 
-  it("buildSecondaryStages exists and iterates players past Player 1", () => {
+  it("buildSecondaryStages exists (controller) + iterates players past Player 1", () => {
+    expect(stagesSrc).toMatch(/async\s+function\s+build\s*\(\s*\)\s*:\s*Promise/);
+    expect(stagesSrc).toMatch(/deps\.playersPanel\.getPlayers\(\)\.slice\(\s*1\s*\)/);
+    // main.ts still exposes a thin wrapper so call sites don't change.
     expect(mainSrc).toMatch(/async\s+function\s+buildSecondaryStages\s*\(/);
-    // After Phase 2.B the players list lives in playersPanel; main.ts reads
-    // it through the panel handle.
-    expect(mainSrc).toMatch(/playersPanel\.getPlayers\(\)\.slice\(\s*1\s*\)/);
+    expect(mainSrc).toMatch(/secondaryStagesController\.build\(\s*\)/);
   });
 
   it("each secondary stage gets its own canvas appended to playerStagesEl", () => {
-    expect(mainSrc).toMatch(/document\.createElement\(\s*["']canvas["']\s*\)/);
-    expect(mainSrc).toMatch(/playerStagesEl\.appendChild\(\s*canvas\s*\)/);
-    expect(mainSrc).toMatch(/canvas\.className\s*=\s*["']playerStage__canvas["']/);
+    expect(stagesSrc).toMatch(/document\.createElement\(\s*["']canvas["']\s*\)/);
+    expect(stagesSrc).toMatch(/deps\.playerStagesEl\.appendChild\(\s*canvas\s*\)/);
+    expect(stagesSrc).toMatch(/canvas\.className\s*=\s*["']playerStage__canvas["']/);
   });
 
   it("primary stage init now passes ONLY Player 1 (not the full players array)", () => {
-    // Each stage renders one player's lane. The primary stage gets
-    // players[0]; secondary stages get [player] in buildSecondaryStages.
+    // Each stage renders one player's lane. Primary stage in main.ts gets
+    // players[0]; secondary stages get [player] in the controller.
     expect(mainSrc).toMatch(/players:\s*playersPanel\.getPlayers\(\)\.slice\(\s*0\s*,\s*1\s*\)\.map/);
-    expect(mainSrc).toMatch(
+    expect(stagesSrc).toMatch(
       /players:\s*\[\{\s*id:\s*player\.id\s*,\s*name:\s*player\.name\s*,\s*instrument:\s*player\.instrument\s*\}\s*\]/
     );
   });
 
   it("tick loop renders every secondary stage with the shared transport", () => {
-    expect(mainSrc).toMatch(/for\s*\(\s*const\s+stage\s+of\s+secondaryStages\s*\)/);
-    // The state arg must be the same `transport` so all stages stay tempo-locked.
-    expect(mainSrc).toMatch(/stage\.viz\.render\(\s*\{[\s\S]*?state:\s*transport/);
+    // Phase 2.U: the per-frame iteration moved into the controller's renderAll.
+    expect(stagesSrc).toMatch(/for\s*\(\s*const\s+stage\s+of\s+secondaryStages\s*\)/);
+    expect(stagesSrc).toMatch(/stage\.viz\.render\(\s*\{[\s\S]*?state:\s*transport/);
+    // Main tick loop must call renderAll with `transport` so tempo-lock survives.
+    expect(mainSrc).toMatch(/secondaryStagesController\.renderAll\(\s*dt\s*,\s*transport\s*,\s*dpr\s*\)/);
   });
 
   it("stopVisualizer disposes secondary stages", () => {
