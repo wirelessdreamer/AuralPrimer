@@ -26,6 +26,8 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { generateLyricsJsonFromPlainText } from "./lyricsGenerator";
 import { selectDrumChartFromMidiBytes, type DrumChartSelection } from "./chartLoader";
+import { refineWorkspaceHtml } from "./refineWorkspaceHtml";
+import { initRefineWorkspace, type RefineWorkspaceHandle } from "./refineWorkspace";
 
 function haveTauri(): boolean {
   // Tauri v2 does **not** necessarily expose `window.__TAURI__` unless
@@ -567,6 +569,8 @@ root.innerHTML = `
         </div>
       </section>
 
+      ${refineWorkspaceHtml()}
+
       <section class="route" data-route="config">
         <div class="twoCol">
           <section class="panel">
@@ -708,7 +712,7 @@ root.innerHTML = `
   }
 }
 
-type Route = "home" | "play" | "make" | "config";
+type Route = "home" | "play" | "make" | "refine" | "config";
 
 type ConsoleLogCategory = "gamestate" | "play" | "debugging" | "ingest";
 type ConsoleLogLevel = "log" | "warn" | "error";
@@ -781,6 +785,7 @@ function setRoute(route: Route) {
     home: "navHome",
     play: "navPlay",
     make: "navMake",
+    refine: "navRefine",  // no top-bar nav button for refine yet -- entered via the Cleanup & Edit details pane
     config: "navConfig"
   };
 
@@ -1243,9 +1248,25 @@ function renderDetails(details: SongPackDetails) {
     <h4>Charts</h4>
     ${details.charts.length ? `<ul>${details.charts.map((c) => `<li>${escapeHtml(c)}</li>`).join("\n")}</ul>` : "(none)"}
 
+    <h4>Refine</h4>
+    <div class="row">
+      <button id="openRefineWorkspace" data-songpack-path="${escapeHtml(details.container_path)}">Open in Refine workspace</button>
+      <span class="meta">Per-region candidate cleanup. Run <code>aural_ingest refine-candidates &lt;songpack&gt; --instrument keys</code> first.</span>
+    </div>
+
     <h4>manifest.json</h4>
     <pre>${escapeHtml(raw)}</pre>
   `;
+  // Wire the Refine button after innerHTML replaces it.
+  const refineBtn = document.getElementById("openRefineWorkspace") as HTMLButtonElement | null;
+  if (refineBtn) {
+    refineBtn.addEventListener("click", () => {
+      const path = refineBtn.getAttribute("data-songpack-path") || "";
+      if (!path) return;
+      setRoute("refine");
+      void refineWorkspace?.openForSongPack(path);
+    });
+  }
 }
 
 // -----------------
@@ -3692,6 +3713,20 @@ ingestOpenCleanupBtn.addEventListener("click", () => {
 resizeVizCanvas();
 renderPreferredModelPacks();
 void Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]);
+
+// Refine workspace -- owns the Cleanup & Edit per-region cleanup flow.
+// Initialized late because its template lives inside `root.innerHTML` above,
+// which the const above the template literal needs to be in scope for.
+// Wired so the back button returns to Cleanup & Edit (the `play` route),
+// and so status updates flow into the same audioStatusEl the rest of
+// Studio uses for one-line status feedback.
+const refineWorkspace: RefineWorkspaceHandle = initRefineWorkspace({
+  setStatus: (msg) => {
+    audioStatusEl.textContent = msg;
+    logConsole("gamestate", `refine: ${msg}`);
+  },
+  onBack: () => setRoute("play"),
+});
 
 async function refresh() {
   statusEl.textContent = "Loading…";

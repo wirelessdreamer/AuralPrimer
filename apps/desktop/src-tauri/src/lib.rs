@@ -1515,6 +1515,53 @@ fn write_songpack_lyrics_json(
     Ok(())
 }
 
+/// Write an arbitrary `features/<…>.json` file into a directory SongPack.
+///
+/// Used by the Studio Refine workspace to persist user picks
+/// (`features/refinement.<instrument>.json`) and -- in future -- any
+/// other small editor-time JSON the workspace produces. Path-traversal
+/// safe: `rel_path` must start with `features/`, must not contain `..`,
+/// must end with `.json`.
+///
+/// Directory SongPacks only -- writing into a `.songpack` zip would
+/// require re-archiving; the workspace already requires a directory
+/// SongPack for the same reason.
+#[tauri::command]
+fn write_songpack_features_json(
+    container_path: String,
+    rel_path: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let p = PathBuf::from(&container_path);
+    if !container_path.ends_with(".songpack") {
+        return Err("path does not end with .songpack".to_string());
+    }
+    if !p.is_dir() {
+        return Err(
+            "writing features is only supported for directory SongPacks (not .songpack zip files)"
+                .to_string(),
+        );
+    }
+    if !rel_path.starts_with("features/") {
+        return Err("rel_path must start with features/".to_string());
+    }
+    if rel_path.contains("..") {
+        return Err("rel_path must not contain '..'".to_string());
+    }
+    if !rel_path.ends_with(".json") {
+        return Err("rel_path must end with .json".to_string());
+    }
+
+    let out_path = p.join(&rel_path);
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+    }
+    let raw =
+        serde_json::to_string_pretty(&value).map_err(|e| format!("serialize features json: {e}"))?;
+    fs::write(&out_path, raw).map_err(|e| format!("write {}: {e}", out_path.display()))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn get_songpack_details(container_path: String) -> Result<SongPackDetails, String> {
     let p = PathBuf::from(&container_path);
@@ -1967,6 +2014,7 @@ pub fn run() {
             read_songpack_mid,
             read_songpack_charts,
             write_songpack_lyrics_json,
+            write_songpack_features_json,
             read_text_file,
             convert_songpack_to_directory,
             // plugins
