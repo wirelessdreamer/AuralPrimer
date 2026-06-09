@@ -159,6 +159,14 @@ export function refineWorkspaceHtml(): string {
         background: #1f2a44; color: #e2e8f0; border-radius: 3px;
         padding: 1px 4px; font-size: 10px; font-family: inherit;
       }
+      .refineRoute .rfAuditionRow { display: flex; gap: 6px; margin-bottom: 8px; }
+      .refineRoute .rfAuditionStatus {
+        font-size: 12px; color: #94a3b8; margin-bottom: 4px;
+        font-variant-numeric: tabular-nums;
+      }
+      .refineRoute .rfAuditionStatus.isPlaying { color: #3EE6A8; }
+      .refineRoute .rfAuditionHint { font-size: 11px; color: #64748b; line-height: 1.5; }
+
       .refineRoute .rfPalette { display: flex; flex-direction: column; gap: 4px; }
       .refineRoute .rfSwatch {
         display: flex; align-items: center; gap: 10px; padding: 8px 10px;
@@ -268,6 +276,16 @@ export function refineWorkspaceHtml(): string {
 
         <!-- RIGHT: CANDIDATES + ACCEPT -->
         <aside class="rfRight">
+          <div class="rfCard">
+            <h4>Audition <span class="rfHint">press <kbd>Space</kbd></span></h4>
+            <div class="rfAuditionRow">
+              <button class="rfBtn isPrimary" id="refineAuditionPlay" style="flex:1;" disabled>▶ Play region</button>
+              <button class="rfBtn" id="refineAuditionStop" style="flex:0 0 auto;" disabled>■</button>
+            </div>
+            <div class="rfAuditionStatus" id="refineAuditionStatus">Stopped</div>
+            <div class="rfAuditionHint">Synthesises the focused candidate's notes — switch candidates while playing to A/B them.</div>
+          </div>
+
           <div class="rfCard">
             <h4>Candidates <span class="rfHint">press <kbd>1</kbd>–<kbd>4</kbd></span></h4>
             <div class="rfPalette" id="refinePalette">

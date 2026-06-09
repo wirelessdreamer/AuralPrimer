@@ -25,6 +25,7 @@ import {
   type RefinementInstrument,
   type RefinementNote,
 } from "./refineCandidatesIo";
+import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
 
 const PITCH_LOW = 21; // A0
 const PITCH_HIGH = 108; // C8
@@ -90,6 +91,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const emptyEl = document.getElementById("refineEmpty") as HTMLElement | null;
   const gridEl = document.getElementById("refineGrid") as HTMLElement | null;
   const emptyCmdEl = document.getElementById("refineEmptyCmd") as HTMLElement | null;
+  const auditionPlayBtn = document.getElementById("refineAuditionPlay") as HTMLButtonElement | null;
+  const auditionStopBtn = document.getElementById("refineAuditionStop") as HTMLButtonElement | null;
+  const auditionStatusEl = document.getElementById("refineAuditionStatus") as HTMLElement | null;
   if (
     !root || !songTitleEl || !instLabelEl || !instSelectEl
     || !reloadBtn || !saveBtn || !backBtn
@@ -98,9 +102,12 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     || !pitchRulerEl || !timelineSurfaceEl || !timelineCanvas
     || !paletteEl || !regionInfoEl
     || !acceptBtn || !skipBtn || !emptyEl || !gridEl || !emptyCmdEl
+    || !auditionPlayBtn || !auditionStopBtn || !auditionStatusEl
   ) {
     throw new Error("initRefineWorkspace: required DOM missing -- refine workspace template not in place");
   }
+
+  const audition: RefineAuditionHandle = initRefineAudition();
 
   // Set the row-height CSS variable for the pitch ruler to match the canvas.
   root.style.setProperty("--rf-row-height", `${ROW_HEIGHT_PX}px`);
@@ -386,6 +393,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     renderTimeline();
     renderPalette();
     renderRegionInfo();
+    syncAudition();
   }
 
   function pickCandidate(candidateId: string): void {
@@ -397,6 +405,63 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     renderRegionInfo();
     renderTimeline();
     renderWorklist();
+    // If audition is running, swap to the newly-picked notes immediately
+    // so A/B comparisons feel instant rather than requiring stop+play.
+    if (audition.isPlaying()) {
+      const active = activeNotesForRegion(session, focusedRegionId);
+      if (active) audition.updateNotes(active.notes);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Audition
+  // -------------------------------------------------------------------------
+  function setAuditionStatus(status: "stopped" | "playing"): void {
+    auditionStatusEl!.classList.toggle("isPlaying", status === "playing");
+    if (status === "playing" && session && focusedRegionId) {
+      const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
+      if (region) {
+        auditionStatusEl!.textContent =
+          `Looping ${formatTime(region.t_start)} – ${formatTime(region.t_end)}`;
+        return;
+      }
+    }
+    auditionStatusEl!.textContent = "Stopped";
+  }
+
+  /**
+   * Refresh the audition button availability + status text based on the
+   * current focused region. Stops playback when no region is focused so
+   * the engine doesn't keep humming after a save/back/etc.
+   */
+  function syncAudition(): void {
+    const canPlay = Boolean(session && focusedRegionId);
+    auditionPlayBtn!.disabled = !canPlay;
+    auditionStopBtn!.disabled = !canPlay;
+    if (!canPlay && audition.isPlaying()) {
+      audition.stop();
+    }
+    setAuditionStatus(audition.isPlaying() ? "playing" : "stopped");
+  }
+
+  function startAudition(): void {
+    if (!session || !focusedRegionId) return;
+    const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
+    if (!region) return;
+    const active = activeNotesForRegion(session, focusedRegionId);
+    if (!active) return;
+    audition.playRegion(active.notes, region.t_start, region.t_end);
+    setAuditionStatus("playing");
+  }
+
+  function stopAudition(): void {
+    audition.stop();
+    setAuditionStatus("stopped");
+  }
+
+  function toggleAudition(): void {
+    if (audition.isPlaying()) stopAudition();
+    else startAudition();
   }
 
   function focusNextRegion(): void {
@@ -505,9 +570,14 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   reloadBtn.addEventListener("click", () => void reload());
   saveBtn.addEventListener("click", () => void save());
-  backBtn.addEventListener("click", () => deps.onBack());
+  backBtn.addEventListener("click", () => {
+    audition.stop();
+    deps.onBack();
+  });
   acceptBtn.addEventListener("click", () => acceptRegion());
   skipBtn.addEventListener("click", () => focusNextRegion());
+  auditionPlayBtn.addEventListener("click", () => startAudition());
+  auditionStopBtn.addEventListener("click", () => stopAudition());
 
   // Keyboard shortcuts (only when refine route is active).
   window.addEventListener("keydown", (ev) => {
@@ -517,6 +587,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       return;
     }
     if (!session || !focusedRegionId) return;
+    if (ev.key === " " || ev.code === "Space") {
+      ev.preventDefault();
+      toggleAudition();
+      return;
+    }
     if (ev.key >= "1" && ev.key <= "4") {
       const idx = Number(ev.key) - 1;
       const cid = Object.keys(session.candidates.candidates)[idx];
