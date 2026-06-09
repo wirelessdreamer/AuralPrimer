@@ -1201,6 +1201,17 @@ async fn ingest_runtime_check(
 }
 
 #[tauri::command]
+async fn ingest_refine_candidates(
+    app: AppHandle,
+    req: ingest_sidecar::RefineCandidatesRequest,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("refine candidates precompute", move || {
+        ingest_sidecar::run_ingest_refine_candidates(req, Some(&app))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn inspect_raw_song_folder(
     folder_path: String,
 ) -> Result<raw_song::RawSongFolderInspection, String> {
@@ -2005,6 +2016,7 @@ pub fn run() {
             stem_midi_create_songpack,
             ingest_import,
             ingest_runtime_check,
+            ingest_refine_candidates,
             inspect_raw_song_folder,
             import_raw_song_folder,
             scan_songpacks,

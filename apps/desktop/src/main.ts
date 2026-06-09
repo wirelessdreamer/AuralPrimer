@@ -438,6 +438,16 @@ root.innerHTML = `
               <button id="stemMidiImportMake">Import SongPack</button>
             </div>
             <pre id="stemMidiStatusMake" class="meta">(not imported)</pre>
+            <div id="stemMidiNextStepsMake" class="postImportCard" style="display:none;">
+              <div class="postImportTitle">✓ SongPack imported</div>
+              <div class="postImportHint">Next: clean up the auto-transcription so the gameplay chart matches your intent.</div>
+              <div class="row">
+                <button class="postImportPrimary" id="stemMidiOpenRefine">Open in Refine workspace</button>
+                <button id="stemMidiPrecomputeRefine">Run candidate precompute</button>
+                <button id="stemMidiOpenCleanup">View in Cleanup &amp; Edit</button>
+              </div>
+              <pre id="stemMidiPrecomputeStatus" class="meta" style="margin-top:8px; display:none;"></pre>
+            </div>
           </section>
 
           <div class="stackCol">
@@ -936,6 +946,14 @@ const stemMidiImportBtn = document.getElementById("stemMidiImportMake") as HTMLB
 const stemMidiFolderLabel = document.getElementById("stemMidiFolderLabelMake") as HTMLDivElement;
 const stemMidiSummaryEl = document.getElementById("stemMidiSummaryMake") as HTMLDivElement;
 const stemMidiStatusEl = document.getElementById("stemMidiStatusMake") as HTMLPreElement;
+// Post-import success card -- shown after the Suno import succeeds so the
+// user has clear next-step actions (refine workspace / candidate precompute
+// / cleanup) instead of a status-log dead-end.
+const stemMidiNextStepsEl = document.getElementById("stemMidiNextStepsMake") as HTMLElement;
+const stemMidiOpenRefineBtn = document.getElementById("stemMidiOpenRefine") as HTMLButtonElement;
+const stemMidiPrecomputeBtn = document.getElementById("stemMidiPrecomputeRefine") as HTMLButtonElement;
+const stemMidiOpenCleanupBtn = document.getElementById("stemMidiOpenCleanup") as HTMLButtonElement;
+const stemMidiPrecomputeStatusEl = document.getElementById("stemMidiPrecomputeStatus") as HTMLPreElement;
 
 const statusEl = document.getElementById("status") as HTMLPreElement;
 const listEl = document.getElementById("list") as HTMLDivElement;
@@ -2640,6 +2658,9 @@ async function stemMidiCreateSongPack() {
 
   setStemMidiStatus("importing...");
   stemMidiImportBtn.disabled = true;
+  // Clear any previous post-import card so the user sees clean state for
+  // this attempt.
+  hideStemMidiNextSteps();
   try {
     await waitForUiPaint();
     const res = await safeInvoke<ImportRawSongFolderResult>("import_raw_song_folder", {
@@ -2668,10 +2689,133 @@ async function stemMidiCreateSongPack() {
     }
     setStemMidiStatus(lines.join("\n"));
     void refresh();
+    // Surface clear next-step actions so the user isn't left staring at a
+    // status log with no idea what to do next. The card stays visible until
+    // a new import attempt starts.
+    showStemMidiNextSteps(res.songpack_path, res.mapped_game_roles);
   } finally {
     stemMidiImportBtn.disabled = !stemMidiInspection;
   }
 }
+
+let stemMidiLastImportedPath: string | null = null;
+
+function gameRolesToRefineInstruments(gameRoles: string[]): string[] {
+  // Map the SongPack manifest's mapped_game_roles list to the instrument
+  // ids the refine-candidates sidecar expects. Drop drums (drum candidates
+  // are deferred to v2; the keys/bass/guitar precompute reuses PTI which
+  // isn't appropriate for drums) and vocals (no melodic transcription).
+  const out: string[] = [];
+  for (const role of gameRoles) {
+    switch (role) {
+      case "keys":
+      case "bass":
+      case "lead_guitar":
+      case "rhythm_guitar":
+        out.push(role);
+        break;
+      default:
+        break;
+    }
+  }
+  if (out.length === 0) out.push("keys");
+  return Array.from(new Set(out));
+}
+
+function showStemMidiNextSteps(songpackPath: string, gameRoles: string[]): void {
+  stemMidiLastImportedPath = songpackPath;
+  stemMidiNextStepsEl.style.display = "block";
+  stemMidiNextStepsEl.dataset.songpackPath = songpackPath;
+  const insts = gameRolesToRefineInstruments(gameRoles);
+  stemMidiNextStepsEl.dataset.instruments = insts.join(",");
+  stemMidiPrecomputeStatusEl.style.display = "none";
+  stemMidiPrecomputeStatusEl.textContent = "";
+  stemMidiPrecomputeBtn.disabled = false;
+  stemMidiPrecomputeBtn.textContent =
+    insts.length === 1
+      ? `Run candidate precompute (${insts[0]})`
+      : `Run candidate precompute (${insts.length} instruments)`;
+}
+
+function hideStemMidiNextSteps(): void {
+  stemMidiNextStepsEl.style.display = "none";
+  stemMidiLastImportedPath = null;
+}
+
+stemMidiOpenRefineBtn.addEventListener("click", () => {
+  const path = stemMidiNextStepsEl.dataset.songpackPath || stemMidiLastImportedPath;
+  if (!path) return;
+  setRoute("refine");
+  void refineWorkspace.openForSongPack(path);
+});
+
+stemMidiOpenCleanupBtn.addEventListener("click", () => {
+  setRoute("play");
+  // Best effort: trigger a refresh of the SongPack list + auto-select the
+  // imported one so the user lands on the details view.
+  const path = stemMidiNextStepsEl.dataset.songpackPath || stemMidiLastImportedPath;
+  if (path) {
+    void selectSongPack(path).catch(() => {
+      // If selection fails (timing race with refresh), the user can pick
+      // the SongPack manually from the list.
+    });
+  }
+});
+
+stemMidiPrecomputeBtn.addEventListener("click", async () => {
+  const path = stemMidiNextStepsEl.dataset.songpackPath || stemMidiLastImportedPath;
+  if (!path) return;
+  const instruments = (stemMidiNextStepsEl.dataset.instruments || "keys")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  stemMidiPrecomputeStatusEl.style.display = "block";
+  stemMidiPrecomputeStatusEl.textContent =
+    `running aural_ingest refine-candidates for ${instruments.join(", ")}...`;
+  stemMidiPrecomputeBtn.disabled = true;
+  try {
+    type RefineRes = {
+      ok: boolean;
+      exit_code: number;
+      stdout: string;
+      stderr: string;
+      payload?: unknown;
+    };
+    const res = await safeInvoke<RefineRes>("ingest_refine_candidates", {
+      req: {
+        container_path: path,
+        instruments,
+      },
+    });
+    if (res.ok) {
+      // The sidecar writes a JSON status line to stdout; surface a brief
+      // summary instead of dumping all of it.
+      let summary = `precompute complete (exit ${res.exit_code})`;
+      try {
+        const lines = res.stdout.trim().split(/\r?\n/);
+        const parsed = JSON.parse(lines[lines.length - 1] ?? "{}");
+        if (parsed && typeof parsed === "object" && "instruments" in parsed) {
+          const insts = parsed.instruments as Record<string, { regions?: number }>;
+          const counts = Object.entries(insts)
+            .map(([k, v]) => `${k}=${v.regions ?? "?"}r`)
+            .join(", ");
+          summary = `precompute complete: ${counts}`;
+        }
+      } catch {
+        // not JSON -- fall back to the generic message
+      }
+      stemMidiPrecomputeStatusEl.textContent = summary;
+    } else {
+      const stderrTail = res.stderr.trim().split(/\r?\n/).slice(-3).join("\n");
+      stemMidiPrecomputeStatusEl.textContent =
+        `precompute failed (exit ${res.exit_code}):\n${stderrTail || "(no stderr)"}`;
+    }
+  } catch (e) {
+    stemMidiPrecomputeStatusEl.textContent = `precompute failed: ${String(e)}`;
+  } finally {
+    stemMidiPrecomputeBtn.disabled = false;
+  }
+});
 function ingestSourceExtensions(mode: IngestSubcommand): string[] {
   if (mode === "import-unsupported_chart_format") return ["unsupported_chart_format"];
   return ["wav", "mp3", "ogg", "flac", "m4a"];

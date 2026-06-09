@@ -629,6 +629,38 @@ audio {
   padding-right: 4px;
 }
 
+/* Post-import success card -- shown after a SongPack import completes so the
+   user gets clear "next step" buttons (refine workspace, candidate
+   precompute, cleanup) instead of staring at a status log dead-end. */
+.postImportCard {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(62, 230, 168, 0.4);
+  background: rgba(62, 230, 168, 0.08);
+  border-radius: 8px;
+}
+.postImportTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3EE6A8;
+  margin-bottom: 4px;
+}
+.postImportHint {
+  font-size: 12px;
+  color: #cbd5e1;
+  margin-bottom: 10px;
+}
+.postImportCard .row { gap: 8px; }
+.postImportPrimary {
+  border-color: #3EE6A8 !important;
+  color: #07090f !important;
+  background: #3EE6A8 !important;
+  font-weight: 600;
+}
+.postImportPrimary:hover {
+  background: #58f0b6 !important;
+}
+
 .importStageNote {
   margin: 0 0 10px;
 }

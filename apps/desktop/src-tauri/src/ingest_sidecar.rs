@@ -633,6 +633,60 @@ pub fn run_ingest_runtime_check(
     run_tauri_sidecar_capture(app, &args)
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct RefineCandidatesRequest {
+    /// Path to the SongPack directory (must end with `.songpack` and be a
+    /// directory, not a zip — same constraint as `write_songpack_features_json`).
+    pub container_path: String,
+    /// One or more instruments to precompute. Empty defaults to `["keys"]`.
+    #[serde(default)]
+    pub instruments: Vec<String>,
+}
+
+/// Run the sidecar's `refine-candidates` subcommand against an existing
+/// SongPack. Writes `features/refine_candidates.<instrument>.json` per
+/// instrument; the Studio's Refine workspace then renders them.
+///
+/// Used by the post-import "Run candidate precompute" CTA so the user
+/// doesn't have to drop to a terminal between import and refine.
+pub fn run_ingest_refine_candidates(
+    req: RefineCandidatesRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let container = req.container_path.trim();
+    if container.is_empty() {
+        return Err("missing container_path".to_string());
+    }
+    let instruments: Vec<String> = if req.instruments.is_empty() {
+        vec!["keys".to_string()]
+    } else {
+        req.instruments
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+    if instruments.is_empty() {
+        return Err("no instruments after filtering".to_string());
+    }
+
+    let mut args: Vec<String> = vec![
+        "refine-candidates".to_string(),
+        container.to_string(),
+    ];
+    for inst in &instruments {
+        args.push("--instrument".to_string());
+        args.push(inst.clone());
+    }
+
+    let app = app.ok_or_else(|| {
+        format!(
+            "Tauri AppHandle required for sidecar execution; ingest_refine_candidates can't run headless",
+        )
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
