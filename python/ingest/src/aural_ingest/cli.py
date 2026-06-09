@@ -3479,6 +3479,55 @@ def cmd_import_unsupported_chart_format(args: argparse.Namespace) -> int:
     return cmd_import(import_args)
 
 
+def cmd_refine_candidates(args: argparse.Namespace) -> int:
+    """Pre-compute per-region candidate transcriptions for the Refine workspace.
+
+    Reads an existing SongPack, runs the 4 candidate transcription variants
+    per requested instrument, and writes
+    ``features/refine_candidates.<instrument>.json`` for each. The Studio
+    Refine workspace consumes those files at edit time; the runtime game
+    never reads them.
+
+    Prints a JSON status line per CLI convention so callers (Studio,
+    benchmark harnesses) can parse the result without re-grepping stdout.
+    """
+    from .refine_precompute import precompute_refine_candidates
+
+    songpack = Path(args.songpack_dir)
+    if not songpack.is_dir():
+        print(
+            json.dumps(
+                {"ok": False, "error": f"songpack not a directory: {songpack}"},
+                sort_keys=True,
+            )
+        )
+        return 1
+
+    instruments: list[str] = list(args.instrument or ["keys"])
+    results: dict[str, dict[str, object]] = {}
+    for inst in instruments:
+        try:
+            payload = precompute_refine_candidates(
+                songpack_root=songpack, instrument=inst
+            )
+            results[inst] = {
+                "ok": True,
+                "regions": len(payload["regions"]),
+                "candidates": list(payload["candidates"].keys()),
+                "song_duration_sec": payload["song_duration_sec"],
+                "pipeline_signature": payload["pipeline_signature"],
+                "out_path": str(
+                    songpack / "features" / f"refine_candidates.{inst}.json"
+                ),
+            }
+        except Exception as exc:
+            results[inst] = {"ok": False, "error": str(exc)}
+
+    overall_ok = all(bool(r.get("ok")) for r in results.values())
+    print(json.dumps({"ok": overall_ok, "instruments": results}, sort_keys=True))
+    return 0 if overall_ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="aural_ingest")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -3580,6 +3629,22 @@ def build_parser() -> argparse.ArgumentParser:
     s_import_unsupported_chart_format.add_argument("--duration-sec", type=float, dest="duration_sec")
     _add_transcription_options(s_import_unsupported_chart_format)
     s_import_unsupported_chart_format.set_defaults(func=cmd_import_unsupported_chart_format)
+
+    s_refine_candidates = sub.add_parser(
+        "refine-candidates",
+        help="Pre-compute per-region candidate transcriptions for the Studio Refine workspace.",
+    )
+    s_refine_candidates.add_argument(
+        "songpack_dir",
+        help="Path to an existing SongPack root (the directory containing manifest.json + audio/).",
+    )
+    s_refine_candidates.add_argument(
+        "--instrument",
+        action="append",
+        choices=sorted(["keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "melodic"]),
+        help="Instrument to precompute. May be repeated. Defaults to 'keys' if omitted.",
+    )
+    s_refine_candidates.set_defaults(func=cmd_refine_candidates)
 
     return p
 
