@@ -173,10 +173,10 @@ def _read_raw_note_counts(reference_path: Path) -> tuple[dict[int, int], int, st
     return counts, sum(counts.values()), ("strict" if strict else "relaxed")
 
 
-def _read_imported_drum_note_counts(songpack_path: Path) -> tuple[dict[int, int], int]:
+def _read_imported_drum_note_counts(auralsong_path: Path) -> tuple[dict[int, int], int]:
     import mido
 
-    midi_path = songpack_path / "features" / "notes.mid"
+    midi_path = auralsong_path / "features" / "notes.mid"
     if not midi_path.is_file():
         return {}, 0
     midi = mido.MidiFile(midi_path)
@@ -191,7 +191,7 @@ def _read_imported_drum_note_counts(songpack_path: Path) -> tuple[dict[int, int]
 
 
 def _run_raw_import(case: dict[str, Any], output_root: Path) -> tuple[list[str], Path | None]:
-    before = {path.name for path in output_root.glob("*.songpack")}
+    before = {path.name for path in output_root.glob("*.auralsong")}
     proc = subprocess.run(
         [str(RAW_IMPORT_EXE), str(Path(case["wav_path"]).parent), str(output_root), str(case["title"])],
         capture_output=True,
@@ -202,7 +202,7 @@ def _run_raw_import(case: dict[str, Any], output_root: Path) -> tuple[list[str],
         raise RuntimeError(f"raw_import failed for {case['id']}: {proc.stderr.strip()}")
     payload = json.loads(proc.stdout)
     warnings = list(payload.get("warnings", []))
-    after = list(output_root.glob("*.songpack"))
+    after = list(output_root.glob("*.auralsong"))
     new_dirs = [path for path in after if path.name not in before]
     if len(new_dirs) == 1:
         return warnings, new_dirs[0]

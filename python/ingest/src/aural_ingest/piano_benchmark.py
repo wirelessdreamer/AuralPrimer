@@ -478,6 +478,9 @@ def evaluate_piano(
 
 PIANO_ALGORITHMS = [
     "piano_auto",
+    "piano_basic_pitch_playable",
+    "piano_basic_pitch",
+    "piano_basic_pitch_clean",
     "piano_polyphonic_clean",
     "piano_polyphonic",
     "piano_transkun_clean",

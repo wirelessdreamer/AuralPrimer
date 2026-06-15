@@ -25,7 +25,7 @@ function normalizeMode(mode: unknown): string | null {
 }
 
 /**
- * Extract key/mode from a SongPack manifest (best-effort).
+ * Extract key/mode from an AuralSong manifest (best-effort).
  *
  * For now our fixtures don’t include harmonic metadata, so this intentionally
  * falls back to a stable placeholder.

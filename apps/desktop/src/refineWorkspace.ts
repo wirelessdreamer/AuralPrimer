@@ -9,7 +9,7 @@
  *    decisions
  *
  * Built so the host (Studio's main.ts) does `initRefineWorkspace({...})` and
- * gets a handle with `openForSongPack(containerPath)`. Internal panels are
+ * gets a handle with `openForAuralSong(containerPath)`. Internal panels are
  * functions in this module rather than separate files; the workspace is
  * ~600 lines which is fine for v1. If it grows we can split worklist /
  * timeline / palette into siblings, mirroring the Phase 2 Game pattern.
@@ -60,9 +60,9 @@ export type RefineWorkspaceDeps = {
 };
 
 export type RefineWorkspaceHandle = {
-  /** Open the workspace for a specific SongPack (called from Make route). */
-  openForSongPack: (containerPath: string) => Promise<void>;
-  /** Currently-loaded SongPack path or null. */
+  /** Open the workspace for a specific AuralSong (called from Make route). */
+  openForAuralSong: (containerPath: string) => Promise<void>;
+  /** Currently-loaded AuralSong path or null. */
   getCurrentContainerPath: () => string | null;
 };
 
@@ -501,13 +501,13 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   async function reload(): Promise<void> {
     if (!containerPath) return;
-    await openForSongPack(containerPath);
+    await openForAuralSong(containerPath);
   }
 
   // -------------------------------------------------------------------------
-  // Public entry: openForSongPack
+  // Public entry: openForAuralSong
   // -------------------------------------------------------------------------
-  async function openForSongPack(path: string): Promise<void> {
+  async function openForAuralSong(path: string): Promise<void> {
     containerPath = path;
     songTitleEl!.textContent = path;
     setDirty(false);
@@ -564,7 +564,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     instLabelEl!.textContent =
       instSelectEl.options[instSelectEl.selectedIndex]?.text ?? instrument;
     if (containerPath) {
-      void openForSongPack(containerPath);
+      void openForAuralSong(containerPath);
     }
   });
 
@@ -617,7 +617,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   window.addEventListener("resize", () => renderTimeline());
 
   return {
-    openForSongPack,
+    openForAuralSong,
     getCurrentContainerPath: () => containerPath,
   };
 }

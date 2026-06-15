@@ -54,7 +54,7 @@ Later hardening options:
 ## Viz SDK API
 
 ### Host-provided objects
-- `SongHandle` (read-only SongPack access)
+- `SongHandle` (read-only AuralSong access)
 - `Transport` (time, tempo, play/pause/seek)
 - `Renderer` (canvas/webgl context + resize)
 - `Input` (keyboard/controller abstractions)
@@ -134,4 +134,4 @@ A plugin should be validated by the host with:
 
 Plugins (and the host SDK) are expected to be developed TDD-first:
 - changes to the Viz SDK API come with contract tests
-- plugins include at least smoke tests against a reference SongPack
+- plugins include at least smoke tests against a reference AuralSong

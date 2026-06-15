@@ -98,6 +98,87 @@ def _count_note_on_statuses(midi_bytes: bytes, statuses: set[int], notes: set[in
     return sum(_count_note_on(midi_bytes, status, notes) for status in statuses)
 
 
+def _melodic_note_tuple(note: object) -> tuple[float, float, int, int, str]:
+    return (
+        round(float(getattr(note, "t_on")), 6),
+        round(float(getattr(note, "t_off")), 6),
+        int(getattr(note, "pitch")),
+        int(getattr(note, "velocity")),
+        str(getattr(note, "instrument")),
+    )
+
+
+def _assert_keys_auralsong_matches_multiple_ingress_verifiers(
+    auralsong: Path,
+    expected_notes: list[object],
+) -> None:
+    from aural_ingest.algorithms.piano_midi import decode_midi_notes
+    from aural_ingest.piano_benchmark import evaluate_piano, parse_piano_midi_reference
+
+    expected_tuples = [_melodic_note_tuple(note) for note in expected_notes]
+    events_payload = json.loads((auralsong / "features" / "events.json").read_text("utf-8"))
+    event_tuples = [
+        (
+            round(float(note["t_on"]), 6),
+            round(float(note["t_off"]), 6),
+            int(note["pitch"]),
+            int(note["velocity"]),
+            str(note["instrument"]),
+        )
+        for note in sorted(events_payload["notes"], key=lambda item: (item["t_on"], item["pitch"], item["t_off"]))
+        if note["track_id"] == "keys_main"
+    ]
+    assert event_tuples == expected_tuples
+
+    notes_mid = auralsong / "features" / "notes.mid"
+    decoded_notes = decode_midi_notes(notes_mid, instrument="keys")
+    assert [_melodic_note_tuple(note) for note in decoded_notes] == expected_tuples
+
+    benchmark_reference = parse_piano_midi_reference(notes_mid, role="keys")
+    reference_tuples = [
+        (
+            round(float(event.time), 6),
+            round(float(event.time + event.duration), 6),
+            int(event.pitch),
+            int(event.velocity),
+            "keys",
+        )
+        for event in benchmark_reference
+    ]
+    assert reference_tuples == expected_tuples
+
+    secondary = evaluate_piano(
+        decoded_notes,
+        benchmark_reference,
+        tolerance_sec=0.001,
+        offset_tolerance_sec=0.001,
+        velocity_tolerance=0,
+    )
+    assert secondary.tp == len(expected_notes)
+    assert secondary.fp == 0
+    assert secondary.fn == 0
+    assert secondary.f1 == pytest.approx(1.0)
+    assert secondary.note_with_offset_f1 == pytest.approx(1.0)
+    assert secondary.note_with_offset_velocity_f1 == pytest.approx(1.0)
+
+
+def _assert_validate_reports_keys_ingress_verifiers(capsys: pytest.CaptureFixture[str], expected_count: int) -> None:
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is True
+    assert payload["verifiers"]["events_notes_mid"]["verifiers"] == [
+        "events_json",
+        "piano_midi_decoder",
+        "piano_benchmark_parser",
+    ]
+    assert payload["verifiers"]["events_notes_mid"]["roles"]["keys"] == {
+        "events_json_notes": expected_count,
+        "piano_benchmark_parser_notes": expected_count,
+        "piano_midi_decoder_notes": expected_count,
+        "secondary_f1": 1.0,
+        "secondary_offset_velocity_f1": 1.0,
+    }
+
+
 @pytest.fixture(autouse=True)
 def _use_fast_standard_beat_default_for_import_smokes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep broad import fixtures fast; explicit high-accuracy tests still opt in."""
@@ -109,11 +190,11 @@ def _use_fast_standard_beat_default_for_import_smokes(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize("bpm", [90.0, 120.0])
-def test_import_generates_valid_songpack(tmp_path: Path, bpm: float) -> None:
+def test_import_generates_valid_auralsong(tmp_path: Path, bpm: float) -> None:
     # Arrange
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=8.0, bpm=bpm)
-    out = tmp_path / "Out.songpack"
+    out = tmp_path / "Out.auralsong"
 
     # Act
     from aural_ingest.cli import cmd_import
@@ -169,7 +250,7 @@ def test_import_generates_valid_songpack(tmp_path: Path, bpm: float) -> None:
 def test_import_guitar_split_preserves_shape_and_reconstructs_source(tmp_path: Path) -> None:
     src = tmp_path / "src_stereo.wav"
     _write_dual_tone_wav(src, sr=48_000, duration_sec=2.0)
-    out = tmp_path / "Split.songpack"
+    out = tmp_path / "Split.auralsong"
 
     from aural_ingest.cli import cmd_import
 
@@ -221,7 +302,7 @@ def test_import_guitar_split_uses_configured_guitar_stem_path(tmp_path: Path) ->
     _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
     source_guitar = tmp_path / "guitar_source.wav"
     _write_dual_tone_wav(source_guitar, sr=48_000, duration_sec=2.0)
-    out = tmp_path / "CfgSplit.songpack"
+    out = tmp_path / "CfgSplit.auralsong"
 
     from aural_ingest.cli import cmd_import
 
@@ -254,7 +335,7 @@ def test_import_uses_explicit_drum_stem_for_drum_transcription(
     _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
     drum_stem = tmp_path / "drums.wav"
     _write_clicktrack_wav(drum_stem, sr=48_000, duration_sec=2.0, bpm=90.0)
-    out = tmp_path / "DrumStem.songpack"
+    out = tmp_path / "DrumStem.auralsong"
 
     from aural_ingest import cli
     from aural_ingest.transcription import (
@@ -334,7 +415,7 @@ def test_import_reuses_configured_input_stems_for_analysis(
     _write_dual_tone_wav(lead_stem, sr=48_000, duration_sec=2.0)
     _write_dual_tone_wav(rhythm_stem, sr=48_000, duration_sec=2.0)
     _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
-    out = tmp_path / "InputStems.songpack"
+    out = tmp_path / "InputStems.auralsong"
 
     from aural_ingest import cli
     from aural_ingest.transcription import (
@@ -459,7 +540,7 @@ def test_import_dir_reuses_configured_input_stems_without_existing_mix(
     _write_dual_tone_wav(lead_stem, sr=48_000, duration_sec=2.0)
     _write_dual_tone_wav(rhythm_stem, sr=48_000, duration_sec=2.0)
     _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
-    out = tmp_path / "StemDir.songpack"
+    out = tmp_path / "StemDir.auralsong"
 
     from aural_ingest import cli
     from aural_ingest.transcription import (
@@ -567,13 +648,321 @@ def test_import_dir_reuses_configured_input_stems_without_existing_mix(
     assert manifest["pipeline"]["guitar_split"]["status"] == "reused"
 
 
+def test_import_dir_with_only_configured_keys_skips_synthetic_mix_drums_and_guitar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src_dir = tmp_path / "stem_dir"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    keys_stem = src_dir / "keys.wav"
+    _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
+    out = tmp_path / "KeysOnly.auralsong"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import InstrumentTranscriptionResult, MelodicNote
+
+    seen: dict[str, object] = {}
+
+    def fail_transcribe_drums(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("keys-only synthesized mix should not be drum-transcribed")
+
+    def fake_transcribe_all_melodic_stems(
+        stems: dict[str, Path],
+        requested_method: str | None,
+        logger: object = None,
+    ) -> list[InstrumentTranscriptionResult]:
+        seen["instrument_stems"] = {role: Path(path) for role, path in stems.items()}
+        note = MelodicNote(t_on=0.0, t_off=0.2, pitch=64, velocity=90, instrument="keys")
+        return [
+            InstrumentTranscriptionResult(
+                instrument="keys",
+                notes=[note],
+                used_method="piano_auto",
+                attempted_methods=["piano_auto"],
+                warnings=[],
+                stem_path=str(stems["keys"]),
+            )
+        ]
+
+    monkeypatch.setattr(cli, "transcribe_drums", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_drums_with_profile", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", fake_transcribe_all_melodic_stems)
+
+    args = type("Args", (), {})()
+    args.input_dir_path = str(src_dir)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "disable_stem_separation": True,
+            "input_stem_paths": {
+                "keys": str(keys_stem),
+            },
+        }
+    )
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_stem_path = None
+    args.melodic_method = "auto"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import_dir(args) == 0
+    assert seen["instrument_stems"] == {"keys": out / "audio" / "stems" / "keys.wav"}
+    assert not (out / "audio" / "stems" / "lead_guitar.wav").exists()
+    assert not (out / "audio" / "stems" / "rhythm_guitar.wav").exists()
+
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["pipeline"]["input_stems"]["roles"] == ["keys"]
+    assert manifest["pipeline"]["guitar_split"] == {
+        "reason": "skipped: synthesized input-stem mix has no guitar source",
+        "source_kind": "input_stems_mix",
+        "source_path": "audio/mix.wav",
+        "status": "skipped",
+    }
+    transcription = manifest["pipeline"]["transcription"]
+    assert transcription["drum_engine_backend"] == "skipped"
+    assert transcription["drum_filter_used"] == "combined_filter"
+    assert transcription["instrument_stems_transcribed"] == ["keys"]
+    assert transcription["instrument_melodic_methods_used"] == {"keys": "piano_auto"}
+
+
+def test_import_with_configured_keys_source_skips_synthetic_mix_drums_and_guitar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    keys_stem = tmp_path / "keys.wav"
+    _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
+    out = tmp_path / "KeysOnlyDirect.auralsong"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import InstrumentTranscriptionResult, MelodicNote
+
+    seen: dict[str, object] = {}
+
+    def fail_transcribe_drums(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("configured keys-only source should not be drum-transcribed")
+
+    def fake_transcribe_all_melodic_stems(
+        stems: dict[str, Path],
+        requested_method: str | None,
+        logger: object = None,
+    ) -> list[InstrumentTranscriptionResult]:
+        seen["instrument_stems"] = {role: Path(path) for role, path in stems.items()}
+        note = MelodicNote(t_on=0.0, t_off=0.2, pitch=64, velocity=90, instrument="keys")
+        return [
+            InstrumentTranscriptionResult(
+                instrument="keys",
+                notes=[note],
+                used_method="piano_auto",
+                attempted_methods=["piano_auto"],
+                warnings=[],
+                stem_path=str(stems["keys"]),
+            )
+        ]
+
+    monkeypatch.setattr(cli, "transcribe_drums", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_drums_with_profile", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", fake_transcribe_all_melodic_stems)
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(keys_stem)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "disable_stem_separation": True,
+            "input_stem_paths": {
+                "keys": str(keys_stem),
+            },
+        }
+    )
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_stem_path = None
+    args.melodic_method = "auto"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import(args) == 0
+    assert seen["instrument_stems"] == {"keys": out / "audio" / "stems" / "keys.wav"}
+    assert not (out / "audio" / "stems" / "lead_guitar.wav").exists()
+    assert not (out / "audio" / "stems" / "rhythm_guitar.wav").exists()
+
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["pipeline"]["guitar_split"] == {
+        "reason": "skipped: synthesized input-stem mix has no guitar source",
+        "source_kind": "input_stems_mix",
+        "source_path": "audio/mix.wav",
+        "status": "skipped",
+    }
+    transcription = manifest["pipeline"]["transcription"]
+    assert transcription["drum_engine_backend"] == "skipped"
+    assert transcription["instrument_stems_transcribed"] == ["keys"]
+    assert transcription["instrument_melodic_methods_used"] == {"keys": "piano_auto"}
+
+
+def test_keys_import_transcription_matches_multiple_ingress_verifiers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    keys_stem = tmp_path / "keys.wav"
+    _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
+    out = tmp_path / "KeysVerifier.auralsong"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import InstrumentTranscriptionResult, MelodicNote
+
+    expected_notes = [
+        MelodicNote(t_on=0.0, t_off=0.5, pitch=60, velocity=80, instrument="keys"),
+        MelodicNote(t_on=0.25, t_off=0.875, pitch=64, velocity=84, instrument="keys"),
+        MelodicNote(t_on=1.0, t_off=1.5, pitch=67, velocity=88, instrument="keys"),
+    ]
+
+    def fail_transcribe_drums(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("configured keys-only source should not be drum-transcribed")
+
+    def fake_transcribe_all_melodic_stems(
+        stems: dict[str, Path],
+        requested_method: str | None,
+        logger: object = None,
+    ) -> list[InstrumentTranscriptionResult]:
+        assert requested_method == "piano_auto"
+        return [
+            InstrumentTranscriptionResult(
+                instrument="keys",
+                notes=expected_notes,
+                used_method="piano_auto",
+                attempted_methods=["piano_auto"],
+                warnings=[],
+                stem_path=str(stems["keys"]),
+            )
+        ]
+
+    monkeypatch.setattr(cli, "transcribe_drums", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_drums_with_profile", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", fake_transcribe_all_melodic_stems)
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(keys_stem)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "bpm_hint": 120.0,
+            "disable_stem_separation": True,
+            "input_stem_paths": {
+                "keys": str(keys_stem),
+            },
+        }
+    )
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_stem_path = None
+    args.melodic_method = "piano_auto"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import(args) == 0
+    capsys.readouterr()
+
+    validate_args = type("Args", (), {})()
+    validate_args.auralsong_dir = str(out)
+    assert cli.cmd_validate(validate_args) == 0
+    _assert_validate_reports_keys_ingress_verifiers(capsys, len(expected_notes))
+    _assert_keys_auralsong_matches_multiple_ingress_verifiers(out, expected_notes)
+
+
+def test_import_dir_keys_transcription_matches_multiple_ingress_verifiers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    src_dir = tmp_path / "stem_dir"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    keys_stem = src_dir / "keys.wav"
+    _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
+    out = tmp_path / "KeysDirVerifier.auralsong"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import InstrumentTranscriptionResult, MelodicNote
+
+    expected_notes = [
+        MelodicNote(t_on=0.0, t_off=0.5, pitch=60, velocity=80, instrument="keys"),
+        MelodicNote(t_on=0.25, t_off=0.875, pitch=64, velocity=84, instrument="keys"),
+        MelodicNote(t_on=1.0, t_off=1.5, pitch=67, velocity=88, instrument="keys"),
+    ]
+
+    def fail_transcribe_drums(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("configured keys-only source should not be drum-transcribed")
+
+    def fake_transcribe_all_melodic_stems(
+        stems: dict[str, Path],
+        requested_method: str | None,
+        logger: object = None,
+    ) -> list[InstrumentTranscriptionResult]:
+        assert requested_method == "piano_auto"
+        return [
+            InstrumentTranscriptionResult(
+                instrument="keys",
+                notes=expected_notes,
+                used_method="piano_auto",
+                attempted_methods=["piano_auto"],
+                warnings=[],
+                stem_path=str(stems["keys"]),
+            )
+        ]
+
+    monkeypatch.setattr(cli, "transcribe_drums", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_drums_with_profile", fail_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", fake_transcribe_all_melodic_stems)
+
+    args = type("Args", (), {})()
+    args.input_dir_path = str(src_dir)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "bpm_hint": 120.0,
+            "disable_stem_separation": True,
+            "input_stem_paths": {
+                "keys": str(keys_stem),
+            },
+        }
+    )
+    args.title = None
+    args.artist = None
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_stem_path = None
+    args.melodic_method = "piano_auto"
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import_dir(args) == 0
+    capsys.readouterr()
+
+    validate_args = type("Args", (), {})()
+    validate_args.auralsong_dir = str(out)
+    assert cli.cmd_validate(validate_args) == 0
+    _assert_validate_reports_keys_ingress_verifiers(capsys, len(expected_notes))
+    _assert_keys_auralsong_matches_multiple_ingress_verifiers(out, expected_notes)
+
+
 def test_import_uses_demucs_separated_drums_and_guitar_when_available(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     src_mix = tmp_path / "mix.wav"
     _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "Separated.songpack"
+    out = tmp_path / "Separated.auralsong"
 
     from aural_ingest import cli
     from aural_ingest.transcription import (
@@ -676,7 +1065,7 @@ def test_import_rejects_mt3_engine_when_only_mix_fallback_is_available(
 ) -> None:
     src_mix = tmp_path / "mix.wav"
     _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "Mt3MissingStem.songpack"
+    out = tmp_path / "Mt3MissingStem.auralsong"
 
     from aural_ingest import cli
 
@@ -726,10 +1115,10 @@ def test_demucs_modelpack_auto_discovery_supports_portable_layout(
     assert expected in candidates
 
 
-def test_validate_passes_on_generated_songpack(tmp_path: Path) -> None:
+def test_validate_passes_on_generated_auralsong(tmp_path: Path) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=4.0, bpm=120.0)
-    out = tmp_path / "Out.songpack"
+    out = tmp_path / "Out.auralsong"
 
     from aural_ingest.cli import cmd_import, cmd_validate
 
@@ -745,7 +1134,7 @@ def test_validate_passes_on_generated_songpack(tmp_path: Path) -> None:
     assert cmd_import(import_args) == 0
 
     validate_args = type("Args", (), {})()
-    validate_args.songpack_dir = str(out)
+    validate_args.auralsong_dir = str(out)
 
     assert cmd_validate(validate_args) == 0
 
@@ -754,7 +1143,7 @@ def test_nonwav_input_requires_ffmpeg(tmp_path: Path, monkeypatch: pytest.Monkey
     # If ffmpeg is not present, non-wav sources must fail deterministically.
     src = tmp_path / "src.mp3"
     src.write_bytes(b"not really an mp3")
-    out = tmp_path / "Out.songpack"
+    out = tmp_path / "Out.auralsong"
 
     from aural_ingest import cli as ingest
 
@@ -778,7 +1167,7 @@ def test_import_dir_picks_audio_from_directory(tmp_path: Path) -> None:
     src_dir.mkdir(parents=True, exist_ok=True)
     src = src_dir / "mix.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "Out.songpack"
+    out = tmp_path / "Out.auralsong"
 
     from aural_ingest.cli import cmd_import_dir
 
@@ -802,7 +1191,7 @@ def test_import_dir_writes_notes_mid_without_ordering_failure(tmp_path: Path) ->
     src_dir.mkdir(parents=True, exist_ok=True)
     src = src_dir / "mix.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "OutOrder.songpack"
+    out = tmp_path / "OutOrder.auralsong"
 
     from aural_ingest.cli import cmd_import_dir
 
@@ -826,38 +1215,10 @@ def test_import_dir_writes_notes_mid_without_ordering_failure(tmp_path: Path) ->
     assert b"\xFF\x51\x03" in data
 
 
-def test_import_unsupported_chart_format_uses_chart_folder_audio(tmp_path: Path) -> None:
-    song_dir = tmp_path / "song_unsupported_chart_format"
-    song_dir.mkdir(parents=True, exist_ok=True)
-    unsupported_chart_format = song_dir / "chart.unsupported_chart_format"
-    src = song_dir / "mix.wav"
-    _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    unsupported_chart_format.write_text("; minimal chart\n", encoding="utf-8")
-    out = tmp_path / "Outunsupported_chart_format.songpack"
-
-    from aural_ingest.cli import cmd_import_unsupported_chart_format
-
-    args = type("Args", (), {})()
-    args.unsupported_chart_format_path = str(unsupported_chart_format)
-    args.out = str(out)
-    args.profile = "full"
-    args.config = json.dumps({"ingest_timestamp": "2000-01-01T00:00:00Z"})
-    args.title = None
-    args.artist = "unsupported_chart_format Artist"
-    args.duration_sec = None
-
-    rc = cmd_import_unsupported_chart_format(args)
-    assert rc == 0
-    assert (out / "manifest.json").is_file()
-    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
-    assert manifest["title"] == "chart"
-    assert manifest["artist"] == "unsupported_chart_format Artist"
-
-
 def test_import_persists_transcription_options_into_manifest(tmp_path: Path) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "Opts.songpack"
+    out = tmp_path / "Opts.auralsong"
 
     from aural_ingest.cli import cmd_import
 
@@ -899,7 +1260,7 @@ def test_import_persists_transcription_options_into_manifest(tmp_path: Path) -> 
 def test_import_unknown_drum_filter_falls_back_to_default_engine_and_records_warning(tmp_path: Path) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "UnknownFilter.songpack"
+    out = tmp_path / "UnknownFilter.auralsong"
 
     from aural_ingest.cli import cmd_import
 
@@ -932,7 +1293,7 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
 ) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "ProfileDrums.songpack"
+    out = tmp_path / "ProfileDrums.auralsong"
 
     from aural_ingest import cli
     from aural_ingest.transcription import DrumEvent
@@ -989,7 +1350,7 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
 def test_import_auto_melodic_no_longer_requires_external_basic_pitch_model(tmp_path: Path) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "AutoMelodic.songpack"
+    out = tmp_path / "AutoMelodic.auralsong"
 
     from aural_ingest.cli import cmd_import
 
@@ -1019,7 +1380,7 @@ def test_import_high_accuracy_beat_mode_falls_back_to_standard_without_librosa(
 ) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "HighAccuracy.songpack"
+    out = tmp_path / "HighAccuracy.auralsong"
 
     from aural_ingest import cli
 
@@ -1061,7 +1422,7 @@ def test_import_uses_external_stem_separation_provider_path(
 ) -> None:
     src_mix = tmp_path / "mix.wav"
     _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "ExternalProvider.songpack"
+    out = tmp_path / "ExternalProvider.auralsong"
     provider_module = tmp_path / "fake_provider.py"
     provider_module.write_text(
         "\n".join(
@@ -1124,7 +1485,7 @@ def test_import_uses_external_stem_separation_provider_path(
 def test_import_fallback_chain_uses_next_algorithm_when_requested_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "Fallback.songpack"
+    out = tmp_path / "Fallback.auralsong"
 
     from aural_ingest import cli
     from aural_ingest.transcription import DrumEvent
@@ -1170,7 +1531,7 @@ def test_import_melodic_fallback_uses_pyin_when_basic_pitch_fails(
 ) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "MelodicFallback.songpack"
+    out = tmp_path / "MelodicFallback.auralsong"
 
     from aural_ingest import cli
     from aural_ingest.transcription import MelodicNote
@@ -1224,8 +1585,8 @@ def test_import_melodic_fallback_uses_pyin_when_basic_pitch_fails(
 def test_import_song_id_changes_when_drum_engine_changes(tmp_path: Path) -> None:
     src = tmp_path / "src.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out_a = tmp_path / "Combined.songpack"
-    out_b = tmp_path / "Aural.songpack"
+    out_a = tmp_path / "Combined.auralsong"
+    out_b = tmp_path / "Aural.auralsong"
 
     from aural_ingest.cli import cmd_import
 

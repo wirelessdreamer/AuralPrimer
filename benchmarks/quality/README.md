@@ -23,7 +23,7 @@ Use `--referenced-only` with `--write-manifest` when you want a promotion-grade 
 
 Reports include `promotion_candidates` to label benchmark winners by role. These labels never change defaults by themselves; listening or in-game review remains required.
 
-When generated manifests point at a combined SongPack `features/notes.mid`, the benchmark filters named MIDI tracks by role before evaluating melodic/keys stems.
+When generated manifests point at a combined AuralSong `features/notes.mid`, the benchmark filters named MIDI tracks by role before evaluating melodic/keys stems.
 
 Reference-backed melodic and piano cases now also include optional `mir_eval.transcription` metrics in `summary.json` and `report.md`:
 

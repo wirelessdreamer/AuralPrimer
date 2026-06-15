@@ -5,7 +5,7 @@ describe("ingestUi", () => {
     const req = buildIngestRequestFromForm({
       sourcePath: "  C:/music/in.wav  ",
       mode: "import",
-      outSongpackPath: "  ",
+      outAuralSongPath: "  ",
       profile: "",
       config: "  ",
       title: "  Song Title ",
@@ -19,7 +19,7 @@ describe("ingestUi", () => {
     expect(req).toEqual({
       source_path: "C:/music/in.wav",
       subcommand: "import",
-      out_songpack_path: undefined,
+      out_auralsong_path: undefined,
       profile: "full",
       config: undefined,
       title: "Song Title",
@@ -32,14 +32,62 @@ describe("ingestUi", () => {
   });
 
   it("passes through piano melodic methods unchanged", () => {
+    for (const melodicMethod of [
+      " piano_auto ",
+      " piano_basic_pitch_playable ",
+      " piano_basic_pitch ",
+      " piano_basic_pitch_clean "
+    ]) {
+      const req = buildIngestRequestFromForm({
+        sourcePath: "C:/music/piano.wav",
+        mode: "import",
+        melodicMethod,
+        multiFilter: false
+      });
+
+      expect(req.melodic_method).toBe(melodicMethod.trim());
+    }
+  });
+
+  it("builds the piano Psalm configured-stem import request shape", () => {
     const req = buildIngestRequestFromForm({
-      sourcePath: "C:/music/piano.wav",
+      sourcePath: "D:/AuralPrimer/benchmarks/piano/.cache/excerpts/psalm_5_keyboard_polyphony_stress.wav",
       mode: "import",
-      melodicMethod: " piano_auto ",
+      outAuralSongPath: "D:/AuralPrimer/tmp/psalm5-gui-smoke.auralsong",
+      profile: "full",
+      config: "D:/AuralPrimer/tmp/psalm5-excerpt.config.json",
+      title: "Psalm 5 GUI Smoke",
+      artist: "Psalms",
+      drumFilter: "auto",
+      melodicMethod: "piano_auto",
+      shiftsText: "1",
       multiFilter: false
     });
 
-    expect(req.melodic_method).toBe("piano_auto");
+    expect(req).toEqual({
+      source_path: "D:/AuralPrimer/benchmarks/piano/.cache/excerpts/psalm_5_keyboard_polyphony_stress.wav",
+      subcommand: "import",
+      out_auralsong_path: "D:/AuralPrimer/tmp/psalm5-gui-smoke.auralsong",
+      profile: "full",
+      config: "D:/AuralPrimer/tmp/psalm5-excerpt.config.json",
+      title: "Psalm 5 GUI Smoke",
+      artist: "Psalms",
+      drum_filter: "auto",
+      melodic_method: "piano_auto",
+      shifts: 1,
+      multi_filter: false
+    });
+  });
+
+  it("preserves default auto melodic routing for backend role-aware selection", () => {
+    const req = buildIngestRequestFromForm({
+      sourcePath: "C:/music/stems-folder",
+      mode: "import-dir",
+      melodicMethod: "auto",
+      multiFilter: false
+    });
+
+    expect(req.melodic_method).toBe("auto");
   });
 
   it("validates required source and shifts", () => {

@@ -6,7 +6,7 @@ function makeDeps(overrides: Partial<StartSessionDeps> = {}): StartSessionDeps {
     setAudioStatus: vi.fn(),
     setVizStatus: vi.fn(),
     showSongLibraryStep: vi.fn(),
-    loadAudioFromSelectedSongPack: vi.fn(async () => Promise.resolve()),
+    loadAudioFromSelectedAuralSong: vi.fn(async () => Promise.resolve()),
     startVisualizer: vi.fn(async () => Promise.resolve()),
     playTransport: vi.fn(async () => Promise.resolve()),
     startMidiOut: vi.fn(async () => Promise.resolve()),
@@ -22,7 +22,7 @@ describe("sessionStart", () => {
   it("returns no_song and shows library when nothing is selected", async () => {
     const deps = makeDeps();
     const result = await startSelectedSongSessionFlow(
-      { selectedSongPackPath: null, lastLoadedSongPackPath: null, hasVisualizer: false },
+      { selectedAuralSongPath: null, lastLoadedAuralSongPath: null, hasVisualizer: false },
       deps
     );
 
@@ -36,8 +36,8 @@ describe("sessionStart", () => {
     const deps = makeDeps();
     const result = await startSelectedSongSessionFlow(
       {
-        selectedSongPackPath: "C:/songs/a.songpack",
-        lastLoadedSongPackPath: null,
+        selectedAuralSongPath: "C:/songs/a.auralsong",
+        lastLoadedAuralSongPath: null,
         hasVisualizer: false
       },
       deps
@@ -45,11 +45,11 @@ describe("sessionStart", () => {
 
     expect(result).toEqual({ kind: "started" });
     expect(deps.setPlayStartDisabled).toHaveBeenNthCalledWith(1, true);
-    expect(deps.loadAudioFromSelectedSongPack).toHaveBeenCalledTimes(1);
+    expect(deps.loadAudioFromSelectedAuralSong).toHaveBeenCalledTimes(1);
     expect(deps.startVisualizer).toHaveBeenCalledTimes(1);
     expect(deps.playTransport).toHaveBeenCalledTimes(1);
     expect(deps.startMidiOut).toHaveBeenCalledTimes(1);
-    expect(deps.setAudioStatus).toHaveBeenLastCalledWith("playing: C:/songs/a.songpack");
+    expect(deps.setAudioStatus).toHaveBeenLastCalledWith("playing: C:/songs/a.auralsong");
     expect(deps.setPlayStartDisabled).toHaveBeenLastCalledWith(false);
   });
 
@@ -57,17 +57,17 @@ describe("sessionStart", () => {
     const deps = makeDeps();
     const result = await startSelectedSongSessionFlow(
       {
-        selectedSongPackPath: "C:/songs/a.songpack",
-        lastLoadedSongPackPath: "C:/songs/a.songpack",
+        selectedAuralSongPath: "C:/songs/a.auralsong",
+        lastLoadedAuralSongPath: "C:/songs/a.auralsong",
         hasVisualizer: true
       },
       deps
     );
 
     expect(result).toEqual({ kind: "started" });
-    expect(deps.loadAudioFromSelectedSongPack).not.toHaveBeenCalled();
+    expect(deps.loadAudioFromSelectedAuralSong).not.toHaveBeenCalled();
     expect(deps.startVisualizer).not.toHaveBeenCalled();
-    expect(deps.setAudioStatus).toHaveBeenCalledWith("audio already loaded: C:/songs/a.songpack");
+    expect(deps.setAudioStatus).toHaveBeenCalledWith("audio already loaded: C:/songs/a.auralsong");
   });
 
   it("fails normally when error is not native callback inactive", async () => {
@@ -79,8 +79,8 @@ describe("sessionStart", () => {
     });
     const result = await startSelectedSongSessionFlow(
       {
-        selectedSongPackPath: "C:/songs/a.songpack",
-        lastLoadedSongPackPath: "C:/songs/a.songpack",
+        selectedAuralSongPath: "C:/songs/a.auralsong",
+        lastLoadedAuralSongPath: "C:/songs/a.auralsong",
         hasVisualizer: true
       },
       deps
@@ -102,15 +102,15 @@ describe("sessionStart", () => {
     });
     const result = await startSelectedSongSessionFlow(
       {
-        selectedSongPackPath: "C:/songs/a.songpack",
-        lastLoadedSongPackPath: "C:/songs/a.songpack",
+        selectedAuralSongPath: "C:/songs/a.auralsong",
+        lastLoadedAuralSongPath: "C:/songs/a.auralsong",
         hasVisualizer: true
       },
       deps
     );
 
     expect(result).toEqual({ kind: "fallback_started" });
-    expect(deps.tryFallbackToHtmlPlayback).toHaveBeenCalledWith("C:/songs/a.songpack");
+    expect(deps.tryFallbackToHtmlPlayback).toHaveBeenCalledWith("C:/songs/a.auralsong");
     expect(deps.setVizStatus).not.toHaveBeenCalled();
   });
 
@@ -126,8 +126,8 @@ describe("sessionStart", () => {
     });
     const result = await startSelectedSongSessionFlow(
       {
-        selectedSongPackPath: "C:/songs/a.songpack",
-        lastLoadedSongPackPath: "C:/songs/a.songpack",
+        selectedAuralSongPath: "C:/songs/a.auralsong",
+        lastLoadedAuralSongPath: "C:/songs/a.auralsong",
         hasVisualizer: true
       },
       deps
@@ -142,14 +142,14 @@ describe("sessionStart", () => {
 
   it("always re-enables start button after failure", async () => {
     const deps = makeDeps({
-      loadAudioFromSelectedSongPack: vi.fn(async () => {
+      loadAudioFromSelectedAuralSong: vi.fn(async () => {
         throw new Error("load failed");
       })
     });
     await startSelectedSongSessionFlow(
       {
-        selectedSongPackPath: "C:/songs/a.songpack",
-        lastLoadedSongPackPath: null,
+        selectedAuralSongPath: "C:/songs/a.auralsong",
+        lastLoadedAuralSongPath: null,
         hasVisualizer: false
       },
       deps

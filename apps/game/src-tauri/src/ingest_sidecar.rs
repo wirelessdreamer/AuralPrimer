@@ -61,7 +61,6 @@ pub enum IngestSubcommand {
     #[default]
     Import,
     ImportDir,
-    Importunsupported_chart_format,
 }
 
 impl IngestSubcommand {
@@ -69,7 +68,6 @@ impl IngestSubcommand {
         match self {
             IngestSubcommand::Import => "import",
             IngestSubcommand::ImportDir => "import-dir",
-            IngestSubcommand::Importunsupported_chart_format => "import-unsupported_chart_format",
         }
     }
 }
@@ -79,7 +77,7 @@ pub struct IngestImportRequest {
     pub source_path: String,
 
     #[serde(default)]
-    pub out_songpack_path: Option<String>,
+    pub out_auralsong_path: Option<String>,
 
     #[serde(default)]
     pub subcommand: Option<IngestSubcommand>,
@@ -122,7 +120,7 @@ pub struct IngestImportResult {
     pub command: Vec<String>,
     pub stdout: String,
     pub stderr: String,
-    /// SongPack-relative paths of any source MIDI files copied into
+    /// AuralSong-relative paths of any source MIDI files copied into
     /// `features/midi/` after the sidecar finished. Populated by
     /// `ingest_import` (Tauri command in lib.rs) when the source is a
     /// folder that contains user-supplied gameplay MIDI -- chiefly Suno
@@ -218,8 +216,8 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
         return Err("missing source_path".to_string());
     }
 
-    let out_songpack_path = non_empty_opt(&req.out_songpack_path)
-        .ok_or_else(|| "missing out_songpack_path".to_string())?;
+    let out_auralsong_path = non_empty_opt(&req.out_auralsong_path)
+        .ok_or_else(|| "missing out_auralsong_path".to_string())?;
 
     let subcommand = req.subcommand.unwrap_or_default().as_cli_arg().to_string();
     let profile = req
@@ -234,7 +232,7 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
         subcommand,
         source_path.to_string(),
         "--out".to_string(),
-        out_songpack_path,
+        out_auralsong_path,
         "--profile".to_string(),
         profile,
     ];
@@ -644,7 +642,7 @@ mod tests {
     fn req_base() -> IngestImportRequest {
         IngestImportRequest {
             source_path: "C:/input/song.wav".to_string(),
-            out_songpack_path: Some("C:/songs/my.songpack".to_string()),
+            out_auralsong_path: Some("C:/songs/my.auralsong".to_string()),
             ..IngestImportRequest::default()
         }
     }
@@ -670,7 +668,7 @@ mod tests {
         let args = build_ingest_args(&req).expect("args");
         assert_eq!(args[0], "import");
         assert_eq!(args[1], "C:/input/song.wav");
-        assert!(has_pair(&args, "--out", "C:/songs/my.songpack"));
+        assert!(has_pair(&args, "--out", "C:/songs/my.auralsong"));
         assert!(has_pair(&args, "--profile", "full"));
         assert!(has_pair(&args, "--config", "{\"bpm_hint\":120}"));
         assert!(has_pair(&args, "--title", "My Song"));
@@ -699,7 +697,7 @@ mod tests {
     fn build_ingest_args_requires_paths() {
         let req = IngestImportRequest {
             source_path: "   ".to_string(),
-            out_songpack_path: None,
+            out_auralsong_path: None,
             ..IngestImportRequest::default()
         };
         let err = build_ingest_args(&req).expect_err("expected error");

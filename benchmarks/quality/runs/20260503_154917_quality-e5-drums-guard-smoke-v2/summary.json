@@ -417,8 +417,8 @@
         "name": "Smoke - drums",
         "role": "drums",
         "family": "drums",
-        "wav_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\audio\\stems\\drums.wav",
-        "reference_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.auralsong\\audio\\stems\\drums.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.auralsong\\features\\notes.mid",
         "reference_count": 22,
         "reference_meta": {
           "format": "midi",
@@ -1062,8 +1062,8 @@
         "name": "tmp_demucs_smoke - drums",
         "role": "drums",
         "family": "drums",
-        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\audio\\stems\\drums.wav",
-        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.auralsong\\audio\\stems\\drums.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.auralsong\\features\\notes.mid",
         "reference_count": 23,
         "reference_meta": {
           "format": "midi",
@@ -1644,8 +1644,8 @@
         "name": "input - drums",
         "role": "drums",
         "family": "drums",
-        "wav_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\audio\\stems\\drums.wav",
-        "reference_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.auralsong\\audio\\stems\\drums.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.auralsong\\features\\notes.mid",
         "reference_count": 13,
         "reference_meta": {
           "format": "midi",

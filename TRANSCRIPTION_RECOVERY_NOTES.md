@@ -13,7 +13,7 @@ Last known architecture was:
 
 1. Studio/Desktop frontend (TypeScript, Tauri webview) calls Rust commands.
 2. Rust backend spawns a Python sidecar executable (`aural_ingest-...exe`).
-3. Sidecar performs audio separation + transcription and writes SongPack outputs.
+3. Sidecar performs audio separation + transcription and writes AuralSong outputs.
 4. Frontend loads `charts/notes.mid` and `features/*.json` for gameplay.
 
 ## 2. Sidecar CLI shape (remembered)
@@ -21,11 +21,10 @@ Last known architecture was:
 The sidecar command was `aural_ingest` with subcommands:
 
 - `stages`
-- `validate <songpack_dir>`
-- `info <songpack_dir>`
-- `import <input_audio_path> --out <songpack>`
-- `import-unsupported_chart_format <unsupported_chart_format_path> --out <songpack>`
-- `import-dir <dir_path> --out <songpack>`
+- `validate <auralsong_dir>`
+- `info <auralsong_dir>`
+- `import <input_audio_path> --out <auralsong>`
+- `import-dir <dir_path> --out <auralsong>`
 
 Important options:
 
@@ -34,7 +33,7 @@ Important options:
 - `--shifts` (Demucs shifting count)
 - `--multi-filter` (optional)
 
-## 3. SongPack outputs (transcription products)
+## 3. AuralSong outputs (transcription products)
 
 Expected outputs after import:
 

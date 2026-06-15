@@ -12,12 +12,12 @@ export interface TransportTimebase {
   load(source: { blob: Blob; mime: string }): Promise<void>;
 
   /**
-   * Optional: load a track directly from a SongPack path.
+   * Optional: load a track directly from an AuralSong path.
    *
    * Desktop (Tauri) can implement this to avoid transferring large audio blobs
    * over the JS<->Rust IPC boundary.
    */
-  loadFromSongPack?(containerPath: string): Promise<{ mime: string; durationSec: number } | void>;
+  loadFromAuralSong?(containerPath: string): Promise<{ mime: string; durationSec: number } | void>;
 
   play(): Promise<void>;
   pause(): void;

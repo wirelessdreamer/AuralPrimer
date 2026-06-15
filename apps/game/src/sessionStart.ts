@@ -1,6 +1,6 @@
 export type StartSessionContext = {
-  selectedSongPackPath: string | null;
-  lastLoadedSongPackPath: string | null;
+  selectedAuralSongPath: string | null;
+  lastLoadedAuralSongPath: string | null;
   hasVisualizer: boolean;
 };
 
@@ -9,12 +9,12 @@ export type StartSessionDeps = {
   setAudioStatus(msg: string): void;
   setVizStatus(msg: string): void;
   showSongLibraryStep(): void;
-  loadAudioFromSelectedSongPack(): Promise<void>;
+  loadAudioFromSelectedAuralSong(): Promise<void>;
   startVisualizer(): Promise<void>;
   playTransport(): Promise<void>;
   startMidiOut(): Promise<void>;
   isNativePlaybackInactiveError(err: string): boolean;
-  tryFallbackToHtmlPlayback(songpackPath: string): Promise<boolean>;
+  tryFallbackToHtmlPlayback(auralsongPath: string): Promise<boolean>;
   onPrimaryStartError(err: unknown): void;
   onFallbackStartError(err: unknown): void;
 };
@@ -29,7 +29,7 @@ export async function startSelectedSongSessionFlow(
   ctx: StartSessionContext,
   deps: StartSessionDeps
 ): Promise<StartSessionResult> {
-  if (!ctx.selectedSongPackPath) {
+  if (!ctx.selectedAuralSongPath) {
     deps.setAudioStatus("Select a song first from the library");
     deps.showSongLibraryStep();
     return { kind: "no_song" };
@@ -38,10 +38,10 @@ export async function startSelectedSongSessionFlow(
   deps.setPlayStartDisabled(true);
   try {
     deps.setAudioStatus("starting...");
-    if (ctx.lastLoadedSongPackPath !== ctx.selectedSongPackPath) {
-      await deps.loadAudioFromSelectedSongPack();
+    if (ctx.lastLoadedAuralSongPath !== ctx.selectedAuralSongPath) {
+      await deps.loadAudioFromSelectedAuralSong();
     } else {
-      deps.setAudioStatus(`audio already loaded: ${ctx.selectedSongPackPath}`);
+      deps.setAudioStatus(`audio already loaded: ${ctx.selectedAuralSongPath}`);
     }
 
     if (!ctx.hasVisualizer) {
@@ -50,14 +50,14 @@ export async function startSelectedSongSessionFlow(
 
     await deps.playTransport();
     await deps.startMidiOut();
-    deps.setAudioStatus(`playing: ${ctx.selectedSongPackPath}`);
+    deps.setAudioStatus(`playing: ${ctx.selectedAuralSongPath}`);
     return { kind: "started" };
   } catch (e) {
     const err = String(e);
     deps.onPrimaryStartError(e);
-    if (ctx.selectedSongPackPath && deps.isNativePlaybackInactiveError(err)) {
+    if (ctx.selectedAuralSongPath && deps.isNativePlaybackInactiveError(err)) {
       try {
-        if (await deps.tryFallbackToHtmlPlayback(ctx.selectedSongPackPath)) {
+        if (await deps.tryFallbackToHtmlPlayback(ctx.selectedAuralSongPath)) {
           return { kind: "fallback_started" };
         }
       } catch (fallbackErr) {

@@ -149,7 +149,7 @@ const state: TransportState = {
 };
 
 describe("frontend parser and mapping hot paths", () => {
-  bench("parse MIDI tracks from 6-track synthetic SongPack MIDI", () => {
+  bench("parse MIDI tracks from 6-track synthetic AuralSong MIDI", () => {
     parseMidiTracksFromBytes(midiBytes);
   });
 

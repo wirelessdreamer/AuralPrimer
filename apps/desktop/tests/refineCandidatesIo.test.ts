@@ -20,7 +20,7 @@ function note(t_on: number, pitch: number) {
 
 function makeSession(): RefineSession {
   return {
-    containerPath: "/tmp/test.songpack",
+    containerPath: "/tmp/test.auralsong",
     instrument: "keys",
     candidates: {
       version: "0.1.0",

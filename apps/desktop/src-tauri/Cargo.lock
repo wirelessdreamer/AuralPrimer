@@ -186,6 +186,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "auralprimer_desktop_tauri"
 version = "0.0.0"
 dependencies = [
+ "auralsong-core",
  "cpal",
  "hex",
  "midir",
@@ -194,7 +195,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "songpack-core",
  "symphonia",
  "tauri",
  "tauri-build",
@@ -202,6 +202,17 @@ dependencies = [
  "tauri-plugin-shell",
  "tempfile",
  "tokio",
+ "zip",
+]
+
+[[package]]
+name = "auralsong-core"
+version = "0.0.0"
+dependencies = [
+ "notify",
+ "serde",
+ "serde_json",
+ "tauri",
  "zip",
 ]
 
@@ -3726,17 +3737,6 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "songpack-core"
-version = "0.0.0"
-dependencies = [
- "notify",
- "serde",
- "serde_json",
- "tauri",
- "zip",
 ]
 
 [[package]]

@@ -36,7 +36,7 @@ import { createConsoleBridge, type ConsoleLogCategory } from "./consoleBridge";
 import { initPauseMenu, type PauseMenuHandle } from "./pauseMenu";
 // instrumentHints helpers are consumed by capsPanel.ts (Phase 2.L); main.ts
 // no longer calls them directly.
-import { initCapsPanel, type CapsPanelHandle, type SongCapabilities, type SongPackChartsByPath } from "./capsPanel";
+import { initCapsPanel, type CapsPanelHandle, type SongCapabilities, type AuralSongChartsByPath } from "./capsPanel";
 import { initPluginsPanel, type PluginsPanelHandle } from "./pluginsPanel";
 import { initSongDetailsView, type SongDetailsViewHandle } from "./songDetailsView";
 import { initPlaySurfaceController, type PlaySurfaceControllerHandle } from "./playSurfaceController";
@@ -49,8 +49,9 @@ import { initSecondaryStagesController, type SecondaryStagesControllerHandle } f
 import { initPlaybackRateAndMetronomePanel } from "./playbackRateAndMetronomePanel";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
+import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
-import { loadSongPackAudioIntoTransport } from "./songpackAudioLoader";
+import { loadAuralSongAudioIntoTransport } from "./auralsongAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
 function haveTauri(): boolean {
@@ -72,27 +73,8 @@ async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promi
 // (songLibraryPanel, ingest flows moved out). Removed.
 
 // ManifestSummary lives in ./manifestTypes (shared with songLibraryPanel).
-// SongPackScanEntry + isDemoSongPack moved into songLibraryPanel.ts.
-type SongPackDetails = {
-  container_path: string;
-  kind: string;
-  ok: boolean;
-  manifest_summary?: ManifestSummary;
-  manifest_raw?: unknown;
-  has_beats: boolean;
-  has_tempo_map: boolean;
-  has_sections: boolean;
-  has_events: boolean;
-  has_lyrics?: boolean;
-  has_notes_mid?: boolean;
-  has_mix_mp3: boolean;
-  has_mix_ogg: boolean;
-  has_mix_wav?: boolean;
-  charts: string[];
-  error?: string;
-};
-
-// SongPackChartsByPath + SongCapabilities live in capsPanel.ts (re-exported above).
+// AuralSongScanEntry + isDemoAuralSong moved into songLibraryPanel.ts.
+// AuralSongChartsByPath + SongCapabilities live in capsPanel.ts (re-exported above).
 
 type LyricsFile = {
   format: string;
@@ -112,10 +94,10 @@ type AudioBlob = {
 };
 
 // MidiBlob type moved into songChartLoader.ts -- main.ts no longer invokes
-// `read_songpack_mid` directly.
+// `read_auralsong_mid` directly.
 
 
-// Import-flow types (proprietary_archive_import, raw-song folder, stem+MIDI, ingest sidecar) and the
+// Import-flow types (raw-song folder, stem+MIDI, ingest sidecar) and the
 // melodic-method dropdown options live in AuralStudio (apps/desktop). See
 // `spec.md §1.1` and `wip.md` for the boundary rule: AuralPrimer (this app)
 // does not include raw audio/chart import or song-creation flows.
@@ -132,7 +114,7 @@ root.innerHTML = appShellHtml();
     banner.innerHTML = `
       <div class="runtimeBannerInner">
         <strong>Browser mode</strong> â€” you opened the web build (no Tauri runtime detected).<br />
-        Desktop-only features (file picker, SongPack scanning, native audio, etc.) are disabled here.
+        Desktop-only features (file picker, AuralSong scanning, native audio, etc.) are disabled here.
         <div class="meta">Run <code>npm run game:dev</code> or launch the installed app to use these features.</div>
       </div>
     `;
@@ -219,7 +201,7 @@ const audioBackendSelect = document.getElementById("audioBackend") as HTMLSelect
 // #modelpackPath / #modelpackImport) lives in modelsPanel.ts. The init call
 // is below (needs escapeHtml defined first).
 
-// Import-flow DOM lookups (proprietary_archive_import, sidecar ingest, analysis import, stem+MIDI
+// Import-flow DOM lookups (sidecar ingest, analysis import, stem+MIDI
 // creator) intentionally do not exist in this app. They live in AuralStudio
 // (apps/desktop). See `spec.md §1.1`.
 
@@ -235,8 +217,8 @@ const playStartBtn = document.getElementById("playStart") as HTMLButtonElement;
 // block below can call disableFolderControls(), and so showSongLibraryStep
 // — invoked at boot via queueMicrotask — has a panel to refresh.
 const songLibraryPanel: SongLibraryPanelHandle = initSongLibraryPanel({
-  selectedSongPackPath: () => selectedSongPackPath,
-  onSongSelected: selectSongPack,
+  selectedAuralSongPath: () => selectedAuralSongPath,
+  onSongSelected: selectAuralSong,
   haveTauri,
   escapeHtml,
 });
@@ -245,8 +227,6 @@ const songLibraryPanel: SongLibraryPanelHandle = initSongLibraryPanel({
 if (!haveTauri()) {
   songLibraryPanel.disableFolderControls();
   playStartBtn.disabled = true;
-
-  midiPanel.disableAll();
 
   // audio output panel disables itself at boot-time refreshAll() when
   // !haveTauri(), so no explicit call needed here.
@@ -302,12 +282,12 @@ let viz: Visualizer | null = null;
 // SecondaryStage type + secondaryStages array live in secondaryStagesController.ts (Phase 2.U).
 let vizRaf: number | null = null;
 let lastFrameMs: number | null = null;
-let selectedSongPackPath: string | null = null;
-let selectedSongPackDetails: SongPackDetails | null = null;
+let selectedAuralSongPath: string | null = null;
+let selectedAuralSongDetails: AuralSongDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
 let selectedMelodicTracks: MelodicTrackSelection[] = [];
 // tabRenderer + activeTabInstrument now live inside playSurfaceController.
-let selectedSongPackCharts: SongPackChartsByPath | null = null;
+let selectedAuralSongCharts: AuralSongChartsByPath | null = null;
 let selectedSongPreloadPromise: Promise<void> | null = null;
 let selectedSongPreloadPath: string | null = null;
 
@@ -364,10 +344,13 @@ const midiPanel: MidiPanelHandle = initMidiPanel({
     transport = { ...transport, bpm };
   },
 });
+if (!haveTauri()) {
+  midiPanel.disableAll();
+}
 
 // Pause-menu overlay (DOM + state + behavior in pauseMenu.ts). The deps'
 // callbacks are arrow lambdas, so the `let`s they reference (transport,
-// selectedSongPackPath, lastLoadedSongPackPath) only need to exist at
+// selectedAuralSongPath, lastLoadedAuralSongPath) only need to exist at
 // CALL time, not init time -- and the function references (transportController,
 // midiPanel, stopAudio, showSongLibraryStep, setAudioStatus, setVizStatus,
 // errorConsole) hoist or are already initialized above.
@@ -380,7 +363,7 @@ const pauseMenu: PauseMenuHandle = initPauseMenu({
     setAudioStatus("paused");
   },
   onResumeRequest: async () => {
-    if (!selectedSongPackPath || lastLoadedSongPackPath !== selectedSongPackPath) {
+    if (!selectedAuralSongPath || lastLoadedAuralSongPath !== selectedAuralSongPath) {
       setAudioStatus("pause menu closed");
       logConsole("gamestate", "pause menu -> close without resume");
       return;
@@ -389,7 +372,7 @@ const pauseMenu: PauseMenuHandle = initPauseMenu({
       await transportController.play();
       transport = transportController.getState();
       await midiPanel.outStartOrContinue();
-      setAudioStatus(selectedSongPackPath ? `playing: ${selectedSongPackPath}` : "resumed");
+      setAudioStatus(selectedAuralSongPath ? `playing: ${selectedAuralSongPath}` : "resumed");
       logConsole("gamestate", "pause menu -> resume");
     } catch (e) {
       const err = String(e);
@@ -411,13 +394,13 @@ const pauseMenu: PauseMenuHandle = initPauseMenu({
 // Audio transport panel — owns Load/Play/Pause/Stop/Seek + loop set/clear,
 // plus the #audioStatus / #vizStatus elements. Host's load/stop callbacks
 // are passed lazily via lambdas so they can capture function refs declared
-// further down (loadAudioFromSelectedSongPack / stopAudio).
+// further down (loadAudioFromSelectedAuralSong / stopAudio).
 const audioTransportPanel: AudioTransportPanelHandle = initAudioTransportPanel({
   transportController,
   midiPanel,
   pauseMenu,
   consoleBridge,
-  onLoadAudio: () => loadAudioFromSelectedSongPack(),
+  onLoadAudio: () => loadAudioFromSelectedAuralSong(),
   onStopAudio: () => stopAudio(),
   refreshCachedTransport: () => {
     transport = transportController.getState();
@@ -448,7 +431,7 @@ function resetTransportController(timebase: TransportTimebase): void {
   transport = transportController.getState();
 }
 
-async function tryFallbackToHtmlPlayback(songpackPath: string): Promise<boolean> {
+async function tryFallbackToHtmlPlayback(auralsongPath: string): Promise<boolean> {
   if (!(currentTimebase instanceof NativeAudioTimebase)) {
     return false;
   }
@@ -457,14 +440,14 @@ async function tryFallbackToHtmlPlayback(songpackPath: string): Promise<boolean>
 
   resetTransportController(new HtmlAudioTimebase(htmlFallbackAudioEl));
   // Force blob-path reload on the fallback backend.
-  lastLoadedSongPackPath = null;
-  await loadAudioFromSelectedSongPack();
+  lastLoadedAuralSongPath = null;
+  await loadAudioFromSelectedAuralSong();
   if (!viz) {
     await startVisualizer();
   }
   await transportController.play();
   await midiPanel.outStartOrContinue();
-  setAudioStatus(`playing (fallback): ${songpackPath}`);
+  setAudioStatus(`playing (fallback): ${auralsongPath}`);
   return true;
 }
 
@@ -501,7 +484,7 @@ toggleFocusBtn.disabled = true;
 // readDrumChartSelection lives in songChartLoader.ts (Phase 2.T) as
 // `readSongChartSelection`, which returns BOTH the drum selection and the
 // melodic tracks instead of mutating selectedMelodicTracks as a side
-// effect. selectSongPack writes both states from the returned object.
+// effect. selectAuralSong writes both states from the returned object.
 
 // loadRefinementsForRoles lives in refinementLoader.ts (Phase 2.E).
 // Instrument-hint helpers (asObjectRecord + 4 applyInstrumentHintsFrom*)
@@ -510,7 +493,7 @@ toggleFocusBtn.disabled = true;
 // computeSongCapabilities + renderCaps + applyInstrumentAvailability live in
 // capsPanel.ts (Phase 2.L). Use capsPanel.render() / .applyAvailability() / .compute().
 
-// pluginRequirements (per-plugin SongPack data gating) lives in pluginsPanel.ts.
+// pluginRequirements (per-plugin AuralSong data gating) lives in pluginsPanel.ts.
 
 // buildVizSongContext lives in vizSongContext.ts (Phase 2.S). Thin wrapper
 // below feeds the four live module-state pieces into the pure compute so
@@ -521,7 +504,7 @@ function buildVizSongContextLocal() {
     drumSelection: selectedDrumChartSelection,
     melodicTracks: selectedMelodicTracks,
     lyrics: currentLyrics,
-    charts: selectedSongPackCharts,
+    charts: selectedAuralSongCharts,
   });
 }
 
@@ -556,7 +539,7 @@ const pluginsPanel: PluginsPanelHandle = initPluginsPanel({
   refreshBtn: pluginRefreshBtn,
   setVizStatus,
   escapeHtml,
-  getSelectedSongPackDetails: () => selectedSongPackDetails,
+  getSelectedAuralSongDetails: () => selectedAuralSongDetails,
   getPreferredPluginIdForPlayers: () => _playersPanelRef?.getPreferredPluginIdForPlayers() ?? null,
   onPluginSelectionChange: () => restartVisualizerForPluginSelection(),
 });
@@ -565,7 +548,7 @@ const playersPanel: PlayersPanelHandle = initPlayersPanel({
   escapeHtml,
   setPluginSelectionModeAuto: () => pluginsPanel.setSelectionModeAuto(),
   applyInstrumentAvailability: () => {
-    capsPanel.applyAvailability(selectedSongPackDetails, selectedDrumChartSelection, selectedSongPackCharts);
+    capsPanel.applyAvailability(selectedAuralSongDetails, selectedDrumChartSelection, selectedAuralSongCharts);
   },
   syncPreferredPluginSelection: () => pluginsPanel.syncPreferred(),
   syncMelodicTrackSelectionFromPlayers,
@@ -629,7 +612,7 @@ const routeController: RouteControllerHandle = initRouteController({
   resizeVizCanvas: () => resizeVizCanvas(),
   syncPlaySurfaceMode,
   isLoadedSongSelected: () =>
-    Boolean(selectedSongPackPath) && lastLoadedSongPackPath === selectedSongPackPath,
+    Boolean(selectedAuralSongPath) && lastLoadedAuralSongPath === selectedAuralSongPath,
   playLayoutEl,
 });
 
@@ -637,7 +620,7 @@ const metronome = new Metronome({ enabled: false, volume: 0.25 });
 
 
 let lastLoadedAudio: { blob: Blob; mime: string } | null = null;
-let lastLoadedSongPackPath: string | null = null;
+let lastLoadedAuralSongPath: string | null = null;
 
 // setAudioStatus + setVizStatus live in audioTransportPanel.ts (Phase 2.Q).
 // Thin wrappers below preserve the existing call shape so the rest of main.ts
@@ -654,7 +637,7 @@ audioBackendSelect.value = "native";
 
 // audio host/device helpers + refresh/apply functions live in audioOutputPanel.ts
 
-// Import-flow logic (proprietary_archive_import, Suno stem+MIDI creator, analysis import,
+// Import-flow logic (Suno stem+MIDI creator, analysis import,
 // advanced sidecar ingest) lives in AuralStudio. See `spec.md §1.1`.
 
 function resizeVizCanvas() {
@@ -727,24 +710,24 @@ function updateInstrumentSelector(): void {
   playSurfaceController.updateInstrumentSelector();
 }
 
-async function selectSongPack(containerPath: string) {
-  const songChanged = selectedSongPackPath !== containerPath;
+async function selectAuralSong(containerPath: string) {
+  const songChanged = selectedAuralSongPath !== containerPath;
   selectedDrumChartSelection = null;
-  selectedSongPackCharts = null;
+  selectedAuralSongCharts = null;
   setSelectedSongCard(containerPath);
   songLibraryPanel.setDetailsHTML("Loading details...");
   try {
-    const details = await invoke<SongPackDetails>("get_songpack_details", {
+    const details = await invoke<AuralSongDetails>("get_auralsong_details", {
       containerPath,
     });
     songDetailsView.renderDetails(details);
-    selectedSongPackDetails = details;
+    selectedAuralSongDetails = details;
     songDetailsView.setHudKeyMode(details.manifest_raw);
     if (details.charts.length > 0) {
       try {
-        selectedSongPackCharts = await safeInvoke<SongPackChartsByPath>("read_songpack_charts", { containerPath });
+        selectedAuralSongCharts = await safeInvoke<AuralSongChartsByPath>("read_auralsong_charts", { containerPath });
       } catch (e) {
-        selectedSongPackCharts = null;
+        selectedAuralSongCharts = null;
         warnConsole("debugging", `failed to read charts for ${containerPath}`, e);
       }
     }
@@ -756,35 +739,35 @@ async function selectSongPack(containerPath: string) {
     updateInstrumentSelector();
 
     // Show per-song data availability so users know what’s actually present.
-    capsPanel.render(details, selectedDrumChartSelection, selectedSongPackCharts);
-    capsPanel.applyAvailability(details, selectedDrumChartSelection, selectedSongPackCharts);
+    capsPanel.render(details, selectedDrumChartSelection, selectedAuralSongCharts);
+    capsPanel.applyAvailability(details, selectedDrumChartSelection, selectedAuralSongCharts);
     pluginsPanel.render();
 
     // Load lyrics (best-effort)
     try {
-      const lyr = await invoke<unknown>("read_songpack_json", { containerPath, relPath: "features/lyrics.json" });
+      const lyr = await invoke<unknown>("read_auralsong_json", { containerPath, relPath: "features/lyrics.json" });
       currentLyrics = (lyr ?? null) as LyricsFile | null;
     } catch {
       currentLyrics = null;
     }
     renderPlaybackLyrics(transport.t);
 
-    // Selecting a SongPack enables audio load.
-    selectedSongPackPath = containerPath;
+    // Selecting an AuralSong enables audio load.
+    selectedAuralSongPath = containerPath;
     if (songChanged) {
-      lastLoadedSongPackPath = null;
+      lastLoadedAuralSongPath = null;
     }
     audioTransportPanel.loadBtn.disabled = false;
     songDetailsView.setSelectedSongSetupLabel(details, containerPath);
     toggleFocusBtn.disabled = false;
     playersPanel.resetForSongSetup();
     showBandSetupStep();
-    if (songChanged || lastLoadedSongPackPath !== containerPath) {
+    if (songChanged || lastLoadedAuralSongPath !== containerPath) {
       playStartBtn.disabled = true;
-      setAudioStatus(`selected songpack: ${containerPath}\npreparing audio...`);
-      const preload = loadAudioFromSelectedSongPack(containerPath)
+      setAudioStatus(`selected auralsong: ${containerPath}\npreparing audio...`);
+      const preload = loadAudioFromSelectedAuralSong(containerPath)
         .catch((e) => {
-          if (selectedSongPackPath === containerPath) {
+          if (selectedAuralSongPath === containerPath) {
             setAudioStatus(String(e));
           }
         })
@@ -793,7 +776,7 @@ async function selectSongPack(containerPath: string) {
             selectedSongPreloadPromise = null;
             selectedSongPreloadPath = null;
           }
-          if (selectedSongPackPath === containerPath) {
+          if (selectedAuralSongPath === containerPath) {
             playStartBtn.disabled = false;
           }
         });
@@ -801,17 +784,17 @@ async function selectSongPack(containerPath: string) {
       selectedSongPreloadPath = containerPath;
       void preload;
     } else {
-      setAudioStatus(`selected songpack: ${containerPath}\naudio ready`);
+      setAudioStatus(`selected auralsong: ${containerPath}\naudio ready`);
     }
   } catch (e) {
     songLibraryPanel.setDetailsHTML(`<pre class="error">${escapeHtml(String(e))}</pre>`);
-    setSelectedSongCard(selectedSongPackPath);
+    setSelectedSongCard(selectedAuralSongPath);
   }
 }
 
-async function loadAudioFromSelectedSongPack(containerPath?: string) {
-  const targetSongPackPath = containerPath ?? selectedSongPackPath;
-  if (!targetSongPackPath) {
+async function loadAudioFromSelectedAuralSong(containerPath?: string) {
+  const targetAuralSongPath = containerPath ?? selectedAuralSongPath;
+  if (!targetAuralSongPath) {
     setAudioStatus("Select a song first from the library");
     return;
   }
@@ -820,24 +803,24 @@ async function loadAudioFromSelectedSongPack(containerPath?: string) {
   audioTransportPanel.loadBtn.disabled = true;
 
   try {
-    const loadResult = await loadSongPackAudioIntoTransport({
-      containerPath: targetSongPackPath,
+    const loadResult = await loadAuralSongAudioIntoTransport({
+      containerPath: targetAuralSongPath,
       timebase: currentTimebase,
       transport: transportController,
       playbackRate: currentPlaybackRate,
-      readSongPackAudio: async (containerPath) => {
-        return invoke<AudioBlob>("read_songpack_audio", { containerPath });
+      readAuralSongAudio: async (containerPath) => {
+        return invoke<AudioBlob>("read_auralsong_audio", { containerPath });
       }
     });
 
     if (loadResult.mode === "direct") {
       // We no longer have the raw bytes in JS (by design).
       lastLoadedAudio = null;
-      lastLoadedSongPackPath = targetSongPackPath;
-      setAudioStatus(`loaded: ${targetSongPackPath}`);
+      lastLoadedAuralSongPath = targetAuralSongPath;
+      setAudioStatus(`loaded: ${targetAuralSongPath}`);
     } else {
       lastLoadedAudio = loadResult.loadedAudio;
-      lastLoadedSongPackPath = targetSongPackPath;
+      lastLoadedAuralSongPath = targetAuralSongPath;
       setAudioStatus(`loaded: ${loadResult.mime} (${loadResult.byteLength} bytes)`);
     }
 
@@ -849,15 +832,15 @@ async function loadAudioFromSelectedSongPack(containerPath?: string) {
     audioTransportPanel.loopClearBtn.disabled = false;
 
     // If user hasnâ€™t started a visualizer yet, auto-start the selected one.
-    if (!viz && targetSongPackPath === selectedSongPackPath) {
+    if (!viz && targetAuralSongPath === selectedAuralSongPath) {
       void startVisualizer().catch((e) => {
         stopVisualizer({ keepStatus: true });
         setVizStatus(String(e));
       });
     }
   } catch (e) {
-    if (targetSongPackPath === selectedSongPackPath) {
-      lastLoadedSongPackPath = null;
+    if (targetAuralSongPath === selectedAuralSongPath) {
+      lastLoadedAuralSongPath = null;
     }
     setAudioStatus(String(e));
     throw e;
@@ -867,7 +850,7 @@ async function loadAudioFromSelectedSongPack(containerPath?: string) {
 }
 
 async function startSelectedSongSession() {
-  if (selectedSongPreloadPromise && selectedSongPackPath && selectedSongPreloadPath === selectedSongPackPath) {
+  if (selectedSongPreloadPromise && selectedAuralSongPath && selectedSongPreloadPath === selectedAuralSongPath) {
     try {
       await selectedSongPreloadPromise;
     } catch {
@@ -876,8 +859,8 @@ async function startSelectedSongSession() {
   }
   await startSelectedSongSessionFlow(
     {
-      selectedSongPackPath,
-      lastLoadedSongPackPath,
+      selectedAuralSongPath,
+      lastLoadedAuralSongPath,
       hasVisualizer: Boolean(viz)
     },
     {
@@ -887,7 +870,7 @@ async function startSelectedSongSession() {
       setAudioStatus,
       setVizStatus,
       showSongLibraryStep,
-      loadAudioFromSelectedSongPack,
+      loadAudioFromSelectedAuralSong,
       startVisualizer,
       playTransport: () => transportController.play(),
       startMidiOut: midiPanel.outStartOrContinue,
@@ -919,7 +902,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
 
   if (plugin.id === "viz-lyrics" && !currentLyrics) {
     setVizStatus(
-      "viz-lyrics: features/lyrics.json missing. Generate it in AuralStudio, then reopen this SongPack."
+      "viz-lyrics: features/lyrics.json missing. Generate it in AuralStudio, then reopen this AuralSong."
     );
   }
 
@@ -1065,8 +1048,8 @@ initScrollSpeedController({
 // MIDI follow defaults to enabled.
 transportController.setFollowExternalClock(true);
 
-// proprietary_archive_import and ingest progress events are emitted by AuralStudio's import flows;
-// the gameplay app does not subscribe to them.
+// Ingest progress events are emitted by AuralStudio's import flows; the
+// gameplay app does not subscribe to them.
 
 // Audio controls
 

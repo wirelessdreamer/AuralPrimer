@@ -6,15 +6,15 @@ This resolves the host audio codec choice as option 3: a bundled library decoder
 
 ## Host Playback
 
-- AuralPrimer and AuralStudio decode SongPack playback audio in Rust with Symphonia.
-- Supported SongPack playback assets are `audio/mix.ogg`, `audio/mix.mp3`, and `audio/mix.wav`.
-- SongPack loading prefers `mix.ogg`, then `mix.mp3`, then `mix.wav`.
+- AuralPrimer and AuralStudio decode AuralSong playback audio in Rust with Symphonia.
+- Supported AuralSong playback assets are `audio/mix.ogg`, `audio/mix.mp3`, and `audio/mix.wav`.
+- AuralSong loading prefers `mix.ogg`, then `mix.mp3`, then `mix.wav`.
 - The host must not require FFmpeg or platform-specific audio stack decoders for normal playback.
 - WebAudio/browser decode remains only a renderer fallback path when native loading is unavailable.
 
 ## Ingest
 
-- The Python ingest sidecar always writes canonical `audio/mix.wav` into generated SongPacks.
+- The Python ingest sidecar always writes canonical `audio/mix.wav` into generated AuralSongs.
 - Non-WAV source ingest may use an FFmpeg sidecar for robust conversion to PCM/WAV.
 - FFmpeg is packaged and licensed as an ingest dependency, not as the host playback codec layer.
 

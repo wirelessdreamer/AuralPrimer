@@ -1,4 +1,4 @@
-"""Build all Psalm songpacks using the correct full-mix WAV files.
+"""Build all Psalm auralsongs using the correct full-mix WAV files.
 
 Each Psalm folder in D:\Psalms contains stem sub-folders, but the full mix
 WAVs live at the parent level (D:\Psalms\*.wav).  We use `import` (not
@@ -31,7 +31,7 @@ def build_psalms():
     total = len(PSALM_MAP)
     for i, (num, wav_name, title) in enumerate(PSALM_MAP):
         mix_wav = PSALMS_DIR / wav_name
-        out_path = OUT_DIR / f"Psalm {num}.songpack"
+        out_path = OUT_DIR / f"Psalm {num}.auralsong"
 
         if not mix_wav.is_file():
             print(f"[{i+1}/{total}] SKIP Psalm {num} — mix not found: {mix_wav}")
@@ -58,7 +58,7 @@ def build_psalms():
             print(f"FAILED on Psalm {num} with code {process.returncode}")
             sys.exit(1)
 
-    print(f"DONE — built {total} Psalm songpacks.")
+    print(f"DONE — built {total} Psalm auralsongs.")
 
 
 if __name__ == "__main__":

@@ -45,8 +45,8 @@ jobs:
       - name: Playback Coverage Gate (100%)
         run: npm run test:coverage:playback --if-present
 
-      - name: SongPack Fixture Validation Gate
-        run: npm run test:songpack-fixtures --if-present
+      - name: AuralSong Fixture Validation Gate
+        run: npm run test:auralsong-fixtures --if-present
 
       - name: TS tests + coverage
         # CI is provided by GitHub Actions by default; set it explicitly so the

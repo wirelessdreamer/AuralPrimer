@@ -5,18 +5,18 @@ AuralPrimer/AuralStudio is a **two-app desktop suite**:
 - **AuralPrimer** is the gameplay runtime.
 - **AuralStudio** is the import/authoring runtime.
 
-Both apps exchange content through **SongPacks**.
+Both apps exchange content through **AuralSongs**.
 All heavy extraction/transcription work happens **offline** in a Python-based ingest pipeline shipped as **embedded sidecar executables**.
 
 ## High-level modules
 
 ### A) AuralPrimer game host (`apps/game`)
 **Responsibilities**
-- SongPack discovery/loading
-  - scan a configured songs folder on startup for `*.songpack` (zip) and `*.songpack/` (directory) SongPacks
-  - update local library index when new SongPacks appear
+- AuralSong discovery/loading
+  - scan a configured songs folder on startup for `*.auralsong` (zip) and `*.auralsong/` (directory) AuralSongs
+  - update local library index when new AuralSongs appear
 - Audio playback + transport clock (play/pause/seek/loop)
-- Local audio codec layer (Rust/Symphonia decode for SongPack playback)
+- Local audio codec layer (Rust/Symphonia decode for AuralSong playback)
 - Latency compensation & sync
 - Visualization plugin loading + lifecycle management
 - Input routing (keyboard/controller; mic/MIDI later)
@@ -30,17 +30,17 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 **Responsibilities**
 - Import/song-creation UX
   - raw audio import
-  - ecosystem importers (e.g., proprietary_archive_import DE)
-  - stem+MIDI SongPack creation
+  - user-provided stems, MIDI, and authored chart import
+  - stem+MIDI AuralSong creation
 - Running ingestion sidecars and tracking progress
 - Authoring-related preferences and tool configuration
-- Writing validated SongPack outputs to the shared songs library
+- Writing validated AuralSong outputs to the shared songs library
 
 **Non-responsibilities**
 - No gameplay/practice runtime modes as product features.
 - No player-focused visualizer/gameplay surfaces.
 
-### C) SongPack format + schemas (`packages/songpack`, `packages/core-music`)
+### C) AuralSong format + schemas (`packages/auralsong`, `packages/core-music`)
 **Responsibilities**
 - Canonical, versioned schema for:
   - beat/tempo grid
@@ -53,10 +53,10 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 
 ### D) Python ingest pipeline (`python/ingest`)
 **Responsibilities**
-- Importers and extraction pipeline that convert sources into SongPacks
+- Importers and extraction pipeline that convert sources into AuralSongs
   - audio-only import
   - MIDI import
-  - ecosystem importers (e.g., proprietary_archive_import DE)
+  - user-provided stem and chart import
 - decoding → PCM (when needed)
 - beat/tempo
 - segmentation
@@ -70,7 +70,7 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 
 ### E) Visualization plugins (`visualizers/*` + `packages/viz-sdk`)
 **Responsibilities**
-- Render visuals based on SongPack events + transport state
+- Render visuals based on AuralSong events + transport state
 - Provide instrument-specific or theory-centric representations
 
 **Constraints**
@@ -80,18 +80,18 @@ All heavy extraction/transcription work happens **offline** in a Python-based in
 ## Runtime data flow
 
 ### 1) Import flow
-1. User selects an import source (audio file, MIDI file, or external ecosystem folder) in AuralStudio.
-2. AuralStudio selects a **pluggable importer** and spawns sidecar: `aural_ingest import <source> --importer <id> --out <songpack-dir> --profile <...>`
-3. Sidecar writes a SongPack folder (or zip) incrementally:
+1. User selects an import source (audio file, stem folder, MIDI file, or authored chart file) in AuralStudio.
+2. AuralStudio selects a **pluggable importer** and spawns sidecar: `aural_ingest import <source> --importer <id> --out <auralsong-dir> --profile <...>`
+3. Sidecar writes an AuralSong folder (or zip) incrementally:
    - `manifest.json`
    - `audio/mix.wav`
    - `features/*.json`
    - `charts/*.json`
 4. AuralStudio watches progress and surfaces logs.
-5. AuralStudio validates SongPack, then writes output to the shared songs library.
+5. AuralStudio validates AuralSong, then writes output to the shared songs library.
 
 ### 2) Playback + render flow
-1. AuralPrimer opens SongPack and chooses a visualization plugin.
+1. AuralPrimer opens AuralSong and chooses a visualization plugin.
 2. AuralPrimer starts audio playback.
 3. Each frame (~60fps):
    - AuralPrimer computes `TransportState` from audio timebase.
@@ -110,7 +110,7 @@ Visualizers must not depend on MIDI parsing or raw ML outputs.
 - Allow external MIDI devices/controllers to provide **performance input** (note on/off, CC) into gameplay.
 - Allow external MIDI clocks to **drive** AuralPrimer’s transport when desired.
 - Allow AuralPrimer to **drive** downstream devices with MIDI clock so chained gear stays in time with:
-  - the currently loaded SongPack
+  - the currently loaded AuralSong
   - current practice slowdown factor (playbackRate)
   - loop/seek state (best-effort, device capabilities vary)
 
@@ -146,7 +146,7 @@ Key concept: **Tempo scaling**
   - loop/seek behaviors while output clock is enabled
   - tempo scaling behavior (external tempo → song tempo) and slowdown (song tempo × playbackRate)
 
-Instead, ingestion produces a **canonical event timeline** (see `docs/songpack-spec.md`) that is stable over time and supports many render paradigms:
+Instead, ingestion produces a **canonical event timeline** (see `docs/auralsong-spec.md`) that is stable over time and supports many render paradigms:
 - fretboard note targets
 - drum lane grid
 - vocal pitch lane
@@ -156,7 +156,7 @@ Instead, ingestion produces a **canonical event timeline** (see `docs/songpack-s
 ## Plugin boundaries and stability
 
 ### Stable interfaces
-1. **SongPack schema** (versioned) — what AuralPrimer and visualizers consume.
+1. **AuralSong schema** (versioned) — what AuralPrimer and visualizers consume.
 2. **Viz SDK API** — lifecycle methods + rendering and event access.
 3. **Ingest CLI contract** — AuralStudio ↔ pipeline communication.
 
@@ -166,7 +166,7 @@ Each stable interface must have **contract tests** (TDD-first) that:
 
 ### Compatibility rules
 - A visualizer declares `supported_schema_versions` in its manifest.
-- Host can run migrations when loading older SongPacks.
+- Host can run migrations when loading older AuralSongs.
 
 ---
 ## Technology choices (recommended)
@@ -185,6 +185,6 @@ Each stable interface must have **contract tests** (TDD-first) that:
 > Note: transcription accuracy is treated as modular and replaceable; early MVP can start with MIDI import and beat/section extraction.
 
 ### Host audio codecs
-- Playback hosts decode SongPack `mix.ogg`, `mix.mp3`, and `mix.wav` in-process with Rust/Symphonia.
+- Playback hosts decode AuralSong `mix.ogg`, `mix.mp3`, and `mix.wav` in-process with Rust/Symphonia.
 - FFmpeg is not part of the normal playback path; it is reserved for ingest-sidecar source conversion.
 - See `docs/audio-codec-policy.md`.

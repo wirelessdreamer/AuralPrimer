@@ -67,15 +67,45 @@ tmp_*
 # Root-level scratch screenshots only (root-anchored so nested, intentionally
 # committed images elsewhere are untouched).
 /*.png
-# Scratch SongPacks dumped at the repo root by ad-hoc ingest/demucs runs.
-# Root-anchored so the tracked fixtures under assets/test_fixtures/songpacks/
-# are NOT ignored.
-/*.songpack/
-/*.songpack
-# Belt-and-braces: never ignore the committed SongPack test fixtures even if a
-# broader pattern is added above.
+# Scratch AuralSongs dumped at the repo root by ad-hoc ingest/demucs runs.
+# Root-anchored so the tracked fixtures under assets/test_fixtures/ are NOT
+# ignored.
+# Belt-and-braces: never ignore the committed test fixtures even if a broader
+# pattern is added above.
 !assets/test_fixtures/**
+assets/test_fixtures/**/*.asd
 assets/models/mr_mt3/
 assets/models/yourmt3/
 assets/models/piano_pti/
 assets/models/piano_d3rm/
+
+# Local agent/worktree scratch state
+.claude/
+.work/
+
+# Ad-hoc command output and generated import products
+tmp/
+*.auralsong/
+*.auralsong
+!assets/test_fixtures/**/*.auralsong/
+!assets/test_fixtures/**/*.auralsong/**
+
+# Generated sidecar binaries are built by the packaging scripts.
+apps/desktop/src-tauri/binaries/
+apps/game/src-tauri/binaries/
+
+# Local benchmark/research output. Keep committed manifests/docs, ignore run
+# products and caches produced by local experiments.
+benchmarks/drums/shootouts/runs/
+benchmarks/piano/.cache/
+benchmarks/piano/runs/
+benchmarks/piano/refinement_runs/
+benchmarks/piano/ableton_verification/
+benchmarks/piano/LATEST_RUN.txt
+benchmarks/piano/LATEST_REFINEMENT_RUN.txt
+benchmarks/piano/psalm*_shootout_manifest.json
+benchmarks/python/*.latest.json
+benchmarks/rust/bench-rust-summary.json
+
+# Python packaging outputs from sidecar builds.
+python/ingest/dist*/

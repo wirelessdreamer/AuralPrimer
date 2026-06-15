@@ -7,10 +7,10 @@ describe("NativeAudioTimebase", () => {
     vi.doUnmock("@tauri-apps/api/core");
   });
 
-  it("loadFromSongPack applies playback rate + loop and exposes duration", async () => {
+  it("loadFromAuralSong applies playback rate + loop and exposes duration", async () => {
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
-      if (cmd === "native_audio_load_songpack_audio") {
-        expect(payload?.containerPath).toBe("C:/songs/demo.songpack");
+      if (cmd === "native_audio_load_auralsong_audio") {
+        expect(payload?.containerPath).toBe("C:/songs/demo.auralsong");
         return { mime: "audio/ogg", duration_sec: 42.5 };
       }
       return null;
@@ -22,7 +22,7 @@ describe("NativeAudioTimebase", () => {
     tb.setPlaybackRate(0.8);
     tb.setLoop({ t0: 2, t1: 6 });
 
-    const out = await tb.loadFromSongPack("C:/songs/demo.songpack");
+    const out = await tb.loadFromAuralSong("C:/songs/demo.auralsong");
     expect(out).toEqual({ mime: "audio/ogg", durationSec: 42.5 });
     expect(tb.getDurationSec()).toBeCloseTo(42.5, 6);
 
@@ -34,7 +34,7 @@ describe("NativeAudioTimebase", () => {
     const calls: Array<{ cmd: string; payload?: Record<string, unknown> }> = [];
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
       calls.push({ cmd, payload });
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/mpeg", duration_sec: 10 };
       }
       if (cmd === "native_audio_get_state") {
@@ -62,7 +62,7 @@ describe("NativeAudioTimebase", () => {
     const tb = new NativeAudioTimebase();
     tb.setLoop({ t0: 1, t1: 4 });
     tb.setPlaybackRate(0.9);
-    await tb.loadFromSongPack("C:/songs/x.songpack");
+    await tb.loadFromAuralSong("C:/songs/x.auralsong");
 
     calls.length = 0;
     await tb.setOutputDevice({ name: "USB DAC", channels: 2, sample_rate_hz: 48_000 });
@@ -70,7 +70,7 @@ describe("NativeAudioTimebase", () => {
     expect(calls.map((c) => c.cmd)).toEqual([
       "native_audio_get_state",
       "native_audio_set_output_device_and_persist",
-      "native_audio_load_songpack_audio",
+      "native_audio_load_auralsong_audio",
       "native_audio_set_playback_rate",
       "native_audio_set_loop",
       "native_audio_seek",
@@ -87,7 +87,7 @@ describe("NativeAudioTimebase", () => {
     const calls: Array<{ cmd: string; payload?: Record<string, unknown> }> = [];
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
       calls.push({ cmd, payload });
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/ogg", duration_sec: 12 };
       }
       if (cmd === "native_audio_get_state") {
@@ -113,14 +113,14 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/z.songpack");
+    await tb.loadFromAuralSong("C:/songs/z.auralsong");
 
     calls.length = 0;
     await tb.setOutputHost({ id: "asio" });
     expect(calls.map((c) => c.cmd)).toEqual([
       "native_audio_get_state",
       "native_audio_set_output_host_and_persist",
-      "native_audio_load_songpack_audio",
+      "native_audio_load_auralsong_audio",
       "native_audio_set_playback_rate",
       "native_audio_set_loop",
       "native_audio_seek"
@@ -428,7 +428,7 @@ describe("NativeAudioTimebase", () => {
     let statePolls = 0;
     let firstRecoveryPollCount = -1;
     const invoke = vi.fn(async (cmd: string) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_play") {
@@ -464,7 +464,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/duo-capture-stalled.songpack");
+    await tb.loadFromAuralSong("C:/songs/duo-capture-stalled.auralsong");
 
     const playPromise = tb.play().catch((e) => e);
     await vi.advanceTimersByTimeAsync(8_000);
@@ -485,7 +485,7 @@ describe("NativeAudioTimebase", () => {
     let statePolls = 0;
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
       calls.push(cmd);
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_play") {
@@ -518,7 +518,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/extra-wait-fallthrough.songpack");
+    await tb.loadFromAuralSong("C:/songs/extra-wait-fallthrough.auralsong");
 
     const playPromise = tb.play().catch((e) => e);
     await vi.advanceTimersByTimeAsync(25_000);
@@ -573,7 +573,7 @@ describe("NativeAudioTimebase", () => {
     let playCount = 0;
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
       calls.push({ cmd, payload });
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_play") {
@@ -608,7 +608,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/recover.songpack");
+    await tb.loadFromAuralSong("C:/songs/recover.auralsong");
 
     const playPromise = tb.play();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -629,7 +629,7 @@ describe("NativeAudioTimebase", () => {
     let recovered = false;
     let playCount = 0;
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_play") {
@@ -663,7 +663,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/recover-null-device.songpack");
+    await tb.loadFromAuralSong("C:/songs/recover-null-device.auralsong");
 
     const playPromise = tb.play();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -677,7 +677,7 @@ describe("NativeAudioTimebase", () => {
     let playCount = 0;
     const setDeviceAttempts: string[] = [];
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_play") {
@@ -725,7 +725,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/recover-device-error.songpack");
+    await tb.loadFromAuralSong("C:/songs/recover-device-error.auralsong");
 
     const playPromise = tb.play();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -739,7 +739,7 @@ describe("NativeAudioTimebase", () => {
     const calls: string[] = [];
     const invoke = vi.fn(async (cmd: string) => {
       calls.push(cmd);
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_get_state") {
@@ -765,7 +765,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/recover-fail.songpack");
+    await tb.loadFromAuralSong("C:/songs/recover-fail.auralsong");
 
     const playPromise = tb.play();
     const handled = playPromise.catch((e) => e);
@@ -784,7 +784,7 @@ describe("NativeAudioTimebase", () => {
     const calls: string[] = [];
     const invoke = vi.fn(async (cmd: string) => {
       calls.push(cmd);
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_get_state") {
@@ -796,7 +796,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/state-unavailable.songpack");
+    await tb.loadFromAuralSong("C:/songs/state-unavailable.auralsong");
 
     const playPromise = tb.play();
     const handled = playPromise.catch((e) => e);
@@ -817,7 +817,7 @@ describe("NativeAudioTimebase", () => {
     let playCount = 0;
     let recovered = false;
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_play") {
@@ -859,7 +859,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/preference-read-fail.songpack");
+    await tb.loadFromAuralSong("C:/songs/preference-read-fail.auralsong");
 
     const playPromise = tb.play();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -872,7 +872,7 @@ describe("NativeAudioTimebase", () => {
     vi.useFakeTimers();
     const setOutputDevicePayloads: Array<unknown> = [];
     const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/wav", duration_sec: 30 };
       }
       if (cmd === "native_audio_set_output_device") {
@@ -902,7 +902,7 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/retry-cap.songpack");
+    await tb.loadFromAuralSong("C:/songs/retry-cap.auralsong");
 
     const playPromise = tb.play();
     const handled = playPromise.catch((e) => e);
@@ -1058,9 +1058,9 @@ describe("NativeAudioTimebase", () => {
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
     // Force the rare branch where audio was marked initialized but no source is cached.
-    (tb as unknown as { initialized: boolean; lastLoadedSongPackPath: string | null; lastLoadedAudio: unknown | null })
+    (tb as unknown as { initialized: boolean; lastLoadedAuralSongPath: string | null; lastLoadedAudio: unknown | null })
       .initialized = true;
-    (tb as unknown as { lastLoadedSongPackPath: string | null }).lastLoadedSongPackPath = null;
+    (tb as unknown as { lastLoadedAuralSongPath: string | null }).lastLoadedAuralSongPath = null;
     (tb as unknown as { lastLoadedAudio: unknown | null }).lastLoadedAudio = null;
 
     await tb.setOutputDevice({ name: "Built-in", channels: 2, sample_rate_hz: 48_000 });
@@ -1224,10 +1224,10 @@ describe("NativeAudioTimebase", () => {
     expect(tb.getOutputLatencySec()).toBeUndefined();
   });
 
-  it("loadFromSongPack falls back to sentinel when duration cache is cleared during apply", async () => {
+  it("loadFromAuralSong falls back to sentinel when duration cache is cleared during apply", async () => {
     let tbRef: { loadedDurationSec: number | null } | null = null;
     const invoke = vi.fn(async (cmd: string) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/ogg", duration_sec: 11 };
       }
       if (cmd === "native_audio_set_playback_rate" && tbRef) {
@@ -1241,13 +1241,13 @@ describe("NativeAudioTimebase", () => {
     const tb = new NativeAudioTimebase();
     tbRef = tb as unknown as { loadedDurationSec: number | null };
 
-    const out = await tb.loadFromSongPack("C:/songs/fallback.songpack");
+    const out = await tb.loadFromAuralSong("C:/songs/fallback.auralsong");
     expect(out).toEqual({ mime: "audio/ogg", durationSec: 24 * 60 * 60 });
   });
 
-  it("loadFromSongPack uses sentinel when decoder reports invalid duration", async () => {
+  it("loadFromAuralSong uses sentinel when decoder reports invalid duration", async () => {
     const invoke = vi.fn(async (cmd: string) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/ogg", duration_sec: Number.NaN };
       }
       return null;
@@ -1256,13 +1256,13 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    const out = await tb.loadFromSongPack("C:/songs/invalid-duration.songpack");
+    const out = await tb.loadFromAuralSong("C:/songs/invalid-duration.auralsong");
     expect(out).toEqual({ mime: "audio/ogg", durationSec: 24 * 60 * 60 });
   });
 
-  it("loadFromSongPack uses sentinel when decoder omits duration field", async () => {
+  it("loadFromAuralSong uses sentinel when decoder omits duration field", async () => {
     const invoke = vi.fn(async (cmd: string) => {
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/ogg" };
       }
       return null;
@@ -1271,18 +1271,18 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    const out = await tb.loadFromSongPack("C:/songs/missing-duration.songpack");
+    const out = await tb.loadFromAuralSong("C:/songs/missing-duration.auralsong");
     expect(out).toEqual({ mime: "audio/ogg", durationSec: 24 * 60 * 60 });
   });
 
-  it("setOutputDevice reloads from songpack when state snapshot is unavailable", async () => {
+  it("setOutputDevice reloads from auralsong when state snapshot is unavailable", async () => {
     const calls: string[] = [];
     const invoke = vi.fn(async (cmd: string) => {
       calls.push(cmd);
       if (cmd === "native_audio_get_state") {
         throw new Error("state unavailable");
       }
-      if (cmd === "native_audio_load_songpack_audio") {
+      if (cmd === "native_audio_load_auralsong_audio") {
         return { mime: "audio/ogg", duration_sec: 12 };
       }
       return null;
@@ -1291,14 +1291,14 @@ describe("NativeAudioTimebase", () => {
 
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase();
-    await tb.loadFromSongPack("C:/songs/snapshot-missing.songpack");
+    await tb.loadFromAuralSong("C:/songs/snapshot-missing.auralsong");
 
     calls.length = 0;
     await tb.setOutputDevice({ name: "Built-in", channels: 2, sample_rate_hz: 48_000 });
     expect(calls).toEqual([
       "native_audio_get_state",
       "native_audio_set_output_device_and_persist",
-      "native_audio_load_songpack_audio",
+      "native_audio_load_auralsong_audio",
       "native_audio_set_playback_rate",
       "native_audio_set_loop"
     ]);

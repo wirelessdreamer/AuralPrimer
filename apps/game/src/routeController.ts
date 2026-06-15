@@ -142,7 +142,7 @@ export function initRouteController(deps: RouteControllerDeps): RouteControllerH
     // Always rescan when the library panel is shown. Covers app-start, returning
     // from focus mode / pause menu, and navigating in from Home or the nav bar.
     // Previously the initial DOM left statusEl reading "(not loaded)" until the
-    // user clicked Refresh or navigated away and back; new SongPacks dropped
+    // user clicked Refresh or navigated away and back; new AuralSongs dropped
     // into the songs folder by aural_ingest while the app was open also stayed
     // invisible until that manual refresh.
     void deps.songLibraryPanel.refresh();

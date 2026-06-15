@@ -484,7 +484,7 @@ import {
   applyRefinementOverlay,
   type RefinementFile,
   type RefinementInstrument,
-} from "@auralprimer/songpack/refinement";
+} from "@auralprimer/auralsong/refinement";
 
 /**
  * Map an instrument role to the refinement file's instrument tag. The
@@ -506,7 +506,7 @@ function refinementMatchesRole(
  *
  * Multiple refinements with the same instrument are applied in array
  * order; later refinements operate on the result of earlier ones (this
- * shouldn't happen in practice since the SongPack convention is one
+ * shouldn't happen in practice since the AuralSong convention is one
  * refinement file per instrument, but the loader handles it deterministically).
  */
 export function applyRefinementsToMelodicTracks(

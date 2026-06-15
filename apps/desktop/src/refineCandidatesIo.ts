@@ -1,21 +1,21 @@
 /**
  * Refine Candidates I/O — read precomputed candidates + read/write the
- * user's accepted picks back to the SongPack.
+ * user's accepted picks back to the AuralSong.
  *
  * The data contract is locked by the JSON Schemas:
  *   - features/refine_candidates.<instrument>.json  ← Python emits via
  *     `aural_ingest refine-candidates`, the workspace consumes (read-only)
  *   - features/refinement.<instrument>.json         ← workspace writes
  *     the user's accepted notes per region; the runtime game reads this
- *     at SongPack load and overlays it onto features/notes.mid
+ *     at AuralSong load and overlays it onto features/notes.mid
  *
  * Validators (`validateRefineCandidates`, `validateRefinement`) live in
- * `@auralprimer/songpack`. We re-use them here so a malformed file
+ * `@auralprimer/auralsong`. We re-use them here so a malformed file
  * surfaces a clear error instead of silently rendering garbage.
  *
  * Tauri commands used:
- *   - read_songpack_json(container_path, rel_path)         → existing
- *   - write_songpack_features_json(container_path, rel_path, value)
+ *   - read_auralsong_json(container_path, rel_path)         → existing
+ *   - write_auralsong_features_json(container_path, rel_path, value)
  *     → new (added in this commit)
  */
 
@@ -25,14 +25,14 @@ import {
   type RefineCandidatesFile,
   type RefineCandidatesRegion,
   type RefineCandidateDefinition,
-} from "@auralprimer/songpack/refineCandidates";
+} from "@auralprimer/auralsong/refineCandidates";
 import {
   validateRefinement,
   type RefinementFile,
   type RefinementRegion,
   type RefinementNote,
   type RefinementInstrument,
-} from "@auralprimer/songpack/refinement";
+} from "@auralprimer/auralsong/refinement";
 
 export {
   type RefineCandidatesFile,
@@ -75,23 +75,23 @@ export type RefineSession = {
 };
 
 /** Tauri-shaped read helper. The Tauri stub injected by tests overrides this. */
-async function readSongPackJson(
+async function readAuralSongJson(
   containerPath: string,
   relPath: string,
 ): Promise<unknown> {
-  return invoke<unknown>("read_songpack_json", {
+  return invoke<unknown>("read_auralsong_json", {
     containerPath,
     relPath,
   });
 }
 
 /** Tauri-shaped write helper. */
-async function writeSongPackFeaturesJson(
+async function writeAuralSongFeaturesJson(
   containerPath: string,
   relPath: string,
   value: unknown,
 ): Promise<void> {
-  await invoke<void>("write_songpack_features_json", {
+  await invoke<void>("write_auralsong_features_json", {
     containerPath,
     relPath,
     value,
@@ -113,7 +113,7 @@ export async function loadCandidates(
   const rel = `features/refine_candidates.${instrument}.json`;
   let raw: unknown;
   try {
-    raw = await readSongPackJson(containerPath, rel);
+    raw = await readAuralSongJson(containerPath, rel);
   } catch (e) {
     const msg = String(e);
     if (msg.includes("not found") || msg.includes("No such") || msg.includes("NotFound")) {
@@ -136,7 +136,7 @@ export async function loadCandidates(
 /**
  * Load any previously-saved decisions for this instrument. Returns an
  * empty Map if the refinement file doesn't exist yet (the common case
- * the first time a user opens this SongPack in the workspace).
+ * the first time a user opens this AuralSong in the workspace).
  */
 export async function loadDecisions(
   containerPath: string,
@@ -145,7 +145,7 @@ export async function loadDecisions(
   const rel = `features/refinement.${instrument}.json`;
   let raw: unknown;
   try {
-    raw = await readSongPackJson(containerPath, rel);
+    raw = await readAuralSongJson(containerPath, rel);
   } catch (e) {
     const msg = String(e);
     if (msg.includes("not found") || msg.includes("No such") || msg.includes("NotFound")) {
@@ -220,6 +220,8 @@ export async function saveDecisions(session: RefineSession): Promise<void> {
       id: region.id,
       t_start: region.t_start,
       t_end: region.t_end,
+      accepted_candidate: decision.candidate_id,
+      accepted_at: decision.edited_at,
       notes: decision.notes,
       // Tag with the candidate id + edit time. The runtime overlay
       // ignores these but they help the workspace + future re-precompute
@@ -236,7 +238,7 @@ export async function saveDecisions(session: RefineSession): Promise<void> {
     regions: regions.sort((a, b) => a.t_start - b.t_start),
   };
   const rel = `features/refinement.${session.instrument}.json`;
-  await writeSongPackFeaturesJson(session.containerPath, rel, file);
+  await writeAuralSongFeaturesJson(session.containerPath, rel, file);
 }
 
 /**

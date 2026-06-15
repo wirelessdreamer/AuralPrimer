@@ -2,18 +2,19 @@
 
 This repository contains a two-app desktop music-learning suite:
 
-1. **AuralStudio (authoring app)**: import, transcription, and SongPack creation flows.
-2. **AuralPrimer (game app)**: playback, practice, and gameplay from SongPacks.
+1. **AuralStudio (authoring app)**: import, transcription, and AuralSong creation flows.
+2. **AuralPrimer (game app)**: playback, practice, and gameplay from AuralSongs.
 3. **Python sidecar pipeline**: extraction/transcription tooling packaged as executables (no system Python required).
 4. **Pluggable visualization engine**: instrument and theory visualizers powered by shared canonical events.
 
 ## Design principles
 
 - **Test-driven development (TDD)**: tests first, implementation second, CI stays green.
-- **SongPack-first runtime**: AuralPrimer consumes SongPacks as canonical game content.
-  - AuralPrimer scans the songs folder for new/removed SongPacks.
-  - AuralStudio importers convert external sources into SongPacks.
+- **AuralSong-first runtime**: AuralPrimer consumes AuralSongs as canonical game content.
+  - AuralPrimer scans the songs folder for new/removed AuralSongs.
+  - AuralStudio importers convert user-provided local sources into AuralSongs.
 - **Deterministic imports**: import outputs are cacheable, reproducible, and versioned.
+- **Rights-neutral importer scope**: PRs for source-specific proprietary game/DLC archive importers are out of scope and will not be accepted.
 - **Plugin-first visualization**: visualizers remain decoupled from core runtime.
 - **Local-first shipping**: required tooling is bundled in desktop artifacts.
   - ML model weights are not bundled in installers.
@@ -32,8 +33,8 @@ Top-level entry points:
 Architecture and contracts:
 
 - [`docs/architecture.md`](docs/architecture.md) - system overview, module boundaries, runtime flows
-- [`docs/songpack-spec.md`](docs/songpack-spec.md) - SongPack format, event model, versioning/migrations
-- [`docs/songpack-deliverable.md`](docs/songpack-deliverable.md) - deterministic `.songpack` zip build contract
+- [`docs/auralsong-spec.md`](docs/auralsong-spec.md) - AuralSong format, event model, versioning/migrations
+- [`docs/auralsong-deliverable.md`](docs/auralsong-deliverable.md) - deterministic `.auralsong` zip build contract
 - [`docs/ingest-pipeline.md`](docs/ingest-pipeline.md) - Python pipeline DAG, stage plugins, caching, CLI contract
 - [`docs/visualization-plugins.md`](docs/visualization-plugins.md) - visualization plugin API and loading model
 - [`docs/audio-codec-policy.md`](docs/audio-codec-policy.md) - host playback uses Rust/Symphonia; FFmpeg stays in ingest sidecar
@@ -68,7 +69,7 @@ Recovery context (preserved from the 2026-03-03 lost-tree recovery):
   /packages
     /core-music             # shared schema + utilities (TS + Rust)
     /viz-sdk                # visualization plugin SDK (TS)
-    /songpack               # SongPack reader/writer/validator (TS + Rust)
+    /auralsong               # AuralSong reader/writer/validator (TS + Rust)
   /python
     /ingest                 # Python extraction pipeline (built into sidecars)
   /visualizers

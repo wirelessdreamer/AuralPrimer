@@ -17,6 +17,9 @@ def test_parse_refinement_methods_expands_profiles() -> None:
         "source_midi_clean",
         "source_midi_clean_playable",
     ]
+    assert "piano_basic_pitch" in parse_refinement_methods(None)
+    assert "piano_basic_pitch_playable" in parse_refinement_methods(None)
+    assert "basic_pitch" not in parse_refinement_methods(None)
     assert parse_refinement_methods("source_midi,piano_polyphonic_clean") == [
         "source_midi",
         "piano_polyphonic_clean",
@@ -25,6 +28,33 @@ def test_parse_refinement_methods_expands_profiles() -> None:
     assert "source_midi_clean" in research
     assert "piano_transkun_clean" in research
     assert len(research) == len(set(research))
+
+
+def test_candidate_notes_prefers_registry_playable_method(tmp_path: Path) -> None:
+    from aural_ingest.piano_refinement import _candidate_notes
+
+    audio = tmp_path / "keys.wav"
+    audio.write_bytes(b"x")
+    source_notes = [
+        MelodicNote(t_on=0.0, t_off=0.5, pitch=60, velocity=80, instrument="keys")
+    ]
+
+    notes, kind = _candidate_notes(
+        "fake_playable",
+        audio_path=audio,
+        source_notes=source_notes,
+        registry={
+            "fake": lambda _path: [
+                MelodicNote(t_on=0.0, t_off=0.5, pitch=64, velocity=80, instrument="keys")
+            ],
+            "fake_playable": lambda _path: [
+                MelodicNote(t_on=0.0, t_off=0.5, pitch=72, velocity=80, instrument="keys")
+            ],
+        },
+    )
+
+    assert kind == "audio-derived transcription candidate"
+    assert [note.pitch for note in notes] == [72]
 
 
 def test_playable_reduction_caps_polyphony_and_preserves_melody_and_bass() -> None:
@@ -89,7 +119,13 @@ def test_refinement_run_scores_candidates_and_writes_artifacts(monkeypatch, tmp_
         audio_path=audio,
         source_midi_path=source,
         reference_midi_path=reference,
-        methods=["source_midi", "source_midi_clean", "fake_audio", "missing_method"],
+        methods=[
+            "source_midi",
+            "source_midi_clean",
+            "source_midi_clean_playable",
+            "fake_audio",
+            "missing_method",
+        ],
         output_root=tmp_path / "runs",
         label="unit",
     )
@@ -111,6 +147,7 @@ def test_refinement_run_scores_candidates_and_writes_artifacts(monkeypatch, tmp_
     assert (out / "playability_audition_before.wav").read_bytes()[:4] == b"RIFF"
     assert (out / "playability_audition_after.wav").read_bytes()[:4] == b"RIFF"
     assert (out / "playability_audition_ab.wav").read_bytes()[:4] == b"RIFF"
+    assert (out / "playability_audition_source.wav").read_bytes()[:4] == b"RIFF"
     assert (out / "candidates" / "fake-audio.mid").is_file()
     assert (out / "candidates" / "source-midi-clean.mid").is_file()
     assert (out / "candidates" / "index.json").is_file()
@@ -121,6 +158,8 @@ def test_refinement_run_scores_candidates_and_writes_artifacts(monkeypatch, tmp_
     assert "https://" not in dashboard
     playability_report = (out / "playability_report.html").read_text("utf-8")
     assert "Piano Playability Visual Report" in playability_report
+    assert "Before: <code>source_midi_clean_playable</code> / After: <code>fake_audio</code>" in playability_report
+    assert "playability_audition_source.wav" in playability_report
     assert "playability_audition_ab.wav" in playability_report
     assert "http://" not in playability_report
     assert "https://" not in playability_report

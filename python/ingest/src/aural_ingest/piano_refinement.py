@@ -2,7 +2,7 @@
 
 This module compares an existing source MIDI against piano-focused
 transcription candidates for a matching audio file. It is intentionally
-separate from normal SongPack import.
+separate from normal AuralSong import.
 """
 from __future__ import annotations
 
@@ -45,8 +45,10 @@ DEFAULT_REFINEMENT_METHODS = [
     "source_midi_clean",
     "source_midi_clean_playable",
     "piano_auto",
+    "piano_basic_pitch_playable",
+    "piano_basic_pitch",
+    "piano_basic_pitch_clean",
     "piano_polyphonic_clean",
-    "basic_pitch",
 ]
 REQUIRED_REFINEMENT_ARTIFACTS = [
     "summary.json",
@@ -59,6 +61,7 @@ REQUIRED_REFINEMENT_ARTIFACTS = [
     "playability_audition_before.wav",
     "playability_audition_after.wav",
     "playability_audition_ab.wav",
+    "playability_audition_source.wav",
     "candidates/index.json",
 ]
 
@@ -379,6 +382,13 @@ def _candidate_notes(
     source_notes: Sequence[MelodicNote],
     registry: Mapping[str, Any],
 ) -> tuple[list[MelodicNote], str]:
+    if method == "source_midi":
+        return list(source_notes), "decoded source MIDI baseline"
+    if method == "source_midi_clean":
+        return piano_cleanup.cleanup_notes(list(source_notes), stem_path=audio_path, instrument="keys"), "source MIDI cleanup"
+    fn = registry.get(method)
+    if fn is not None:
+        return list(fn(audio_path)), "audio-derived transcription candidate"
     if method.endswith("_playable"):
         base_method = method[: -len("_playable")]
         base_notes, base_kind = _candidate_notes(
@@ -391,14 +401,7 @@ def _candidate_notes(
             reduce_piano_polyphony_for_playability(base_notes),
             f"{base_kind} + playable polyphony reduction",
         )
-    if method == "source_midi":
-        return list(source_notes), "decoded source MIDI baseline"
-    if method == "source_midi_clean":
-        return piano_cleanup.cleanup_notes(list(source_notes), stem_path=audio_path, instrument="keys"), "source MIDI cleanup"
-    fn = registry.get(method)
-    if fn is None:
-        raise RuntimeError(f"piano refinement method '{method}' is unavailable")
-    return list(fn(audio_path)), "audio-derived transcription candidate"
+    raise RuntimeError(f"piano refinement method '{method}' is unavailable")
 
 
 def run_piano_refinement_workbench(
@@ -631,7 +634,7 @@ def render_refinement_report_markdown(payload: Mapping[str, Any]) -> str:
     lines.append("- `refinement_dashboard.html`: static before/after review UI")
     lines.append("- `playability_report.html`: focused before/after playability report")
     lines.append("- `playability_*.svg`: static visual summaries for polyphony, metrics, and piano-roll diff")
-    lines.append("- `playability_audition_*.wav`: synthesized before/after focused-section audio previews")
+    lines.append("- `playability_audition_*.wav`: source recording plus synthesized before/after focused-section audio previews")
     lines.append("- `candidates/*.mid`: normalized MIDI outputs")
     lines.append("- `candidates/*.notes.json`: decoded candidate note lists")
     return "\n".join(lines) + "\n"
@@ -655,13 +658,17 @@ def _candidate_by_method(payload: Mapping[str, Any], method: str) -> Mapping[str
 
 
 def _select_playability_pair(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any] | None, Mapping[str, Any] | None]:
+    recommendation = payload.get("recommendation", {})
+    rec_method = recommendation.get("method")
+    recommended = _candidate_by_method(payload, str(rec_method)) if rec_method else None
+    source_playable = _candidate_by_method(payload, "source_midi_clean_playable")
+
+    if payload.get("reference_available") and recommended is not None and recommended is not source_playable:
+        before = source_playable or _candidate_by_method(payload, "source_midi_clean") or _candidate_by_method(payload, "source_midi")
+        return before, recommended
+
     before = _candidate_by_method(payload, "source_midi_clean") or _candidate_by_method(payload, "source_midi")
-    after = _candidate_by_method(payload, "source_midi_clean_playable")
-    if after is None:
-        recommendation = payload.get("recommendation", {})
-        rec_method = recommendation.get("method")
-        if rec_method:
-            after = _candidate_by_method(payload, str(rec_method))
+    after = source_playable or recommended
     return before, after
 
 
@@ -791,6 +798,34 @@ def _write_pcm16_wav(path: Path, samples: Sequence[float], *, sample_rate: int, 
 def _write_silence_wav(path: Path, *, duration_sec: float = 0.25, sample_rate: int = AUDITION_SAMPLE_RATE) -> None:
     sample_count = max(1, int(duration_sec * sample_rate))
     _write_pcm16_wav(path, [0.0] * sample_count, sample_rate=sample_rate, normalization_peak=1.0)
+
+
+def _write_source_audition_audio(
+    path: Path,
+    audio_path: Path | None,
+    *,
+    start_sec: float,
+    end_sec: float,
+) -> None:
+    duration = max(0.25, float(end_sec) - float(start_sec))
+    if audio_path is None or audio_path.suffix.lower() != ".wav":
+        _write_silence_wav(path, duration_sec=duration)
+        return
+    try:
+        with wave.open(str(audio_path), "rb") as src:
+            frame_rate = src.getframerate()
+            start_frame = max(0, int(round(float(start_sec) * frame_rate)))
+            frame_count = max(1, int(round(duration * frame_rate)))
+            src.setpos(min(start_frame, src.getnframes()))
+            frames = src.readframes(frame_count)
+            if not frames:
+                _write_silence_wav(path, duration_sec=duration)
+                return
+            with wave.open(str(path), "wb") as dst:
+                dst.setparams(src.getparams())
+                dst.writeframes(frames)
+    except Exception:
+        _write_silence_wav(path, duration_sec=duration)
 
 
 def _write_playability_audition_audio(
@@ -1085,8 +1120,9 @@ code {{ color: #69e6a3; }}
   <div class="card"><strong>{PLAYABLE_MAX_POLYPHONY}</strong><span class="muted">playable cap</span></div>
 </div>
 <h2>Audition Clips</h2>
-<p class="muted">Generated-piano previews for the focused section from {start_sec:.1f}s to {end_sec:.1f}s. These are synthesized from MIDI notes for A/B review; they are not the original audio recording.</p>
+<p class="muted">Focused section from {start_sec:.1f}s to {end_sec:.1f}s. Source audio is copied from the input recording; before/after clips are synthesized from MIDI notes for A/B review.</p>
 <div class="audio-grid">
+  <div class="audio-card"><strong>Source recording</strong><audio controls preload="none" src="playability_audition_source.wav"></audio></div>
   <div class="audio-card"><strong>Before section</strong><audio controls preload="none" src="playability_audition_before.wav"></audio></div>
   <div class="audio-card"><strong>After section</strong><audio controls preload="none" src="playability_audition_after.wav"></audio></div>
   <div class="audio-card"><strong>A/B section: before, then after</strong><audio controls preload="none" src="playability_audition_ab.wav"></audio></div>
@@ -1112,6 +1148,7 @@ def _write_playability_visual_reports(out_dir: Path, payload: Mapping[str, Any])
         _write_silence_wav(out_dir / "playability_audition_before.wav")
         _write_silence_wav(out_dir / "playability_audition_after.wav")
         _write_silence_wav(out_dir / "playability_audition_ab.wav")
+        _write_silence_wav(out_dir / "playability_audition_source.wav")
         (out_dir / "playability_report.html").write_text(render_playability_report_html(payload), encoding="utf-8")
         return
     duration = _playability_duration(payload, before, after)
@@ -1124,7 +1161,14 @@ def _write_playability_visual_reports(out_dir: Path, payload: Mapping[str, Any])
         _render_playability_roll_svg(before, after, duration_sec=duration),
         encoding="utf-8",
     )
-    _write_playability_audition_audio(out_dir, before, after, duration_sec=duration)
+    start_sec, end_sec = _write_playability_audition_audio(out_dir, before, after, duration_sec=duration)
+    audio_raw = (payload.get("inputs", {}) or {}).get("audio_path")
+    _write_source_audition_audio(
+        out_dir / "playability_audition_source.wav",
+        Path(str(audio_raw)) if audio_raw else None,
+        start_sec=start_sec,
+        end_sec=end_sec,
+    )
     (out_dir / "playability_report.html").write_text(render_playability_report_html(payload), encoding="utf-8")
 
 

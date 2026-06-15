@@ -12,7 +12,7 @@ PR expectations:
 - CI is treated as a hard gate (no merge if red).
 
 ## Goals
-- Protect the **SongPack schema** from accidental breaking changes.
+- Protect the **AuralSong schema** from accidental breaking changes.
 - Keep ingestion outputs **reproducible** and regression-tested.
 - Ensure the visualization host can load any compatible plugin and render frames reliably.
 - Catch cross-platform packaging issues early.
@@ -21,12 +21,12 @@ PR expectations:
 ## Test layers
 
 ### 1) Schema tests (fast, always-on)
-**Where**: `packages/songpack`, `packages/core-music`, `python/ingest`
+**Where**: `packages/auralsong`, `packages/core-music`, `python/ingest`
 
 **What to test**
 - JSON schema validation for each file (`manifest.json`, `features/events.json`, etc.)
 - migration tests:
-  - given a SongPack produced by schema v0.x, migrate to v1.x
+  - given an AuralSong produced by schema v0.x, migrate to v1.x
   - validate equality invariants (event ordering preserved, times preserved)
 - round-trip tests:
   - parse → normalize → serialize yields stable output (canonical json)
@@ -81,9 +81,9 @@ PR expectations:
 ---
 ### 5) End-to-end tests (slow, nightly)
 **Flow**
-1. Run ingest on fixture audio in AuralStudio -> produce SongPack.
+1. Run ingest on fixture audio in AuralStudio -> produce AuralSong.
 2. Launch AuralPrimer in headless mode (or minimal UI harness).
-3. Load SongPack.
+3. Load AuralSong.
 4. Load a reference plugin.
 5. Run playback for N seconds and verify:
    - no crashes
@@ -122,7 +122,7 @@ In addition, release work should be approached TDD-first:
 
 ---
 ## What “done” looks like (MVP)
-- A SongPack fixture can be validated and loaded.
+- A AuralSong fixture can be validated and loaded.
 - At least one plugin passes contract tests.
 - CI runs lint/test on PRs.
 - Release workflow produces installers.

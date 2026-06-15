@@ -2,11 +2,11 @@
  * Plugins panel — owns the visualizer plugin dropdown (#pluginSelect),
  * the refresh button (#pluginRefresh), the in-memory `availablePlugins`
  * list, the auto/user selection-mode state, and the per-plugin
- * "requirements satisfied?" gating that disables options for SongPacks
+ * "requirements satisfied?" gating that disables options for AuralSongs
  * missing required data (lyrics, notes.mid, etc.).
  *
  * Extracted from main.ts as Phase 2.M. The host wires three callbacks:
- *   - getSelectedSongPackDetails  — for requirement gating
+ *   - getSelectedAuralSongDetails  — for requirement gating
  *   - getPreferredPluginIdForPlayers  — read playersPanel preferred id
  *   - onPluginSelectionChange  — host-side viz restart on user change
  *
@@ -20,7 +20,7 @@ import {
   scanUserPlugins,
   type PluginDescriptor,
 } from "./plugins";
-import type { SongPackDetails } from "./songpack";
+import type { AuralSongDetails } from "./auralsong";
 
 export type PluginsPanelDeps = {
   /** <select id="pluginSelect"> the panel owns. */
@@ -31,8 +31,8 @@ export type PluginsPanelDeps = {
   setVizStatus: (msg: string) => void;
   /** Same escapeHtml the rest of main.ts uses. */
   escapeHtml: (s: string) => string;
-  /** Live getter — returns the currently-selected SongPackDetails (may be null). */
-  getSelectedSongPackDetails: () => SongPackDetails | null;
+  /** Live getter — returns the currently-selected AuralSongDetails (may be null). */
+  getSelectedAuralSongDetails: () => AuralSongDetails | null;
   /**
    * Live getter — returns the plugin id playersPanel would prefer given its
    * current player roster. Returns null if no preference (auto mode no-op).
@@ -66,10 +66,10 @@ export type PluginsPanelHandle = {
 
 /**
  * Per-plugin requirement gating. Add cases here as new visualizers need
- * specific SongPack data to function.
+ * specific AuralSong data to function.
  */
 function pluginRequirements(id: string): {
-  ok: (d: SongPackDetails | null) => boolean;
+  ok: (d: AuralSongDetails | null) => boolean;
   reason: string;
 } {
   switch (id) {
@@ -109,7 +109,7 @@ export function initPluginsPanel(deps: PluginsPanelDeps): PluginsPanelHandle {
   }
 
   function render(): void {
-    const details = deps.getSelectedSongPackDetails();
+    const details = deps.getSelectedAuralSongDetails();
     const previousSelectedId = getSelectedPluginId();
     const esc = deps.escapeHtml;
 

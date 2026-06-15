@@ -44,7 +44,7 @@ main {
 }
 
 /* -----------------
-   App shell (proprietary_rhythm_archive-ish)
+   App shell (rhythm-game)
    ----------------- */
 
 .appShell {
@@ -629,7 +629,7 @@ audio {
   padding-right: 4px;
 }
 
-/* Post-import success card -- shown after a SongPack import completes so the
+/* Post-import success card -- shown after a AuralSong import completes so the
    user gets clear "next step" buttons (refine workspace, candidate
    precompute, cleanup) instead of staring at a status log dead-end. */
 .postImportCard {
@@ -827,7 +827,7 @@ audio {
   margin-top: 2px;
 }
 
-#songpackEditorStatus {
+#auralsongEditorStatus {
   margin-top: 8px;
 }
 

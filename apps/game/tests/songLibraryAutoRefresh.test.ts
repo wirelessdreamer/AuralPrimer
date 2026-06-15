@@ -3,7 +3,7 @@
  *
  * Two complementary cases:
  *
- *  1. **Library-panel entry refresh.** Originally an imported SongPack did
+ *  1. **Library-panel entry refresh.** Originally an imported AuralSong did
  *     not surface in the Play Songs panel because `showSongLibraryStep()`
  *     (called on app boot, from the pause menu, from focus-toggle, and
  *     from `openPlaySongFlow`) did not trigger `refresh()`. The fix moved
@@ -11,7 +11,7 @@
  *     path rescans the songs folder.
  *
  *  2. **Filesystem-watcher auto-refresh.** While the panel is already
- *     visible, a `.songpack/` dropped into the songs folder by an external
+ *     visible, a `.auralsong/` dropped into the songs folder by an external
  *     tool (e.g. `aural_ingest import` from a separate shell) used to stay
  *     invisible until the user clicked Refresh. The Rust side now mounts a
  *     `notify`-based watcher and emits a debounced `songs_folder_changed`

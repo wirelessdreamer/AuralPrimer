@@ -7,7 +7,7 @@ that wires PTI is exercised through an injectable runner stub so the
 tests don't need piano_transcription_inference / librosa / a GPU.
 
 The end-to-end JSON shape is then validated against the schema in
-``packages/songpack/schemas/refine_candidates.schema.json`` to catch
+``packages/auralsong/schemas/refine_candidates.schema.json`` to catch
 drift between the Python emitter and the TS reader.
 """
 
@@ -300,8 +300,8 @@ def _fake_runner_returning(stem_only, tight, default, denoised):
 
 
 def test_precompute_writes_refine_candidates_json_to_features(tmp_path: Path):
-    # Build a minimal SongPack layout: audio/stems/keys.wav (empty file).
-    sp = tmp_path / "songpack"
+    # Build a minimal AuralSong layout: audio/stems/keys.wav (empty file).
+    sp = tmp_path / "auralsong"
     (sp / "audio" / "stems").mkdir(parents=True)
     (sp / "audio" / "stems" / "keys.wav").write_bytes(b"")
     (sp / "audio" / "mix.wav").write_bytes(b"")
@@ -312,7 +312,7 @@ def test_precompute_writes_refine_candidates_json_to_features(tmp_path: Path):
     runner = _fake_runner_returning(notes, notes, notes, notes)
 
     payload = precompute_refine_candidates(
-        songpack_root=sp,
+        auralsong_root=sp,
         instrument="keys",
         runner=runner,
     )
@@ -335,7 +335,7 @@ def test_precompute_raises_when_no_stem_found(tmp_path: Path):
     runner = _fake_runner_returning([], [], [], [])
     with pytest.raises(FileNotFoundError):
         precompute_refine_candidates(
-            songpack_root=sp, instrument="keys", runner=runner
+            auralsong_root=sp, instrument="keys", runner=runner
         )
 
 
@@ -344,7 +344,7 @@ def test_precompute_rejects_unknown_instrument(tmp_path: Path):
     sp.mkdir()
     with pytest.raises(ValueError):
         precompute_refine_candidates(
-            songpack_root=sp,
+            auralsong_root=sp,
             instrument="bassoon",  # type: ignore[arg-type]
         )
 

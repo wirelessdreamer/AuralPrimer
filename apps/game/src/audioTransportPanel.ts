@@ -19,7 +19,7 @@ export type AudioTransportPanelDeps = {
   midiPanel: MidiPanelHandle;
   pauseMenu: PauseMenuHandle;
   consoleBridge: ConsoleBridge;
-  /** Called when the user clicks Load. Host's loadAudioFromSelectedSongPack. */
+  /** Called when the user clicks Load. Host's loadAudioFromSelectedAuralSong. */
   onLoadAudio: () => Promise<void>;
   /** Called when the user clicks Stop. Host's stopAudio. */
   onStopAudio: () => void;

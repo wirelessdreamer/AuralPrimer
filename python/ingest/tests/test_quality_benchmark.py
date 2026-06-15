@@ -51,6 +51,17 @@ def test_transcription_profiles_are_valid_and_role_specific() -> None:
 
     meta = transcription_profile_metadata("fidelity_midi")
     assert meta["profile"] == "fidelity_midi"
+    assert melodic_methods_for_profile("gameplay_default", "keys")[:4] == [
+        "piano_auto",
+        "piano_basic_pitch_playable",
+        "piano_basic_pitch",
+        "piano_basic_pitch_clean",
+    ]
+    assert melodic_methods_for_profile("fidelity_midi", "keys")[:3] == [
+        "piano_basic_pitch",
+        "piano_basic_pitch_clean",
+        "piano_basic_pitch_playable",
+    ]
     assert "piano_transkun_clean" in melodic_methods_for_profile("fidelity_midi", "keys")
     assert "torchcrepe" in melodic_methods_for_profile("research_ab", "bass")
     assert "torchcrepe" not in melodic_methods_for_profile("gameplay_default", "bass")
@@ -205,13 +216,13 @@ def test_mir_eval_transcription_metrics_report_onset_and_offset_modes() -> None:
     assert metrics["onset_offset"]["f1"] < metrics["onset"]["f1"]
 
 
-def test_scan_corpus_finds_songpacks_and_split_stems(tmp_path: Path) -> None:
+def test_scan_corpus_finds_auralsongs_and_split_stems(tmp_path: Path) -> None:
     from aural_ingest.quality_benchmark import scan_corpus
 
-    songpack = tmp_path / "Song.songpack"
-    (songpack / "audio" / "stems").mkdir(parents=True)
-    (songpack / "features").mkdir()
-    (songpack / "manifest.json").write_text(
+    auralsong = tmp_path / "Song.auralsong"
+    (auralsong / "audio" / "stems").mkdir(parents=True)
+    (auralsong / "features").mkdir()
+    (auralsong / "manifest.json").write_text(
         json.dumps(
             {
                 "song_id": "abc",
@@ -222,10 +233,10 @@ def test_scan_corpus_finds_songpacks_and_split_stems(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    (songpack / "audio" / "stems" / "keys.wav").write_bytes(b"x")
-    (songpack / "audio" / "stems" / "guitar.wav").write_bytes(b"x")
-    (songpack / "audio" / "stems" / "rhythm_guitar.wav").write_bytes(b"x")
-    (songpack / "features" / "notes.mid").write_bytes(b"MThd")
+    (auralsong / "audio" / "stems" / "keys.wav").write_bytes(b"x")
+    (auralsong / "audio" / "stems" / "guitar.wav").write_bytes(b"x")
+    (auralsong / "audio" / "stems" / "rhythm_guitar.wav").write_bytes(b"x")
+    (auralsong / "features" / "notes.mid").write_bytes(b"MThd")
 
     split = tmp_path / "split"
     split.mkdir()
@@ -240,10 +251,10 @@ def test_scan_corpus_finds_songpacks_and_split_stems(tmp_path: Path) -> None:
 
     payload = scan_corpus(tmp_path)
 
-    assert payload["songpack_count"] == 1
-    assert payload["songpacks"][0]["has_notes_mid"] is True
-    assert payload["songpacks"][0]["midi_files"]
-    assert payload["songpacks"][0]["stems"]["keys"].endswith("keys.wav")
+    assert payload["auralsong_count"] == 1
+    assert payload["auralsongs"][0]["has_notes_mid"] is True
+    assert payload["auralsongs"][0]["midi_files"]
+    assert payload["auralsongs"][0]["stems"]["keys"].endswith("keys.wav")
     assert payload["split_stem_folder_count"] >= 1
     assert payload["benchmark_artifact_count"] == 1
     assert payload["benchmark_artifacts"][0]["prediction_midi_count"] == 1
@@ -252,10 +263,10 @@ def test_scan_corpus_finds_songpacks_and_split_stems(tmp_path: Path) -> None:
 def test_build_quality_manifest_from_scan_tracks_sources_and_references(tmp_path: Path) -> None:
     from aural_ingest.quality_benchmark import build_quality_manifest_from_scan, scan_corpus
 
-    songpack = tmp_path / "Psalm.songpack"
-    (songpack / "audio" / "stems").mkdir(parents=True)
-    (songpack / "features").mkdir()
-    (songpack / "manifest.json").write_text(
+    auralsong = tmp_path / "Psalm.auralsong"
+    (auralsong / "audio" / "stems").mkdir(parents=True)
+    (auralsong / "features").mkdir()
+    (auralsong / "manifest.json").write_text(
         json.dumps(
             {
                 "song_id": "psalm",
@@ -270,10 +281,10 @@ def test_build_quality_manifest_from_scan_tracks_sources_and_references(tmp_path
         ),
         encoding="utf-8",
     )
-    (songpack / "audio" / "stems" / "keys.wav").write_bytes(b"x")
-    (songpack / "audio" / "stems" / "guitar.wav").write_bytes(b"x")
-    (songpack / "audio" / "stems" / "rhythm_guitar.wav").write_bytes(b"x")
-    (songpack / "features" / "notes.mid").write_bytes(b"MThd")
+    (auralsong / "audio" / "stems" / "keys.wav").write_bytes(b"x")
+    (auralsong / "audio" / "stems" / "guitar.wav").write_bytes(b"x")
+    (auralsong / "audio" / "stems" / "rhythm_guitar.wav").write_bytes(b"x")
+    (auralsong / "features" / "notes.mid").write_bytes(b"MThd")
 
     split = tmp_path / "Psalm split"
     split.mkdir()
@@ -298,7 +309,7 @@ def test_build_quality_manifest_from_scan_tracks_sources_and_references(tmp_path
         include_unreferenced=False,
     )
     assert "psalm-keys" in [case["id"] for case in referenced_only["cases"]]
-    assert all(case["source"] == "songpack" for case in referenced_only["cases"])
+    assert all(case["source"] == "auralsong" for case in referenced_only["cases"])
 
 
 def test_quality_manifest_loads_cases(tmp_path: Path) -> None:

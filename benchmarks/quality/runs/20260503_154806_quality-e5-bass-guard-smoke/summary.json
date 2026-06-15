@@ -417,8 +417,8 @@
         "name": "tmp_demucs_smoke - bass",
         "role": "bass",
         "family": "melodic",
-        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\audio\\stems\\bass.wav",
-        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.auralsong\\audio\\stems\\bass.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.auralsong\\features\\notes.mid",
         "reference_count": 47,
         "reference_meta": {},
         "algorithms": [

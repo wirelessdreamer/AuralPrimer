@@ -1,8 +1,8 @@
-export type IngestSubcommand = "import" | "import-dir" | "import-unsupported_chart_format";
+export type IngestSubcommand = "import" | "import-dir";
 
 export type IngestImportRequest = {
   source_path: string;
-  out_songpack_path?: string;
+  out_auralsong_path?: string;
   subcommand?: IngestSubcommand;
   profile?: string;
   config?: string;
@@ -23,7 +23,7 @@ export type IngestImportResult = {
   stdout: string;
   stderr: string;
   /**
-   * SongPack-relative paths of any source MIDI files preserved into
+   * AuralSong-relative paths of any source MIDI files preserved into
    * `features/midi/` after the sidecar finished. Populated when the source
    * is a folder that contains user-supplied gameplay MIDI (Suno gameplay
    * exports being the canonical case) so the Refine workspace can render

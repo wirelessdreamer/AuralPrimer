@@ -2,8 +2,8 @@
  * Per-instrument refinement overlay loader.
  *
  * For each `InstrumentRole`, best-effort fetches
- * `features/refinement.<role>.json` from a SongPack via the existing
- * `read_songpack_json` Tauri command. Missing files are silent (the
+ * `features/refinement.<role>.json` from an AuralSong via the existing
+ * `read_auralsong_json` Tauri command. Missing files are silent (the
  * common case — no refinement has been authored). Invalid files are
  * surfaced via the caller-provided `warn` callback and skipped, so a
  * broken refinement file never prevents the base `notes.mid` track from
@@ -16,7 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-import { validateRefinement, type RefinementFile } from "@auralprimer/songpack/refinement";
+import { validateRefinement, type RefinementFile } from "@auralprimer/auralsong/refinement";
 import type { InstrumentRole } from "./chartLoader";
 
 export type RefinementLoaderDeps = {
@@ -34,7 +34,7 @@ export async function loadRefinementsForRoles(
     const relPath = `features/refinement.${role}.json`;
     let raw: unknown;
     try {
-      raw = await invoke<unknown>("read_songpack_json", { containerPath, relPath });
+      raw = await invoke<unknown>("read_auralsong_json", { containerPath, relPath });
     } catch {
       // Missing file is the common case; do not log.
       continue;

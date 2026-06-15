@@ -345,7 +345,7 @@ Use this as a smoke benchmark when rebuilding.
 
 Stem used:
 
-- `.../Unknown___Book_of_Psalms___Psalm_2___King_in_Zion.songpack/audio/stems/Drums.wav`
+- `.../Unknown___Book_of_Psalms___Psalm_2___King_in_Zion.auralsong/audio/stems/Drums.wav`
 
 Observed outputs from `transcribe_drums_dsp`:
 
@@ -366,9 +366,9 @@ Observed outputs from `transcribe_drums_dsp`:
 
 Conclusion: expanded lane loss was consistent with adaptive defaulting, not with combined_filter behavior.
 
-### 8.2 Existing generated songpacks before fix
+### 8.2 Existing generated auralsongs before fix
 
-Across multiple Psalms songpacks (`notes.mid` in portable data), drum channel (ch=9) showed only:
+Across multiple Psalms auralsongs (`notes.mid` in portable data), drum channel (ch=9) showed only:
 
 - `[36, 38, 42]`
 

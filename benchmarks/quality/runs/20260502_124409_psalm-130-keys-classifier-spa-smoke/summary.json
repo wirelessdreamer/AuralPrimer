@@ -311,8 +311,8 @@
         "name": "psalm 130 - 5 Stems - keys",
         "role": "keys",
         "family": "piano",
-        "wav_path": "D:\\AuralPrimer\\AuralPrimerPortable\\data\\songs\\ingest_psalm_130_5_stems.songpack\\audio\\stems\\keys.wav",
-        "reference_path": "D:\\AuralPrimer\\AuralPrimerPortable\\data\\songs\\ingest_psalm_130_5_stems.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\AuralPrimerPortable\\data\\songs\\ingest_psalm_130_5_stems.auralsong\\audio\\stems\\keys.wav",
+        "reference_path": "D:\\AuralPrimer\\AuralPrimerPortable\\data\\songs\\ingest_psalm_130_5_stems.auralsong\\features\\notes.mid",
         "reference_count": 426,
         "reference_meta": {},
         "algorithms": [

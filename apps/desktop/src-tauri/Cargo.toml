@@ -15,11 +15,11 @@ asio = ["cpal/asio"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# Shared SongPack manifest parsing + songs-folder watcher (deduped from the
+# Shared AuralSong manifest parsing + songs-folder watcher (deduped from the
 # near-verbatim copy that used to live in both src-tauri lib.rs files). This
 # also brings the songs-folder filesystem watcher to the desktop shell, which
 # previously lacked it.
-songpack-core = { path = "../../../crates/songpack-core" }
+auralsong-core = { path = "../../../crates/auralsong-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"

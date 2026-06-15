@@ -488,12 +488,15 @@ def _parse_midi_note_ons(reference_path: Path) -> tuple[list[_MidiNoteOn], list[
 
 
 def _compress_tempo_changes(changes: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
-    ordered = sorted((int(tick), int(tempo)) for tick, tempo in changes if tempo > 0)
+    ordered = sorted(
+        ((idx, int(tick), int(tempo)) for idx, (tick, tempo) in enumerate(changes) if tempo > 0),
+        key=lambda item: (item[1], item[0]),
+    )
     if not ordered:
         return [(0, 500_000)]
 
     out: list[tuple[int, int]] = []
-    for tick, tempo in ordered:
+    for _idx, tick, tempo in ordered:
         if out and out[-1][0] == tick:
             out[-1] = (tick, tempo)
         else:

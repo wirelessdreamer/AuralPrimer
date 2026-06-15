@@ -59,7 +59,7 @@ def test_default_import_dir_path_restores_expanded_drum_note_diversity(
     src_dir.mkdir()
     src = src_dir / "fixture_mix.wav"
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
-    out = tmp_path / "Recovered.songpack"
+    out = tmp_path / "Recovered.auralsong"
 
     expanded_notes = [36, 38, 41, 42, 46, 47, 49, 50, 51]
     core_only_notes = [36, 38, 42]

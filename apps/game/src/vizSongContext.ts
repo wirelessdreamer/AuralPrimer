@@ -1,13 +1,13 @@
 /**
  * Build the "song context" object passed to every Visualizer plugin's
- * init/render — composes the loaded SongPack's lyrics, chart spec JSON,
+ * init/render — composes the loaded AuralSong's lyrics, chart spec JSON,
  * and a merged + time-sorted notes array (drums + per-instrument melodic).
  *
  * Pure compute: zero state, zero DOM. Extracted from main.ts as Phase 2.S.
  */
 
 import type { DrumChartSelection, MelodicTrackSelection } from "./chartLoader";
-import type { SongPackChartsByPath } from "./capsPanel";
+import type { AuralSongChartsByPath } from "./capsPanel";
 
 export type VizNote = {
   t_on: number;
@@ -20,7 +20,7 @@ export type VizNote = {
 
 export type VizSongContext = {
   lyrics?: unknown;
-  charts?: SongPackChartsByPath;
+  charts?: AuralSongChartsByPath;
   notes?: VizNote[];
 };
 
@@ -28,7 +28,7 @@ export type BuildVizSongContextInput = {
   drumSelection: DrumChartSelection | null;
   melodicTracks: MelodicTrackSelection[];
   lyrics: unknown | null;
-  charts: SongPackChartsByPath | null;
+  charts: AuralSongChartsByPath | null;
 };
 
 export function buildVizSongContext(input: BuildVizSongContextInput): VizSongContext {

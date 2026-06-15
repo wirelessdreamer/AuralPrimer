@@ -120,7 +120,7 @@ describe("dist bundle Play Songs runtime", () => {
           // surfaces noisy "failed to refresh X" status messages during boot,
           // obscuring the actual test signal. Return an empty array instead.
           const arrayShapedInvokes = new Set([
-            "scan_songpacks",
+            "scan_auralsongs",
             "native_audio_list_output_hosts",
             "native_audio_list_output_devices",
             "list_midi_input_ports",
@@ -229,11 +229,11 @@ describe("dist bundle Play Songs runtime", () => {
     expect(statusEl?.tagName).toBe("PRE");
   });
 
-  it("bundle invokes get_songs_folder + scan_songpacks at boot (refresh ran)", () => {
+  it("bundle invokes get_songs_folder + scan_auralsongs at boot (refresh ran)", () => {
     // If neither command was invoked, refresh() didn't actually fire. That
     // matches the user-observed bug where statusEl stayed at "(not loaded)".
     expect(invokeCalls).toContain("get_songs_folder");
-    expect(invokeCalls).toContain("scan_songpacks");
+    expect(invokeCalls).toContain("scan_auralsongs");
   });
 
   it("statusEl no longer reads '(not loaded)' after refresh settles", () => {

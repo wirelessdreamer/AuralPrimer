@@ -6,7 +6,7 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
 
 > Authoritative requirements: `spec.md`
 > Architecture: `docs/architecture.md`
-> File format: `docs/songpack-spec.md`
+> File format: `docs/auralsong-spec.md`
 > Ingest pipeline: `docs/ingest-pipeline.md`
 > Plugin API: `docs/visualization-plugins.md`
 > Testing: `docs/testing-strategy.md`
@@ -20,12 +20,12 @@ It is intentionally **engineering-oriented**: concrete milestones, technical tas
 ### Platforms
 - Windows + Linux only.
 
-### SongPack-first runtime
-- Gameplay/runtime consumes SongPacks.
-- External ecosystems are supported via **pluggable importers** that convert into SongPacks.
+### AuralSong-first runtime
+- Gameplay/runtime consumes AuralSongs.
+- User-provided local sources are supported via **pluggable importers** that convert into AuralSongs.
 
 ### Audio formats
-- SongPacks may include compressed audio (`mix.mp3` / `mix.ogg`).
+- AuralSongs may include compressed audio (`mix.mp3` / `mix.ogg`).
 - Playback decoding is via a **local codec layer**.
 
 ### Models
@@ -56,12 +56,12 @@ Where things stand. Treat this as the "what changed since the 2026-04-20 audit" 
 - Transcription recovery regressions tightened, sidecar packaging contract hardened, portable build copies the just-built sidecar with hash/timestamp guard (`afbfcb9`, `fe67cf7`).
 - Build ergonomics: WSL-safe Tauri/portable launchers; same `npm run game:build` / `studio:build` / `portable:build` work from native Windows or WSL worktrees (`555c69a`, `e7f92f3`).
 - Studio import UX improvements + Suno MIDI normalization keeping source MIDI authoritative when mappable, with safe drum-pitch preservation (`0f55d19`).
-- SongPack validator entry points re-hardened, including richer error contexts (`637c5df`).
+- AuralSong validator entry points re-hardened, including richer error contexts (`637c5df`).
 
 **Landed in this session (uncommitted on working copy)**
 1. `apps/game` no longer hosts import or content-creation flows — `spec.md §1.1` is now enforced in the gameplay app:
-   - Removed the in-flight "Import" top-level route and the existing import sections in Configure (Suno stem+MIDI, proprietary_archive_import, analysis import, advanced sidecar ingest).
-   - Removed `generateLyricsForSelectedSongPack` from the visualizer-start path; the gameplay app now renders without lyrics if `features/lyrics.json` is missing and points users to AuralStudio.
+   - Removed the in-flight "Import" top-level route and the existing import sections in Configure (Suno stem+MIDI, analysis import, advanced sidecar ingest).
+   - Removed `generateLyricsForSelectedAuralSong` from the visualizer-start path; the gameplay app now renders without lyrics if `features/lyrics.json` is missing and points users to AuralStudio.
    - Stubbed `apps/game/src/{ingestClient,ingestUi,lyricsGenerator}.ts` to empty modules and replaced their tests with `describe.skip` placeholders. Authoritative copies remain in `apps/desktop`.
    - Stripped orphaned import-only CSS classes (`.importLayout`, `.importStack`, `.importAudit*`) and added `.menuCard--info` for the "Import / Create lives in AuralStudio" home card.
 2. New sparse-source drum precision regression: `python/ingest/tests/test_drum_sparse_source_precision.py` runs `combined_filter` against a synthetic 4-kick stem and asserts (a) the algorithm did NOT fall through to `fallback_events_from_classes` (the dense-grid Psalm 12 hallucination path) and (b) event count stays in `[1, 12]`. A second test pins the documented behavior on truly silent input. Smoke-verified that the test fails when `detect_candidates` is forced to return empty — i.e. the guard correctly catches the regression.
@@ -313,7 +313,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 - Either way, this PR closes the documented Psalm 12 hallucination on synthetic input and unlocks tighter bounds on tests #2, #4, and #5 once a wider quality-benchmark run confirms the change is safe on real stems.
 
 **Doc/scaffolding hygiene done earlier in this session**
-- README docs index now points at every doc that lives under `docs/` (audio-codec-policy, midi-keyboard-testing, performance-baselines, research-decision-gates, songpack-deliverable, testing-strategy, local-dev-prereqs).
+- README docs index now points at every doc that lives under `docs/` (audio-codec-policy, midi-keyboard-testing, performance-baselines, research-decision-gates, auralsong-deliverable, testing-strategy, local-dev-prereqs).
 - README monorepo-layout block now matches the real visualizer names (`viz-beats`, `viz-drum-highway`, `viz-fretboard`, `viz-lyrics`, `viz-nashville`) and surfaces `benchmarks/` and `scripts/`.
 - BUILDING.md picked up a "Working in this repo (quick orientation)" section so a returning contributor can find spec / wip / TDD rule / benchmarks / portable smoke / app boundaries in seven bullets.
 
@@ -321,7 +321,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 
 ### Done (docs / blueprint)
 - [x] High-level architecture drafted (`docs/architecture.md`)
-- [x] SongPack spec drafted (`docs/songpack-spec.md`)
+- [x] AuralSong spec drafted (`docs/auralsong-spec.md`)
 - [x] Ingest pipeline draft (`docs/ingest-pipeline.md`)
 - [x] Packaging/CI draft (`docs/packaging-ci.md`)
 - [x] Roadmap draft (`docs/roadmap.md`)
@@ -333,7 +333,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 - [x] Restore Studio app surface and portable build scripts (`build_sidecar.ps1`, `create_portable.ps1`)
   - [x] Restored portable scripts: `build_sidecar.ps1`, `create_portable.ps1` (hash/timestamp freshness guard)
   - [x] Split products into two separate app surfaces: `apps/game` (AuralPrimer gameplay) and `apps/desktop` as AuralStudio (content creation)
-- [x] Restore advanced sidecar CLI surface (`import-dir`, `import-unsupported_chart_format`, `--drum-filter`, `--melodic-method`, `--shifts`, `--multi-filter`)
+- [x] Restore advanced sidecar CLI surface (`import-dir`, `--drum-filter`, `--melodic-method`, `--shifts`, `--multi-filter`)
 - [~] Restore drum transcription algorithms + fallback ordering with `combined_filter` default
   - [x] Added deterministic algorithm modules under `python/ingest/src/aural_ingest/algorithms/*` for all planned IDs
   - [x] Wired `transcribe_drums` stage to emit `features/events.json` from selected/fallback algorithm
@@ -364,7 +364,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
     - [x] Captured requirements in `benchmarks/piano/PIANO_REFINEMENT_WORKBENCH.md`.
     - [x] Implement `refine-piano` CLI, static dashboard, candidate MIDI artifacts, and reference/no-reference scoring.
     - [ ] Validate on real Suno piano MIDI plus matching audio/reference cases.
-  - [x] Generate benchmark manifests from scanned SongPacks/split-stem folders so full-corpus A/B runs are repeatable.
+  - [x] Generate benchmark manifests from scanned AuralSongs/split-stem folders so full-corpus A/B runs are repeatable.
   - [x] Add bounded guard-run filters (`--role`, `--case-filter`, `--max-cases`) for generated quality manifests.
   - [x] Add self-contained classifier performance explorer for full report coverage: role/method/risk filters, per-class metrics, confusions, pitch summaries, and TP/FP/FN timelines.
     - [~] Run the generated full-corpus quality manifest on local guard cases and save report artifacts.
@@ -384,21 +384,21 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 - [~] Reference visualizers are mixed-fidelity right now:
   - [x] `viz-lyrics` consumes real `features/lyrics.json` timing data when present.
   - [x] `viz-drum-highway` consumes host-provided parsed MIDI note events.
-  - [ ] `viz-beats` still renders a placeholder 1-beat-per-second grid instead of SongPack beat/section data.
+  - [ ] `viz-beats` still renders a placeholder 1-beat-per-second grid instead of AuralSong beat/section data.
   - [ ] `viz-nashville` still renders a placeholder harmony lane because the host does not yet provide chord/key song data to plugins.
   - [ ] `viz-fretboard` still uses a placeholder time-driven cursor instead of host note/chord queries.
 - [~] Release automation is still partial:
-  - [x] `.github/workflows/lint-test.yml` runs TS, Python, Rust, SongPack fixture validation, and Rust coverage.
+  - [x] `.github/workflows/lint-test.yml` runs TS, Python, Rust, AuralSong fixture validation, and Rust coverage.
   - [x] `.github/workflows/build-release.yml` now builds both `@auralprimer/studio` and `@auralprimer/game`, runs a real PyInstaller-based sidecar step (Linux uses `aural_ingest.spec`; Windows reuses `npm run portable:sidecar`), and uploads three artifact bundles. The sidecar step is `continue-on-error: true` because the spec collects heavy ML deps; the portable build remains the canonical end-to-end path.
   - [ ] Validate `build-release.yml` on `workflow_dispatch` once the next tag goes out; consider trimming the sidecar deps if the Linux job runs too long.
 
 ### Now (top priority)
 - [x] Create the initial monorepo layout skeleton (apps/, packages/, python/, visualizers/, assets/, docs/)
-- [x] Implement SongPack discovery + library indexing (scan folder; parse directory + zip `manifest.json`)
-- [x] Implement SongPack schemas + validator (JSON schema + runtime validation) (manifest + core features + validateSongPack)
-- [x] Implement host skeleton (Tauri) + startup library scan + SongPack details view
+- [x] Implement AuralSong discovery + library indexing (scan folder; parse directory + zip `manifest.json`)
+- [x] Implement AuralSong schemas + validator (JSON schema + runtime validation) (manifest + core features + validateAuralSong)
+- [x] Implement host skeleton (Tauri) + startup library scan + AuralSong details view
 - [x] Implement plugin loader skeleton (viz-sdk + built-in plugin + lifecycle loop)
-- [x] Implement audio playback/transport (MVP: HTMLAudio + SongPack audio load)
+- [x] Implement audio playback/transport (MVP: HTMLAudio + AuralSong audio load)
   - [x] Transport controller module (audio-backed clock + loop)
   - [x] UI controls: play/pause/stop/seek + loop
   - [x] Unit tests for transport behavior (jsdom)
@@ -436,12 +436,12 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
     - [~] Investigate ASIO feasibility/licensing; likely start with WASAPI exclusive as default
       - [x] Added optional ASIO build feature (`--features asio`) + runtime host selection UI (host + device)
       - [ ] Validate SDK/licensing/distribution policy and default-host strategy for production installer builds
-- [~] Implement ingest sidecar MVP (decode + beats/tempo + sections + SongPack feature generation)
+- [~] Implement ingest sidecar MVP (decode + beats/tempo + sections + AuralSong feature generation)
   - [x] `python/ingest` project scaffold (`pyproject.toml`, `pytest`, `ruff`)
-  - [x] Sidecar CLI surface (current): `aural_ingest stages|info|validate|import|import-dir|import-unsupported_chart_format|runtime-check|benchmark-drums`
+  - [x] Sidecar CLI surface (current): `aural_ingest stages|info|validate|import|import-dir|runtime-check|benchmark-drums`
   - [x] JSONL progress event emitter (`aural_ingest.progress`)
   - [x] Real decode + analysis stages (wav inputs supported without ffmpeg; non-wav requires ffmpeg)
-  - [x] Determinism tests (synthetic click-track wav fixture) for decode+tempo+beats+sections+SongPack feature outputs (`notes.mid` / `events.json`)
+  - [x] Determinism tests (synthetic click-track wav fixture) for decode+tempo+beats+sections+AuralSong feature outputs (`notes.mid` / `events.json`)
   - [x] Host import UI wiring to run sidecar + stream progress
     - [x] Configure panel ingest controls now call desktop `ingest_import` command end-to-end
     - [x] Stream per-stage JSONL progress events into Configure UI during import
@@ -453,33 +453,26 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
   - [x] Add high-value unit tests for untested Rust modules (`wav_mix`, `audio_decode`, `models`, `midi_clock_service`)
   - [x] Rust `cargo llvm-cov` CI step wired into `.github/workflows/lint-test.yml`
 
-- [~] (New) proprietary_archive_import-DE importer (audio import/stem mixdown working; chart parsing still pending)
-  - [x] Add Configure UI section to scan/import proprietary_archive_import-DE DLC songs
-  - [x] Add Tauri commands: configure proprietary_archive_import paths + scan DLC + import preview audio
-  - [x] Runtime: allow SongPacks with `audio/mix.wav` to load/play
-  - [x] Rust tests for DLC scan + import using non-copyrighted fixtures
-  - [x] Add native folder picker (Browse…) for proprietary_archive_import DATA root
-  - [ ] Follow-ups:
-    - [x] Bulk import (import all scanned DLC songs)
-    - [x] Better error UI: missing external_decoder / decode failures + preflight check
-    - [x] Import full stems (DLC*_1..3) and mix down to `audio/mix.wav` (fallback to preview)
-    - [ ] Parse GH charts from `*.unsupported_archive.unsupported_archive` into canonical SongPack charts/features
+- [x] Remove proprietary game/DLC archive import support from the product boundary
+  - [x] Keep AuralSong as the native project format.
+  - [x] Remove source-specific proprietary archive scan/import backend commands, UI, tests, and docs requirements.
+  - [x] Keep generic user-provided audio, stem, MIDI, and chart import paths.
 
-- [~] (New) Create SongPack from WAV stems + MIDI (song creator / importer)
-  - [x] Spec: confirm SongPack output contract (manifest + audio + features)
+- [~] (New) Create AuralSong from WAV stems + MIDI (song creator / importer)
+  - [x] Spec: confirm AuralSong output contract (manifest + audio + features)
   - [x] Desktop UI: Configure section with file pickers (stems WAVs + MIDI) + metadata (title/artist)
-  - [x] Backend: create SongPack folder in songs directory
+  - [x] Backend: create AuralSong folder in songs directory
     - [x] validate stems (wav format, sample rate, channel count, duration)
     - [x] deterministic mixdown to `audio/mix.wav` (or copy if a single mix is provided)
     - [x] copy MIDI to `features/notes.mid`
     - [x] generate minimal `features/events.json` from MIDI notes
     - [x] generate `manifest.json` (duration_sec + stable song_id)
   - [x] Tests:
-    - [x] Rust: fixture WAV+MIDI -> SongPack created; validates presence of artifacts
-    - [ ] TS: library scan sees created SongPack and can load audio/mix.wav
-- [~] (New) Raw song folder importer (Suno/export folder -> canonical SongPack)
+    - [x] Rust: fixture WAV+MIDI -> AuralSong created; validates presence of artifacts
+    - [ ] TS: library scan sees created AuralSong and can load audio/mix.wav
+- [~] (New) Raw song folder importer (Suno/export folder -> canonical AuralSong)
   - [x] Inspect raw folder contents (stems, MIDIs, lyrics) and surface detected-role + timing warnings
-  - [x] Import folder into SongPack with `audio/mix.wav`, copied source MIDIs, normalized combined `features/notes.mid`, and optional lyrics carry-through
+  - [x] Import folder into AuralSong with `audio/mix.wav`, copied source MIDIs, normalized combined `features/notes.mid`, and optional lyrics carry-through
   - [x] Suno/raw-song import currently treats normalized source MIDI as the chart/timing authority when a playable mapping is found (`suno_source_midi_normalized`, `timing_authority = normalized_source`)
   - [x] Preserve Suno source MIDI drum note identities during raw-song import; safe start-time normalization still applies, but the importer no longer auto-canonicalizes drum pitches against the audio stem (this had been producing non-matching drum output relative to source MIDI)
   - [x] When a role-specific source MIDI/audio start delta is wildly unstable (>2s), raw-song import now falls back to the cross-track median normalization offset instead of dropping that role from the gameplay chart; this targets Psalm 10-style drum/audio sync failures while keeping source MIDI authoritative
@@ -531,7 +524,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 - Monorepo tree created
 - Root Node tooling installed (`vitest`, `typescript`)
 - TS tests run via `npm test`
-- `packages/songpack` includes tested SongPack discovery + basic library indexing
+- `packages/auralsong` includes tested AuralSong discovery + basic library indexing
 
 **Deliverables**
 - [x] Monorepo folders created (matching README layout).
@@ -548,7 +541,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
   - Rust: `cargo test` is configured to run in CI (`apps/desktop/src-tauri/tests/smoke.rs`)
   - Python: `pytest` runs in CI (`python/ingest/tests/test_smoke.py`)
 - [x] Contract-test scaffolding:
-  - SongPack schema validation tests can run with at least one fixture.
+  - AuralSong schema validation tests can run with at least one fixture.
 
 **Exit criteria**
 - [x] `lint-test` workflow *should be* green on PR with:
@@ -565,8 +558,8 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 
 ---
 
-### Milestone 1 — SongPack core libraries + schemas (1–3 weeks)
-**Goal**: Make SongPack real: validation, migrations (stub), and deterministic serialization.
+### Milestone 1 — AuralSong core libraries + schemas (1–3 weeks)
+**Goal**: Make AuralSong real: validation, migrations (stub), and deterministic serialization.
 
 **Progress**
 - [x] `manifest.schema.json` created
@@ -576,8 +569,8 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 - [x] TS validators added for features (`validateBeats`, `validateTempoMap`, `validateSections`, `validateEvents`)
 - [x] TS validator added: `validateLyrics`
 - [x] Minimal `chart.schema.json` created
-- [x] `validateSongPack()` implemented for directory + zip SongPacks
-- [x] Fixture updated: `minimal_valid.songpack` includes `features/lyrics.json`
+- [x] `validateAuralSong()` implemented for directory + zip AuralSongs
+- [x] Fixture updated: `minimal_valid.auralsong` includes `features/lyrics.json`
 
 **Deliverables**
 - [x] JSON Schemas committed for:
@@ -587,20 +580,20 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
   - `features/tempo_map.json`
   - `features/sections.json`
   - `charts/*.json` (at least one chart schema)
-- [x] `packages/songpack` library:
-  - [x] load directory SongPack
-  - [x] load zip SongPack
-  - [x] validate SongPack against JSON schemas
+- [x] `packages/auralsong` library:
+  - [x] load directory AuralSong
+  - [x] load zip AuralSong
+  - [x] validate AuralSong against JSON schemas
   - [x] canonical JSON serialization (stable key ordering)
   - [x] version/migration entry points (identity migration for v1 is implemented)
 
 **TDD / testing deliverables**
-- [x] Schema tests (fast, always-on): fixtures under `assets/test_fixtures/songpacks/...`
+- [x] Schema tests (fast, always-on): fixtures under `assets/test_fixtures/auralsongs/...`
 - [x] Round-trip tests: parse → normalize → serialize stability
 - [x] Negative tests: missing files, invalid versions, out-of-range event times
 
 **Exit criteria**
-- [x] `packages/songpack` can validate at least one fixture SongPack.
+- [x] `packages/auralsong` can validate at least one fixture AuralSong.
 - [x] CI fails if a schema breaks fixture validation.
 
 **Dependencies / notes**
@@ -609,7 +602,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 ---
 
 ### Milestone 2 — Desktop host skeleton (Tauri) + playback + plugin loader (2–4 weeks)
-**Goal**: A minimal desktop app can load a SongPack and render a plugin synced to audio.
+**Goal**: A minimal desktop app can load an AuralSong and render a plugin synced to audio.
 
 **Audit note (2026-04-20)**
 - Active playback/runtime work now lives primarily in `apps/game`.
@@ -617,11 +610,11 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 
 **Deliverables**
 - [x] `apps/game` + `apps/desktop` created (Tauri + TS UI; gameplay/runtime is centered in `apps/game`).
-- [x] Song library view (minimal): list SongPacks found in a configured folder.
-- [x] Scan songs folder on startup to discover new/removed SongPacks (directory + zip containers).
-- [x] Load SongPack + show basic metadata.
+- [x] Song library view (minimal): list AuralSongs found in a configured folder.
+- [x] Scan songs folder on startup to discover new/removed AuralSongs (directory + zip containers).
+- [x] Load AuralSong + show basic metadata.
 - [x] Audio playback + transport clock (MVP):
-  - load `audio/mix.wav`, `audio/mix.ogg`, or `audio/mix.mp3` from selected SongPack
+  - load `audio/mix.wav`, `audio/mix.ogg`, or `audio/mix.mp3` from selected AuralSong
   - play/pause/stop/seek
   - drive `TransportState.t` from `audio.currentTime`
 - [x] Audio playback + transport clock (next):
@@ -637,14 +630,14 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
   - [x] load ESM entrypoint (`dist/index.js`)
   - [x] lifecycle: `init → resize → update → render → dispose`
 - [x] Host → visualizer song data (initial):
-  - [x] Tauri command: `read_songpack_json(container_path, rel_path)` (restricted to `features/*.json`)
-  - [x] Load `features/lyrics.json` best-effort when selecting a SongPack
+  - [x] Tauri command: `read_auralsong_json(container_path, rel_path)` (restricted to `features/*.json`)
+  - [x] Load `features/lyrics.json` best-effort when selecting an AuralSong
   - [x] Pass into plugin init context: `VizInitContext.song.lyrics`
 
 - [x] (New) Lyrics generation prompt (MVP):
   - [x] If user starts `viz-lyrics` and `features/lyrics.json` is missing, prompt to generate it
   - [x] Generation reads a user-selected `.txt` lyrics file and distributes lines uniformly across `manifest.duration_sec`
-  - [x] Writes `features/lyrics.json` into **directory** SongPacks only (zip SongPacks are read-only for now)
+  - [x] Writes `features/lyrics.json` into **directory** AuralSongs only (zip AuralSongs are read-only for now)
 - [x] Global HUD:
   - [x] always display **key + mode** (even if placeholder from fixture)
 
@@ -657,7 +650,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
   - [ ] add explicit monotonic/property-style transport clock assertions
 
 **Exit criteria**
-- [ ] A fixture SongPack plays with a minimal plugin rendering beats/sections.
+- [ ] A fixture AuralSong plays with a minimal plugin rendering beats/sections.
 - [ ] Plugin contract tests run in CI.
 
 **Dependencies / notes**
@@ -703,7 +696,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 
 **TDD / testing deliverables**
 - [ ] SDK contract tests for API stability.
-- [ ] Plugin smoke tests against fixture SongPacks.
+- [ ] Plugin smoke tests against fixture AuralSongs.
 
 **Exit criteria**
 - [ ] A new plugin can be added/updated without changing the host.
@@ -711,20 +704,20 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 ---
 
 ### Milestone 4 — Ingest sidecar MVP (2–4 weeks)
-**Goal**: Import local audio into a playable SongPack deterministically.
+**Goal**: Import local audio into a playable AuralSong deterministically.
 
 **Deliverables**
 - [x] `python/ingest` project structure.
 - [x] Sidecar CLI:
   - `aural_ingest import <source> --out ... --profile ...` (basic flags)
   - `aural_ingest import-dir <source-dir> --out ... --profile ...` (directory source picker)
-  - `aural_ingest validate <songpack-dir>` (file presence checks)
-  - `aural_ingest info <songpack-dir>`
+  - `aural_ingest validate <auralsong-dir>` (file presence checks)
+  - `aural_ingest info <auralsong-dir>`
   - `aural_ingest stages`
 - [x] `aural_ingest runtime-check`
 - [x] `aural_ingest benchmark-drums <stem> <reference>`
 - [~] Pipeline stages (current repo pipeline has moved beyond the original `chart_generation` MVP and now centers on `notes.mid`/`events.json` outputs):
-  - [x] `init_songpack`
+  - [x] `init_auralsong`
   - [x] `decode_audio` (writes deterministic `audio/mix.wav`; non-wav decode requires ffmpeg)
   - [x] `beats_tempo` (deterministic BPM estimate + generated beat grid, plus optional `high_accuracy` `librosa.beat_track` mode with fallback metadata)
   - [x] `sections` (generated section blocks from duration + BPM)
@@ -742,7 +735,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 - [ ] Golden tests on short fixtures (beats/tempo within tolerance).
 
 **Exit criteria**
-- [ ] User can import an mp3/ogg and play resulting SongPack.
+- [ ] User can import an mp3/ogg and play resulting AuralSong.
 - [ ] Golden test suite catches accidental extraction regressions.
 
 ---
@@ -760,7 +753,6 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
   - [ ] Add ML-backed and/or higher-fidelity MIR implementations to match pre-loss quality expectations
 - [x] Reintroduce CLI/import modes:
   - [x] `import-dir` (MVP directory audio source selection + forward to import pipeline)
-  - [x] `import-unsupported_chart_format` (MVP: resolve unsupported_chart_format-referenced audio or chart-folder audio, then forward to import pipeline)
   - [x] `--drum-filter`, `--melodic-method`, `--shifts`, `--multi-filter` (validated parsing + import pass-through)
   - [~] `--multi-filter` is currently parsed/persisted plumbing; a distinct multi-engine execution path is not yet evident in the current pipeline
 - [x] Rebuild drum algorithm set: `combined_filter`, `dsp_bandpass_improved`, `dsp_spectral_flux`, `adaptive_beat_grid`, `dsp_bandpass`, `aural_onset`, `librosa_superflux`
@@ -781,7 +773,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 - [x] Restore chart parser strict/relaxed guard so sparse dedicated drum tracks are not dropped
   - [x] Added `apps/desktop/src/chartLoader.ts` strict/relaxed selection logic with dedicated drum-track guard
   - [x] Added desktop regression tests for strict-vs-relaxed and King in Zion sparse-drums behavior
-  - [x] Integrated chart loader into active gameplay song selection path (`read_songpack_mid` + capability/instrument availability plumbing)
+  - [x] Integrated chart loader into active gameplay song selection path (`read_auralsong_mid` + capability/instrument availability plumbing)
 - [x] Rebuild portable packaging flow that always copies latest sidecar before ship
 - [x] Verify/fix `import-dir` ordering around `sections` and `events.json`
 
@@ -805,19 +797,18 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 ---
 
 ### Milestone 5 — Pluggable importers (content adoption track) (ongoing)
-**Goal**: Multiple import sources feed SongPack without constraining internal capabilities.
+**Goal**: Multiple import sources feed AuralSong without constraining internal capabilities.
 
 **Deliverables**
 - [ ] Define importer interface (concept + CLI flags):
   - importer id
   - input discovery/validation
-  - conversion into canonical SongPack
+  - conversion into canonical AuralSong
   - importer provenance surfaced in Studio UI and persisted in import results/metadata (`importer_id`, engine/path used, chart authority)
 - [ ] Importers:
   - [~] `audio_only` (baseline sidecar import path exists; stable importer interface is not frozen)
-  - [~] `midi` (stem+MIDI SongPack creation and raw-song folder import exist; formal importer interface is not frozen)
-  - [x] `proprietary_archive_import_de` (MVP: preview audio import into SongPacks)
-  - [x] `raw_song_folder` / Suno-style export folder import (inspection + SongPack creation)
+  - [~] `midi` (stem+MIDI AuralSong creation and raw-song folder import exist; formal importer interface is not frozen)
+  - [x] `raw_song_folder` / Suno-style export folder import (inspection + AuralSong creation)
     - [x] Uses normalized Suno MIDI as source-of-truth gameplay timing when the MIDI is mappable
     - [ ] Make that source-of-truth choice obvious in Studio so users do not confuse it with heuristic sidecar transcription
 
@@ -877,7 +868,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 ---
 
 ## Critical path / dependency notes
-- Milestone 1 (SongPack libs/schemas) unblocks Milestone 2 (host) and Milestone 3 (plugins).
+- Milestone 1 (AuralSong libs/schemas) unblocks Milestone 2 (host) and Milestone 3 (plugins).
 - Milestone 0 is required before anything else (CI + tests).
 - Milestone 4 (ingest MVP) is required for real content, but Milestone 2/3 can progress with fixtures.
 - Model manager (Milestone 6) is required before any model-dependent stages can ship.
@@ -926,7 +917,7 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 
 ### C) Ingest/transcription recovery stack: concrete implementation plan
 - [x] Restore sidecar CLI surface from recovery notes:
-  - [x] `import-dir`, `import-unsupported_chart_format`
+  - [x] `import-dir`
   - [x] `--drum-filter`, `--melodic-method`, `--shifts`, `--multi-filter`
 - [x] Drum transcription architecture:
   - [x] restore algorithm modules (`combined_filter`, `dsp_bandpass_improved`, `dsp_spectral_flux`, `adaptive_beat_grid`, `dsp_bandpass`, `aural_onset`, `librosa_superflux`)
@@ -1091,15 +1082,15 @@ Grouped by tractability. Items 1–3 are testable today; items 4–7 are mostly 
 
 ### A) Audio codec layer implementation choice (host) - resolved
 - [x] Chosen approach: bundled Rust/Symphonia decoder for host playback (`mix.ogg`, `mix.mp3`, `mix.wav`).
-- [x] FFmpeg remains sidecar-only for ingest/non-WAV source conversion; it is not required for normal SongPack playback.
+- [x] FFmpeg remains sidecar-only for ingest/non-WAV source conversion; it is not required for normal AuralSong playback.
 - [x] Documented in `docs/audio-codec-policy.md` and locked with host decode policy tests.
 
 ### B) Importer boundaries
 - What is the minimum initial importer interface surface (CLI + filesystem contract) we want to freeze in v0.1?
 
-### C) proprietary_archive_import DE importer scope
-- Exactly which files are in scope first (song metadata, charts, stems, etc.)?
-- Confirm legal posture/documentation requirements.
+### C) Proprietary game/DLC importer boundary - resolved
+- [x] Do not support source-specific proprietary archive importers or similar proprietary game-content conversion paths.
+- [x] Keep importer work scoped to generic user-provided audio, stems, standard MIDI, and authored chart files.
 
 ### D) Model pack trust
 - Should we require:

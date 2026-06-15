@@ -18,7 +18,7 @@ import {
   type MelodicTrackSelection,
   type MelodicNote,
 } from "../src/chartLoader";
-import type { RefinementFile } from "@auralprimer/songpack/refinement";
+import type { RefinementFile } from "@auralprimer/auralsong/refinement";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
@@ -102,7 +102,7 @@ describe("applyRefinementsToMelodicTracks", () => {
   });
 
   it("composes when two refinements target the same instrument", () => {
-    // Edge case: SongPack convention is one file per instrument, but the loader
+    // Edge case: AuralSong convention is one file per instrument, but the loader
     // must be deterministic when several arrive together. Later refinements
     // operate on the result of earlier ones.
     const refA = refinement("keys", [region(0.0, 1.0, [n(0.6, 0.9, 71)])]);
@@ -128,7 +128,7 @@ describe("main.ts wiring (source-level pin)", () => {
 
   it("songChartLoader imports loadRefinementsForRoles from its extracted module", () => {
     expect(chartSrc).toMatch(/import\s*\{\s*loadRefinementsForRoles\s*\}\s*from\s*["']\.\/refinementLoader["']/);
-    expect(chartSrc).not.toMatch(/from\s+["']@auralprimer\/songpack\/refinement["']/);
+    expect(chartSrc).not.toMatch(/from\s+["']@auralprimer\/auralsong\/refinement["']/);
   });
 
   it("songChartLoader calls loadRefinementsForRoles + applies overlay into melodicTracks", () => {
@@ -151,10 +151,10 @@ describe("main.ts wiring (source-level pin)", () => {
     expect(main).toMatch(/selectedMelodicTracks\s*=\s*chartSelection\.melodicTracks/);
   });
 
-  it("refinementLoader module wires the read_songpack_json + validateRefinement flow", () => {
+  it("refinementLoader module wires the read_auralsong_json + validateRefinement flow", () => {
     const loaderSrc = read("apps/game/src/refinementLoader.ts");
     expect(loaderSrc).toMatch(/async\s+function\s+loadRefinementsForRoles\s*\(/);
-    expect(loaderSrc).toMatch(/read_songpack_json/);
+    expect(loaderSrc).toMatch(/read_auralsong_json/);
     expect(loaderSrc).toMatch(/features\/refinement\.\$\{role\}\.json/);
     expect(loaderSrc).toMatch(/validateRefinement\s*\(\s*raw\s*\)/);
     // Invalid files warn + continue, never throw.
@@ -162,9 +162,9 @@ describe("main.ts wiring (source-level pin)", () => {
     expect(loaderSrc).toMatch(/deps\.warn\s*\(/);
   });
 
-  it("refinementLoader uses the browser-safe deep import (not the songpack barrel)", () => {
+  it("refinementLoader uses the browser-safe deep import (not the auralsong barrel)", () => {
     const loaderSrc = read("apps/game/src/refinementLoader.ts");
-    expect(loaderSrc).toMatch(/from\s+["']@auralprimer\/songpack\/refinement["']/);
-    expect(loaderSrc).not.toMatch(/from\s+["']@auralprimer\/songpack["']/);
+    expect(loaderSrc).toMatch(/from\s+["']@auralprimer\/auralsong\/refinement["']/);
+    expect(loaderSrc).not.toMatch(/from\s+["']@auralprimer\/auralsong["']/);
   });
 });

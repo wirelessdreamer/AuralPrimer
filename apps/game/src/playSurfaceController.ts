@@ -22,6 +22,7 @@
 
 import type { InstrumentRole, MelodicTrackSelection } from "./chartLoader";
 import { TabRenderer } from "./tabRenderer";
+import type { PianoLiveInputNote } from "./tabRenderer";
 import type { PlayersPanelHandle } from "./playersPanel";
 import type { ConsoleBridge } from "./consoleBridge";
 
@@ -29,7 +30,7 @@ import type { ConsoleBridge } from "./consoleBridge";
 export type TabRenderFrame = {
   bpm: number;
   timeSignature: [number, number];
-  liveInputNotes: Array<{ note: number; channel: number }>;
+  liveInputNotes: PianoLiveInputNote[];
   scrollSpeedMultiplier?: number;
 };
 

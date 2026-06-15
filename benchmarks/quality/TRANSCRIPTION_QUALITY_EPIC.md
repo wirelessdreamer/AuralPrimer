@@ -6,7 +6,7 @@ Status: experimental infrastructure implemented; default promotion still gated b
 
 - Added transcription profiles: `gameplay_default`, `fidelity_midi`, and `research_ab`.
 - Added unified quality benchmark CLI and helper script with corpus scanning, profile metadata, optional model backend reporting, gameplay metrics, JSON/Markdown/HTML reports, and SVG heatmaps.
-- Added generated quality manifest support from scanned SongPacks and pre-split stem folders, including role labels, reference MIDI availability, stem provenance, duration, and current method metadata.
+- Added generated quality manifest support from scanned AuralSongs and pre-split stem folders, including role labels, reference MIDI availability, stem provenance, duration, and current method metadata.
 - Added promotion-candidate labels to quality reports. These identify benchmark winners but still require listening/in-game review and never auto-promote `gameplay_default`.
 - Added bounded guard-run filters (`--role`, `--case-filter`, `--max-cases`) so local quality runs can target representative cases before launching the full manifest.
 - Added role-filtering for combined reference MIDI so keys/guitar/bass benchmarks do not compare a stem against unrelated tracks in `features/notes.mid`.

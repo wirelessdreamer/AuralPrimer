@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for requested_engine in engines:
         variant_slug = f"{base_slug}__drums_{_slugify(requested_engine)}"
-        out_path = songs_dir / f"{variant_slug}.songpack"
+        out_path = songs_dir / f"{variant_slug}.auralsong"
         if out_path.exists():
             shutil.rmtree(out_path)
 
@@ -121,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "requested_engine": requested_engine,
                 "used_engine": str(used_engine or ""),
-                "songpack_path": str(out_path),
+                "auralsong_path": str(out_path),
                 "title": str(manifest["title"]),
                 "song_id": str(manifest.get("song_id", "")),
             }

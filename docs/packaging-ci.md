@@ -38,12 +38,12 @@ Bundling requirements:
 
 ### Audio decoding
 Host playback:
-- use the in-process Rust/Symphonia decoder for SongPack `mix.ogg`, `mix.mp3`, and `mix.wav`
+- use the in-process Rust/Symphonia decoder for AuralSong `mix.ogg`, `mix.mp3`, and `mix.wav`
 - do not require FFmpeg or platform codec packs for normal playback
 
 Ingest:
 - non-WAV source conversion may use a bundled `ffmpeg` sidecar
-- generated SongPacks still write canonical `audio/mix.wav`
+- generated AuralSongs still write canonical `audio/mix.wav`
 
 Recommended: keep FFmpeg contained to the ingest sidecar boundary and document license obligations.
 
@@ -69,7 +69,7 @@ This containment helps security and makes sandboxing easier.
 ### Model storage
 - store versioned models under `assets/models/<model-id>/<version>/...`
 - ingestion stages declare exact model id/version used
-- SongPack manifest records stage fingerprints
+- AuralSong manifest records stage fingerprints
 
 ### Model acquisition strategy
 - MVP/v1: **models are downloaded post-install** (in-app) or imported manually.
@@ -108,8 +108,8 @@ This containment helps security and makes sandboxing easier.
 - assert beats/sections stable within tolerance
 
 ### End-to-end
-- AuralStudio imports fixture audio -> produce SongPack
-- AuralPrimer loads SongPack and runs visualizer smoke test
+- AuralStudio imports fixture audio -> produce AuralSong
+- AuralPrimer loads AuralSong and runs visualizer smoke test
 
 ---
 ## License compliance

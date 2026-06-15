@@ -47,7 +47,7 @@
   },
   "frontend": {
     "max_mean_ms_by_benchmark": {
-      "parse MIDI tracks from 6-track synthetic SongPack MIDI": 10.0,
+      "parse MIDI tracks from 6-track synthetic AuralSong MIDI": 10.0,
       "select drum chart from parsed tracks": 5.0,
       "select melodic tracks from parsed tracks": 5.0,
       "parse MIDI and select melodic tracks end-to-end": 15.0,

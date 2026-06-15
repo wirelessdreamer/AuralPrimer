@@ -313,7 +313,7 @@ def test_find_mix_audio_returns_none_when_layout_unrecognized(tmp_path):
 
 # ---------------------------------------------------------------------------
 # Regression: consensus_clean must resolve the mix from the ORIGINAL stem
-# location, not the denoised temp path (which lives outside the songpack and
+# location, not the denoised temp path (which lives outside the auralsong and
 # would silently collapse consensus back to a stem-only pass).
 # ---------------------------------------------------------------------------
 
@@ -323,7 +323,7 @@ def test_consensus_clean_resolves_mix_despite_denoise_temp_path(tmp_path, monkey
     from aural_ingest.algorithms import piano_pti as pti_mod, piano_denoise, piano_cleanup
     from aural_ingest.transcription import build_default_melodic_algorithm_registry
 
-    # SongPack-shaped layout: audio/stems/keys.wav + audio/mix.wav.
+    # AuralSong-shaped layout: audio/stems/keys.wav + audio/mix.wav.
     audio = tmp_path / "audio"
     stems = audio / "stems"
     stems.mkdir(parents=True)

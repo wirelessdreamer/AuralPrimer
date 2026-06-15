@@ -44,7 +44,7 @@ export function appShellHtml(): string {
             </button>
             <div class="menuCard menuCard--info" role="listitem" aria-label="Import lives in AuralStudio">
               <div class="menuTitle">Import / Create</div>
-              <div class="meta">Importing songs and creating SongPacks lives in <strong>AuralStudio</strong>. Open AuralStudio to bring in Suno exports, analyzed audio, pre-split stems, or proprietary_archive_import content.</div>
+              <div class="meta">Importing songs and creating AuralSongs lives in <strong>AuralStudio</strong>. Open AuralStudio to bring in Suno exports, analyzed audio, or pre-split stems.</div>
             </div>
             <button class="menuCard menuCard--danger" id="homeExit" role="listitem">
               <div class="menuTitle">Exit</div>
@@ -75,7 +75,7 @@ export function appShellHtml(): string {
             <div class="panelHeader bandSetupHeader">
               <h2>Band Setup</h2>
               <div class="row" style="margin:0">
-                <span class="meta">proprietary_rhythm_archive style player setup</span>
+                <span class="meta">Rhythm player setup</span>
                 <button id="toggleFocus" class="ghostBtn" title="Back to song library">Back to Library</button>
               </div>
             </div>

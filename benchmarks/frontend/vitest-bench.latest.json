@@ -8,7 +8,7 @@
           "benchmarks": [
             {
               "id": "1934397760_0_0",
-              "name": "parse MIDI tracks from 6-track synthetic SongPack MIDI",
+              "name": "parse MIDI tracks from 6-track synthetic AuralSong MIDI",
               "rank": 6,
               "rme": 3.0243931712968473,
               "samples": [],

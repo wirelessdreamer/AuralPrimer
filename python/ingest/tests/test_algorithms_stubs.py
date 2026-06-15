@@ -4,6 +4,8 @@ import random
 import struct
 import wave
 
+import pytest
+
 
 def _write_drum_rebuild_fixture(path: Path, sr: int = 48_000, duration_sec: float = 6.0) -> None:
     n = int(sr * duration_sec)
@@ -332,7 +334,11 @@ def test_melodic_pyin_tracks_pitch_from_waveform(tmp_path: Path) -> None:
     assert any(67 <= n.pitch <= 71 for n in notes)
 
 
-def test_melodic_basic_pitch_uses_model_gate_and_generates_poly_notes(tmp_path: Path) -> None:
+def test_melodic_basic_pitch_fallback_generates_poly_notes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import builtins
+
     from aural_ingest.algorithms import melodic_basic_pitch
 
     stem = tmp_path / "tone.wav"
@@ -340,11 +346,49 @@ def test_melodic_basic_pitch_uses_model_gate_and_generates_poly_notes(tmp_path: 
 
     model_path = tmp_path / "nmp.onnx"
     model_path.write_bytes(b"x")
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if str(name).startswith("basic_pitch"):
+            raise ModuleNotFoundError("basic_pitch unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
 
     notes = melodic_basic_pitch.transcribe(stem, model_path=model_path)
     assert notes
     pitches = {n.pitch for n in notes}
     assert any(p + 7 in pitches for p in pitches if p + 7 <= 108)
+
+
+def test_melodic_basic_pitch_strict_mode_rejects_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import builtins
+
+    from aural_ingest.algorithms import melodic_basic_pitch
+    from aural_ingest.transcription import MelodicNote
+
+    stem = tmp_path / "tone.wav"
+    stem.write_bytes(b"audio")
+    fallback = [MelodicNote(t_on=0.0, t_off=0.25, pitch=60, velocity=80)]
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if str(name).startswith("basic_pitch"):
+            raise ModuleNotFoundError("basic_pitch unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(
+        melodic_basic_pitch,
+        "_fallback_transcribe",
+        lambda _path, *, instrument="melodic": fallback,
+    )
+
+    assert melodic_basic_pitch.transcribe(stem, allow_fallback=True) == fallback
+    with pytest.raises(RuntimeError, match="optional 'basic_pitch' package"):
+        melodic_basic_pitch.transcribe(stem, allow_fallback=False)
 
 
 def test_spectral_flux_multiband_emits_simultaneous_hits(tmp_path: Path) -> None:

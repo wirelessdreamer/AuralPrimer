@@ -1,7 +1,7 @@
 # Python Ingest Pipeline
 
 ## Objective
-Convert source audio (mp3/wav/flac) and/or MIDI into a **SongPack**.
+Convert source audio (mp3/wav/flac) and/or MIDI into a **AuralSong**.
 
 Key properties:
 - staged pipeline (DAG)
@@ -14,15 +14,15 @@ Key properties:
 ### Primary command
 ```
 aural_ingest import <input-audio-path>
-  --out <output-songpack-dir>
+  --out <output-auralsong-dir>
   --profile <full|guitar|bass|drums|vocals|theory>
   --config <json>
 ```
 
 ### Additional commands
 ```
-aural_ingest validate <songpack-dir>
-aural_ingest info <songpack-dir>
+aural_ingest validate <auralsong-dir>
+aural_ingest info <auralsong-dir>
 aural_ingest stages
 ```
 
@@ -42,7 +42,7 @@ The host UI can render progress without parsing arbitrary log strings.
 ---
 ## Pipeline overview (recommended MVP → v1)
 
-### Stage 0: `init_songpack`
+### Stage 0: `init_auralsong`
 - create output folder structure
 - write initial `manifest.json`
 

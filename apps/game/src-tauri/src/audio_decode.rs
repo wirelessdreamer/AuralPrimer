@@ -1,6 +1,6 @@
 //! Audio decoding helpers (Phase 1.5)
 //!
-//! Host playback policy: decode common SongPack formats in-process with
+//! Host playback policy: decode common AuralSong formats in-process with
 //! Symphonia. FFmpeg remains an ingest-sidecar dependency, not a playback
 //! dependency.
 
@@ -23,7 +23,7 @@ pub struct DecodedPcm16 {
 
 pub const HOST_AUDIO_CODEC_POLICY_ID: &str = "rust_symphonia_in_process";
 pub const HOST_AUDIO_CODEC_POLICY: &str =
-    "Host playback decodes SongPack audio in-process with Rust/Symphonia; FFmpeg is sidecar-only for ingest conversion.";
+    "Host playback decodes AuralSong audio in-process with Rust/Symphonia; FFmpeg is sidecar-only for ingest conversion.";
 pub const HOST_AUDIO_SUPPORTED_MIME_HINTS: &[&str] = &[
     "audio/mpeg",
     "audio/mp3",

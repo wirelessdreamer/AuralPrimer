@@ -76,7 +76,7 @@ type ManifestSummary = {
   duration_sec?: number;
 };
 
-type SongPackScanEntry = {
+type AuralSongScanEntry = {
   container_path: string;
   kind: string;
   ok: boolean;
@@ -84,7 +84,7 @@ type SongPackScanEntry = {
   error?: string;
 };
 
-function isDemoSongPack(e: SongPackScanEntry): boolean {
+function isDemoAuralSong(e: AuralSongScanEntry): boolean {
   // Deterministic id for our built-in first-run song.
   return (e.manifest?.song_id ?? "") === "demo_sine_440hz";
 }
@@ -95,7 +95,7 @@ async function waitForUiPaint(): Promise<void> {
   });
 }
 
-type SongPackDetails = {
+type AuralSongDetails = {
   container_path: string;
   kind: string;
   ok: boolean;
@@ -192,49 +192,6 @@ type MidiBlob = {
   bytes: number[];
 };
 
-type proprietary_archive_importSettings = {
-  data_root?: string;
-  external_decoder_cli_path?: string;
-};
-
-type proprietary_archive_importPreflight = {
-  dlc_ok: boolean;
-  external_decoder_ok: boolean;
-  data_root: string;
-  dlc_root: string;
-  external_decoder_resolved?: string;
-  error?: string;
-};
-
-type proprietary_archive_importSongEntry = {
-  checksum: string;
-  title: string;
-  artist: string;
-  year?: number;
-  dlc_dir: string;
-  preview_fsb_path: string;
-  stem_fsb_paths: string[];
-  pak_path?: string;
-};
-
-type proprietary_archive_importImportResult = { songpack_path: string; used?: string };
-
-type proprietary_archive_importImportAllResult = {
-  ok: boolean;
-  checksum: string;
-  songpack_path?: string;
-  error?: string;
-};
-
-type proprietary_archive_importImportProgressEvent = {
-  song: string;
-  type: string;
-  id: string;
-  progress: number;
-  message?: string;
-  artifact?: string;
-};
-
 type IngestImportProgressEvent = {
   stream: "stdout" | "stderr";
   line: string;
@@ -243,7 +200,10 @@ type IngestImportProgressEvent = {
 
 const MELODIC_METHOD_OPTIONS = [
   ["auto", "auto"],
-  ["piano_auto", "piano_auto (piano-focused cleanup)"],
+  ["piano_auto", "piano_auto (model-backed)"],
+  ["piano_basic_pitch_playable", "piano_basic_pitch_playable (model + playable)"],
+  ["piano_basic_pitch", "piano_basic_pitch (model-backed)"],
+  ["piano_basic_pitch_clean", "piano_basic_pitch_clean (model + cleanup)"],
   ["piano_polyphonic_clean", "piano_polyphonic_clean (heuristic)"],
   ["piano_polyphonic", "piano_polyphonic (heuristic raw)"],
   ["piano_transkun_clean", "piano_transkun_clean (research)"],
@@ -290,7 +250,7 @@ type StemMidiCreateRequest = {
   trackAssignments?: TrackAssignment[];
 };
 
-type StemMidiCreateResult = { songpack_path: string };
+type StemMidiCreateResult = { auralsong_path: string };
 
 type RawSongDetectedPart = {
   path: string;
@@ -323,7 +283,7 @@ type ImportRawSongFolderRequest = {
 };
 
 type ImportRawSongFolderResult = {
-  songpack_path: string;
+  auralsong_path: string;
   stems_count: number;
   midi_files_count: number;
   lyrics_included: boolean;
@@ -363,17 +323,17 @@ root.innerHTML = `
             <span class="logoMark logoMark--xl" aria-hidden="true"></span>
             <div>
               <h1 class="heroTitle">AuralStudio</h1>
-              <div class="meta heroMeta">Import raw source material, clean up SongPacks, and edit pack metadata without the gameplay shell.</div>
+              <div class="meta heroMeta">Import raw source material, clean up AuralSongs, and edit pack metadata without the gameplay shell.</div>
             </div>
           </div>
           <div class="menuGrid" role="list">
             <button class="menuCard" id="homeMake" role="listitem">
               <div class="menuTitle">Import</div>
-              <div class="meta">Suno folders, perform-analysis import, and proprietary_archive_import import.</div>
+              <div class="meta">Suno folders, stem folders, and perform-analysis import.</div>
             </button>
             <button class="menuCard" id="homePlay" role="listitem">
               <div class="menuTitle">Cleanup &amp; Edit</div>
-              <div class="meta">Inspect SongPacks, regenerate lyrics, and review pack contents.</div>
+              <div class="meta">Inspect AuralSongs, regenerate lyrics, and review pack contents.</div>
             </button>
             <button class="menuCard" id="homeConfig" role="listitem">
               <div class="menuTitle">Configure</div>
@@ -402,17 +362,17 @@ root.innerHTML = `
 
           <section class="panel">
             <div class="panelHeader">
-              <h2>Selected SongPack</h2>
+              <h2>Selected AuralSong</h2>
               <div class="meta">editor tools</div>
             </div>
             <p class="meta">
               Studio stays focused on inspection and authoring. Use <strong>AuralPrimer</strong> for live playback and performance.
             </p>
             <div class="row">
-              <button id="songpackRefreshSelection">Reload selection</button>
-              <button id="songpackGenerateLyrics">Generate lyrics.json from .txt</button>
+              <button id="auralsongRefreshSelection">Reload selection</button>
+              <button id="auralsongGenerateLyrics">Generate lyrics.json from .txt</button>
             </div>
-            <pre id="songpackEditorStatus" class="meta">(select a SongPack to inspect or edit)</pre>
+            <pre id="auralsongEditorStatus" class="meta">(select an AuralSong to inspect or edit)</pre>
           </section>
         </div>
       </section>
@@ -427,7 +387,7 @@ root.innerHTML = `
             <h3>Import stem WAV + MIDI (Suno)</h3>
             <p class="meta">
               Point this at one Suno export folder. We will scan the folder for stem WAVs, MIDI,
-              <code>lyrics.txt</code>, and optional karaoke JSON, validate what we can, then build the SongPack.
+              <code>lyrics.txt</code>, and optional karaoke JSON, validate what we can, then build the AuralSong.
             </p>
             <div class="row">
               <button id="stemMidiPickFolderMake">Choose Suno folder...</button>
@@ -435,11 +395,11 @@ root.innerHTML = `
             </div>
             <div id="stemMidiSummaryMake" class="meta makeSummary"></div>
             <div class="row">
-              <button id="stemMidiImportMake">Import SongPack</button>
+              <button id="stemMidiImportMake">Import AuralSong</button>
             </div>
             <pre id="stemMidiStatusMake" class="meta">(not imported)</pre>
             <div id="stemMidiNextStepsMake" class="postImportCard" style="display:none;">
-              <div class="postImportTitle">✓ SongPack imported</div>
+              <div class="postImportTitle">✓ AuralSong imported</div>
               <div class="postImportHint">Next: clean up the auto-transcription so the gameplay chart matches your intent.</div>
               <div class="row">
                 <button class="postImportPrimary" id="stemMidiOpenRefine">Open in Refine workspace</button>
@@ -457,7 +417,7 @@ root.innerHTML = `
                 <div class="meta">beat analysis + stem split + transcription</div>
               </div>
               <p class="meta">
-                Run the Python ingest sidecar on a file, folder, pre-split stems folder, or unsupported_chart_format chart. This path performs
+                Run the Python ingest sidecar on a file, folder, or pre-split stems folder. This path performs
                 beat/tempo analysis, stem separation, guitar lead/rhythm stem split, and chart transcription.
               </p>
               <div class="meta importStageNote">
@@ -469,7 +429,6 @@ root.innerHTML = `
                   <option value="import">perform analysis import (single audio file)</option>
                   <option value="import-dir">perform analysis import (scan folder)</option>
                   <option value="stem-dir">perform analysis import (pre-split stems folder)</option>
-                  <option value="import-unsupported_chart_format">perform analysis import (unsupported_chart_format chart)</option>
                 </select>
               </div>
               <div class="row">
@@ -478,7 +437,7 @@ root.innerHTML = `
                 <button id="ingestBrowseSource">Browse...</button>
               </div>
               <div class="row">
-                <label class="meta">Output SongPack (optional)</label>
+                <label class="meta">Output AuralSong (optional)</label>
                 <input id="ingestOutPath" class="grow" type="text" placeholder="(leave blank for songs folder default)" />
               </div>
               <div class="row">
@@ -546,35 +505,6 @@ root.innerHTML = `
                 <pre id="ingestStatus" class="meta">(not started)</pre>
               </details>
             </section>
-
-            <section class="panel">
-              <div class="panelHeader">
-                <h2>Import proprietary_archive_import songs</h2>
-                <div class="meta">advanced archive import</div>
-              </div>
-              <p class="meta">
-                Scan your local <strong>proprietary_rhythm_archive World Tour Definitive Edition</strong> <code>DATA</code> folder
-                and import each DLC song's <code>*_preview.unsupported_archive.unsupported_archive</code> into a SongPack.
-                <br />
-                Requires <code>external_decoder-cli</code> on PATH (or provide an explicit path).
-              </p>
-              <div class="row">
-                <label class="meta">proprietary_archive_import DATA root</label>
-                <input id="proprietary_archive_importDataRoot" class="grow" type="text" placeholder="D:\\proprietary_rhythm_archive World Tour\\DATA" />
-                <button id="proprietary_archive_importBrowse">Browse...</button>
-              </div>
-              <div class="row">
-                <label class="meta">external_decoder-cli path (optional)</label>
-                <input id="proprietary_archive_importexternal_decoder" type="text" placeholder="C:\\tools\\external_decoder-cli.exe" />
-              </div>
-              <div class="row">
-                <button id="proprietary_archive_importSave">Save</button>
-                <button id="proprietary_archive_importScan">Scan DLC</button>
-                <button id="proprietary_archive_importImportAll">Import all</button>
-              </div>
-              <pre id="proprietary_archive_importStatus" class="meta">(not scanned)</pre>
-              <div id="proprietary_archive_importList"></div>
-            </section>
           </div>
         </div>
       </section>
@@ -624,7 +554,7 @@ root.innerHTML = `
               <div class="meta">Studio vs AuralPrimer</div>
             </div>
             <p class="meta">
-              <strong>AuralStudio</strong> is the authoring app: import raw material, inspect SongPacks, regenerate lyrics,
+              <strong>AuralStudio</strong> is the authoring app: import raw material, inspect AuralSongs, regenerate lyrics,
               and maintain the library.
             </p>
             <p class="meta">
@@ -715,7 +645,7 @@ root.innerHTML = `
     banner.innerHTML = `
       <div class="runtimeBannerInner">
         <strong>Browser mode</strong> — you opened the web build (no Tauri runtime detected).<br />
-        Desktop-only features (file picker, SongPack scanning, native audio, etc.) are disabled here.
+        Desktop-only features (file picker, AuralSong scanning, native audio, etc.) are disabled here.
         <div class="meta">Run <code>npm run desktop:dev</code> or launch the installed app to use these features.</div>
       </div>
     `;
@@ -907,15 +837,6 @@ const modelsStatusEl = document.getElementById("modelsStatus") as HTMLPreElement
 const modelpackPathInput = document.getElementById("modelpackPath") as HTMLInputElement;
 const modelpackImportBtn = document.getElementById("modelpackImport") as HTMLButtonElement;
 
-const proprietary_archive_importDataRootInput = document.getElementById("proprietary_archive_importDataRoot") as HTMLInputElement;
-const proprietary_archive_importexternal_decoderInput = document.getElementById("proprietary_archive_importexternal_decoder") as HTMLInputElement;
-const proprietary_archive_importSaveBtn = document.getElementById("proprietary_archive_importSave") as HTMLButtonElement;
-const proprietary_archive_importScanBtn = document.getElementById("proprietary_archive_importScan") as HTMLButtonElement;
-const proprietary_archive_importImportAllBtn = document.getElementById("proprietary_archive_importImportAll") as HTMLButtonElement;
-const proprietary_archive_importBrowseBtn = document.getElementById("proprietary_archive_importBrowse") as HTMLButtonElement;
-const proprietary_archive_importStatusEl = document.getElementById("proprietary_archive_importStatus") as HTMLPreElement;
-const proprietary_archive_importListEl = document.getElementById("proprietary_archive_importList") as HTMLDivElement;
-
 const ingestModeSelect = document.getElementById("ingestMode") as HTMLSelectElement;
 const ingestSourcePathInput = document.getElementById("ingestSourcePath") as HTMLInputElement;
 const ingestBrowseSourceBtn = document.getElementById("ingestBrowseSource") as HTMLButtonElement;
@@ -963,17 +884,12 @@ const songsFolderInput = document.getElementById("songsFolder") as HTMLInputElem
 const setOverrideBtn = document.getElementById("setOverride") as HTMLButtonElement;
 const clearOverrideBtn = document.getElementById("clearOverride") as HTMLButtonElement;
 
-const songpackRefreshSelectionBtn = document.getElementById("songpackRefreshSelection") as HTMLButtonElement;
-const songpackGenerateLyricsBtn = document.getElementById("songpackGenerateLyrics") as HTMLButtonElement;
-const songpackEditorStatusEl = document.getElementById("songpackEditorStatus") as HTMLPreElement;
+const auralsongRefreshSelectionBtn = document.getElementById("auralsongRefreshSelection") as HTMLButtonElement;
+const auralsongGenerateLyricsBtn = document.getElementById("auralsongGenerateLyrics") as HTMLButtonElement;
+const auralsongEditorStatusEl = document.getElementById("auralsongEditorStatus") as HTMLPreElement;
 
 // Disable desktop-only actions when running without the Tauri runtime.
 if (!haveTauri()) {
-  proprietary_archive_importBrowseBtn.disabled = true;
-  proprietary_archive_importSaveBtn.disabled = true;
-  proprietary_archive_importScanBtn.disabled = true;
-  proprietary_archive_importImportAllBtn.disabled = true;
-
   setOverrideBtn.disabled = true;
   clearOverrideBtn.disabled = true;
 
@@ -1022,7 +938,7 @@ if (!haveTauri()) {
 
 function renderPlugins() {
   // Base render; actual availability gating happens once we know selected song details.
-  renderPluginsWithAvailability(selectedSongPackDetails);
+  renderPluginsWithAvailability(selectedAuralSongDetails);
 }
 
 async function refreshPlugins() {
@@ -1233,7 +1149,7 @@ function setHudKeyMode(manifestRaw: unknown) {
   hudKeyModeEl.textContent = `${km.key} ${km.mode}`;
 }
 
-function renderDetails(details: SongPackDetails) {
+function renderDetails(details: AuralSongDetails) {
   const title = details.manifest_summary?.title ?? "(missing title)";
   const artist = details.manifest_summary?.artist ?? "";
 
@@ -1268,8 +1184,8 @@ function renderDetails(details: SongPackDetails) {
 
     <h4>Refine</h4>
     <div class="row">
-      <button id="openRefineWorkspace" data-songpack-path="${escapeHtml(details.container_path)}">Open in Refine workspace</button>
-      <span class="meta">Per-region candidate cleanup. Run <code>aural_ingest refine-candidates &lt;songpack&gt; --instrument keys</code> first.</span>
+      <button id="openRefineWorkspace" data-auralsong-path="${escapeHtml(details.container_path)}">Open in Refine workspace</button>
+      <span class="meta">Per-region candidate cleanup. Run <code>aural_ingest refine-candidates &lt;auralsong&gt; --instrument keys</code> first.</span>
     </div>
 
     <h4>manifest.json</h4>
@@ -1279,10 +1195,10 @@ function renderDetails(details: SongPackDetails) {
   const refineBtn = document.getElementById("openRefineWorkspace") as HTMLButtonElement | null;
   if (refineBtn) {
     refineBtn.addEventListener("click", () => {
-      const path = refineBtn.getAttribute("data-songpack-path") || "";
+      const path = refineBtn.getAttribute("data-auralsong-path") || "";
       if (!path) return;
       setRoute("refine");
-      void refineWorkspace?.openForSongPack(path);
+      void refineWorkspace?.openForAuralSong(path);
     });
   }
 }
@@ -1301,8 +1217,8 @@ let vizCtx2d: CanvasRenderingContext2D;
 let viz: Visualizer | null = null;
 let vizRaf: number | null = null;
 let lastFrameMs: number | null = null;
-let selectedSongPackPath: string | null = null;
-let selectedSongPackDetails: SongPackDetails | null = null;
+let selectedAuralSongPath: string | null = null;
+let selectedAuralSongDetails: AuralSongDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
 
 let availablePlugins: PluginDescriptor[] = [...BUILTIN_PLUGINS];
@@ -1330,7 +1246,7 @@ let audioOutputDevices: NativeAudioDeviceInfo[] = [];
 
 let currentPlaybackRate = 1;
 
-// proprietary_rhythm_archive-ish: once a song is loaded, make the Now Playing panel the focus.
+// Rhythm-game flow: once a song is loaded, make the Now Playing panel the focus.
 let playFocusMode = false;
 function setPlayFocusMode(enabled: boolean) {
   playFocusMode = enabled;
@@ -1356,13 +1272,13 @@ const INSTRUMENT_LABELS: Record<Instrument, string> = {
   vocals: "Vocals"
 };
 
-async function readDrumChartSelection(containerPath: string, details: SongPackDetails): Promise<DrumChartSelection | null> {
+async function readDrumChartSelection(containerPath: string, details: AuralSongDetails): Promise<DrumChartSelection | null> {
   if (!details.has_notes_mid) {
     return null;
   }
 
   try {
-    const midi = await invoke<MidiBlob>("read_songpack_mid", { containerPath, relPath: "features/notes.mid" });
+    const midi = await invoke<MidiBlob>("read_auralsong_mid", { containerPath, relPath: "features/notes.mid" });
     if (!midi.bytes.length) {
       return null;
     }
@@ -1373,7 +1289,7 @@ async function readDrumChartSelection(containerPath: string, details: SongPackDe
   }
 }
 
-function computeSongCapabilities(details: SongPackDetails | null, drumSelection: DrumChartSelection | null): SongCapabilities {
+function computeSongCapabilities(details: AuralSongDetails | null, drumSelection: DrumChartSelection | null): SongCapabilities {
   const charts = details?.charts ?? [];
   const byInstrument: SongCapabilities["charts"]["byInstrument"] = {};
   const midiDrumsAvailable = Boolean(drumSelection?.events.length);
@@ -1409,7 +1325,7 @@ function computeSongCapabilities(details: SongPackDetails | null, drumSelection:
   };
 }
 
-function renderCaps(details: SongPackDetails | null, drumSelection: DrumChartSelection | null) {
+function renderCaps(details: AuralSongDetails | null, drumSelection: DrumChartSelection | null) {
   const caps = computeSongCapabilities(details, drumSelection);
 
   const pill = (label: string, ok: boolean, hint?: string) => {
@@ -1459,7 +1375,7 @@ function renderCaps(details: SongPackDetails | null, drumSelection: DrumChartSel
   `;
 }
 
-function applyInstrumentAvailability(details: SongPackDetails | null, drumSelection: DrumChartSelection | null) {
+function applyInstrumentAvailability(details: AuralSongDetails | null, drumSelection: DrumChartSelection | null) {
   const caps = computeSongCapabilities(details, drumSelection);
   for (const chip of Array.from(playersEl.querySelectorAll<HTMLElement>(".playerChip"))) {
     const sel = chip.querySelector<HTMLSelectElement>("select.playerInstrument");
@@ -1481,7 +1397,7 @@ function applyInstrumentAvailability(details: SongPackDetails | null, drumSelect
   }
 }
 
-function pluginRequirements(id: string): { ok: (d: SongPackDetails | null) => boolean; reason: string } {
+function pluginRequirements(id: string): { ok: (d: AuralSongDetails | null) => boolean; reason: string } {
   // Minimal v1 mapping (can evolve per plugin manifest later)
   switch (id) {
     case "viz-lyrics":
@@ -1527,7 +1443,7 @@ function buildVizSongContext(): {
   };
 }
 
-function renderPluginsWithAvailability(details: SongPackDetails | null) {
+function renderPluginsWithAvailability(details: AuralSongDetails | null) {
   // Re-render options with disabled state + hint.
   pluginSelect.innerHTML = availablePlugins
     .map((p, idx) => {
@@ -1599,7 +1515,7 @@ function renderPlayers(): void {
 // Ensure instruments/plugin availability is applied even if players are added after song selection.
 function rerenderPlayersAndApplyAvailability() {
   renderPlayers();
-  applyInstrumentAvailability(selectedSongPackDetails, selectedDrumChartSelection);
+  applyInstrumentAvailability(selectedAuralSongDetails, selectedDrumChartSelection);
 }
 
 addPlayerBtn.addEventListener("click", () => {
@@ -1711,16 +1627,16 @@ function parseRawMidiHexBytes(raw: string): number[] {
   });
 }
 
-async function generateLyricsForSelectedSongPack(): Promise<void> {
-  if (!selectedSongPackPath || !selectedSongPackDetails) {
-    setVizStatus("Select a SongPack first");
+async function generateLyricsForSelectedAuralSong(): Promise<void> {
+  if (!selectedAuralSongPath || !selectedAuralSongDetails) {
+    setVizStatus("Select an AuralSong first");
     return;
   }
 
-  // If it's a zip songpack, offer to convert to a directory songpack so we can write features.
-  if (selectedSongPackDetails.kind !== "directory") {
+  // If it's a zip auralsong, offer to convert to a directory auralsong so we can write features.
+  if (selectedAuralSongDetails.kind !== "directory") {
     const ok = confirm(
-      "This SongPack is a zipped .songpack file (read-only).\n\nConvert it to a directory SongPack so we can write features/lyrics.json?"
+      "This AuralSong is a zipped .auralsong file (read-only).\n\nConvert it to a directory AuralSong so we can write features/lyrics.json?"
     );
     if (!ok) {
       setVizStatus("Lyrics generation cancelled");
@@ -1728,18 +1644,18 @@ async function generateLyricsForSelectedSongPack(): Promise<void> {
     }
 
     try {
-      const newPath = await safeInvoke<string>("convert_songpack_to_directory", { containerPath: selectedSongPackPath });
-      selectedSongPackPath = newPath;
-      // Refresh details for the new directory songpack.
-      selectedSongPackDetails = await safeInvoke<SongPackDetails>("get_songpack_details", { containerPath: newPath });
-      setVizStatus(`Converted to directory SongPack: ${newPath}`);
+      const newPath = await safeInvoke<string>("convert_auralsong_to_directory", { containerPath: selectedAuralSongPath });
+      selectedAuralSongPath = newPath;
+      // Refresh details for the new directory auralsong.
+      selectedAuralSongDetails = await safeInvoke<AuralSongDetails>("get_auralsong_details", { containerPath: newPath });
+      setVizStatus(`Converted to directory AuralSong: ${newPath}`);
     } catch (e) {
       setVizStatus(`Conversion failed: ${String(e)}`);
       return;
     }
   }
 
-  const durationSec = Number(selectedSongPackDetails.manifest_summary?.duration_sec ?? 0);
+  const durationSec = Number(selectedAuralSongDetails.manifest_summary?.duration_sec ?? 0);
   if (!Number.isFinite(durationSec) || durationSec <= 0) {
     setVizStatus("Cannot generate lyrics: manifest duration_sec missing/invalid");
     return;
@@ -1762,7 +1678,7 @@ async function generateLyricsForSelectedSongPack(): Promise<void> {
       jobId: "auralprimer_mvp"
     });
 
-    await safeInvoke("write_songpack_lyrics_json", { containerPath: selectedSongPackPath, lyricsJson });
+    await safeInvoke("write_auralsong_lyrics_json", { containerPath: selectedAuralSongPath, lyricsJson });
 
     // Update local state so viz init sees it without requiring the user to click Details again.
     currentLyrics = lyricsJson as unknown as LyricsFile;
@@ -2208,12 +2124,8 @@ async function applyAudioOutputDeviceSelection() {
 
 function setVizStatus(msg: string) {
   vizStatusEl.textContent = msg;
-  songpackEditorStatusEl.textContent = msg;
+  auralsongEditorStatusEl.textContent = msg;
   logConsole("debugging", msg);
-}
-
-function setproprietary_archive_importStatus(msg: string) {
-  proprietary_archive_importStatusEl.textContent = msg;
 }
 
 function setStemMidiStatus(msg: string) {
@@ -2263,8 +2175,8 @@ function setIngestSummary(
   ingestLogPanelEl.open = options.showLog ?? state !== "success";
 }
 
-function setSongpackEditorStatus(msg: string) {
-  songpackEditorStatusEl.textContent = msg;
+function setAuralSongEditorStatus(msg: string) {
+  auralsongEditorStatusEl.textContent = msg;
 }
 
 function debugIngestConsole(message: string, details?: unknown) {
@@ -2560,7 +2472,7 @@ function renderStemMidiAuditTable(inspection: RawSongFolderInspection): string {
 
 function renderStemMidiSelection() {
   stemMidiPickFolderBtn.textContent = "Choose Suno folder...";
-  stemMidiImportBtn.textContent = "Import SongPack";
+  stemMidiImportBtn.textContent = "Import AuralSong";
   stemMidiFolderLabel.textContent = stemMidiFolderPath ?? "(no folder selected)";
   stemMidiImportBtn.disabled = !stemMidiInspection;
   if (!stemMidiInspection) {
@@ -2646,7 +2558,7 @@ async function inspectStemMidiFolder(folderPath: string): Promise<void> {
   }
 }
 
-async function stemMidiCreateSongPack() {
+async function stemMidiCreateAuralSong() {
   if (!stemMidiFolderPath) {
     setStemMidiStatus("choose a Suno folder first");
     return;
@@ -2669,7 +2581,7 @@ async function stemMidiCreateSongPack() {
       } satisfies ImportRawSongFolderRequest,
     });
     const lines = [
-      `imported: ${res.songpack_path}`,
+      `imported: ${res.auralsong_path}`,
       `detected ${res.stems_count} WAV stem(s), ${res.midi_files_count} MIDI file(s)${res.lyrics_included ? " | lyrics ready" : ""}`,
     ];
     if (res.midi_chart_included) {
@@ -2692,7 +2604,7 @@ async function stemMidiCreateSongPack() {
     // Surface clear next-step actions so the user isn't left staring at a
     // status log with no idea what to do next. The card stays visible until
     // a new import attempt starts.
-    showStemMidiNextSteps(res.songpack_path, res.mapped_game_roles);
+    showStemMidiNextSteps(res.auralsong_path, res.mapped_game_roles);
   } finally {
     stemMidiImportBtn.disabled = !stemMidiInspection;
   }
@@ -2701,7 +2613,7 @@ async function stemMidiCreateSongPack() {
 let stemMidiLastImportedPath: string | null = null;
 
 function gameRolesToRefineInstruments(gameRoles: string[]): string[] {
-  // Map the SongPack manifest's mapped_game_roles list to the instrument
+  // Map the AuralSong manifest's mapped_game_roles list to the instrument
   // ids the refine-candidates sidecar expects. Drop drums (drum candidates
   // are deferred to v2; the keys/bass/guitar precompute reuses PTI which
   // isn't appropriate for drums) and vocals (no melodic transcription).
@@ -2722,10 +2634,10 @@ function gameRolesToRefineInstruments(gameRoles: string[]): string[] {
   return Array.from(new Set(out));
 }
 
-function showStemMidiNextSteps(songpackPath: string, gameRoles: string[]): void {
-  stemMidiLastImportedPath = songpackPath;
+function showStemMidiNextSteps(auralsongPath: string, gameRoles: string[]): void {
+  stemMidiLastImportedPath = auralsongPath;
   stemMidiNextStepsEl.style.display = "block";
-  stemMidiNextStepsEl.dataset.songpackPath = songpackPath;
+  stemMidiNextStepsEl.dataset.auralsongPath = auralsongPath;
   const insts = gameRolesToRefineInstruments(gameRoles);
   stemMidiNextStepsEl.dataset.instruments = insts.join(",");
   stemMidiPrecomputeStatusEl.style.display = "none";
@@ -2743,27 +2655,27 @@ function hideStemMidiNextSteps(): void {
 }
 
 stemMidiOpenRefineBtn.addEventListener("click", () => {
-  const path = stemMidiNextStepsEl.dataset.songpackPath || stemMidiLastImportedPath;
+  const path = stemMidiNextStepsEl.dataset.auralsongPath || stemMidiLastImportedPath;
   if (!path) return;
   setRoute("refine");
-  void refineWorkspace.openForSongPack(path);
+  void refineWorkspace.openForAuralSong(path);
 });
 
 stemMidiOpenCleanupBtn.addEventListener("click", () => {
   setRoute("play");
-  // Best effort: trigger a refresh of the SongPack list + auto-select the
+  // Best effort: trigger a refresh of the AuralSong list + auto-select the
   // imported one so the user lands on the details view.
-  const path = stemMidiNextStepsEl.dataset.songpackPath || stemMidiLastImportedPath;
+  const path = stemMidiNextStepsEl.dataset.auralsongPath || stemMidiLastImportedPath;
   if (path) {
-    void selectSongPack(path).catch(() => {
+    void selectAuralSong(path).catch(() => {
       // If selection fails (timing race with refresh), the user can pick
-      // the SongPack manually from the list.
+      // the AuralSong manually from the list.
     });
   }
 });
 
 stemMidiPrecomputeBtn.addEventListener("click", async () => {
-  const path = stemMidiNextStepsEl.dataset.songpackPath || stemMidiLastImportedPath;
+  const path = stemMidiNextStepsEl.dataset.auralsongPath || stemMidiLastImportedPath;
   if (!path) return;
   const instruments = (stemMidiNextStepsEl.dataset.instruments || "keys")
     .split(",")
@@ -2817,28 +2729,25 @@ stemMidiPrecomputeBtn.addEventListener("click", async () => {
   }
 });
 function ingestSourceExtensions(mode: IngestSubcommand): string[] {
-  if (mode === "import-unsupported_chart_format") return ["unsupported_chart_format"];
   return ["wav", "mp3", "ogg", "flac", "m4a"];
 }
 
 function currentIngestMode(): DesktopAnalysisImportMode {
   const mode = ingestModeSelect.value;
-  if (mode === "import-dir" || mode === "import-unsupported_chart_format" || mode === "stem-dir") {
+  if (mode === "import-dir" || mode === "stem-dir") {
     return mode;
   }
   return "import";
 }
 
 function setIngestSourcePlaceholder(mode: DesktopAnalysisImportMode) {
-  ingestBrowseSourceBtn.textContent = mode === "import" || mode === "import-unsupported_chart_format" ? "Browse..." : "Pick folder...";
+  ingestBrowseSourceBtn.textContent = mode === "import" ? "Browse..." : "Pick folder...";
   if (mode === "stem-dir") {
     ingestSourcePathInput.placeholder = "C:\\music\\split-stems-folder";
     return;
   }
   if (mode === "import-dir") {
     ingestSourcePathInput.placeholder = "C:\\music\\folder";
-  } else if (mode === "import-unsupported_chart_format") {
-    ingestSourcePathInput.placeholder = "C:\\charts\\song.unsupported_chart_format";
   } else {
     ingestSourcePathInput.placeholder = "C:\\music\\song.wav";
   }
@@ -3020,7 +2929,7 @@ async function runIngestImport() {
       req = buildIngestRequestFromForm({
         sourcePath: folderPath,
         mode: "import-dir",
-        outSongpackPath: ingestOutPathInput.value,
+        outAuralSongPath: ingestOutPathInput.value,
         profile: ingestProfileInput.value,
         config: await buildStemDirConfig(ingestConfigInput.value, inputStemPaths),
         title: ingestTitleInput.value,
@@ -3034,7 +2943,7 @@ async function runIngestImport() {
       req = buildIngestRequestFromForm({
         sourcePath: ingestSourcePathInput.value,
         mode,
-        outSongpackPath: ingestOutPathInput.value,
+        outAuralSongPath: ingestOutPathInput.value,
         profile: ingestProfileInput.value,
         config: ingestConfigInput.value,
         title: ingestTitleInput.value,
@@ -3083,7 +2992,7 @@ async function runIngestImport() {
         setIngestSummary(
           "success",
           "Import complete",
-          `SongPack created at ${outPath}. Review it in Cleanup & Edit.`,
+          `AuralSong created at ${outPath}. Review it in Cleanup & Edit.`,
           {
             progressPct: 100,
             canReview: true,
@@ -3091,7 +3000,7 @@ async function runIngestImport() {
           }
         );
       } else {
-        setIngestSummary("success", "Import complete", "SongPack created. Review it in Cleanup & Edit.", {
+        setIngestSummary("success", "Import complete", "AuralSong created. Review it in Cleanup & Edit.", {
           progressPct: 100,
           canReview: true,
           showLog: false
@@ -3133,180 +3042,6 @@ async function runIngestImport() {
     ingestInFlight = false;
     ingestRunBtn.disabled = false;
     ingestRunBtn.textContent = "Run import";
-  }
-}
-
-let proprietary_archive_importSongs: proprietary_archive_importSongEntry[] = [];
-
-function renderproprietary_archive_importSongs() {
-  if (!proprietary_archive_importSongs.length) {
-    proprietary_archive_importListEl.innerHTML = "<div class=\"meta\">(no DLC songs found)</div>";
-    return;
-  }
-
-  proprietary_archive_importListEl.innerHTML = `
-    <ul>
-      ${proprietary_archive_importSongs
-        .map((s) => {
-          const title = s.title || s.checksum;
-          const artist = s.artist || "";
-          const stems = s.stem_fsb_paths?.length ?? 0;
-          const hasPreview = Boolean(s.preview_fsb_path);
-          const audioHint = stems >= 2 ? `${stems} stems` : hasPreview ? "preview" : "(no audio?)";
-          return `
-            <li>
-              <div class="row">
-                <div class="grow">
-                  <strong>${escapeHtml(title)}</strong> ${escapeHtml(artist)}
-                  <div class="meta">${escapeHtml(s.checksum)} | ${escapeHtml(audioHint)} | ${escapeHtml(s.preview_fsb_path)}</div>
-                </div>
-                <button class="proprietary_archive_importImportBtn" data-checksum="${escapeHtml(s.checksum)}">Import</button>
-              </div>
-            </li>
-          `;
-        })
-        .join("\n")}
-    </ul>
-  `;
-
-  for (const btn of Array.from(proprietary_archive_importListEl.querySelectorAll<HTMLButtonElement>("button.proprietary_archive_importImportBtn"))) {
-    btn.addEventListener("click", () => {
-      const checksum = btn.getAttribute("data-checksum");
-      if (!checksum) return;
-      void proprietary_archive_importImportSong(checksum);
-    });
-  }
-}
-
-async function proprietary_archive_importLoadSettings() {
-  try {
-    const s = await safeInvoke<proprietary_archive_importSettings>("get_proprietary_archive_import_settings");
-    proprietary_archive_importDataRootInput.value = s.data_root ?? "";
-    proprietary_archive_importexternal_decoderInput.value = s.external_decoder_cli_path ?? "";
-  } catch (e) {
-    // Not fatal.
-    setproprietary_archive_importStatus(String(e));
-  }
-}
-
-async function proprietary_archive_importSaveSettings() {
-  const dataRoot = proprietary_archive_importDataRootInput.value.trim();
-  const vgm = proprietary_archive_importexternal_decoderInput.value.trim();
-
-  await safeInvoke("set_proprietary_archive_import_settings", {
-    dataRoot: dataRoot || null,
-    external_decoderCliPath: vgm || null,
-  });
-  setproprietary_archive_importStatus("saved");
-}
-
-async function proprietary_archive_importScanDlc() {
-  const dataRoot = proprietary_archive_importDataRootInput.value.trim();
-  if (!dataRoot) {
-    setproprietary_archive_importStatus("Set proprietary_archive_import DATA root first");
-    return;
-  }
-
-  // Preflight (gives friendly actionable errors)
-  try {
-    const pf = await safeInvoke<proprietary_archive_importPreflight>("proprietary_archive_import_preflight", {
-      dataRoot,
-      external_decoderCliPath: proprietary_archive_importexternal_decoderInput.value.trim() || null,
-    });
-    if (!pf.dlc_ok) {
-      setproprietary_archive_importStatus(pf.error ?? "Invalid DATA/DLC folder");
-      return;
-    }
-    if (!pf.external_decoder_ok) {
-      // Still allow scan; but make it very clear import will fail.
-      setproprietary_archive_importStatus(
-        (pf.error ?? "external_decoder-cli not available") +
-          " (scan will work; import will fail until external_decoder is installed/configured)"
-      );
-    }
-  } catch (e) {
-    // Ignore: preflight isn't required for scan.
-  }
-
-  setproprietary_archive_importStatus("Scanning DLC…");
-  proprietary_archive_importSongs = [];
-  renderproprietary_archive_importSongs();
-
-  try {
-    await waitForUiPaint();
-    proprietary_archive_importSongs = await safeInvoke<proprietary_archive_importSongEntry[]>("proprietary_archive_import_scan_dlc", { dataRoot });
-    setproprietary_archive_importStatus(`found ${proprietary_archive_importSongs.length} DLC songs`);
-  } catch (e) {
-    setproprietary_archive_importStatus(String(e));
-  }
-  renderproprietary_archive_importSongs();
-}
-
-async function proprietary_archive_importImportAll() {
-  const dataRoot = proprietary_archive_importDataRootInput.value.trim();
-  const vgm = proprietary_archive_importexternal_decoderInput.value.trim();
-  if (!dataRoot) {
-    setproprietary_archive_importStatus("Set proprietary_archive_import DATA root first");
-    return;
-  }
-
-  // Preflight required for import-all.
-  const pf = await safeInvoke<proprietary_archive_importPreflight>("proprietary_archive_import_preflight", {
-    dataRoot,
-    external_decoderCliPath: vgm || null,
-  });
-  if (!pf.dlc_ok) throw new Error(pf.error ?? "Invalid DATA/DLC folder");
-  if (!pf.external_decoder_ok) throw new Error(pf.error ?? "external_decoder-cli not available");
-
-  setproprietary_archive_importStatus("Importing all DLC songs…");
-  proprietary_archive_importImportAllBtn.disabled = true;
-
-  try {
-    await waitForUiPaint();
-    const res = await safeInvoke<proprietary_archive_importImportAllResult[]>("proprietary_archive_import_import_all", {
-      dataRoot,
-      external_decoderCliPath: vgm || null,
-    });
-    const ok = res.filter((r) => r.ok).length;
-    const bad = res.length - ok;
-    setproprietary_archive_importStatus(`bulk import done: ok=${ok} failed=${bad}`);
-    void refresh();
-  } finally {
-    proprietary_archive_importImportAllBtn.disabled = false;
-  }
-}
-
-async function proprietary_archive_importImportSong(checksum: string) {
-  const dataRoot = proprietary_archive_importDataRootInput.value.trim();
-  const vgm = proprietary_archive_importexternal_decoderInput.value.trim();
-  if (!dataRoot) {
-    setproprietary_archive_importStatus("Set proprietary_archive_import DATA root first");
-    return;
-  }
-
-  // Preflight required for import.
-  const pf = await safeInvoke<proprietary_archive_importPreflight>("proprietary_archive_import_preflight", {
-    dataRoot,
-    external_decoderCliPath: vgm || null,
-  });
-  if (!pf.dlc_ok) throw new Error(pf.error ?? "Invalid DATA/DLC folder");
-  if (!pf.external_decoder_ok) throw new Error(pf.error ?? "external_decoder-cli not available");
-
-  setproprietary_archive_importStatus(`Importing ${checksum}…`);
-
-  try {
-    await waitForUiPaint();
-    const res = await safeInvoke<proprietary_archive_importImportResult>("proprietary_archive_import_import_preview", {
-      checksum,
-      dataRoot,
-      external_decoderCliPath: vgm || null,
-    });
-    const used = res.used ? ` (${res.used})` : "";
-    setproprietary_archive_importStatus(`imported: ${res.songpack_path}${used}`);
-    // Refresh library list so the new song appears.
-    void refresh();
-  } catch (e) {
-    setproprietary_archive_importStatus(String(e));
   }
 }
 
@@ -3354,37 +3089,37 @@ function stopVisualizer(opts?: { keepStatus?: boolean }) {
   vizStopBtn.disabled = true;
 }
 
-async function selectSongPack(containerPath: string, opts?: { autoLoadAudio?: boolean }) {
+async function selectAuralSong(containerPath: string, opts?: { autoLoadAudio?: boolean }) {
   detailsEl.innerHTML = "Loading details...";
   try {
-    const details = await invoke<SongPackDetails>("get_songpack_details", {
+    const details = await invoke<AuralSongDetails>("get_auralsong_details", {
       containerPath,
     });
     renderDetails(details);
-    selectedSongPackDetails = details;
+    selectedAuralSongDetails = details;
     selectedDrumChartSelection = null;
 
     try {
-      const lyr = await invoke<unknown>("read_songpack_json", { containerPath, relPath: "features/lyrics.json" });
+      const lyr = await invoke<unknown>("read_auralsong_json", { containerPath, relPath: "features/lyrics.json" });
       currentLyrics = (lyr ?? null) as LyricsFile | null;
     } catch {
       currentLyrics = null;
     }
 
-    selectedSongPackPath = containerPath;
-    setSongpackEditorStatus(`selected SongPack: ${containerPath}`);
-    logConsole("gamestate", "selected songpack", {
+    selectedAuralSongPath = containerPath;
+    setAuralSongEditorStatus(`selected AuralSong: ${containerPath}`);
+    logConsole("gamestate", "selected auralsong", {
       containerPath,
       autoLoadAudio: Boolean(opts?.autoLoadAudio),
     });
   } catch (e) {
     detailsEl.innerHTML = `<pre class="error">${escapeHtml(String(e))}</pre>`;
-    setSongpackEditorStatus(`selection failed: ${String(e)}`);
+    setAuralSongEditorStatus(`selection failed: ${String(e)}`);
   }
 }
-async function loadAudioFromSelectedSongPack() {
-  if (!selectedSongPackPath) {
-    setAudioStatus("Select a SongPack first (click Details)");
+async function loadAudioFromSelectedAuralSong() {
+  if (!selectedAuralSongPath) {
+    setAudioStatus("Select an AuralSong first (click Details)");
     return;
   }
 
@@ -3393,17 +3128,17 @@ async function loadAudioFromSelectedSongPack() {
 
   try {
     // Prefer the direct-native path (avoids sending large WAV bytes over IPC).
-    if (transportController.loadAudioFromSongPack) {
-      await transportController.loadAudioFromSongPack(selectedSongPackPath);
+    if (transportController.loadAudioFromAuralSong) {
+      await transportController.loadAudioFromAuralSong(selectedAuralSongPath);
       transportController.setPlaybackRate(currentPlaybackRate);
 
       // We no longer have the raw bytes in JS (by design).
       lastLoadedAudio = null;
-      setAudioStatus(`loaded: ${selectedSongPackPath}`);
+      setAudioStatus(`loaded: ${selectedAuralSongPath}`);
     } else {
       // Fallback: read audio into JS, then send back into Rust for decode.
-      const blob = await invoke<AudioBlob>("read_songpack_audio", {
-        containerPath: selectedSongPackPath
+      const blob = await invoke<AudioBlob>("read_auralsong_audio", {
+        containerPath: selectedAuralSongPath
       });
 
       // Phase 1.5: Native backend decodes MP3/OGG/WAV via Rust.
@@ -3460,10 +3195,10 @@ async function startVisualizer() {
 
   if (plugin.id === "viz-lyrics" && !currentLyrics) {
     const ok = confirm(
-      "This songpack has no lyric animation (features/lyrics.json).\n\nGenerate it now from a .txt lyrics file? (directory SongPacks only)"
+      "This auralsong has no lyric animation (features/lyrics.json).\n\nGenerate it now from a .txt lyrics file? (directory AuralSongs only)"
     );
     if (ok) {
-      await generateLyricsForSelectedSongPack();
+      await generateLyricsForSelectedAuralSong();
     }
   }
 
@@ -3708,14 +3443,6 @@ void listen<MidiInputMessageEvent>("midi_input_message", (ev) => {
   );
 });
 
-// proprietary_archive_import importer progress events (from Rust)
-void listen<proprietary_archive_importImportProgressEvent>("proprietary_archive_import_import_progress", (ev) => {
-  const p = ev.payload;
-  const pct = Math.round((p.progress ?? 0) * 100);
-  const msg = p.message ? ` | ${p.message}` : "";
-  setproprietary_archive_importStatus(`${p.song}: ${pct}% | ${p.id}${msg}`);
-});
-
 void listen<IngestImportProgressEvent>("ingest_import_progress", (ev) => {
   if (!ingestInFlight) return;
   appendIngestStatusLine(formatIngestProgressEvent(ev.payload));
@@ -3733,7 +3460,7 @@ void listen<IngestImportProgressEvent>("ingest_import_progress", (ev) => {
 // Audio controls
 
 audioLoadBtn.addEventListener("click", () => {
-  void loadAudioFromSelectedSongPack().catch((e) => setAudioStatus(String(e)));
+  void loadAudioFromSelectedAuralSong().catch((e) => setAudioStatus(String(e)));
 });
 
 audioPlayBtn.addEventListener("click", () => {
@@ -3879,13 +3606,13 @@ async function refresh() {
 
   try {
     const songsFolder = await invoke<string>("get_songs_folder");
-    const entries = await invoke<SongPackScanEntry[]>("scan_songpacks");
+    const entries = await invoke<AuralSongScanEntry[]>("scan_auralsongs");
 
     // Prefer the built-in demo song on first load so the app is immediately playable.
     // Order: demo first, then the rest alphabetically by title.
     entries.sort((a, b) => {
-      const ad = isDemoSongPack(a);
-      const bd = isDemoSongPack(b);
+      const ad = isDemoAuralSong(a);
+      const bd = isDemoAuralSong(b);
       if (ad !== bd) return ad ? -1 : 1;
       const at = (a.manifest?.title ?? "").toLowerCase();
       const bt = (b.manifest?.title ?? "").toLowerCase();
@@ -3928,15 +3655,15 @@ async function refresh() {
         const containerPath = el.getAttribute("data-path");
         if (!containerPath) return;
 
-        await selectSongPack(containerPath, { autoLoadAudio: false });
+        await selectAuralSong(containerPath, { autoLoadAudio: false });
       });
     }
 
-    // UX improvement: if nothing is selected yet, preload the first valid SongPack into the editor view.
-    if (!selectedSongPackPath) {
+    // UX improvement: if nothing is selected yet, preload the first valid AuralSong into the editor view.
+    if (!selectedAuralSongPath) {
       const firstOk = entries.find((e) => e.ok);
       if (firstOk?.container_path) {
-        await selectSongPack(firstOk.container_path, { autoLoadAudio: false });
+        await selectAuralSong(firstOk.container_path, { autoLoadAudio: false });
       }
     }
   } catch (e) {
@@ -3951,18 +3678,18 @@ async function refresh() {
 
 refreshBtn.addEventListener("click", () => void refresh());
 
-songpackRefreshSelectionBtn.addEventListener("click", () => {
-  if (!selectedSongPackPath) {
-    setSongpackEditorStatus("Select a SongPack first");
+auralsongRefreshSelectionBtn.addEventListener("click", () => {
+  if (!selectedAuralSongPath) {
+    setAuralSongEditorStatus("Select an AuralSong first");
     return;
   }
-  void selectSongPack(selectedSongPackPath, { autoLoadAudio: false }).catch((e) =>
-    setSongpackEditorStatus(String(e))
+  void selectAuralSong(selectedAuralSongPath, { autoLoadAudio: false }).catch((e) =>
+    setAuralSongEditorStatus(String(e))
   );
 });
 
-songpackGenerateLyricsBtn.addEventListener("click", () => {
-  void generateLyricsForSelectedSongPack().catch((e) => setSongpackEditorStatus(String(e)));
+auralsongGenerateLyricsBtn.addEventListener("click", () => {
+  void generateLyricsForSelectedAuralSong().catch((e) => setAuralSongEditorStatus(String(e)));
 });
 
 setOverrideBtn.addEventListener("click", () => {
@@ -3977,30 +3704,6 @@ clearOverrideBtn.addEventListener("click", () => {
 
 pluginRefreshBtn.addEventListener("click", () => {
   void refreshPlugins();
-});
-
-// proprietary_archive_import importer UI
-proprietary_archive_importSaveBtn.addEventListener("click", () => {
-  void proprietary_archive_importSaveSettings().catch((e) => setproprietary_archive_importStatus(String(e)));
-});
-
-proprietary_archive_importScanBtn.addEventListener("click", () => {
-  void proprietary_archive_importScanDlc();
-});
-
-proprietary_archive_importImportAllBtn.addEventListener("click", () => {
-  void proprietary_archive_importImportAll().catch((e) => setproprietary_archive_importStatus(String(e)));
-});
-
-proprietary_archive_importBrowseBtn.addEventListener("click", () => {
-  void (async () => {
-    const dir = await pickFolder();
-    if (!dir) return;
-    proprietary_archive_importDataRootInput.value = dir;
-    // Save immediately so next app run remembers it.
-    await proprietary_archive_importSaveSettings();
-    setproprietary_archive_importStatus(`selected: ${dir}`);
-  })().catch((e) => setproprietary_archive_importStatus(String(e)));
 });
 
 ingestModeSelect.addEventListener("change", () => {
@@ -4039,11 +3742,8 @@ stemMidiPickFolderBtn.addEventListener("click", () => {
 });
 
 stemMidiImportBtn.addEventListener("click", () => {
-  void stemMidiCreateSongPack().catch((e) => setStemMidiStatus(String(e)));
+  void stemMidiCreateAuralSong().catch((e) => setStemMidiStatus(String(e)));
 });
-
-// Load proprietary_archive_import settings.
-void proprietary_archive_importLoadSettings();
 
 setIngestSourcePlaceholder(currentIngestMode());
 

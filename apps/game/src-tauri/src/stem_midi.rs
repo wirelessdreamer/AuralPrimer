@@ -86,7 +86,7 @@ pub struct StemMidiCreateRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StemMidiCreateResult {
-    pub songpack_path: String,
+    pub auralsong_path: String,
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -231,7 +231,7 @@ fn ticks_to_sec(t_ticks: u32, tpq: u32, tempo_us_per_beat: u32) -> f64 {
     beats * sec_per_beat
 }
 
-pub fn create_songpack(
+pub fn create_auralsong(
     req: StemMidiCreateRequest,
     songs_folder: &Path,
 ) -> Result<StemMidiCreateResult, String> {
@@ -267,19 +267,19 @@ pub fn create_songpack(
         sanitize_for_folder(&req.artist),
         sanitize_for_folder(&req.title)
     );
-    let mut out_dir = songs_folder.join(format!("stem_midi_{base}.songpack"));
+    let mut out_dir = songs_folder.join(format!("stem_midi_{base}.auralsong"));
 
     // Avoid overwriting: append a numeric suffix.
     if out_dir.exists() {
         for i in 2..=9999 {
-            let candidate = songs_folder.join(format!("stem_midi_{base}_{i}.songpack"));
+            let candidate = songs_folder.join(format!("stem_midi_{base}_{i}.auralsong"));
             if !candidate.exists() {
                 out_dir = candidate;
                 break;
             }
         }
         if out_dir.exists() {
-            return Err("unable to choose a unique output songpack path".to_string());
+            return Err("unable to choose a unique output auralsong path".to_string());
         }
     }
 
@@ -383,6 +383,6 @@ pub fn create_songpack(
     .map_err(|e| format!("write manifest: {e}"))?;
 
     Ok(StemMidiCreateResult {
-        songpack_path: out_dir.to_string_lossy().to_string(),
+        auralsong_path: out_dir.to_string_lossy().to_string(),
     })
 }

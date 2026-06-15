@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aural_ingest.drum_benchmark import _compress_tempo_changes, _tick_to_seconds
 from aural_ingest.transcription import MelodicNote
 
 _PIANO_MIN_MIDI = 21
@@ -20,28 +21,6 @@ def _read_vlq(data: bytes, pos: int) -> tuple[int, int]:
             return value, pos
 
 
-def _tempo_segments(tempo_changes: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    return sorted(set(tempo_changes), key=lambda item: item[0]) or [(0, 500_000)]
-
-
-def _tick_to_seconds(tick: int, tempo_changes: list[tuple[int, int]], division: int) -> float:
-    tick = max(0, int(tick))
-    changes = _tempo_segments(tempo_changes)
-    seconds = 0.0
-    last_tick = 0
-    last_tempo = changes[0][1]
-
-    for change_tick, tempo_us_per_quarter in changes[1:]:
-        if tick <= change_tick:
-            break
-        seconds += ((change_tick - last_tick) * last_tempo) / (division * 1_000_000.0)
-        last_tick = change_tick
-        last_tempo = tempo_us_per_quarter
-
-    seconds += ((tick - last_tick) * last_tempo) / (division * 1_000_000.0)
-    return seconds
-
-
 def decode_midi_notes(midi_path: Path, *, instrument: str = "keys") -> list[MelodicNote]:
     data = midi_path.read_bytes()
     if len(data) < 14 or data[0:4] != b"MThd":
@@ -58,6 +37,18 @@ def decode_midi_notes(midi_path: Path, *, instrument: str = "keys") -> list[Melo
     pos = 8 + header_len
     tempo_changes: list[tuple[int, int]] = [(0, 500_000)]
     note_events: list[tuple[int, int, int, int]] = []
+    all_note_events: list[tuple[int, int, int, int]] = []
+
+    def track_matches(track_name: str | None) -> bool:
+        normalized_instrument = str(instrument or "").strip().lower()
+        if not normalized_instrument:
+            return True
+        name = (track_name or "").strip().lower().replace("_", " ")
+        if not name:
+            return False
+        if normalized_instrument in {"keys", "piano", "synth"}:
+            return any(token in name for token in ("key", "piano", "synth"))
+        return normalized_instrument.replace("_", " ") in name
 
     for _track_index in range(track_count):
         if pos + 8 > len(data) or data[pos : pos + 4] != b"MTrk":
@@ -71,6 +62,8 @@ def decode_midi_notes(midi_path: Path, *, instrument: str = "keys") -> list[Melo
         tick = 0
         running_status: int | None = None
         open_notes: dict[tuple[int, int], tuple[int, int]] = {}
+        track_name: str | None = None
+        track_note_events: list[tuple[int, int, int, int]] = []
 
         while pos < end:
             delta, pos = _read_vlq(data, pos)
@@ -97,7 +90,9 @@ def decode_midi_notes(midi_path: Path, *, instrument: str = "keys") -> list[Melo
                 length, pos = _read_vlq(data, pos)
                 payload = data[pos : pos + length]
                 pos += length
-                if meta_type == 0x51 and len(payload) == 3:
+                if meta_type == 0x03:
+                    track_name = payload.decode("utf-8", errors="replace").strip() or None
+                elif meta_type == 0x51 and len(payload) == 3:
                     tempo_changes.append((tick, int.from_bytes(payload, "big")))
                 elif meta_type == 0x2F:
                     break
@@ -138,19 +133,26 @@ def decode_midi_notes(midi_path: Path, *, instrument: str = "keys") -> list[Melo
             if event_type == 0x90 and data2 > 0:
                 prior = open_notes.get(key)
                 if prior is not None:
-                    note_events.append((prior[0], tick, pitch, prior[1]))
+                    track_note_events.append((prior[0], tick, pitch, prior[1]))
                 open_notes[key] = (tick, int(data2))
             elif event_type == 0x80 or (event_type == 0x90 and data2 == 0):
                 prior = open_notes.pop(key, None)
                 if prior is not None:
-                    note_events.append((prior[0], tick, pitch, prior[1]))
+                    track_note_events.append((prior[0], tick, pitch, prior[1]))
 
         for (_channel, pitch), (start_tick, velocity) in open_notes.items():
-            note_events.append((start_tick, tick, pitch, velocity))
+            track_note_events.append((start_tick, tick, pitch, velocity))
+
+        all_note_events.extend(track_note_events)
+        if track_matches(track_name):
+            note_events.extend(track_note_events)
 
         pos = end
 
-    tempos = _tempo_segments(tempo_changes)
+    if instrument and not note_events:
+        note_events = all_note_events
+
+    tempos = _compress_tempo_changes(tempo_changes)
     notes: list[MelodicNote] = []
     for start_tick, end_tick, pitch, velocity in note_events:
         t_on = _tick_to_seconds(start_tick, tempos, division)

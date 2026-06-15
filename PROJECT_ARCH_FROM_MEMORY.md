@@ -36,14 +36,13 @@ The project was a Node monorepo with workspaces similar to:
   - stem separation
   - drum transcription
   - melodic transcription
-  - SongPack artifact generation
+  - AuralSong artifact generation
 
 ## 3. Data and handoff contracts
 
 ### Input
 
 - audio files or stem directories (`import` / `import-dir`)
-- optional unsupported_chart_format import path (`import-unsupported_chart_format`)
 
 ### Output contract
 
@@ -119,9 +118,9 @@ Portable mode:
   - `AuralPrimer.exe`
   - `AuralStudio.exe`
   - sidecar exe in portable root
-  - `data/songs/*.songpack`
+  - `data/songs/*.auralsong`
 
-## 9. SongPack minimal fields that mattered most
+## 9. AuralSong minimal fields that mattered most
 
 1. `manifest.json`:
    - `song_id`, `title`, `artist`, `duration_sec`

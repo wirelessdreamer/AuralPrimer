@@ -2,9 +2,9 @@
  * Song library panel — the Play Songs left column.
  *
  * Owns:
- *   - The status line, songpack list, and details panel DOM
+ *   - The status line, auralsong list, and details panel DOM
  *   - The songs-folder override input + set/clear buttons
- *   - The "Refresh" button + the songpack-list render
+ *   - The "Refresh" button + the auralsong-list render
  *   - The filesystem-watcher auto-refresh wiring (listen for
  *     `songs_folder_changed` events emitted by the Rust `notify` watcher;
  *     calls refresh() on the same scan path the manual button uses)
@@ -23,7 +23,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { ManifestSummary } from "./manifestTypes";
 
-export type SongPackScanEntry = {
+export type AuralSongScanEntry = {
   container_path: string;
   kind: string;
   ok: boolean;
@@ -31,17 +31,17 @@ export type SongPackScanEntry = {
   error?: string;
 };
 
-function isDemoSongPack(e: SongPackScanEntry): boolean {
+function isDemoAuralSong(e: AuralSongScanEntry): boolean {
   // Deterministic id for our built-in first-run song.
   return (e.manifest?.song_id ?? "") === "demo_sine_440hz";
 }
 
 export type SongLibraryPanelDeps = {
-  /** Getter for the currently-selected songpack (used to mark the list row). */
-  selectedSongPackPath: () => string | null;
-  /** Fires when the user clicks a list row. main.ts wires this to selectSongPack. */
+  /** Getter for the currently-selected auralsong (used to mark the list row). */
+  selectedAuralSongPath: () => string | null;
+  /** Fires when the user clicks a list row. main.ts wires this to selectAuralSong. */
   onSongSelected: (containerPath: string) => Promise<void>;
-  /** Whether the Tauri runtime is available (no scan_songpacks invoke in plain Vite dev). */
+  /** Whether the Tauri runtime is available (no scan_auralsongs invoke in plain Vite dev). */
   haveTauri: () => boolean;
   /** HTML escape helper, injected to avoid duplication. */
   escapeHtml: (s: string) => string;
@@ -52,7 +52,7 @@ export type SongLibraryPanelHandle = {
   refresh: () => Promise<void>;
   /** Disable the songs-folder override controls (used when no Tauri). */
   disableFolderControls: () => void;
-  /** Replace the details pane HTML (used by the host to render the selected songpack). */
+  /** Replace the details pane HTML (used by the host to render the selected auralsong). */
   setDetailsHTML: (html: string) => void;
   /** Re-apply the .isSelected class + aria-pressed to the matching list row. */
   setSelectedSongCard: (containerPath: string | null) => void;
@@ -77,12 +77,12 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
 
     try {
       const songsFolder = await invoke<string>("get_songs_folder");
-      const entries = await invoke<SongPackScanEntry[]>("scan_songpacks");
+      const entries = await invoke<AuralSongScanEntry[]>("scan_auralsongs");
 
       // Prefer the built-in demo song first, then alphabetical.
       entries.sort((a, b) => {
-        const ad = isDemoSongPack(a);
-        const bd = isDemoSongPack(b);
+        const ad = isDemoAuralSong(a);
+        const bd = isDemoAuralSong(b);
         if (ad !== bd) return ad ? -1 : 1;
         const at = (a.manifest?.title ?? "").toLowerCase();
         const bt = (b.manifest?.title ?? "").toLowerCase();
@@ -92,7 +92,7 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
       songsFolderInput!.value = songsFolder;
       statusEl!.textContent = `songsFolder: ${songsFolder}\ntracks: ${entries.length}`;
 
-      const selected = deps.selectedSongPackPath();
+      const selected = deps.selectedAuralSongPath();
       listEl!.innerHTML = `
         <ul class="songLibraryList">
           ${entries
@@ -148,7 +148,7 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
 
   // Auto-refresh the library panel when files/directories appear, change, or
   // are removed under the songs folder (e.g. `aural_ingest import` from a
-  // separate shell drops a new .songpack/ directory). The Rust side mounts a
+  // separate shell drops a new .auralsong/ directory). The Rust side mounts a
   // `notify`-based watcher during setup() and emits this event after a short
   // debounce; we just re-run the same scan the manual refresh button uses.
   if (deps.haveTauri()) {

@@ -1,9 +1,9 @@
-﻿import type { IngestImportRequest, IngestSubcommand } from "./ingestClient";
+import type { IngestImportRequest, IngestSubcommand } from "./ingestClient";
 
 export type IngestFormState = {
   sourcePath: string;
   mode: IngestSubcommand;
-  outSongpackPath?: string;
+  outAuralSongPath?: string;
   profile?: string;
   config?: string;
   title?: string;
@@ -36,7 +36,7 @@ function basenameFromPath(path: string): string {
 }
 
 function stripKnownIngestExtension(name: string): string {
-  return name.replace(/\.(wav|mp3|ogg|flac|m4a|aif|aiff|aac|opus|wma|unsupported_chart_format)$/i, "");
+  return name.replace(/\.(wav|mp3|ogg|flac|m4a|aif|aiff|aac|opus|wma)$/i, "");
 }
 
 function normalizeFilenameStem(raw: string): string {
@@ -102,7 +102,7 @@ export function buildIngestRequestFromForm(state: IngestFormState): IngestImport
   const req: IngestImportRequest = {
     source_path: sourcePath,
     subcommand: state.mode,
-    out_songpack_path: nonEmpty(state.outSongpackPath),
+    out_auralsong_path: nonEmpty(state.outAuralSongPath),
     profile: nonEmpty(state.profile) ?? "full",
     config: nonEmpty(state.config),
     title: nonEmpty(state.title),

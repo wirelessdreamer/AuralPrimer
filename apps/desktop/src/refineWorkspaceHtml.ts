@@ -312,9 +312,9 @@ export function refineWorkspaceHtml(): string {
 
       <div class="rfEmpty" id="refineEmpty" style="display:none;">
         <h3>No candidates yet</h3>
-        <div>Run the precompute stage to generate per-region transcription candidates for this SongPack:</div>
+        <div>Run the precompute stage to generate per-region transcription candidates for this AuralSong:</div>
         <div>
-          <code id="refineEmptyCmd">aural_ingest refine-candidates &lt;songpack&gt; --instrument keys</code>
+          <code id="refineEmptyCmd">aural_ingest refine-candidates &lt;auralsong&gt; --instrument keys</code>
         </div>
         <div style="font-size:12px; color:#64748b;">
           Then come back here and hit Reload.

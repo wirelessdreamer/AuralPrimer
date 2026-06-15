@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from aural_ingest.piano_benchmark import (
+    PIANO_ALGORITHMS,
     PianoBenchmarkEvent,
     benchmark_piano_algorithms,
     evaluate_piano,
@@ -59,6 +60,16 @@ def test_benchmark_piano_algorithms_supports_no_reference_cases(monkeypatch, tmp
     assert results[0]["prediction"]["duplicate_predictions"] == 1
     assert results[0]["predicted_notes"][0]["pitch"] == 60
     assert results[0]["overall"]["f1"] == 0.0
+
+
+def test_default_piano_benchmark_algorithms_include_strict_basic_pitch() -> None:
+    assert PIANO_ALGORITHMS[:4] == [
+        "piano_auto",
+        "piano_basic_pitch_playable",
+        "piano_basic_pitch",
+        "piano_basic_pitch_clean",
+    ]
+    assert "basic_pitch" in PIANO_ALGORITHMS
 
 
 def test_write_melodic_notes_midi_writes_valid_header(tmp_path: Path) -> None:

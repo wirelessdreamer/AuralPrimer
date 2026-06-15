@@ -1,8 +1,8 @@
-"""Build Psalm 1-7 songpacks with per-instrument MIDI ground truth.
+"""Build Psalm 1-7 auralsongs with per-instrument MIDI ground truth.
 
 Each Psalm folder in D:\Psalms has per-instrument MIDI files (Drums.mid,
 Bass.mid, Guitar.mid etc.) alongside matching stem WAVs.  This script
-creates songpacks with per-instrument note highways by:
+creates auralsongs with per-instrument note highways by:
 
   1. Copying the full-mix WAV as audio/mix.wav
   2. Merging all per-instrument MIDIs into features/events.json
@@ -356,8 +356,8 @@ def generate_sections(duration_sec: float, bpm: float, bars_per_section: int = 8
     return {"sections_version": "1.0.0", "sections": sections}
 
 
-def build_psalm_songpack(psalm: dict) -> Optional[Path]:
-    """Build a single Psalm songpack with per-instrument MIDI highways."""
+def build_psalm_auralsong(psalm: dict) -> Optional[Path]:
+    """Build a single Psalm auralsong with per-instrument MIDI highways."""
     num = psalm["num"]
     mix_wav = PSALMS_DIR / psalm["mix"]
     stems_dir = PSALMS_DIR / psalm["stems_dir"]
@@ -399,7 +399,7 @@ def build_psalm_songpack(psalm: dict) -> Optional[Path]:
         print(f"      {tid}: {cnt} notes")
 
     # Output path
-    folder_name = f"psalm_{num}_midi.songpack"
+    folder_name = f"psalm_{num}_midi.auralsong"
     out_dir = OUT_DIR / folder_name
     if out_dir.exists():
         print(f"    removing existing {out_dir}")
@@ -475,7 +475,7 @@ def build_psalm_songpack(psalm: dict) -> Optional[Path]:
 
 
 def main():
-    print(f"Building Psalm songpacks with MIDI ground truth")
+    print(f"Building Psalm auralsongs with MIDI ground truth")
     print(f"Source: {PSALMS_DIR}")
     print(f"Output: {OUT_DIR}")
     print()
@@ -485,13 +485,13 @@ def main():
     built = 0
     for psalm in PSALM_MAP:
         print(f"[Psalm {psalm['num']}] {psalm['title']}")
-        result = build_psalm_songpack(psalm)
+        result = build_psalm_auralsong(psalm)
         if result:
             print(f"  → {result}")
             built += 1
         print()
 
-    print(f"DONE — built {built}/{len(PSALM_MAP)} songpacks")
+    print(f"DONE — built {built}/{len(PSALM_MAP)} auralsongs")
 
 
 if __name__ == "__main__":

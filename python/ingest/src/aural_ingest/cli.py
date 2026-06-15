@@ -162,7 +162,7 @@ KNOWN_INPUT_STEM_ROLES: tuple[str, ...] = (
 
 
 STAGES: list[Stage] = [
-    Stage(id="init_songpack", version="0.1.0", outputs=["manifest.json"]),
+    Stage(id="init_auralsong", version="0.1.0", outputs=["manifest.json"]),
     # We always produce mix.wav. Compressed assets are optional (only produced when ffmpeg is available).
     Stage(id="decode_audio", version="0.2.0", outputs=["audio/mix.wav", "audio/mix.mp3", "audio/mix.ogg"]),
     Stage(id="beats_tempo", version="0.3.0", outputs=["features/beats.json", "features/tempo_map.json"]),
@@ -332,7 +332,7 @@ def _parse_config_arg(raw: str | None) -> dict[str, Any]:
 
     p = Path(raw)
     if p.is_file():
-        return json.loads(p.read_text("utf-8"))
+        return json.loads(p.read_text("utf-8-sig"))
 
     return json.loads(raw)
 
@@ -1295,7 +1295,6 @@ def _separate_stems_with_demucs(
         return {"ok": False, "status": "skipped", "reason": err or "demucs modelpack unavailable"}
 
     try:
-        import torch
         from demucs.apply import apply_model
         from demucs.audio import convert_audio
     except Exception as exc:
@@ -1521,6 +1520,55 @@ def _build_midi_track_chunk(events: list[tuple[int, bytes]]) -> bytes:
     return b"MTrk" + len(body).to_bytes(4, "big") + bytes(body)
 
 
+def _midi_channel_pool(base_channel: int) -> list[int]:
+    base = _clamp_int(base_channel, 0, 15)
+    reserved = {MIDI_CHANNEL_DRUMS, MIDI_CHANNEL_STRUCTURE}
+    pool = [base]
+    pool.extend(ch for ch in range(16) if ch != base and ch not in reserved)
+    return pool
+
+
+def _melodic_note_midi_events(
+    notes: list[Any],
+    *,
+    bpm: float,
+    base_channel: int,
+    default_note_dur: int,
+) -> list[tuple[int, bytes]]:
+    track_events: list[tuple[int, bytes]] = []
+    channel_pool = _midi_channel_pool(base_channel)
+    active_until: dict[tuple[int, int], int] = {}
+
+    for n in sorted(
+        notes,
+        key=lambda item: (
+            float(getattr(item, "t_on", 0.0)),
+            int(getattr(item, "pitch", 60)),
+            float(getattr(item, "t_off", 0.0)),
+        ),
+    ):
+        t_on = _sec_to_ticks(float(getattr(n, "t_on", 0.0)), bpm=bpm)
+        t_off = _sec_to_ticks(float(getattr(n, "t_off", 0.0)), bpm=bpm)
+        if t_off <= t_on:
+            t_off = t_on + default_note_dur
+        pitch = _clamp_int(int(getattr(n, "pitch", 60)), 0, 127)
+        vel = _clamp_int(int(getattr(n, "velocity", 90)), 1, 127)
+
+        channel = channel_pool[0]
+        for candidate in channel_pool:
+            if active_until.get((candidate, pitch), -1) <= t_on:
+                channel = candidate
+                break
+        else:
+            channel = min(channel_pool, key=lambda candidate: active_until.get((candidate, pitch), -1))
+
+        active_until[(channel, pitch)] = t_off
+        track_events.append((t_on, _note_on(channel, pitch, vel)))
+        track_events.append((t_off, _note_off(channel, pitch)))
+
+    return track_events
+
+
 def _build_notes_mid_bytes(
     *,
     bpm: float,
@@ -1602,28 +1650,26 @@ def _build_notes_mid_bytes(
             channel = _INSTRUMENT_MIDI_CHANNELS.get(role, MIDI_CHANNEL_MELODIC)
             track_name = _INSTRUMENT_TRACK_NAMES.get(role, role.replace("_", " ").title())
             track_events: list[tuple[int, bytes]] = [(0, _meta_text_event(0x03, track_name))]
-            for n in notes:
-                t_on = _sec_to_ticks(float(getattr(n, "t_on", 0.0)), bpm=bpm_safe)
-                t_off = _sec_to_ticks(float(getattr(n, "t_off", 0.0)), bpm=bpm_safe)
-                if t_off <= t_on:
-                    t_off = t_on + default_note_dur
-                pitch = _clamp_int(int(getattr(n, "pitch", 60)), 0, 127)
-                vel = _clamp_int(int(getattr(n, "velocity", 90)), 1, 127)
-                track_events.append((t_on, _note_on(channel, pitch, vel)))
-                track_events.append((t_off, _note_off(channel, pitch)))
+            track_events.extend(
+                _melodic_note_midi_events(
+                    notes,
+                    bpm=bpm_safe,
+                    base_channel=channel,
+                    default_note_dur=default_note_dur,
+                )
+            )
             tracks.append(track_events)
     elif melodic_notes:
         # Legacy single-melodic-track path.
         melodic_track_events: list[tuple[int, bytes]] = [(0, _meta_text_event(0x03, "Melodic"))]
-        for n in melodic_notes:
-            t_on = _sec_to_ticks(float(getattr(n, "t_on", 0.0)), bpm=bpm_safe)
-            t_off = _sec_to_ticks(float(getattr(n, "t_off", 0.0)), bpm=bpm_safe)
-            if t_off <= t_on:
-                t_off = t_on + default_note_dur
-            pitch = _clamp_int(int(getattr(n, "pitch", 60)), 0, 127)
-            vel = _clamp_int(int(getattr(n, "velocity", 90)), 1, 127)
-            melodic_track_events.append((t_on, _note_on(MIDI_CHANNEL_MELODIC, pitch, vel)))
-            melodic_track_events.append((t_off, _note_off(MIDI_CHANNEL_MELODIC, pitch)))
+        melodic_track_events.extend(
+            _melodic_note_midi_events(
+                melodic_notes,
+                bpm=bpm_safe,
+                base_channel=MIDI_CHANNEL_MELODIC,
+                default_note_dur=default_note_dur,
+            )
+        )
         tracks.append(melodic_track_events)
 
     header = (
@@ -1670,74 +1716,6 @@ def _find_audio_source_in_dir(src_dir: Path) -> Path | None:
 
     candidates.sort(key=lambda p: p.relative_to(src_dir).as_posix().lower())
     return candidates[0]
-
-
-def _extract_unsupported_chart_format_referenced_paths(unsupported_chart_format_path: Path) -> list[Path]:
-    """Extract best-effort referenced file paths from a unsupported_chart_format chart file.
-
-    Supported directives (MVP):
-    - #WAVxx <path>
-    - #BGM <path>
-    - #PREIMAGE <path>
-    - #PREVIEW <path>
-    - #VIDEO <path>
-    - #AVIZZ <path>
-    """
-
-    try:
-        raw = unsupported_chart_format_path.read_text("utf-8", errors="replace")
-    except Exception:
-        return []
-
-    out: list[Path] = []
-    for line in raw.splitlines():
-        s = line.strip()
-        if not s or not s.startswith("#"):
-            continue
-
-        # Drop trailing comments after ';' in the same line.
-        s = s.split(";", 1)[0].strip()
-        if not s:
-            continue
-
-        parts = s.split(maxsplit=1)
-        if len(parts) < 2:
-            continue
-
-        token = parts[0].upper()
-        value = parts[1].strip().strip('"').strip("'")
-        if not value:
-            continue
-
-        is_supported = (
-            token.startswith("#WAV")
-            or token in {"#BGM", "#PREIMAGE", "#PREVIEW", "#VIDEO", "#AVIZZ"}
-        )
-        if not is_supported:
-            continue
-
-        # unsupported_chart_format references are usually relative to chart folder.
-        rel = value.replace("\\", "/")
-        out.append((unsupported_chart_format_path.parent / rel).resolve())
-
-    return out
-
-
-def _find_audio_source_for_unsupported_chart_format(unsupported_chart_format_path: Path) -> Path | None:
-    """Resolve one deterministic audio source for a unsupported_chart_format chart.
-
-    Priority:
-    1) existing referenced audio files from unsupported_chart_format directives
-    2) fallback to folder scan in chart directory
-    """
-
-    audio_exts = {".wav", ".mp3", ".ogg", ".flac", ".m4a"}
-
-    for p in _extract_unsupported_chart_format_referenced_paths(unsupported_chart_format_path):
-        if p.is_file() and p.suffix.lower() in audio_exts:
-            return p
-
-    return _find_audio_source_in_dir(unsupported_chart_format_path.parent)
 
 
 def _resolve_requested_drum_stem_path(
@@ -1986,7 +1964,7 @@ def _try_relpath(path: Path, root: Path) -> str:
 
 
 def _resolve_guitar_split_source(
-    songpack_root: Path,
+    auralsong_root: Path,
     mix_wav: Path,
     config: dict[str, Any],
 ) -> tuple[Path, str]:
@@ -1997,8 +1975,8 @@ def _resolve_guitar_split_source(
             return p, "config"
 
     for candidate in (
-        songpack_root / "audio" / "stems" / "guitar.wav",
-        songpack_root / "audio" / "stems" / "Guitar.wav",
+        auralsong_root / "audio" / "stems" / "guitar.wav",
+        auralsong_root / "audio" / "stems" / "Guitar.wav",
     ):
         if candidate.is_file():
             return candidate, "stems_guitar"
@@ -2008,7 +1986,7 @@ def _resolve_guitar_split_source(
 
 def _resolve_drum_transcription_source(
     args: argparse.Namespace,
-    songpack_root: Path,
+    auralsong_root: Path,
     mix_wav: Path,
     config: dict[str, Any],
 ) -> tuple[Path, str]:
@@ -2017,8 +1995,8 @@ def _resolve_drum_transcription_source(
         return configured, configured_kind
 
     for candidate in (
-        songpack_root / "audio" / "stems" / "drums.wav",
-        songpack_root / "audio" / "stems" / "Drums.wav",
+        auralsong_root / "audio" / "stems" / "drums.wav",
+        auralsong_root / "audio" / "stems" / "Drums.wav",
     ):
         if candidate.is_file():
             return candidate, "separated_drums"
@@ -2176,7 +2154,7 @@ def _local_rms_peak_dbfs_at(
     return round(_dbfs(rms), 2), round(_dbfs(peak), 2)
 
 
-def _songpack_transcription_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+def _auralsong_transcription_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     pipeline = manifest.get("pipeline")
     if not isinstance(pipeline, dict):
         return {}
@@ -2184,7 +2162,7 @@ def _songpack_transcription_manifest(manifest: dict[str, Any]) -> dict[str, Any]
     return transcription if isinstance(transcription, dict) else {}
 
 
-def _songpack_stem_silence_gate_meta(transcription: dict[str, Any]) -> dict[str, Any] | None:
+def _auralsong_stem_silence_gate_meta(transcription: dict[str, Any]) -> dict[str, Any] | None:
     for key in ("stem_silence_gate", "drum_silence_gate"):
         value = transcription.get(key)
         if isinstance(value, dict):
@@ -2198,8 +2176,8 @@ def _songpack_stem_silence_gate_meta(transcription: dict[str, Any]) -> dict[str,
     return None
 
 
-def _resolve_songpack_drum_stem(root: Path, manifest: dict[str, Any]) -> Path | None:
-    transcription = _songpack_transcription_manifest(manifest)
+def _resolve_auralsong_drum_stem(root: Path, manifest: dict[str, Any]) -> Path | None:
+    transcription = _auralsong_transcription_manifest(manifest)
     candidates: list[Path] = []
     raw_source = transcription.get("drum_source_path")
     if isinstance(raw_source, str) and raw_source.strip():
@@ -2218,7 +2196,7 @@ def _resolve_songpack_drum_stem(root: Path, manifest: dict[str, Any]) -> Path | 
     return candidates[0] if candidates else None
 
 
-def _load_songpack_drum_events(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _load_auralsong_drum_events(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     events_path = root / "features" / "events.json"
     if events_path.is_file():
         payload = json.loads(events_path.read_text("utf-8"))
@@ -2273,10 +2251,10 @@ def _counter_by_key(events: list[dict[str, Any]], key: str) -> dict[str, int]:
 
 
 def cmd_audit_drums(args: argparse.Namespace) -> int:
-    root = Path(args.songpack_dir)
+    root = Path(args.auralsong_dir)
     manifest_path = root / "manifest.json"
     if not root.exists() or not root.is_dir():
-        print(json.dumps({"ok": False, "error": f"songpack directory does not exist: {root}"}, sort_keys=True))
+        print(json.dumps({"ok": False, "error": f"auralsong directory does not exist: {root}"}, sort_keys=True))
         return 1
     if not manifest_path.is_file():
         print(json.dumps({"ok": False, "error": "missing manifest.json"}, sort_keys=True))
@@ -2291,12 +2269,12 @@ def cmd_audit_drums(args: argparse.Namespace) -> int:
         print(json.dumps({"ok": False, "error": "manifest.json must contain an object"}, sort_keys=True))
         return 1
 
-    events, event_source = _load_songpack_drum_events(root)
+    events, event_source = _load_auralsong_drum_events(root)
     pipeline = manifest.get("pipeline")
     pipeline = pipeline if isinstance(pipeline, dict) else {}
-    transcription = _songpack_transcription_manifest(manifest)
-    stem_gate = _songpack_stem_silence_gate_meta(transcription)
-    stem_path = _resolve_songpack_drum_stem(root, manifest)
+    transcription = _auralsong_transcription_manifest(manifest)
+    stem_gate = _auralsong_stem_silence_gate_meta(transcription)
+    stem_path = _resolve_auralsong_drum_stem(root, manifest)
     threshold_values = list(getattr(args, "threshold_dbfs", None) or DRUM_AUDIT_DEFAULT_THRESHOLDS_DBFS)
     thresholds = sorted(float(value) for value in threshold_values)
     window_ms = float(getattr(args, "window_ms", DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS))
@@ -2304,7 +2282,7 @@ def cmd_audit_drums(args: argparse.Namespace) -> int:
 
     payload: dict[str, Any] = {
         "ok": True,
-        "songpack": str(root),
+        "auralsong": str(root),
         "event_source": event_source,
         "manifest": {
             "title": manifest.get("title"),
@@ -2411,7 +2389,7 @@ def cmd_stages(_args: argparse.Namespace) -> int:
 
 
 def cmd_info(args: argparse.Namespace) -> int:
-    root = Path(args.songpack_dir)
+    root = Path(args.auralsong_dir)
     manifest = root / "manifest.json"
     if not manifest.exists():
         print(json.dumps({"ok": False, "error": "missing manifest.json"}, sort_keys=True))
@@ -2422,8 +2400,159 @@ def cmd_info(args: argparse.Namespace) -> int:
     return 0
 
 
+def _event_note_tuple(note: dict[str, Any]) -> tuple[float, float, int, int]:
+    return (
+        round(float(note.get("t_on", 0.0) or 0.0), 6),
+        round(float(note.get("t_off", 0.0) or 0.0), 6),
+        int(note.get("pitch", 0) or 0),
+        int(note.get("velocity", 0) or 0),
+    )
+
+
+def _validate_note_tuple_matches(
+    *,
+    role: str,
+    idx: int,
+    label: str,
+    expected: tuple[float, float, int, int],
+    actual: tuple[float, float, int, int],
+    tolerance_sec: float,
+) -> None:
+    expected_t_on, expected_t_off, expected_pitch, expected_velocity = expected
+    actual_t_on, actual_t_off, actual_pitch, actual_velocity = actual
+    if (
+        expected_pitch != actual_pitch
+        or expected_velocity != actual_velocity
+        or abs(expected_t_on - actual_t_on) > tolerance_sec
+        or abs(expected_t_off - actual_t_off) > tolerance_sec
+    ):
+        raise ValueError(
+            f"{label} disagree for {role} note {idx}: "
+            f"events=({expected_t_on}, {expected_t_off}, {expected_pitch}, {expected_velocity}) "
+            f"verifier=({actual_t_on}, {actual_t_off}, {actual_pitch}, {actual_velocity})"
+        )
+
+
+def _validate_events_json_matches_notes_mid(root: Path) -> dict[str, Any] | None:
+    events_path = root / "features" / "events.json"
+    if not events_path.is_file():
+        return None
+
+    from aural_ingest.algorithms.piano_midi import decode_midi_notes
+    from aural_ingest.piano_benchmark import evaluate_piano, parse_piano_midi_reference
+
+    payload = json.loads(events_path.read_text("utf-8"))
+    raw_notes = payload.get("notes", [])
+    if not isinstance(raw_notes, list) or not raw_notes:
+        return None
+
+    notes_mid = root / "features" / "notes.mid"
+    notes_by_role: dict[str, list[dict[str, Any]]] = {}
+    for raw_note in raw_notes:
+        if not isinstance(raw_note, dict):
+            raise ValueError("events.json notes must be objects")
+        role = str(raw_note.get("instrument", "")).strip()
+        if not role or role == "drums":
+            continue
+        notes_by_role.setdefault(role, []).append(raw_note)
+
+    tolerance_sec = 0.01
+    summary: dict[str, Any] = {
+        "events_notes_mid": {
+            "roles": {},
+            "verifiers": ["events_json", "piano_midi_decoder", "piano_benchmark_parser"],
+        }
+    }
+    for role, expected_notes in sorted(notes_by_role.items()):
+        decoded_notes = decode_midi_notes(notes_mid, instrument=role)
+        benchmark_events = parse_piano_midi_reference(notes_mid, role=role)
+        expected_sorted = sorted(
+            expected_notes,
+            key=lambda item: (
+                float(item.get("t_on", 0.0) or 0.0),
+                int(item.get("pitch", 0) or 0),
+                float(item.get("t_off", 0.0) or 0.0),
+                int(item.get("velocity", 0) or 0),
+            ),
+        )
+        if len(decoded_notes) != len(expected_sorted):
+            raise ValueError(
+                "events.json and piano_midi_decoder disagree for "
+                f"{role}: {len(expected_sorted)} event notes vs {len(decoded_notes)} MIDI notes"
+            )
+        if len(benchmark_events) != len(expected_sorted):
+            raise ValueError(
+                "events.json and piano_benchmark_parser disagree for "
+                f"{role}: {len(expected_sorted)} event notes vs {len(benchmark_events)} benchmark notes"
+            )
+
+        for idx, (event_note, midi_note) in enumerate(zip(expected_sorted, decoded_notes, strict=True)):
+            expected_tuple = _event_note_tuple(event_note)
+            actual_tuple = (
+                round(float(midi_note.t_on), 6),
+                round(float(midi_note.t_off), 6),
+                int(midi_note.pitch),
+                int(midi_note.velocity),
+            )
+            _validate_note_tuple_matches(
+                role=role,
+                idx=idx,
+                label="events.json and piano_midi_decoder",
+                expected=expected_tuple,
+                actual=actual_tuple,
+                tolerance_sec=tolerance_sec,
+            )
+
+        for idx, (event_note, benchmark_note) in enumerate(zip(expected_sorted, benchmark_events, strict=True)):
+            expected_tuple = _event_note_tuple(event_note)
+            actual_tuple = (
+                round(float(benchmark_note.time), 6),
+                round(float(benchmark_note.time + benchmark_note.duration), 6),
+                int(benchmark_note.pitch),
+                int(benchmark_note.velocity),
+            )
+            _validate_note_tuple_matches(
+                role=role,
+                idx=idx,
+                label="events.json and piano_benchmark_parser",
+                expected=expected_tuple,
+                actual=actual_tuple,
+                tolerance_sec=tolerance_sec,
+            )
+
+        secondary = evaluate_piano(
+            decoded_notes,
+            benchmark_events,
+            tolerance_sec=tolerance_sec,
+            offset_tolerance_sec=tolerance_sec,
+            velocity_tolerance=0,
+        )
+        if (
+            secondary.tp != len(expected_sorted)
+            or secondary.fp != 0
+            or secondary.fn != 0
+            or secondary.offset_velocity_tp != len(expected_sorted)
+        ):
+            raise ValueError(
+                "piano_midi_decoder and piano_benchmark_parser disagree for "
+                f"{role}: f1={secondary.f1:.4f}, offset_velocity_f1={secondary.note_with_offset_velocity_f1:.4f}"
+            )
+
+        summary["events_notes_mid"]["roles"][role] = {
+            "events_json_notes": len(expected_sorted),
+            "piano_benchmark_parser_notes": len(benchmark_events),
+            "piano_midi_decoder_notes": len(decoded_notes),
+            "secondary_f1": round(secondary.f1, 4),
+            "secondary_offset_velocity_f1": round(secondary.note_with_offset_velocity_f1, 4),
+        }
+
+    if not summary["events_notes_mid"]["roles"]:
+        return None
+    return summary
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
-    root = Path(args.songpack_dir)
+    root = Path(args.auralsong_dir)
     required = [
         "manifest.json",
         "audio/mix.wav",
@@ -2453,11 +2582,15 @@ def cmd_validate(args: argparse.Namespace) -> int:
             raise ValueError("notes.mid missing track chunks")
         if b"\xFF\x51\x03" not in midi_bytes:
             raise ValueError("notes.mid missing SetTempo meta event")
+        verifier_summary = _validate_events_json_matches_notes_mid(root)
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)}, sort_keys=True))
         return 1
 
-    print(json.dumps({"ok": True}, sort_keys=True))
+    payload: dict[str, Any] = {"ok": True}
+    if verifier_summary:
+        payload["verifiers"] = verifier_summary
+    print(json.dumps(payload, sort_keys=True))
     return 0
 
 
@@ -2824,8 +2957,17 @@ def cmd_import(args: argparse.Namespace) -> int:
         log(f"input does not exist: {src}")
         return 2
 
-    # Stage 0: init_songpack
-    emit(ProgressEvent(type="stage_start", id="init_songpack", progress=0.0))
+    input_stem_paths = _resolved_input_stem_paths(config)
+    if input_stem_paths:
+        try:
+            src_resolved = src.resolve()
+            if any(stem_path.resolve() == src_resolved for stem_path in input_stem_paths.values()):
+                config = {**config, "_synthesized_mix_from_input_stems": True}
+        except Exception:
+            pass
+
+    # Stage 0: init_auralsong
+    emit(ProgressEvent(type="stage_start", id="init_auralsong", progress=0.0))
     _mkdir(out)
     _mkdir(out / "audio")
     _mkdir(out / "features")
@@ -2868,7 +3010,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     }
 
     _write_json(out / "manifest.json", manifest)
-    emit(ProgressEvent(type="stage_done", id="init_songpack", progress=0.1, artifact="manifest.json"))
+    emit(ProgressEvent(type="stage_done", id="init_auralsong", progress=0.1, artifact="manifest.json"))
 
     # Stage 1: decode_audio
     emit(ProgressEvent(type="stage_start", id="decode_audio", progress=0.1))
@@ -3046,6 +3188,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     rhythm_stem = stems_dir / "rhythm_guitar.wav"
     split_summary: dict[str, Any] | None = None
     split_source, split_source_kind = _resolve_guitar_split_source(out, dst_wav, config)
+    synthesized_input_mix = bool(config.get("_synthesized_mix_from_input_stems"))
 
     if lead_stem.is_file() and rhythm_stem.is_file():
         audio_assets = manifest.setdefault("assets", {}).setdefault("audio", {})
@@ -3068,6 +3211,24 @@ def cmd_import(args: argparse.Namespace) -> int:
                 progress=0.86,
                 artifact="audio/stems/lead_guitar.wav",
                 message="reused",
+            )
+        )
+    elif synthesized_input_mix and split_source_kind == "mix_fallback":
+        msg = "skipped: synthesized input-stem mix has no guitar source"
+        manifest.setdefault("pipeline", {})["guitar_split"] = {
+            "status": "skipped",
+            "reason": msg,
+            "source_path": "audio/mix.wav",
+            "source_kind": "input_stems_mix",
+        }
+        _write_json(out / "manifest.json", manifest)
+        emit(
+            ProgressEvent(
+                type="stage_done",
+                id="split_guitar_stems",
+                progress=0.86,
+                message="skipped",
+                artifact=None,
             )
         )
     else:
@@ -3136,21 +3297,37 @@ def cmd_import(args: argparse.Namespace) -> int:
         )
         return 4
 
-    drum_registry = build_default_drum_algorithm_registry()
-    if tr_opts.get("drum_engine_selection") == "profile":
-        drum_result = transcribe_drums_with_profile(
-            drum_source,
-            profile=tr_opts.get("transcription_profile"),
-            algorithm_registry=drum_registry,
-            logger=log,
+    skip_synthetic_mix_drums = (
+        synthesized_input_mix
+        and drum_source_kind == "mix_fallback"
+        and "drums" not in copied_input_stems
+    )
+    if skip_synthetic_mix_drums:
+        msg = "skipped drum transcription: synthesized input-stem mix has no drum source"
+        log(msg)
+        drum_result = DrumTranscriptionResult(
+            events=[],
+            used_algorithm=None,
+            attempted_algorithms=[],
+            warnings=[msg],
+            meta={"backend": "skipped", "skip_reason": "input_stems_mix_without_drums"},
         )
     else:
-        drum_result = transcribe_drums(
-            drum_source,
-            requested_engine=tr_opts["drum_filter_requested"],
-            algorithm_registry=drum_registry,
-            logger=log,
-        )
+        drum_registry = build_default_drum_algorithm_registry()
+        if tr_opts.get("drum_engine_selection") == "profile":
+            drum_result = transcribe_drums_with_profile(
+                drum_source,
+                profile=tr_opts.get("transcription_profile"),
+                algorithm_registry=drum_registry,
+                logger=log,
+            )
+        else:
+            drum_result = transcribe_drums(
+                drum_source,
+                requested_engine=tr_opts["drum_filter_requested"],
+                algorithm_registry=drum_registry,
+                logger=log,
+            )
     if is_mt3_drum_engine(tr_opts["drum_filter_requested"]) and drum_result.used_algorithm is None:
         log("requested MT3 drum engine did not produce a chart; aborting import")
         return 4
@@ -3401,6 +3578,7 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
                 synth = _synthesize_mix_wav_from_input_stems(temp_mix_path, config)
                 if synth is not None:
                     src_audio = temp_mix_path
+                    config = {**config, "_synthesized_mix_from_input_stems": True}
         except Exception as exc:
             if temp_mix_ctx is not None:
                 temp_mix_ctx.cleanup()
@@ -3420,7 +3598,7 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
             input_audio_path=str(src_audio),
             out=str(out),
             profile=args.profile,
-            config=args.config,
+            config=json.dumps(config) if config else args.config,
             title=args.title,
             artist=args.artist,
             duration_sec=args.duration_sec,
@@ -3443,46 +3621,10 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
             temp_mix_ctx.cleanup()
 
 
-def cmd_import_unsupported_chart_format(args: argparse.Namespace) -> int:
-    unsupported_chart_format = Path(args.unsupported_chart_format_path)
-    out = Path(args.out)
-    if not unsupported_chart_format.exists() or not unsupported_chart_format.is_file():
-        log(f"unsupported_chart_format file does not exist: {unsupported_chart_format}")
-        return 2
-
-    src_audio = _find_audio_source_for_unsupported_chart_format(unsupported_chart_format)
-    if src_audio is None:
-        log(f"no supported audio files found for unsupported_chart_format: {unsupported_chart_format}")
-        return 2
-
-    import_args = argparse.Namespace(
-        input_audio_path=str(src_audio),
-        out=str(out),
-        profile=args.profile,
-        config=args.config,
-        title=args.title or unsupported_chart_format.stem,
-        artist=args.artist,
-        duration_sec=args.duration_sec,
-        drum_filter=getattr(args, "drum_filter", "auto"),
-        drum_stem_path=getattr(args, "drum_stem_path", None),
-        drum_silence_gate_dbfs=getattr(args, "drum_silence_gate_dbfs", None),
-        drum_silence_gate_window_ms=getattr(args, "drum_silence_gate_window_ms", None),
-        drum_silence_gate_disabled=bool(getattr(args, "drum_silence_gate_disabled", False)),
-        melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
-        transcription_profile=getattr(args, "transcription_profile", DEFAULT_TRANSCRIPTION_PROFILE),
-        beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
-        stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),
-        stem_separation_provider_path=getattr(args, "stem_separation_provider_path", None),
-        shifts=getattr(args, "shifts", 1),
-        multi_filter=bool(getattr(args, "multi_filter", False)),
-    )
-    return cmd_import(import_args)
-
-
 def cmd_refine_candidates(args: argparse.Namespace) -> int:
     """Pre-compute per-region candidate transcriptions for the Refine workspace.
 
-    Reads an existing SongPack, runs the 4 candidate transcription variants
+    Reads an existing AuralSong, runs the 4 candidate transcription variants
     per requested instrument, and writes
     ``features/refine_candidates.<instrument>.json`` for each. The Studio
     Refine workspace consumes those files at edit time; the runtime game
@@ -3493,11 +3635,11 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
     """
     from .refine_precompute import precompute_refine_candidates
 
-    songpack = Path(args.songpack_dir)
-    if not songpack.is_dir():
+    auralsong = Path(args.auralsong_dir)
+    if not auralsong.is_dir():
         print(
             json.dumps(
-                {"ok": False, "error": f"songpack not a directory: {songpack}"},
+                {"ok": False, "error": f"auralsong not a directory: {auralsong}"},
                 sort_keys=True,
             )
         )
@@ -3508,7 +3650,7 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
     for inst in instruments:
         try:
             payload = precompute_refine_candidates(
-                songpack_root=songpack, instrument=inst
+                auralsong_root=auralsong, instrument=inst
             )
             results[inst] = {
                 "ok": True,
@@ -3517,7 +3659,7 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
                 "song_duration_sec": payload["song_duration_sec"],
                 "pipeline_signature": payload["pipeline_signature"],
                 "out_path": str(
-                    songpack / "features" / f"refine_candidates.{inst}.json"
+                    auralsong / "features" / f"refine_candidates.{inst}.json"
                 ),
             }
         except Exception as exc:
@@ -3536,15 +3678,15 @@ def build_parser() -> argparse.ArgumentParser:
     s_stages.set_defaults(func=cmd_stages)
 
     s_validate = sub.add_parser("validate")
-    s_validate.add_argument("songpack_dir")
+    s_validate.add_argument("auralsong_dir")
     s_validate.set_defaults(func=cmd_validate)
 
     s_info = sub.add_parser("info")
-    s_info.add_argument("songpack_dir")
+    s_info.add_argument("auralsong_dir")
     s_info.set_defaults(func=cmd_info)
 
     s_audit_drums = sub.add_parser("audit-drums")
-    s_audit_drums.add_argument("songpack_dir")
+    s_audit_drums.add_argument("auralsong_dir")
     s_audit_drums.add_argument("--window-ms", type=float, default=DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS)
     s_audit_drums.add_argument(
         "--threshold-dbfs",
@@ -3619,24 +3761,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_transcription_options(s_import_dir)
     s_import_dir.set_defaults(func=cmd_import_dir)
 
-    s_import_unsupported_chart_format = sub.add_parser("import-unsupported_chart_format")
-    s_import_unsupported_chart_format.add_argument("unsupported_chart_format_path")
-    s_import_unsupported_chart_format.add_argument("--out", required=True)
-    s_import_unsupported_chart_format.add_argument("--profile", default="full")
-    s_import_unsupported_chart_format.add_argument("--config")
-    s_import_unsupported_chart_format.add_argument("--title")
-    s_import_unsupported_chart_format.add_argument("--artist")
-    s_import_unsupported_chart_format.add_argument("--duration-sec", type=float, dest="duration_sec")
-    _add_transcription_options(s_import_unsupported_chart_format)
-    s_import_unsupported_chart_format.set_defaults(func=cmd_import_unsupported_chart_format)
-
     s_refine_candidates = sub.add_parser(
         "refine-candidates",
         help="Pre-compute per-region candidate transcriptions for the Studio Refine workspace.",
     )
     s_refine_candidates.add_argument(
-        "songpack_dir",
-        help="Path to an existing SongPack root (the directory containing manifest.json + audio/).",
+        "auralsong_dir",
+        help="Path to an existing AuralSong root (the directory containing manifest.json + audio/).",
     )
     s_refine_candidates.add_argument(
         "--instrument",

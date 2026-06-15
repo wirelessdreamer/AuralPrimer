@@ -333,8 +333,43 @@ $preflightPortableStudioExe = Join-Path $portableRootAbs "AuralStudio.exe"
 Assert-PortableAppNotRunning "AuralPrimer" $preflightPortableGameExe
 Assert-PortableAppNotRunning "AuralStudio" $preflightPortableStudioExe
 
+$buildSidecarScript = Join-Path $repoRootAbs "build_sidecar.ps1"
+if (-not (Test-Path -LiteralPath $buildSidecarScript -PathType Leaf)) {
+  throw "Missing script: $buildSidecarScript"
+}
+
+$sidecarArgs = @{
+  RepoRoot = $repoRootAbs
+  OutDir = "dist/sidecar"
+  SyncTauriBinaries = $true
+}
+if ($SidecarSourceExePath) {
+  $sidecarArgs.SourceExePath = $SidecarSourceExePath
+}
+if ($SkipSidecarBuild) {
+  $sidecarArgs.SkipBuild = $true
+}
+
+$sidecarInfo = Invoke-ScriptFile -ScriptPath $buildSidecarScript -ScriptArgs $sidecarArgs | Select-Object -Last 1
+if (-not $sidecarInfo) {
+  throw "build_sidecar.ps1 did not return sidecar metadata"
+}
+
+$sidecarBuiltExe = [string]$sidecarInfo.packaged_path
+$sidecarBuiltManifest = [string]$sidecarInfo.manifest_path
+$sidecarBuiltHash = [string]$sidecarInfo.sha256
+Assert-NotBlank $sidecarBuiltExe "build_sidecar packaged_path"
+Assert-NotBlank $sidecarBuiltManifest "build_sidecar manifest_path"
+Assert-NotBlank $sidecarBuiltHash "build_sidecar sha256"
+if (-not (Test-Path -LiteralPath $sidecarBuiltExe -PathType Leaf)) {
+  throw "Built sidecar not found: $sidecarBuiltExe"
+}
+if (-not (Test-Path -LiteralPath $sidecarBuiltManifest -PathType Leaf)) {
+  throw "Built sidecar manifest not found: $sidecarBuiltManifest"
+}
+
 if (-not $SkipGameBuild) {
-  Push-Location $repoRootAbs
+  Push-Location (Join-Path $repoRootAbs "apps/game")
   try {
     # `--no-bundle` skips MSI/NSIS installer generation (which can fail on
     # WiX/light.exe environments). The portable build only needs the raw
@@ -349,7 +384,7 @@ if (-not $SkipGameBuild) {
     # preserved here, npm forwards `--no-bundle` to the tauri:build script,
     # which appends it to `node ./scripts/run-tauri.mjs build`, which passes
     # it to tauri.cmd.
-    & npm -w '@auralprimer/game' run tauri:build -- --no-bundle
+    & node "..\..\scripts\run-tauri.mjs" build --no-bundle
     if ($LASTEXITCODE -ne 0) {
       throw "game:build failed with exit code $LASTEXITCODE"
     }
@@ -359,10 +394,10 @@ if (-not $SkipGameBuild) {
 }
 
 if (-not $SkipStudioBuild) {
-  Push-Location $repoRootAbs
+  Push-Location (Join-Path $repoRootAbs "apps/desktop")
   try {
-    # Same `--` workaround as game:build above.
-    & npm -w '@auralprimer/studio' run tauri:build -- --no-bundle
+    # Same direct Tauri build path as game above.
+    & node "..\..\scripts\run-tauri.mjs" build --no-bundle
     if ($LASTEXITCODE -ne 0) {
       throw "studio:build failed with exit code $LASTEXITCODE"
     }
@@ -390,40 +425,6 @@ if (-not $SkipGameBuild) {
 }
 if (-not $SkipStudioBuild) {
   Assert-ExeFresherThanDist "AuralStudio" $studioExeAbs $studioDistDir
-}
-
-$buildSidecarScript = Join-Path $repoRootAbs "build_sidecar.ps1"
-if (-not (Test-Path -LiteralPath $buildSidecarScript -PathType Leaf)) {
-  throw "Missing script: $buildSidecarScript"
-}
-
-$sidecarArgs = @{
-  RepoRoot = $repoRootAbs
-  OutDir = "dist/sidecar"
-}
-if ($SidecarSourceExePath) {
-  $sidecarArgs.SourceExePath = $SidecarSourceExePath
-}
-if ($SkipSidecarBuild) {
-  $sidecarArgs.SkipBuild = $true
-}
-
-$sidecarInfo = Invoke-ScriptFile -ScriptPath $buildSidecarScript -ScriptArgs $sidecarArgs | Select-Object -Last 1
-if (-not $sidecarInfo) {
-  throw "build_sidecar.ps1 did not return sidecar metadata"
-}
-
-$sidecarBuiltExe = [string]$sidecarInfo.packaged_path
-$sidecarBuiltManifest = [string]$sidecarInfo.manifest_path
-$sidecarBuiltHash = [string]$sidecarInfo.sha256
-Assert-NotBlank $sidecarBuiltExe "build_sidecar packaged_path"
-Assert-NotBlank $sidecarBuiltManifest "build_sidecar manifest_path"
-Assert-NotBlank $sidecarBuiltHash "build_sidecar sha256"
-if (-not (Test-Path -LiteralPath $sidecarBuiltExe -PathType Leaf)) {
-  throw "Built sidecar not found: $sidecarBuiltExe"
-}
-if (-not (Test-Path -LiteralPath $sidecarBuiltManifest -PathType Leaf)) {
-  throw "Built sidecar manifest not found: $sidecarBuiltManifest"
 }
 
 $portableSidecarDir = Join-Path $portableRootAbs "sidecar"

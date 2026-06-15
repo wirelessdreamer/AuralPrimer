@@ -295,7 +295,7 @@ drum default.
 - Importing without `demucs_6.zip` and without `--allow-no-separator`
   fails with a clear error before any DSP runs.
 - Existing imports with `--allow-no-separator` succeed and emit a
-  prominent warning into the SongPack manifest.
+  prominent warning into the AuralSong manifest.
 
 ---
 

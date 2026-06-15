@@ -1248,7 +1248,7 @@ def inspect_optional_model_backends(
 
 def scan_corpus(root: Path | str) -> dict[str, Any]:
     root_path = Path(root)
-    songpacks: list[dict[str, Any]] = []
+    auralsongs: list[dict[str, Any]] = []
     split_stem_folders: list[dict[str, Any]] = []
     benchmark_artifacts: list[dict[str, Any]] = []
     for manifest_path in sorted(root_path.rglob("manifest.json")):
@@ -1258,24 +1258,24 @@ def scan_corpus(root: Path | str) -> dict[str, Any]:
             manifest = json.loads(manifest_path.read_text("utf-8"))
         except Exception:
             continue
-        songpack_root = manifest_path.parent
+        auralsong_root = manifest_path.parent
         stems = {}
         for role in ("drums", "bass", "guitar", "lead_guitar", "rhythm_guitar", "keys", "vocals"):
             for candidate in (
-                songpack_root / "audio" / "stems" / f"{role}.wav",
-                songpack_root / "audio" / "stems" / f"{role.title()}.wav",
+                auralsong_root / "audio" / "stems" / f"{role}.wav",
+                auralsong_root / "audio" / "stems" / f"{role.title()}.wav",
             ):
                 if candidate.is_file():
                     stems[role] = str(candidate)
                     break
-        songpacks.append(
+        auralsongs.append(
             {
-                "path": str(songpack_root),
+                "path": str(auralsong_root),
                 "title": manifest.get("title"),
                 "song_id": manifest.get("song_id"),
                 "duration_sec": manifest.get("duration_sec"),
-                "has_notes_mid": (songpack_root / "features" / "notes.mid").is_file(),
-                "midi_files": [str(p) for p in sorted((songpack_root / "features").glob("*.mid"))],
+                "has_notes_mid": (auralsong_root / "features" / "notes.mid").is_file(),
+                "midi_files": [str(p) for p in sorted((auralsong_root / "features").glob("*.mid"))],
                 "stems": stems,
                 "transcription": manifest.get("pipeline", {}).get("transcription", {}),
             }
@@ -1317,17 +1317,17 @@ def scan_corpus(root: Path | str) -> dict[str, Any]:
 
     return {
         "root": str(root_path),
-        "songpack_count": len(songpacks),
+        "auralsong_count": len(auralsongs),
         "split_stem_folder_count": len(split_stem_folders),
         "benchmark_artifact_count": len(benchmark_artifacts),
-        "songpacks": songpacks,
+        "auralsongs": auralsongs,
         "split_stem_folders": split_stem_folders,
         "benchmark_artifacts": benchmark_artifacts,
     }
 
 
-def _songpack_reference_midi(songpack_root: Path, role: str) -> Path | None:
-    feature_root = songpack_root / "features"
+def _auralsong_reference_midi(auralsong_root: Path, role: str) -> Path | None:
+    feature_root = auralsong_root / "features"
     candidates = [
         feature_root / f"{role}.mid",
         feature_root / f"{role}.midi",
@@ -1390,22 +1390,22 @@ def build_quality_manifest_from_scan(
     cases: list[dict[str, Any]] = []
     seen_case_ids: set[str] = set()
 
-    for songpack in scan_payload.get("songpacks", []):
-        if not isinstance(songpack, Mapping):
+    for auralsong in scan_payload.get("auralsongs", []):
+        if not isinstance(auralsong, Mapping):
             continue
-        songpack_path = Path(str(songpack.get("path", "")))
-        song_id = str(songpack.get("song_id") or songpack_path.stem)
-        title = str(songpack.get("title") or songpack_path.stem)
-        transcription = songpack.get("transcription", {})
+        auralsong_path = Path(str(auralsong.get("path", "")))
+        song_id = str(auralsong.get("song_id") or auralsong_path.stem)
+        title = str(auralsong.get("title") or auralsong_path.stem)
+        transcription = auralsong.get("transcription", {})
         if not isinstance(transcription, Mapping):
             transcription = {}
-        stems = songpack.get("stems", {})
+        stems = auralsong.get("stems", {})
         if not isinstance(stems, Mapping):
             continue
         for raw_role, raw_stem in sorted(stems.items()):
             role = _case_role_name(str(raw_role))
             stem = Path(str(raw_stem))
-            reference = _songpack_reference_midi(songpack_path, role)
+            reference = _auralsong_reference_midi(auralsong_path, role)
             if reference is None and not include_unreferenced:
                 continue
             case_id = _unique_case_id(
@@ -1422,10 +1422,10 @@ def build_quality_manifest_from_scan(
                     "wav": str(stem),
                     "reference_midi": str(reference) if reference is not None else None,
                     "offset_sec": 0.0,
-                    "duration_sec": songpack.get("duration_sec"),
-                    "source": "songpack",
-                    "source_songpack": str(songpack_path),
-                    "stem_provenance": "songpack_audio_stems",
+                    "duration_sec": auralsong.get("duration_sec"),
+                    "source": "auralsong",
+                    "source_auralsong": str(auralsong_path),
+                    "stem_provenance": "auralsong_audio_stems",
                     "current_method": _current_method_for_role(transcription, role),
                 }
             )

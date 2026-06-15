@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Any
 
@@ -131,6 +130,10 @@ def transcribe(
     *,
     model_path: Path | None = None,
     instrument: str = "melodic",
+    allow_fallback: bool = True,
+    onset_threshold: float = 0.5,
+    frame_threshold: float = 0.3,
+    minimum_note_length_ms: float = 127.7,
 ) -> list[MelodicNote]:
     if model_path is not None and not model_path.exists():
         raise RuntimeError("basic_pitch model path unavailable")
@@ -139,6 +142,10 @@ def transcribe(
         from basic_pitch import ICASSP_2022_MODEL_PATH
         from basic_pitch.inference import Model, predict
     except Exception:
+        if not allow_fallback:
+            raise RuntimeError(
+                "basic_pitch requires the optional 'basic_pitch' package in the ingest runtime"
+            )
         return _fallback_transcribe(stem_path, instrument=instrument)
 
     freq_lo, freq_hi = INSTRUMENT_FREQ_RANGES.get(
@@ -163,12 +170,18 @@ def transcribe(
             _model_output, _midi_data, note_events = predict(
                 str(stem_path),
                 model,
+                onset_threshold=float(onset_threshold),
+                frame_threshold=float(frame_threshold),
+                minimum_note_length=float(minimum_note_length_ms),
                 minimum_frequency=float(freq_lo),
                 maximum_frequency=float(freq_hi),
             )
         else:
             _model_output, _midi_data, note_events = predict(
                 str(stem_path),
+                onset_threshold=float(onset_threshold),
+                frame_threshold=float(frame_threshold),
+                minimum_note_length=float(minimum_note_length_ms),
                 minimum_frequency=float(freq_lo),
                 maximum_frequency=float(freq_hi),
             )
@@ -179,8 +192,12 @@ def transcribe(
             else:
                 _model_output, _midi_data, note_events = predict(str(stem_path))
         except Exception:
+            if not allow_fallback:
+                raise RuntimeError("basic_pitch prediction failed")
             return _fallback_transcribe(stem_path, instrument=instrument)
     except Exception:
+        if not allow_fallback:
+            raise RuntimeError("basic_pitch prediction failed")
         return _fallback_transcribe(stem_path, instrument=instrument)
 
     parsed = [
@@ -195,4 +212,6 @@ def transcribe(
         parsed.sort(key=lambda note: (note.t_on, note.pitch, note.t_off))
         return parsed
 
+    if not allow_fallback:
+        raise RuntimeError("basic_pitch produced no parseable note events")
     return _fallback_transcribe(stem_path, instrument=instrument)

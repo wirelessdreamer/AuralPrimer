@@ -332,7 +332,7 @@ def test_explicit_kwarg_beats_env_dbfs(
 
 
 def test_metadata_is_serializable_to_json(tmp_path: Path) -> None:
-    """The metadata dict is meant for the songpack manifest, so it must
+    """The metadata dict is meant for the auralsong manifest, so it must
     round-trip through JSON without exotic types."""
 
     import json

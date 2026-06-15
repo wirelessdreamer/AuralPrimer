@@ -8,12 +8,12 @@ Role split for this roadmap:
 
 ## Milestone 0 - Project foundations (1-2 weeks)
 **Deliverables**
-- SongPack schema v1 + JSON schema definitions.
-- SongPack reader/writer + validator library.
+- AuralSong schema v1 + JSON schema definitions.
+- AuralSong reader/writer + validator library.
 - AuralPrimer host skeleton:
   - library view
-  - scan songs folder on startup (discover new/removed SongPacks)
-  - SongPack loader
+  - scan songs folder on startup (discover new/removed AuralSongs)
+  - AuralSong loader
   - audio playback
   - plugin loader
 - AuralStudio shell:
@@ -26,7 +26,7 @@ Role split for this roadmap:
   - pipeline unit tests scaffold
 
 **Exit criteria**
-- A demo SongPack can be played with synced visuals.
+- A demo AuralSong can be played with synced visuals.
 
 ## Milestone 1 - Import MVP (2-4 weeks)
 **Deliverables**
@@ -40,7 +40,7 @@ Role split for this roadmap:
 - Packaging proof: Windows + Linux.
 
 **Exit criteria**
-- User imports an mp3 in AuralStudio and gets a SongPack playable in AuralPrimer.
+- User imports an mp3 in AuralStudio and gets an AuralSong playable in AuralPrimer.
 - CI includes regression coverage for the import path (unit + golden tests).
 
 ## Milestone 2 - Visualization experimentation (2-6 weeks)
@@ -93,8 +93,8 @@ Role split for this roadmap:
 ## Parallel tracks (post-MVP)
 
 ### A) Pluggable importers (content adoption)
-- Define a stable importer interface and implement multiple importers (e.g., audio-only, MIDI, proprietary_archive_import DE).
-- Ensure importers convert into SongPacks without constraining SongPack capabilities.
+- Define a stable importer interface and implement multiple importers for user-provided sources (e.g., audio-only, stems, MIDI, authored chart files).
+- Ensure importers convert into AuralSongs without constraining AuralSong capabilities.
 
 ### B) Realtime audio->MIDI / realtime identification
 - Implement a local, realtime sidecar/module that converts mic/line-in audio into MIDI-like events.

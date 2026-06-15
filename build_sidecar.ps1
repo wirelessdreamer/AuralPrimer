@@ -5,6 +5,7 @@ param(
   [string]$SourceExePath = "",
   [string]$TargetTriple = "",
   [string[]]$TauriAppRoots = @(),
+  [int]$RuntimeCheckTimeoutSec = 300,
   [switch]$SkipBuild,
   [switch]$SyncTauriBinaries
 )
@@ -97,18 +98,51 @@ function Invoke-Checked([string[]]$CommandPrefix, [string[]]$Arguments, [string]
   }
 }
 
-function Invoke-CapturedCommand([string]$Executable, [string[]]$Arguments, [string]$Label, [string]$Workdir) {
-  Push-Location $Workdir
+function Invoke-CapturedCommand(
+  [string]$Executable,
+  [string[]]$Arguments,
+  [string]$Label,
+  [string]$Workdir,
+  [int]$TimeoutSec
+) {
+  if ($TimeoutSec -le 0) {
+    throw "$Label timeout must be greater than zero seconds"
+  }
+
+  $psi = [System.Diagnostics.ProcessStartInfo]::new()
+  $psi.FileName = $Executable
+  $psi.WorkingDirectory = $Workdir
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.Arguments = ($Arguments | ForEach-Object {
+    '"' + ([string]$_ -replace '"', '\"') + '"'
+  }) -join " "
+
+  $process = [System.Diagnostics.Process]::new()
+  $process.StartInfo = $psi
   try {
-    $output = & $Executable @Arguments 2>&1 | Out-String
-    $exitCode = $LASTEXITCODE
+    [void]$process.Start()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $completed = $process.WaitForExit($TimeoutSec * 1000)
+    if (-not $completed) {
+      try {
+        $process.Kill()
+      } catch {
+      }
+      throw "$Label timed out after $TimeoutSec seconds"
+    }
+    $stdout = $stdoutTask.GetAwaiter().GetResult()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
+    $output = (@($stdout, $stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
     return [pscustomobject]@{
-      exit_code = $exitCode
+      exit_code = $process.ExitCode
       output = $output.Trim()
-      ok = ($exitCode -eq 0)
+      ok = ($process.ExitCode -eq 0)
     }
   } finally {
-    Pop-Location
+    $process.Dispose()
   }
 }
 
@@ -288,7 +322,7 @@ if (-not $sourceAbs) {
   throw "No sidecar executable available. Provide -SourceExePath, or run without -SkipBuild."
 }
 
-$runtimeCheck = Invoke-CapturedCommand $sourceAbs @("runtime-check") "runtime-check" $repoRootAbs
+$runtimeCheck = Invoke-CapturedCommand $sourceAbs @("runtime-check") "runtime-check" $repoRootAbs $RuntimeCheckTimeoutSec
 
 $runtimePayload = $null
 if (-not [string]::IsNullOrWhiteSpace($runtimeCheck.output)) {
@@ -398,7 +432,9 @@ $manifest = [ordered]@{
     mt3_checkpoints = $mt3CheckpointAssets
   }
 }
-$manifest | ConvertTo-Json -Depth 10 | Set-Content -Path $manifestPath -Encoding UTF8
+$manifestJson = $manifest | ConvertTo-Json -Depth 10
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText($manifestPath, $manifestJson, $utf8NoBom)
 
 $result = [pscustomobject]$manifest
 $result | Add-Member -NotePropertyName manifest_path -NotePropertyValue $manifestPath

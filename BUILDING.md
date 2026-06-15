@@ -160,9 +160,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -Ffmpe
 
 1. Build one app (`game:build` or `studio:build`).
 2. Launch the built app from its bundle folder.
-3. Put a fixture SongPack into the songs folder.
+3. Put a fixture AuralSong into the songs folder.
 4. In AuralPrimer (game), refresh library, load song, and play.
-5. In AuralStudio, verify import/creation tools and generated SongPacks.
+5. In AuralStudio, verify import/creation tools and generated AuralSongs.
 
 ## Notes
 - Bundled visualizers live under Tauri resources at runtime.

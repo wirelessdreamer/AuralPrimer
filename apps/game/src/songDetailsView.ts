@@ -11,7 +11,7 @@
  * Phase 2.N.
  */
 
-import type { SongPackDetails } from "./songpack";
+import type { AuralSongDetails } from "./auralsong";
 import { extractKeyModeFromManifest } from "./hud";
 import type { SongLibraryPanelHandle } from "./songLibraryPanel";
 import type { ConsoleBridge } from "./consoleBridge";
@@ -25,11 +25,11 @@ export type SongDetailsViewDeps = {
 export type SongDetailsViewHandle = {
   /** Update the HUD key/mode chip from a raw manifest blob. */
   setHudKeyMode: (manifestRaw: unknown) => void;
-  /** Replace the right-rail details slot with the given SongPack details. */
-  renderDetails: (details: SongPackDetails) => void;
+  /** Replace the right-rail details slot with the given AuralSong details. */
+  renderDetails: (details: AuralSongDetails) => void;
   /** Update the band-setup widget's title/artist/path + playStart gate. */
   setSelectedSongSetupLabel: (
-    details: SongPackDetails | null,
+    details: AuralSongDetails | null,
     containerPath: string | null,
   ) => void;
 };
@@ -56,7 +56,7 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
     hudKeyModeEl!.textContent = `${km.key} ${km.mode}`;
   }
 
-  function renderDetails(details: SongPackDetails): void {
+  function renderDetails(details: AuralSongDetails): void {
     const title = details.manifest_summary?.title ?? "(missing title)";
     const artist = details.manifest_summary?.artist ?? "";
 
@@ -95,7 +95,7 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
   }
 
   function setSelectedSongSetupLabel(
-    details: SongPackDetails | null,
+    details: AuralSongDetails | null,
     containerPath: string | null,
   ): void {
     const title = details?.manifest_summary?.title?.trim() || "(no song selected)";

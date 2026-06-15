@@ -6,14 +6,14 @@
 ## 1) Product vision
 The product is split into **two separate desktop apps** with strict ownership boundaries:
 
-- **AuralPrimer**: gameplay app (play/learn/practice/performance) that consumes SongPacks.
-- **AuralStudio**: content app (import/transcription/song creation/preferences for authoring) that produces SongPacks.
+- **AuralPrimer**: gameplay app (play/learn/practice/performance) that consumes AuralSongs.
+- **AuralStudio**: content app (import/transcription/song creation/preferences for authoring) that produces AuralSongs.
 
-Both apps are offline-first and exchange content through the SongPack format.
+Both apps are offline-first and exchange content through the AuralSong format.
 
 ### 1.1 App-role boundaries (non-negotiable)
 **AuralPrimer (game) must include:**
-- SongPack library browsing/loading
+- AuralSong library browsing/loading
 - playback + visualization
 - practice workflows (looping, slowdown, metronome)
 - gameplay/performance input systems (MIDI/audio input for gameplay)
@@ -21,12 +21,12 @@ Both apps are offline-first and exchange content through the SongPack format.
 **AuralPrimer (game) must NOT include:**
 - raw audio/chart import flows
 - transcription/ingest execution UI
-- SongPack creation wizards (e.g., stem+MIDI creator)
-- ecosystem importers (e.g., proprietary_archive_import importer)
+- AuralSong creation wizards (e.g., stem+MIDI creator)
+- external proprietary game/DLC importers
 
 **AuralStudio (authoring) must include:**
 - import/transcription pipelines
-- SongPack creation and conversion flows
+- AuralSong creation and conversion flows
 - authoring-related preferences/settings
 - model and tool setup needed for import/authoring
 
@@ -45,6 +45,7 @@ Both apps are offline-first and exchange content through the SongPack format.
   - unit tests and/or contract tests covering the change
   - updated golden fixtures when outputs intentionally change
 - CI must run the test suite and block merges on failures.
+- PRs that add, restore, or document source-specific importers for proprietary game/DLC archive ecosystems are out of scope and will not be accepted.
 
 ### 2.1 Platform support
 - **Windows**: supported
@@ -73,19 +74,19 @@ Both apps are offline-first and exchange content through the SongPack format.
 > Implication: "offline gameplay" is compatible with model downloads as a *setup step*; once downloaded/imported, the feature must function offline.
 
 ### 2.4 Local-only data and privacy
-- User content (audio, SongPacks, derived features) stays on the local machine.
+- User content (audio, AuralSongs, derived features) stays on the local machine.
 - No cloud upload is required to import or play songs.
 
 ## 3) Core system requirements
 
-### 3.1 SongPack-first runtime
-- **AuralPrimer runtime** consumes **SongPacks** as its canonical game content.
-- External formats (audio+charts from other ecosystems) are supported via **pluggable importers** in **AuralStudio** that convert into SongPacks.
+### 3.1 AuralSong-first runtime
+- **AuralPrimer runtime** consumes **AuralSongs** as its canonical game content.
+- User-provided local sources (audio, stems, standard MIDI, and authored charts) are supported via **pluggable importers** in **AuralStudio** that convert into AuralSongs.
 - The AuralPrimer runtime host must not perform ingestion/extraction/transcription on raw audio.
-- Playback decoding (e.g., MP3/OGG) is provided by a **local codec layer** (bundled decoder/sidecar); this does not change the SongPack-first rule.
-- All AuralPrimer runtime visuals are rendered from **SongPack artifacts** (canonical event timeline).
+- Playback decoding (e.g., MP3/OGG) is provided by a **local codec layer** (bundled decoder/sidecar); this does not change the AuralSong-first rule.
+- All AuralPrimer runtime visuals are rendered from **AuralSong artifacts** (canonical event timeline).
 - Reference:
-  - `docs/songpack-spec.md`
+  - `docs/auralsong-spec.md`
   - `docs/architecture.md`
 
 ### 3.2 Deterministic imports
@@ -99,12 +100,12 @@ Both apps are offline-first and exchange content through the SongPack format.
 - Visualizers consume the canonical event model and transport state.
 - Reference: `docs/visualization-plugins.md`.
 
-### 3.4 Local SongPack library discovery
-- Users must be able to download or copy **SongPacks** into a designated local "songs folder".
-- On application start, AuralPrimer must **scan for new/removed SongPacks** and update the local library view.
-- AuralPrimer must support **both** SongPack container forms:
-  - directory SongPacks (`*.songpack/` folders)
-  - zip SongPacks (`*.songpack` files)
+### 3.4 Local AuralSong library discovery
+- Users must be able to download or copy **AuralSongs** into a designated local "songs folder".
+- On application start, AuralPrimer must **scan for new/removed AuralSongs** and update the local library view.
+- AuralPrimer must support **both** AuralSong container forms:
+  - directory AuralSongs (`*.auralsong/` folders)
+  - zip AuralSongs (`*.auralsong` files)
 
 ### 3.5 Native audio engine (real-time DSP) (new direction)
 The AuralPrimer runtime host must evolve from "web-audio playback" into a **native real-time audio engine**.
@@ -119,7 +120,7 @@ Requirements:
 - The runtime must include a native audio engine with a **real-time audio thread**.
 - The engine must support a graph/bus model:
   - master output bus
-  - per-track buses (at minimum: SongPack playback bus, metronome bus; later: instrument buses)
+  - per-track buses (at minimum: AuralSong playback bus, metronome bus; later: instrument buses)
   - per-bus effect chains
 - The engine must expose time as a **sample-accurate transport clock** used for:
   - visualizer sync
@@ -219,45 +220,47 @@ The system must include a roadmap and architecture path to:
 - feed that MIDI-like event stream into gameplay modes as input
 
 Notes:
-- This is distinct from offline ingestion (MP3->SongPack). It is **live**.
+- This is distinct from offline ingestion (MP3->AuralSong). It is **live**.
 - The first implementation may target **monophonic** sources (voice/bass) before polyphonic guitar.
 
 ## 6) Content interoperability requirements
 
-### 6.1 Interoperability via pluggable importers (proprietary_archive_import DE is one source)
-AuralPrimer uses **SongPack** as its native game content format.
+### 6.1 Interoperability via pluggable importers
+AuralPrimer uses **AuralSong** as its native game content format.
 
-To accelerate adoption without constraining internal capabilities, **AuralStudio** must support **pluggable importers** that convert external sources into SongPacks (e.g., audio-only, user MIDI, proprietary_archive_import DE, and other ecosystems).
+To accelerate adoption without constraining internal capabilities, **AuralStudio** must support importers that convert user-provided sources into AuralSongs (e.g., audio-only, stems, standard MIDI, and authored chart files).
 
 Minimum requirements:
-- Define an ingestion/import path that can take **user-provided** proprietary_archive_import DE assets and transform them into SongPacks.
-- The pipeline must support generating canonical events and charts from those assets.
+- Define ingestion/import paths that take user-provided audio/stem/MIDI/chart sources and transform them into AuralSongs.
+- The pipeline must support generating canonical events and charts from those sources.
+- Do not support importers that scan, decode, or translate proprietary game/DLC archive formats.
+- Maintainers must reject PRs that add, restore, or document source-specific importers for proprietary game/DLC archive ecosystems.
 
-#### 6.1.2 Stem + MIDI song creator (MVP behavior)
-**AuralStudio** must provide an importer/creator that can build a playable SongPack from:
+#### 6.1.1 Stem + MIDI song creator (MVP behavior)
+**AuralStudio** must provide an importer/creator that can build a playable AuralSong from:
 - one or more **audio stem WAV files** (e.g. drums/bass/guitar/vocals), and
 - a **standard MIDI file** (`.mid`) containing note events.
 
 This enables users to:
 - bring their own multi-track stems (from a DAW export, or other sources)
 - pair them with a MIDI chart (hand-authored or exported)
-- produce a SongPack that is then playable inside AuralPrimer.
+- produce an AuralSong that is then playable inside AuralPrimer.
 
 **UI requirements**
-- AuralStudio must provide a **Configure -> Create SongPack (stems + MIDI)** section.
+- AuralStudio must provide a **Configure -> Create AuralSong (stems + MIDI)** section.
 - The user can:
   - select one or more stem WAV files (file picker)
   - optionally select a single already-mixed WAV file instead of multiple stems
   - select a MIDI file (`.mid`)
   - enter metadata (title, artist)
-  - click **Create SongPack**
+  - click **Create AuralSong**
 
 **Output requirements**
-- Output is a **directory SongPack** created in the user's configured songs folder.
+- Output is a **directory AuralSong** created in the user's configured songs folder.
 - Audio output must be `audio/mix.wav`:
   - If multiple stems are provided, the app must mix them down deterministically.
   - If a single WAV is provided, it may be copied as `audio/mix.wav`.
-- MIDI must be stored in the SongPack as `features/notes.mid`.
+- MIDI must be stored in the AuralSong as `features/notes.mid`.
 - The importer should also emit a minimal canonical `features/events.json` containing at least:
   - a track entry (role/name can be generic)
   - note events derived from the MIDI file (`t_on`, `t_off`, `pitch`)
@@ -268,35 +271,19 @@ This enables users to:
 - If stems have mismatched sample rate / channel count / duration, the importer must fail with a clear error.
 - The app must not ship copyrighted music content in this repo.
 
-#### 6.1.1 proprietary_archive_import-DE import (MVP behavior)
-- AuralStudio must provide a **Configure -> Import proprietary_archive_import songs** section.
-- The user can configure:
-  - the proprietary_archive_import-DE `DATA` root folder path
-  - an optional explicit path to `external_decoder-cli` (otherwise it is resolved via PATH)
-- AuralStudio must be able to:
-  - scan proprietary_archive_import-DE DLC content under:
-    `DATA/MODS/proprietary_rhythm_archive_ World Tour Downloadable Content/DLC*/song.ini`
-  - display detected songs with basic metadata (title/artist/checksum)
-  - import a selected song into the user's configured AuralPrimer songs folder as a directory SongPack:
-    `proprietary_archive_import_<checksum>.songpack/`
-
-MVP importer scope / limitations:
-- Audio source: `Content/MUSIC/<checksum>_preview.unsupported_archive.unsupported_archive` (preview only)
-- Output audio: `audio/mix.wav`
-- Chart import from `*.unsupported_archive.unsupported_archive` is **out of scope** for MVP.
-
 Audio compatibility:
-- The runtime must support playing SongPacks containing `audio/mix.wav` (in addition to `mix.mp3` / `mix.ogg`).
+- The runtime must support playing AuralSongs containing `audio/mix.wav` (in addition to `mix.mp3` / `mix.ogg`).
 
 Constraints / compliance:
-- Do not ship copyrighted proprietary_archive_import content in this repo.
-- The feature must be designed around **user-owned** game files and a format translation layer.
-- The SongPack schema must remain free to evolve beyond any source format's limitations.
+- Do not ship copyrighted music content in this repo.
+- Do not provide source-specific importers for proprietary game/DLC ecosystems.
+- Do not accept PRs that add, restore, or document those importer paths.
+- The AuralSong schema must remain free to evolve beyond any source format's limitations.
 
 ### 6.2 Product boundary enforcement
 - AuralPrimer must not expose raw import/song-creation controls in its UI.
 - AuralStudio is the only app that may expose ingest/transcription/import/song-creation controls.
-- The app handoff is via SongPack artifacts in the configured songs library.
+- The app handoff is via AuralSong artifacts in the configured songs library.
 
 ## 7) Packaging & deployment requirements
 
@@ -315,7 +302,7 @@ Constraints / compliance:
 
 ### 7.4 Model management
 - Models are stored under `assets/models/<model-id>/<version>/...`.
-- The pipeline records model id/version fingerprints into the SongPack manifest.
+- The pipeline records model id/version fingerprints into the AuralSong manifest.
 
 ## 8) Non-goals (for now)
 - Online multiplayer / online leaderboards
@@ -324,7 +311,7 @@ Constraints / compliance:
 
 ## 9) References
 - `docs/architecture.md`
-- `docs/songpack-spec.md`
+- `docs/auralsong-spec.md`
 - `docs/ingest-pipeline.md`
 - `docs/packaging-ci.md`
 - `docs/roadmap.md`

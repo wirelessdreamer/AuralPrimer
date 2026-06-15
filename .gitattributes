@@ -38,8 +38,6 @@
 *.mp3         binary
 *.ogg         binary
 *.mid         binary
-*.unsupported_archive         binary
-*.unsupported_archive         binary
 *.exe         binary
 *.dll         binary
 *.pdb         binary

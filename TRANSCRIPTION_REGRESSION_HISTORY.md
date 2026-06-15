@@ -88,7 +88,7 @@ Date written: 2026-03-03
    - strict/relaxed dual-pass + sparse-strict fallback heuristic
    - parser tests added and passing
 3. Symptom persisted on real imports.
-4. Root-cause isolation run against real songpacks showed:
+4. Root-cause isolation run against real auralsongs showed:
    - drum track in generated `notes.mid` had only `[36, 38, 42]`
    - ride/crash/tom notes were present in other melodic tracks, not drums track
 5. Direct algorithm run on same drum stem proved:

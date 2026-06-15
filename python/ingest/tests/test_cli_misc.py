@@ -33,6 +33,10 @@ def test_parse_config_arg_variants(tmp_path: Path) -> None:
     cfg.write_text('{"a": "b"}', encoding="utf-8")
     assert cli._parse_config_arg(str(cfg)) == {"a": "b"}
 
+    bom_cfg = tmp_path / "cfg-bom.json"
+    bom_cfg.write_text('{"bom": true}', encoding="utf-8-sig")
+    assert cli._parse_config_arg(str(bom_cfg)) == {"bom": True}
+
 
 def test_cmd_stages_emits_all_stage_ids(capsys) -> None:
     from aural_ingest import cli
@@ -59,7 +63,7 @@ def test_cmd_info_missing_manifest_returns_error(tmp_path: Path, capsys) -> None
     from aural_ingest import cli
 
     args = type("Args", (), {})()
-    args.songpack_dir = str(tmp_path / "missing.songpack")
+    args.auralsong_dir = str(tmp_path / "missing.auralsong")
     rc = cli.cmd_info(args)
     assert rc == 1
 
@@ -70,13 +74,13 @@ def test_cmd_info_missing_manifest_returns_error(tmp_path: Path, capsys) -> None
 def test_cmd_info_returns_manifest_payload(tmp_path: Path, capsys) -> None:
     from aural_ingest import cli
 
-    songpack = tmp_path / "ok.songpack"
-    songpack.mkdir(parents=True, exist_ok=True)
+    auralsong = tmp_path / "ok.auralsong"
+    auralsong.mkdir(parents=True, exist_ok=True)
     manifest = {"song_id": "abc", "duration_sec": 12.3}
-    _write_json(songpack / "manifest.json", manifest)
+    _write_json(auralsong / "manifest.json", manifest)
 
     args = type("Args", (), {})()
-    args.songpack_dir = str(songpack)
+    args.auralsong_dir = str(auralsong)
     rc = cli.cmd_info(args)
     assert rc == 0
 
@@ -88,14 +92,14 @@ def test_cmd_info_returns_manifest_payload(tmp_path: Path, capsys) -> None:
 def test_cmd_audit_drums_reports_stem_energy_by_lane(tmp_path: Path, capsys) -> None:
     from aural_ingest import cli
 
-    songpack = tmp_path / "Psalm.songpack"
+    auralsong = tmp_path / "Psalm.auralsong"
     samples = [0.0] * 48_000
     for idx in range(24_000, 24_600):
         samples[idx] = 0.5
 
-    _write_mono_wav(songpack / "audio" / "stems" / "drums.wav", samples)
+    _write_mono_wav(auralsong / "audio" / "stems" / "drums.wav", samples)
     _write_json(
-        songpack / "manifest.json",
+        auralsong / "manifest.json",
         {
             "title": "Psalm Fixture",
             "profile": "full",
@@ -111,7 +115,7 @@ def test_cmd_audit_drums_reports_stem_energy_by_lane(tmp_path: Path, capsys) -> 
         },
     )
     _write_json(
-        songpack / "features" / "events.json",
+        auralsong / "features" / "events.json",
         {
             "onsets": [
                 {"t": 0.1, "note": 38, "velocity": 90, "instrument": "drums"},
@@ -121,7 +125,7 @@ def test_cmd_audit_drums_reports_stem_energy_by_lane(tmp_path: Path, capsys) -> 
     )
 
     args = type("Args", (), {})()
-    args.songpack_dir = str(songpack)
+    args.auralsong_dir = str(auralsong)
     args.window_ms = 20.0
     args.threshold_dbfs = None
 
@@ -140,16 +144,16 @@ def test_cmd_audit_drums_reports_stem_energy_by_lane(tmp_path: Path, capsys) -> 
 def test_cmd_validate_detects_invalid_notes_mid(tmp_path: Path, capsys) -> None:
     from aural_ingest import cli
 
-    songpack = tmp_path / "bad.songpack"
-    (songpack / "audio").mkdir(parents=True, exist_ok=True)
-    (songpack / "features").mkdir(parents=True, exist_ok=True)
+    auralsong = tmp_path / "bad.auralsong"
+    (auralsong / "audio").mkdir(parents=True, exist_ok=True)
+    (auralsong / "features").mkdir(parents=True, exist_ok=True)
 
-    _write_json(songpack / "manifest.json", {"duration_sec": 10.0})
-    (songpack / "audio" / "mix.wav").write_bytes(b"wav")
-    (songpack / "features" / "notes.mid").write_bytes(b"not-midi")
+    _write_json(auralsong / "manifest.json", {"duration_sec": 10.0})
+    (auralsong / "audio" / "mix.wav").write_bytes(b"wav")
+    (auralsong / "features" / "notes.mid").write_bytes(b"not-midi")
 
     args = type("Args", (), {})()
-    args.songpack_dir = str(songpack)
+    args.auralsong_dir = str(auralsong)
     rc = cli.cmd_validate(args)
     assert rc == 1
 
@@ -158,12 +162,197 @@ def test_cmd_validate_detects_invalid_notes_mid(tmp_path: Path, capsys) -> None:
     assert "notes.mid" in payload["error"]
 
 
+def test_cmd_validate_detects_events_notes_mid_mismatch(tmp_path: Path, capsys) -> None:
+    from aural_ingest import cli
+    from aural_ingest.transcription import MelodicNote
+
+    auralsong = tmp_path / "mismatch.auralsong"
+    (auralsong / "audio").mkdir(parents=True, exist_ok=True)
+    (auralsong / "features").mkdir(parents=True, exist_ok=True)
+
+    _write_json(auralsong / "manifest.json", {"duration_sec": 2.0})
+    (auralsong / "audio" / "mix.wav").write_bytes(b"wav")
+    (auralsong / "features" / "notes.mid").write_bytes(
+        cli._build_notes_mid_bytes(
+            bpm=120.0,
+            beats=[],
+            sections=[],
+            drum_events=[],
+            instrument_tracks={
+                "keys": [
+                    MelodicNote(t_on=0.0, t_off=0.5, pitch=64, velocity=90, instrument="keys"),
+                ],
+            },
+        )
+    )
+    _write_json(
+        auralsong / "features" / "events.json",
+        {
+            "events_version": "1.0.0",
+            "tracks": [],
+            "onsets": [],
+            "notes": [
+                {
+                    "track_id": "keys_main",
+                    "instrument": "keys",
+                    "t_on": 0.0,
+                    "t_off": 0.5,
+                    "pitch": 65,
+                    "velocity": 90,
+                }
+            ],
+            "chords": [],
+        },
+    )
+
+    args = type("Args", (), {})()
+    args.auralsong_dir = str(auralsong)
+    rc = cli.cmd_validate(args)
+    assert rc == 1
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is False
+    assert "events.json and piano_midi_decoder disagree for keys note 0" in payload["error"]
+
+
+def test_cmd_validate_reports_secondary_piano_verifier_summary(tmp_path: Path, capsys) -> None:
+    from aural_ingest import cli
+    from aural_ingest.transcription import MelodicNote
+
+    auralsong = tmp_path / "ok-piano-verifiers.auralsong"
+    (auralsong / "audio").mkdir(parents=True, exist_ok=True)
+    (auralsong / "features").mkdir(parents=True, exist_ok=True)
+
+    _write_json(auralsong / "manifest.json", {"duration_sec": 2.0})
+    (auralsong / "audio" / "mix.wav").write_bytes(b"wav")
+    (auralsong / "features" / "notes.mid").write_bytes(
+        cli._build_notes_mid_bytes(
+            bpm=120.0,
+            beats=[],
+            sections=[],
+            drum_events=[],
+            instrument_tracks={
+                "keys": [
+                    MelodicNote(t_on=0.0, t_off=0.5, pitch=64, velocity=90, instrument="keys"),
+                    MelodicNote(t_on=0.75, t_off=1.25, pitch=67, velocity=88, instrument="keys"),
+                ],
+            },
+        )
+    )
+    _write_json(
+        auralsong / "features" / "events.json",
+        {
+            "events_version": "1.0.0",
+            "tracks": [],
+            "onsets": [],
+            "notes": [
+                {
+                    "track_id": "keys_main",
+                    "instrument": "keys",
+                    "t_on": 0.0,
+                    "t_off": 0.5,
+                    "pitch": 64,
+                    "velocity": 90,
+                },
+                {
+                    "track_id": "keys_main",
+                    "instrument": "keys",
+                    "t_on": 0.75,
+                    "t_off": 1.25,
+                    "pitch": 67,
+                    "velocity": 88,
+                },
+            ],
+            "chords": [],
+        },
+    )
+
+    args = type("Args", (), {})()
+    args.auralsong_dir = str(auralsong)
+    assert cli.cmd_validate(args) == 0
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    role_summary = payload["verifiers"]["events_notes_mid"]["roles"]["keys"]
+    assert payload["ok"] is True
+    assert role_summary == {
+        "events_json_notes": 2,
+        "piano_benchmark_parser_notes": 2,
+        "piano_midi_decoder_notes": 2,
+        "secondary_f1": 1.0,
+        "secondary_offset_velocity_f1": 1.0,
+    }
+
+
+def test_cmd_validate_detects_secondary_piano_verifier_mismatch(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    from aural_ingest import cli, piano_benchmark
+    from aural_ingest.piano_benchmark import PianoBenchmarkEvent
+    from aural_ingest.transcription import MelodicNote
+
+    auralsong = tmp_path / "secondary-mismatch.auralsong"
+    (auralsong / "audio").mkdir(parents=True, exist_ok=True)
+    (auralsong / "features").mkdir(parents=True, exist_ok=True)
+
+    _write_json(auralsong / "manifest.json", {"duration_sec": 2.0})
+    (auralsong / "audio" / "mix.wav").write_bytes(b"wav")
+    (auralsong / "features" / "notes.mid").write_bytes(
+        cli._build_notes_mid_bytes(
+            bpm=120.0,
+            beats=[],
+            sections=[],
+            drum_events=[],
+            instrument_tracks={
+                "keys": [
+                    MelodicNote(t_on=0.0, t_off=0.5, pitch=64, velocity=90, instrument="keys"),
+                ],
+            },
+        )
+    )
+    _write_json(
+        auralsong / "features" / "events.json",
+        {
+            "events_version": "1.0.0",
+            "tracks": [],
+            "onsets": [],
+            "notes": [
+                {
+                    "track_id": "keys_main",
+                    "instrument": "keys",
+                    "t_on": 0.0,
+                    "t_off": 0.5,
+                    "pitch": 64,
+                    "velocity": 90,
+                }
+            ],
+            "chords": [],
+        },
+    )
+    monkeypatch.setattr(
+        piano_benchmark,
+        "parse_piano_midi_reference",
+        lambda *_args, **_kwargs: [
+            PianoBenchmarkEvent(time=0.0, duration=0.5, pitch=65, velocity=90),
+        ],
+    )
+
+    args = type("Args", (), {})()
+    args.auralsong_dir = str(auralsong)
+    assert cli.cmd_validate(args) == 1
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is False
+    assert "events.json and piano_benchmark_parser disagree for keys note 0" in payload["error"]
+
+
 def test_cmd_import_returns_2_for_missing_input(tmp_path: Path) -> None:
     from aural_ingest import cli
 
     args = type("Args", (), {})()
     args.input_audio_path = str(tmp_path / "nope.wav")
-    args.out = str(tmp_path / "x.songpack")
+    args.out = str(tmp_path / "x.auralsong")
     args.profile = "full"
     args.config = None
     args.title = None
@@ -184,16 +373,15 @@ def test_build_parser_knows_core_commands() -> None:
     assert p.parse_args(["runtime-check"]).cmd == "runtime-check"
     assert p.parse_args(["benchmark-drums", "stem.wav", "reference.json"]).cmd == "benchmark-drums"
     assert p.parse_args(["refine-piano", "--audio", "keys.wav", "--source-midi", "suno.mid"]).cmd == "refine-piano"
-    assert p.parse_args(["import", "in.wav", "--out", "o.songpack"]).cmd == "import"
-    assert p.parse_args(["import-dir", "in_dir", "--out", "o.songpack"]).cmd == "import-dir"
-    assert p.parse_args(["import-unsupported_chart_format", "chart.unsupported_chart_format", "--out", "o.songpack"]).cmd == "import-unsupported_chart_format"
+    assert p.parse_args(["import", "in.wav", "--out", "o.auralsong"]).cmd == "import"
+    assert p.parse_args(["import-dir", "in_dir", "--out", "o.auralsong"]).cmd == "import-dir"
 
     parsed = p.parse_args(
         [
             "import",
             "in.wav",
             "--out",
-            "o.songpack",
+            "o.auralsong",
             "--drum-filter",
             "combined_filter",
             "--melodic-method",
@@ -219,7 +407,7 @@ def test_build_parser_knows_core_commands() -> None:
             "import",
             "in.wav",
             "--out",
-            "o.songpack",
+            "o.auralsong",
             "--drum-engine",
             "mr_mt3_drums",
         ]
@@ -459,7 +647,7 @@ def test_cmd_import_dir_returns_2_for_missing_input_dir(tmp_path: Path) -> None:
 
     args = type("Args", (), {})()
     args.input_dir_path = str(tmp_path / "no_such")
-    args.out = str(tmp_path / "x.songpack")
+    args.out = str(tmp_path / "x.auralsong")
     args.profile = "full"
     args.config = None
     args.title = None
@@ -502,7 +690,7 @@ def test_cmd_import_dir_returns_2_when_no_supported_audio_found(tmp_path: Path) 
 
     args = type("Args", (), {})()
     args.input_dir_path = str(src_dir)
-    args.out = str(tmp_path / "x.songpack")
+    args.out = str(tmp_path / "x.auralsong")
     args.profile = "full"
     args.config = None
     args.title = None
@@ -532,7 +720,7 @@ def test_cmd_import_dir_forwards_selected_source_to_cmd_import(tmp_path: Path, m
 
     args = type("Args", (), {})()
     args.input_dir_path = str(src_dir)
-    args.out = str(tmp_path / "x.songpack")
+    args.out = str(tmp_path / "x.auralsong")
     args.profile = "full"
     args.config = "{}"
     args.title = "t"
@@ -541,7 +729,7 @@ def test_cmd_import_dir_forwards_selected_source_to_cmd_import(tmp_path: Path, m
 
     assert cli.cmd_import_dir(args) == 0
     assert seen["input_audio_path"] == str(src)
-    assert seen["out"] == str(tmp_path / "x.songpack")
+    assert seen["out"] == str(tmp_path / "x.auralsong")
     assert seen["profile"] == "full"
 
 
@@ -573,7 +761,7 @@ def test_cmd_import_dir_synthesizes_mix_from_configured_input_stems(tmp_path: Pa
 
     args = type("Args", (), {})()
     args.input_dir_path = str(src_dir)
-    args.out = str(tmp_path / "x.songpack")
+    args.out = str(tmp_path / "x.auralsong")
     args.profile = "full"
     args.config = json.dumps(
         {
@@ -590,73 +778,13 @@ def test_cmd_import_dir_synthesizes_mix_from_configured_input_stems(tmp_path: Pa
 
     assert cli.cmd_import_dir(args) == 0
     assert Path(seen["input_audio_path"]).name == "mix.wav"
-    assert seen["config"] == args.config
-
-
-def test_cmd_import_unsupported_chart_format_returns_2_for_missing_unsupported_chart_format_file(tmp_path: Path) -> None:
-    from aural_ingest import cli
-
-    args = type("Args", (), {})()
-    args.unsupported_chart_format_path = str(tmp_path / "nope.unsupported_chart_format")
-    args.out = str(tmp_path / "x.songpack")
-    args.profile = "full"
-    args.config = None
-    args.title = None
-    args.artist = None
-    args.duration_sec = None
-
-    assert cli.cmd_import_unsupported_chart_format(args) == 2
-
-
-def test_find_audio_source_for_unsupported_chart_format_prefers_referenced_files(tmp_path: Path) -> None:
-    from aural_ingest import cli
-
-    src_dir = tmp_path / "song"
-    src_dir.mkdir(parents=True, exist_ok=True)
-    unsupported_chart_format = src_dir / "chart.unsupported_chart_format"
-    (src_dir / "audio").mkdir(parents=True, exist_ok=True)
-    ref_audio = src_dir / "audio" / "drums.wav"
-    ref_audio.write_bytes(b"x")
-    # fallback mix file should not be chosen when referenced audio exists
-    (src_dir / "mix.wav").write_bytes(b"x")
-
-    unsupported_chart_format.write_text("#WAV01 audio/drums.wav\n", encoding="utf-8")
-
-    assert cli._find_audio_source_for_unsupported_chart_format(unsupported_chart_format) == ref_audio
-
-
-def test_cmd_import_unsupported_chart_format_forwards_selected_audio_to_cmd_import(tmp_path: Path, monkeypatch) -> None:
-    from aural_ingest import cli
-
-    src_dir = tmp_path / "song"
-    src_dir.mkdir(parents=True, exist_ok=True)
-    unsupported_chart_format = src_dir / "chart.unsupported_chart_format"
-    wav = src_dir / "mix.wav"
-    wav.write_bytes(b"x")
-    unsupported_chart_format.write_text("; minimal unsupported_chart_format\n", encoding="utf-8")
-
-    seen = {}
-
-    def fake_cmd_import(args):
-        seen["input_audio_path"] = args.input_audio_path
-        seen["title"] = args.title
-        return 0
-
-    monkeypatch.setattr(cli, "cmd_import", fake_cmd_import)
-
-    args = type("Args", (), {})()
-    args.unsupported_chart_format_path = str(unsupported_chart_format)
-    args.out = str(tmp_path / "x.songpack")
-    args.profile = "full"
-    args.config = "{}"
-    args.title = None
-    args.artist = None
-    args.duration_sec = None
-
-    assert cli.cmd_import_unsupported_chart_format(args) == 0
-    assert seen["input_audio_path"] == str(wav)
-    # default title should use unsupported_chart_format stem when not provided
-    assert seen["title"] == "chart"
+    forwarded_config = json.loads(seen["config"])
+    assert forwarded_config["disable_stem_separation"] is True
+    assert forwarded_config["input_stem_paths"] == {
+        "drums": str(drums),
+        "bass": str(bass),
+    }
+    assert forwarded_config["_synthesized_mix_from_input_stems"] is True
 
 
 def test_cmd_import_handles_unknown_drum_filter_and_rejects_other_invalid_transcription_options(tmp_path: Path) -> None:
@@ -667,7 +795,7 @@ def test_cmd_import_handles_unknown_drum_filter_and_rejects_other_invalid_transc
 
     args = type("Args", (), {})()
     args.input_audio_path = str(src)
-    args.out = str(tmp_path / "out.songpack")
+    args.out = str(tmp_path / "out.auralsong")
     args.profile = "full"
     args.config = None
     args.title = None
@@ -728,7 +856,7 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
 
     args = type("Args", (), {})()
     args.input_dir_path = str(src_dir)
-    args.out = str(tmp_path / "x.songpack")
+    args.out = str(tmp_path / "x.auralsong")
     args.profile = "full"
     args.config = "{}"
     args.title = "t"

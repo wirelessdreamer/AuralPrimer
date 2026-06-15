@@ -1,10 +1,10 @@
 /**
- * Loads + parses features/notes.mid for a selected SongPack and applies
+ * Loads + parses features/notes.mid for a selected AuralSong and applies
  * any per-instrument refinement overlays. Returns BOTH the drum chart
  * selection AND the melodic tracks so the caller can write both into its
  * state in one shot.
  *
- * Pure (no module state) plus a Tauri invoke for the SongPack MIDI blob.
+ * Pure (no module state) plus a Tauri invoke for the AuralSong MIDI blob.
  * Extracted from main.ts as Phase 2.T (was the old `readDrumChartSelection`
  * which mutated `selectedMelodicTracks` as a side effect).
  */
@@ -22,7 +22,7 @@ import type { ConsoleBridge, ConsoleLogCategory } from "./consoleBridge";
 
 type MidiBlob = { bytes: number[] };
 
-/** Minimum SongPackDetails subset readDrumChartSelection needs. */
+/** Minimum AuralSongDetails subset readDrumChartSelection needs. */
 export type SongChartLoaderDetails = {
   has_notes_mid?: boolean;
 };
@@ -39,7 +39,7 @@ export type ReadSongChartSelectionArgs = {
 };
 
 /**
- * Reads features/notes.mid from a SongPack, extracts drum + melodic
+ * Reads features/notes.mid from an AuralSong, extracts drum + melodic
  * tracks, and applies refinement overlays if present.
  *
  *  - No notes.mid → returns `{ drumSelection: null, melodicTracks: [] }`.
@@ -53,7 +53,7 @@ export async function readSongChartSelection(args: ReadSongChartSelectionArgs): 
   }
 
   try {
-    const midi = await invoke<MidiBlob>("read_songpack_mid", {
+    const midi = await invoke<MidiBlob>("read_auralsong_mid", {
       containerPath,
       relPath: "features/notes.mid",
     });

@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://auralprimer.dev/schemas/auralsong/manifest.schema.json",
+  "title": "AuralSong manifest.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "song_id", "title", "artist", "duration_sec"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "song_id": { "type": "string" },
+    "title": { "type": "string" },
+    "artist": { "type": "string" },
+    "duration_sec": { "type": "number", "minimum": 0 }
+  }
+}

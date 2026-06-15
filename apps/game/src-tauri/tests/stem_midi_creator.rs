@@ -45,7 +45,7 @@ fn write_minimal_midi(path: &std::path::Path) {
 }
 
 #[test]
-fn stem_midi_creator_writes_songpack_artifacts() {
+fn stem_midi_creator_writes_auralsong_artifacts() {
     let td = tempdir().unwrap();
     let songs_dir = td.path().join("songs");
     fs::create_dir_all(&songs_dir).unwrap();
@@ -68,8 +68,8 @@ fn stem_midi_creator_writes_songpack_artifacts() {
         midi_path: midi.to_string_lossy().to_string(),
     };
 
-    let res = stem_midi::create_songpack(req, &songs_dir).unwrap();
-    let out = std::path::PathBuf::from(res.songpack_path);
+    let res = stem_midi::create_auralsong(req, &songs_dir).unwrap();
+    let out = std::path::PathBuf::from(res.auralsong_path);
     assert!(out.exists());
     assert!(out.join("manifest.json").is_file());
     assert!(out.join("audio").join("mix.wav").is_file());

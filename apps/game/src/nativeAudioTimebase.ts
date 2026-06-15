@@ -38,7 +38,7 @@ type NativeAudioState = {
   callback_overrun_count: number;
 };
 
-type LoadedSongPackAudioInfo = {
+type LoadedAuralSongAudioInfo = {
   mime: string;
   duration_sec: number;
 };
@@ -64,7 +64,7 @@ export class NativeAudioTimebase implements TransportTimebase {
   private loadedDurationSec: number | null = null;
   private initialized = false;
 
-  private lastLoadedSongPackPath: string | null = null;
+  private lastLoadedAuralSongPath: string | null = null;
   private lastLoadedAudio: { mime: string; bytes: number[] } | null = null;
 
   private _lastT = 0;
@@ -81,8 +81,8 @@ export class NativeAudioTimebase implements TransportTimebase {
     this.loadedDurationSec = LONG_DURATION_SENTINEL_SEC;
   }
 
-  private async loadSongPackAudioIntoNative(containerPath: string): Promise<LoadedSongPackAudioInfo> {
-    const info = await invoke<LoadedSongPackAudioInfo>("native_audio_load_songpack_audio", {
+  private async loadAuralSongAudioIntoNative(containerPath: string): Promise<LoadedAuralSongAudioInfo> {
+    const info = await invoke<LoadedAuralSongAudioInfo>("native_audio_load_auralsong_audio", {
       containerPath
     });
     this.initialized = true;
@@ -211,8 +211,8 @@ export class NativeAudioTimebase implements TransportTimebase {
       return;
     }
 
-    if (this.lastLoadedSongPackPath) {
-      await this.loadSongPackAudioIntoNative(this.lastLoadedSongPackPath);
+    if (this.lastLoadedAuralSongPath) {
+      await this.loadAuralSongAudioIntoNative(this.lastLoadedAuralSongPath);
     } else if (this.lastLoadedAudio) {
       await this.loadAudioBytesIntoNative(this.lastLoadedAudio.mime, this.lastLoadedAudio.bytes);
     } else {
@@ -274,18 +274,18 @@ export class NativeAudioTimebase implements TransportTimebase {
     const ab = await source.blob.arrayBuffer();
     const bytes = Array.from(new Uint8Array(ab));
 
-    this.lastLoadedSongPackPath = null;
+    this.lastLoadedAuralSongPath = null;
     this.lastLoadedAudio = { mime: source.mime, bytes };
 
     await this.loadAudioBytesIntoNative(source.mime, bytes);
     await this.applyRuntimeSettings();
   }
 
-  async loadFromSongPack(containerPath: string): Promise<{ mime: string; durationSec: number } | void> {
-    this.lastLoadedSongPackPath = containerPath;
+  async loadFromAuralSong(containerPath: string): Promise<{ mime: string; durationSec: number } | void> {
+    this.lastLoadedAuralSongPath = containerPath;
     this.lastLoadedAudio = null;
 
-    const info = await this.loadSongPackAudioIntoNative(containerPath);
+    const info = await this.loadAuralSongAudioIntoNative(containerPath);
     await this.applyRuntimeSettings();
 
     return { mime: info.mime, durationSec: this.loadedDurationSec ?? LONG_DURATION_SENTINEL_SEC };

@@ -40,7 +40,7 @@ fn write_minimal_midi(path: &std::path::Path) {
 }
 
 #[test]
-fn raw_song_importer_writes_songpack_artifacts() {
+fn raw_song_importer_writes_auralsong_artifacts() {
     let td = tempdir().unwrap();
     let songs_dir = td.path().join("songs");
     fs::create_dir_all(&songs_dir).unwrap();
@@ -77,7 +77,7 @@ fn raw_song_importer_writes_songpack_artifacts() {
     )
     .unwrap();
 
-    let sp = std::path::PathBuf::from(res.songpack_path);
+    let sp = std::path::PathBuf::from(res.auralsong_path);
     assert!(sp.exists());
     assert!(sp.join("manifest.json").is_file());
     assert!(sp.join("audio").join("mix.wav").is_file());

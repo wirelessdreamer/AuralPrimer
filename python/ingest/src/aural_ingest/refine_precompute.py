@@ -28,7 +28,7 @@ highest score, with ties broken by candidate display order so stem_only
 beats consensus_tight beats consensus_default beats denoise_consensus.
 
 Output: ``features/refine_candidates.<instrument>.json`` matching
-``packages/songpack/schemas/refine_candidates.schema.json``.
+``packages/auralsong/schemas/refine_candidates.schema.json``.
 
 Editor-time only. The runtime game never reads this file; it only feeds
 the Studio Refine workspace.
@@ -334,8 +334,8 @@ class CandidateNotes:
         }
 
 
-def _find_stem(songpack_root: Path, instrument: str) -> Path | None:
-    stem_dir = songpack_root / "audio" / "stems"
+def _find_stem(auralsong_root: Path, instrument: str) -> Path | None:
+    stem_dir = auralsong_root / "audio" / "stems"
     for ext in ("wav", "mp3", "ogg", "flac"):
         candidate = stem_dir / f"{instrument}.{ext}"
         if candidate.is_file():
@@ -343,8 +343,8 @@ def _find_stem(songpack_root: Path, instrument: str) -> Path | None:
     return None
 
 
-def _find_mix(songpack_root: Path) -> Path | None:
-    audio_dir = songpack_root / "audio"
+def _find_mix(auralsong_root: Path) -> Path | None:
+    audio_dir = auralsong_root / "audio"
     for ext in ("wav", "mp3", "ogg", "flac"):
         candidate = audio_dir / f"mix.{ext}"
         if candidate.is_file():
@@ -404,7 +404,7 @@ def run_four_candidates(
 
 def precompute_refine_candidates(
     *,
-    songpack_root: Path,
+    auralsong_root: Path,
     instrument: str,
     stem_path: Path | None = None,
     mix_path: Path | None = None,
@@ -420,14 +420,14 @@ def precompute_refine_candidates(
     if instrument not in VALID_INSTRUMENTS:
         raise ValueError(f"unknown instrument: {instrument!r}")
 
-    resolved_stem = stem_path if stem_path is not None else _find_stem(songpack_root, instrument)
+    resolved_stem = stem_path if stem_path is not None else _find_stem(auralsong_root, instrument)
     if resolved_stem is None or not resolved_stem.is_file():
         raise FileNotFoundError(
             f"no stem found for instrument={instrument!r} under "
-            f"{songpack_root / 'audio' / 'stems'}"
+            f"{auralsong_root / 'audio' / 'stems'}"
         )
 
-    resolved_mix = mix_path if mix_path is not None else _find_mix(songpack_root)
+    resolved_mix = mix_path if mix_path is not None else _find_mix(auralsong_root)
 
     runner = runner or run_four_candidates
     candidates = runner(resolved_stem, resolved_mix, instrument)
@@ -444,7 +444,7 @@ def precompute_refine_candidates(
         song_duration_sec=song_duration_sec,
     )
 
-    features_dir = songpack_root / "features"
+    features_dir = auralsong_root / "features"
     features_dir.mkdir(parents=True, exist_ok=True)
     out_path = features_dir / f"refine_candidates.{instrument}.json"
     out_path.write_text(

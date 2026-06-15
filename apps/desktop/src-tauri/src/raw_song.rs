@@ -462,7 +462,7 @@ mod tests {
         )
         .expect("import raw song folder");
 
-        let out_dir = PathBuf::from(result.songpack_path);
+        let out_dir = PathBuf::from(result.auralsong_path);
         let copied_midis: Vec<PathBuf> = fs::read_dir(out_dir.join("features").join("midi"))
             .expect("read features/midi")
             .map(|entry| entry.expect("dir entry").path())
@@ -568,7 +568,7 @@ mod tests {
         )
         .expect("import raw song folder");
 
-        let out_dir = PathBuf::from(result.songpack_path);
+        let out_dir = PathBuf::from(result.auralsong_path);
         let manifest: serde_json::Value = serde_json::from_slice(
             &fs::read(out_dir.join("manifest.json")).expect("read manifest"),
         )
@@ -719,7 +719,7 @@ mod tests {
         )
         .expect("import raw song folder");
 
-        let out_dir = PathBuf::from(result.songpack_path);
+        let out_dir = PathBuf::from(result.auralsong_path);
         let notes_mid =
             fs::read(out_dir.join("features").join("notes.mid")).expect("read notes.mid");
         let imported_notes = midi_bytes_to_timed_notes(&notes_mid).expect("parse notes.mid");
@@ -845,7 +845,7 @@ mod tests {
             result.warnings
         );
 
-        let out_dir = PathBuf::from(result.songpack_path);
+        let out_dir = PathBuf::from(result.auralsong_path);
         let events_json: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(out_dir.join("features").join("events.json"))
                 .expect("read events.json"),
@@ -995,7 +995,7 @@ mod tests {
             .any(|role| role == "lead_guitar"));
         assert!(result.mapped_game_roles.iter().any(|role| role == "keys"));
 
-        let out_dir = PathBuf::from(result.songpack_path);
+        let out_dir = PathBuf::from(result.auralsong_path);
         let events_json: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(out_dir.join("features").join("events.json"))
                 .expect("read events.json"),
@@ -1018,8 +1018,8 @@ mod tests {
     #[test]
     fn preserve_source_midis_copies_files_and_updates_manifest_reference_paths() {
         // Models the new Studio ingest flow on a Suno folder: sidecar
-        // already wrote a SongPack (mix + manifest.json) and we follow up
-        // with preserve_source_midis_into_songpack to copy the user's
+        // already wrote an AuralSong (mix + manifest.json) and we follow up
+        // with preserve_source_midis_into_auralsong to copy the user's
         // gameplay MIDI in for the Refine workspace to render later.
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1027,10 +1027,10 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("auralprimer_preserve_midis_{unique}"));
         let source_dir = root.join("source");
-        let songpack_root = root.join("songpack");
+        let auralsong_root = root.join("auralsong");
         fs::create_dir_all(&source_dir).expect("create source dir");
-        fs::create_dir_all(songpack_root.join("audio")).expect("create songpack audio dir");
-        fs::create_dir_all(songpack_root.join("features")).expect("create songpack features dir");
+        fs::create_dir_all(auralsong_root.join("audio")).expect("create auralsong audio dir");
+        fs::create_dir_all(auralsong_root.join("features")).expect("create auralsong features dir");
 
         // Source folder needs to look "raw-song-shaped" enough for
         // scan_raw_song_folder to surface MIDI files. A WAV stem with the
@@ -1065,24 +1065,24 @@ mod tests {
             }
         });
         fs::write(
-            songpack_root.join("manifest.json"),
+            auralsong_root.join("manifest.json"),
             serde_json::to_string_pretty(&seed_manifest).unwrap(),
         )
         .expect("seed manifest.json");
 
-        let added = preserve_source_midis_into_songpack(&source_dir, &songpack_root)
+        let added = preserve_source_midis_into_auralsong(&source_dir, &auralsong_root)
             .expect("preserve source midis");
         assert_eq!(added.len(), 2, "expected both source MIDIs preserved");
         assert!(
             added.iter().all(|p| p.starts_with("features/midi/")),
-            "preserved paths should be SongPack-relative under features/midi: {:?}",
+            "preserved paths should be AuralSong-relative under features/midi: {:?}",
             added
         );
 
         // Both copied files exist on disk.
         for rel in &added {
             assert!(
-                songpack_root.join(rel).is_file(),
+                auralsong_root.join(rel).is_file(),
                 "expected preserved midi at {rel}"
             );
         }
@@ -1090,7 +1090,7 @@ mod tests {
         // Manifest now lists both paths under assets.midi.reference_paths,
         // without disturbing assets.midi.notes_path that the sidecar seeded.
         let manifest_raw =
-            fs::read_to_string(songpack_root.join("manifest.json")).expect("read manifest");
+            fs::read_to_string(auralsong_root.join("manifest.json")).expect("read manifest");
         let manifest: serde_json::Value =
             serde_json::from_str(&manifest_raw).expect("parse manifest");
         let refs = manifest
@@ -1118,13 +1118,13 @@ mod tests {
         );
 
         // Idempotency: running again doesn't duplicate the entries.
-        let added_again = preserve_source_midis_into_songpack(&source_dir, &songpack_root)
+        let added_again = preserve_source_midis_into_auralsong(&source_dir, &auralsong_root)
             .expect("preserve again");
         // The function reports what it COPIED (which it always does); the
         // dedup invariant is the manifest stays at 2 entries, not 4.
         let _ = added_again;
         let manifest_after: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(songpack_root.join("manifest.json")).unwrap())
+            serde_json::from_str(&fs::read_to_string(auralsong_root.join("manifest.json")).unwrap())
                 .unwrap();
         let refs_after = manifest_after
             .pointer("/assets/midi/reference_paths")
@@ -1142,7 +1142,7 @@ mod tests {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImportRawSongFolderResult {
-    pub songpack_path: String,
+    pub auralsong_path: String,
     pub stems_count: usize,
     pub midi_files_count: usize,
     pub lyrics_included: bool,
@@ -3686,8 +3686,8 @@ pub fn inspect_raw_song_folder(folder_path: &Path) -> Result<RawSongFolderInspec
 }
 
 /// Copy any MIDI files found inside `source_folder` into
-/// `<songpack_root>/features/midi/{copy_id}.mid` and append their relative
-/// paths to `assets.midi.reference_paths` inside the SongPack's manifest.
+/// `<auralsong_root>/features/midi/{copy_id}.mid` and append their relative
+/// paths to `assets.midi.reference_paths` inside the AuralSong's manifest.
 ///
 /// Used by the Studio ingest-sidecar flow (the "new" import path) to preserve
 /// user-supplied reference MIDI -- Suno's gameplay MIDI export being the
@@ -3707,10 +3707,10 @@ pub fn inspect_raw_song_folder(folder_path: &Path) -> Result<RawSongFolderInspec
 ///    the helper still copies the MIDIs and returns the relative paths; only
 ///    a write error on the manifest is propagated.
 ///
-/// Returns the SongPack-relative paths that were copied this call.
-pub fn preserve_source_midis_into_songpack(
+/// Returns the AuralSong-relative paths that were copied this call.
+pub fn preserve_source_midis_into_auralsong(
     source_folder: &Path,
-    songpack_root: &Path,
+    auralsong_root: &Path,
 ) -> Result<Vec<String>, String> {
     if !source_folder.is_dir() {
         return Ok(vec![]);
@@ -3720,11 +3720,11 @@ pub fn preserve_source_midis_into_songpack(
         return Ok(vec![]);
     }
 
-    let midi_dir = songpack_root.join("features").join("midi");
+    let midi_dir = auralsong_root.join("features").join("midi");
     fs::create_dir_all(&midi_dir).map_err(|e| format!("mkdir features/midi: {e}"))?;
 
     // Same de-dup naming the raw-song importer uses so the two flows produce
-    // identical SongPack layouts for the same Suno export folder.
+    // identical AuralSong layouts for the same Suno export folder.
     let mut copied_names: BTreeMap<String, usize> = BTreeMap::new();
     let mut copied_rel_paths: Vec<String> = vec![];
 
@@ -3745,29 +3745,28 @@ pub fn preserve_source_midis_into_songpack(
             format!("{}_{}", base_id, *next_idx)
         };
         let rel = format!("features/midi/{copy_id}.mid");
-        let dst = songpack_root.join(&rel);
+        let dst = auralsong_root.join(&rel);
         fs::write(&dst, &bytes).map_err(|e| format!("write midi copy {}: {e}", dst.display()))?;
         copied_rel_paths.push(rel);
     }
 
-    update_manifest_reference_midi_paths(songpack_root, &copied_rel_paths)?;
+    update_manifest_reference_midi_paths(auralsong_root, &copied_rel_paths)?;
     Ok(copied_rel_paths)
 }
 
 /// Merge `new_paths` into `assets.midi.reference_paths` inside
-/// `<songpack_root>/manifest.json`. Creates missing parent objects on the
+/// `<auralsong_root>/manifest.json`. Creates missing parent objects on the
 /// path. Skips paths already present. No-op if the manifest doesn't exist
 /// or isn't an object root.
 fn update_manifest_reference_midi_paths(
-    songpack_root: &Path,
+    auralsong_root: &Path,
     new_paths: &[String],
 ) -> Result<(), String> {
-    let manifest_path = songpack_root.join("manifest.json");
+    let manifest_path = auralsong_root.join("manifest.json");
     if !manifest_path.is_file() {
         return Ok(());
     }
-    let raw = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("read manifest.json: {e}"))?;
+    let raw = fs::read_to_string(&manifest_path).map_err(|e| format!("read manifest.json: {e}"))?;
     let mut manifest: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
         Err(_) => return Ok(()), // Don't blow up the import on a corrupt manifest.
@@ -3802,8 +3801,8 @@ fn update_manifest_reference_midi_paths(
             refs_arr.push(serde_json::json!(p));
         }
     }
-    let json = serde_json::to_string_pretty(&manifest)
-        .map_err(|e| format!("manifest json: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(&manifest).map_err(|e| format!("manifest json: {e}"))?;
     fs::write(&manifest_path, json).map_err(|e| format!("write manifest.json: {e}"))?;
     Ok(())
 }
@@ -3856,17 +3855,17 @@ pub fn import_raw_song_folder(
     // Build output folder name.
     let base = format!("{}_{}", sanitize_id(&artist), sanitize_id(&title));
     let base = base.trim_matches('_');
-    let mut out_dir = songs_folder.join(format!("raw_{base}.songpack"));
+    let mut out_dir = songs_folder.join(format!("raw_{base}.auralsong"));
     if out_dir.exists() {
         for i in 2..=9999 {
-            let candidate = songs_folder.join(format!("raw_{base}_{i}.songpack"));
+            let candidate = songs_folder.join(format!("raw_{base}_{i}.auralsong"));
             if !candidate.exists() {
                 out_dir = candidate;
                 break;
             }
         }
         if out_dir.exists() {
-            return Err("unable to choose a unique output songpack path".to_string());
+            return Err("unable to choose a unique output auralsong path".to_string());
         }
     }
 
@@ -4198,7 +4197,7 @@ pub fn import_raw_song_folder(
     }
 
     Ok(ImportRawSongFolderResult {
-        songpack_path: out_dir.to_string_lossy().to_string(),
+        auralsong_path: out_dir.to_string_lossy().to_string(),
         stems_count: scan.stem_wavs.len(),
         midi_files_count: scan.midi_files.len(),
         lyrics_included,

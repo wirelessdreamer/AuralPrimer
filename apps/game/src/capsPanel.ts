@@ -1,8 +1,8 @@
 /**
  * Caps (capabilities) panel — the row of pill chips below the song-info
- * block showing which SongPack features / charts / mixdowns are available,
+ * block showing which AuralSong features / charts / mixdowns are available,
  * plus the cross-talk that disables Player chip dropdowns for instruments
- * the SongPack has no chart for.
+ * the AuralSong has no chart for.
  *
  * Owns:
  *   - the dynamically-created #songCaps container (caller hands us the slot)
@@ -27,10 +27,10 @@ import type { DrumChartSelection, MelodicTrackSelection } from "./chartLoader";
 import type { PlayersPanelHandle } from "./playersPanel";
 
 /** Loose alias for the chart-spec JSON-by-path map — same as in main.ts. */
-export type SongPackChartsByPath = Record<string, unknown>;
+export type AuralSongChartsByPath = Record<string, unknown>;
 
-/** Minimum subset of SongPackDetails the caps panel reads. */
-export type CapsSongPackDetails = {
+/** Minimum subset of AuralSongDetails the caps panel reads. */
+export type CapsAuralSongDetails = {
   charts?: string[];
   manifest_raw?: unknown;
   has_beats?: boolean;
@@ -73,29 +73,29 @@ export type CapsPanelDeps = {
 export type CapsPanelHandle = {
   /** Re-render the pill rows for the given song + drum + chart-JSON context. */
   render: (
-    details: CapsSongPackDetails | null,
+    details: CapsAuralSongDetails | null,
     drumSelection: DrumChartSelection | null,
-    chartsByPath: SongPackChartsByPath | null,
+    chartsByPath: AuralSongChartsByPath | null,
   ) => void;
   /** Sweep the .playerChip selects and disable instruments with no chart. */
   applyAvailability: (
-    details: CapsSongPackDetails | null,
+    details: CapsAuralSongDetails | null,
     drumSelection: DrumChartSelection | null,
-    chartsByPath: SongPackChartsByPath | null,
+    chartsByPath: AuralSongChartsByPath | null,
   ) => void;
   /** Pure compute, exposed for callers that need the raw caps. */
   compute: (
-    details: CapsSongPackDetails | null,
+    details: CapsAuralSongDetails | null,
     drumSelection: DrumChartSelection | null,
-    chartsByPath: SongPackChartsByPath | null,
+    chartsByPath: AuralSongChartsByPath | null,
   ) => SongCapabilities;
 };
 
 export function initCapsPanel(deps: CapsPanelDeps): CapsPanelHandle {
   function compute(
-    details: CapsSongPackDetails | null,
+    details: CapsAuralSongDetails | null,
     drumSelection: DrumChartSelection | null,
-    chartsByPath: SongPackChartsByPath | null,
+    chartsByPath: AuralSongChartsByPath | null,
   ): SongCapabilities {
     const charts = details?.charts ?? [];
     const byInstrument: InstrumentFlags = {};
@@ -141,9 +141,9 @@ export function initCapsPanel(deps: CapsPanelDeps): CapsPanelHandle {
   }
 
   function render(
-    details: CapsSongPackDetails | null,
+    details: CapsAuralSongDetails | null,
     drumSelection: DrumChartSelection | null,
-    chartsByPath: SongPackChartsByPath | null,
+    chartsByPath: AuralSongChartsByPath | null,
   ): void {
     const caps = compute(details, drumSelection, chartsByPath);
     const esc = deps.escapeHtml;
@@ -195,9 +195,9 @@ export function initCapsPanel(deps: CapsPanelDeps): CapsPanelHandle {
   }
 
   function applyAvailability(
-    details: CapsSongPackDetails | null,
+    details: CapsAuralSongDetails | null,
     drumSelection: DrumChartSelection | null,
-    chartsByPath: SongPackChartsByPath | null,
+    chartsByPath: AuralSongChartsByPath | null,
   ): void {
     const caps = compute(details, drumSelection, chartsByPath);
     for (const chip of Array.from(deps.playersEl.querySelectorAll<HTMLElement>(".playerChip"))) {

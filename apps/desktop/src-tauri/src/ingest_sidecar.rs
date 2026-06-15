@@ -61,7 +61,6 @@ pub enum IngestSubcommand {
     #[default]
     Import,
     ImportDir,
-    Importunsupported_chart_format,
 }
 
 impl IngestSubcommand {
@@ -69,7 +68,6 @@ impl IngestSubcommand {
         match self {
             IngestSubcommand::Import => "import",
             IngestSubcommand::ImportDir => "import-dir",
-            IngestSubcommand::Importunsupported_chart_format => "import-unsupported_chart_format",
         }
     }
 }
@@ -79,7 +77,7 @@ pub struct IngestImportRequest {
     pub source_path: String,
 
     #[serde(default)]
-    pub out_songpack_path: Option<String>,
+    pub out_auralsong_path: Option<String>,
 
     #[serde(default)]
     pub subcommand: Option<IngestSubcommand>,
@@ -122,7 +120,7 @@ pub struct IngestImportResult {
     pub command: Vec<String>,
     pub stdout: String,
     pub stderr: String,
-    /// SongPack-relative paths of any source MIDI files copied into
+    /// AuralSong-relative paths of any source MIDI files copied into
     /// `features/midi/` after the sidecar finished. Populated by
     /// `ingest_import` (Tauri command in lib.rs) when the source is a
     /// folder that contains user-supplied gameplay MIDI -- chiefly Suno
@@ -197,9 +195,11 @@ fn run_runtime_fallback_with_progress(
     reason: &str,
 ) -> Option<Result<IngestImportResult, String>> {
     let binary = runtime_fallback_sidecar_binary()?;
-    Some(run_explicit_binary_with_progress(&binary, args, app).map_err(|fallback_error| {
-        format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
-    }))
+    Some(
+        run_explicit_binary_with_progress(&binary, args, app).map_err(|fallback_error| {
+            format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
+        }),
+    )
 }
 
 fn run_runtime_fallback_capture(
@@ -207,9 +207,11 @@ fn run_runtime_fallback_capture(
     reason: &str,
 ) -> Option<Result<IngestRuntimeCheckResult, String>> {
     let binary = runtime_fallback_sidecar_binary()?;
-    Some(run_explicit_binary_capture(&binary, args).map_err(|fallback_error| {
-        format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
-    }))
+    Some(
+        run_explicit_binary_capture(&binary, args).map_err(|fallback_error| {
+            format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
+        }),
+    )
 }
 
 pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, String> {
@@ -218,8 +220,8 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
         return Err("missing source_path".to_string());
     }
 
-    let out_songpack_path = non_empty_opt(&req.out_songpack_path)
-        .ok_or_else(|| "missing out_songpack_path".to_string())?;
+    let out_auralsong_path = non_empty_opt(&req.out_auralsong_path)
+        .ok_or_else(|| "missing out_auralsong_path".to_string())?;
 
     let subcommand = req.subcommand.unwrap_or_default().as_cli_arg().to_string();
     let profile = req
@@ -234,7 +236,7 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
         subcommand,
         source_path.to_string(),
         "--out".to_string(),
-        out_songpack_path,
+        out_auralsong_path,
         "--profile".to_string(),
         profile,
     ];
@@ -635,8 +637,8 @@ pub fn run_ingest_runtime_check(
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RefineCandidatesRequest {
-    /// Path to the SongPack directory (must end with `.songpack` and be a
-    /// directory, not a zip — same constraint as `write_songpack_features_json`).
+    /// Path to the AuralSong directory (must end with `.auralsong` and be a
+    /// directory, not a zip — same constraint as `write_auralsong_features_json`).
     pub container_path: String,
     /// One or more instruments to precompute. Empty defaults to `["keys"]`.
     #[serde(default)]
@@ -644,7 +646,7 @@ pub struct RefineCandidatesRequest {
 }
 
 /// Run the sidecar's `refine-candidates` subcommand against an existing
-/// SongPack. Writes `features/refine_candidates.<instrument>.json` per
+/// AuralSong. Writes `features/refine_candidates.<instrument>.json` per
 /// instrument; the Studio's Refine workspace then renders them.
 ///
 /// Used by the post-import "Run candidate precompute" CTA so the user
@@ -670,10 +672,7 @@ pub fn run_ingest_refine_candidates(
         return Err("no instruments after filtering".to_string());
     }
 
-    let mut args: Vec<String> = vec![
-        "refine-candidates".to_string(),
-        container.to_string(),
-    ];
+    let mut args: Vec<String> = vec!["refine-candidates".to_string(), container.to_string()];
     for inst in &instruments {
         args.push("--instrument".to_string());
         args.push(inst.clone());
@@ -690,15 +689,18 @@ pub fn run_ingest_refine_candidates(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_ingest_args, explicit_binary, resolve_max_runtime, timeout_error_message,
-        IngestImportRequest, IngestSubcommand, DEFAULT_INGEST_TIMEOUT_SEC,
+        build_ingest_args, explicit_binary, resolve_max_runtime, run_ingest_import,
+        timeout_error_message, IngestImportRequest, IngestSubcommand, DEFAULT_INGEST_TIMEOUT_SEC,
     };
+    use serde_json::Value;
+    use std::env;
+    use std::path::Path;
     use std::time::Duration;
 
     fn req_base() -> IngestImportRequest {
         IngestImportRequest {
             source_path: "C:/input/song.wav".to_string(),
-            out_songpack_path: Some("C:/songs/my.songpack".to_string()),
+            out_auralsong_path: Some("C:/songs/my.auralsong".to_string()),
             ..IngestImportRequest::default()
         }
     }
@@ -724,7 +726,7 @@ mod tests {
         let args = build_ingest_args(&req).expect("args");
         assert_eq!(args[0], "import");
         assert_eq!(args[1], "C:/input/song.wav");
-        assert!(has_pair(&args, "--out", "C:/songs/my.songpack"));
+        assert!(has_pair(&args, "--out", "C:/songs/my.auralsong"));
         assert!(has_pair(&args, "--profile", "full"));
         assert!(has_pair(&args, "--config", "{\"bpm_hint\":120}"));
         assert!(has_pair(&args, "--title", "My Song"));
@@ -753,7 +755,7 @@ mod tests {
     fn build_ingest_args_requires_paths() {
         let req = IngestImportRequest {
             source_path: "   ".to_string(),
-            out_songpack_path: None,
+            out_auralsong_path: None,
             ..IngestImportRequest::default()
         };
         let err = build_ingest_args(&req).expect_err("expected error");
@@ -782,7 +784,10 @@ mod tests {
 
     #[test]
     fn resolve_max_runtime_parses_override_seconds() {
-        assert_eq!(resolve_max_runtime(Some("60")), Some(Duration::from_secs(60)));
+        assert_eq!(
+            resolve_max_runtime(Some("60")),
+            Some(Duration::from_secs(60))
+        );
         assert_eq!(
             resolve_max_runtime(Some("  120 ")),
             Some(Duration::from_secs(120))
@@ -804,7 +809,10 @@ mod tests {
     #[test]
     fn timeout_error_message_states_the_limit_and_override_knob() {
         let msg = timeout_error_message(Duration::from_secs(30 * 60));
-        assert!(msg.contains("30 min"), "must state the limit in minutes: {msg}");
+        assert!(
+            msg.contains("30 min"),
+            "must state the limit in minutes: {msg}"
+        );
         assert!(
             msg.contains("AURALPRIMER_INGEST_TIMEOUT_SEC"),
             "must point at the override env var: {msg}"
@@ -813,5 +821,90 @@ mod tests {
             msg.to_lowercase().contains("cpu fallback") || msg.to_lowercase().contains("wedged"),
             "must explain the likely cause: {msg}"
         );
+    }
+
+    #[test]
+    #[ignore = "requires local piano audio/config paths and a packaged sidecar binary"]
+    fn explicit_binary_piano_import_smoke_from_env() {
+        let binary = env::var("AURALPRIMER_STUDIO_INGEST_SMOKE_BINARY")
+            .expect("set AURALPRIMER_STUDIO_INGEST_SMOKE_BINARY");
+        let source = env::var("AURALPRIMER_STUDIO_INGEST_SMOKE_SOURCE")
+            .expect("set AURALPRIMER_STUDIO_INGEST_SMOKE_SOURCE");
+        let out = env::var("AURALPRIMER_STUDIO_INGEST_SMOKE_OUT")
+            .expect("set AURALPRIMER_STUDIO_INGEST_SMOKE_OUT");
+        let config = env::var("AURALPRIMER_STUDIO_INGEST_SMOKE_CONFIG").ok();
+        let drum_filter = env::var("AURALPRIMER_STUDIO_INGEST_SMOKE_DRUM_FILTER")
+            .unwrap_or_else(|_| "combined_filter".to_string());
+
+        assert!(Path::new(&binary).is_file(), "sidecar missing: {binary}");
+        assert!(Path::new(&source).is_file(), "source missing: {source}");
+        assert!(
+            !Path::new(&out).exists(),
+            "smoke output path must not already exist: {out}"
+        );
+        if let Some(config) = &config {
+            assert!(Path::new(config).is_file(), "config missing: {config}");
+        }
+
+        let result = run_ingest_import(IngestImportRequest {
+            source_path: source,
+            out_auralsong_path: Some(out.clone()),
+            subcommand: Some(IngestSubcommand::Import),
+            profile: Some("full".to_string()),
+            config,
+            title: Some("Studio Wrapper Piano Smoke".to_string()),
+            drum_filter: Some(drum_filter),
+            melodic_method: Some("piano_auto".to_string()),
+            ingest_binary_path: Some(binary),
+            ..IngestImportRequest::default()
+        })
+        .expect("Studio ingest wrapper should execute explicit sidecar binary");
+
+        assert!(
+            result.ok,
+            "ingest failed with exit {}:\nstdout:\n{}\nstderr:\n{}",
+            result.exit_code, result.stdout, result.stderr
+        );
+        assert_eq!(result.exit_code, 0);
+        assert!(
+            result.command.iter().any(|arg| arg == "--melodic-method"),
+            "command should forward melodic method: {:?}",
+            result.command
+        );
+        assert!(
+            result.command.iter().any(|arg| arg == "--drum-filter"),
+            "command should forward GUI drum filter default: {:?}",
+            result.command
+        );
+
+        let manifest_path = Path::new(&out).join("manifest.json");
+        assert!(
+            manifest_path.is_file(),
+            "manifest missing: {manifest_path:?}"
+        );
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(&manifest_path).expect("read smoke manifest"))
+                .expect("parse smoke manifest");
+
+        let used = manifest
+            .pointer("/pipeline/transcription/instrument_melodic_methods_used/keys")
+            .and_then(Value::as_str);
+        assert_eq!(used, Some("piano_auto"));
+
+        let stems = manifest
+            .pointer("/pipeline/transcription/instrument_stems_transcribed")
+            .and_then(Value::as_array)
+            .expect("instrument_stems_transcribed");
+        assert_eq!(stems.len(), 1, "expected only keys stem: {stems:?}");
+        assert_eq!(stems[0].as_str(), Some("keys"));
+
+        let drum_backend = manifest
+            .pointer("/pipeline/transcription/drum_engine_backend")
+            .and_then(Value::as_str);
+        assert_eq!(drum_backend, Some("skipped"));
+        let skip_reason = manifest
+            .pointer("/pipeline/transcription/drum_engine_meta/skip_reason")
+            .and_then(Value::as_str);
+        assert_eq!(skip_reason, Some("input_stems_mix_without_drums"));
     }
 }

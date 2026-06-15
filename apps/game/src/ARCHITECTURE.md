@@ -123,11 +123,11 @@ context and exercising the boot path — a TDZ violation surfaces as a
 
 `main.ts` (~1,135 lines, down from 3,517 pre-Phase 2 — **–67.7%**) owns:
 - The bootstrap sequence (DOM setup, panel construction in dependency order)
-- The 30+ module-level state `let`s for the current SongPack / transport
+- The 30+ module-level state `let`s for the current AuralSong / transport
 - The visualizer lifecycle (`startVisualizer` / `stopVisualizer` /
   `restartVisualizerForPluginSelection` / tick loop) — kept inline because
   every panel feeds it
-- The audio session flow (`selectSongPack` / `loadAudioFromSelectedSongPack`
+- The audio session flow (`selectAuralSong` / `loadAudioFromSelectedAuralSong`
   / `startSelectedSongSession`)
 - Boot orchestration (panel `.refresh()` calls + the `beforeunload` cleanup)
 
@@ -166,7 +166,7 @@ Everything else lives in a sibling module:
 | `songChartLoader.ts` | `readSongChartSelection` — read notes.mid + apply refinement overlays | 2.T |
 | `songDetailsView.ts` | HUD key chip + selected-song labels + details rail | 2.N |
 | `songLibraryPanel.ts` | Song-library list + filesystem watcher + override controls | 2.C |
-| `songpackAudioLoader.ts` | SongPack audio → transport timebase loader | pre-Phase 2 |
+| `auralsongAudioLoader.ts` | AuralSong audio → transport timebase loader | pre-Phase 2 |
 | `tabRenderer.ts` | Legacy shim — `export * from "@auralprimer/viz-tab"` | 2.G |
 | `transportController.ts` | Transport playback control + scroll-speed multiplier | pre-Phase 2 |
 | `vizSongContext.ts` | Pure compute — assemble notes/lyrics/charts for visualizer init | 2.S |

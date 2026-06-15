@@ -108,7 +108,9 @@ pub fn list_installed_modelpacks(app_data_dir: &Path) -> Vec<InstalledModelPack>
                             .map(|x| x.trim())
                             .filter(|x| !x.is_empty());
 
-                        if manifest_id != Some(id.as_str()) || manifest_version != Some(version.as_str()) {
+                        if manifest_id != Some(id.as_str())
+                            || manifest_version != Some(version.as_str())
+                        {
                             ok = false;
                             err = Some(format!(
                                 "modelpack.json id/version mismatch (expected {}/{}, got {}/{})",
@@ -129,9 +131,12 @@ pub fn list_installed_modelpacks(app_data_dir: &Path) -> Vec<InstalledModelPack>
                 }
             }
 
-            let license_file = [ver_dir.join("license.json"), ver_dir.join("files").join("license.json")]
-                .into_iter()
-                .find(|path| path.is_file());
+            let license_file = [
+                ver_dir.join("license.json"),
+                ver_dir.join("files").join("license.json"),
+            ]
+            .into_iter()
+            .find(|path| path.is_file());
             if license.is_none() {
                 if let Some(path) = license_file.as_ref() {
                     license = read_optional_jsonish(path);
@@ -432,8 +437,10 @@ mod tests {
         )
         .unwrap();
         zip.start_file("license.json", opts).unwrap();
-        zip.write_all(br#"{"text":"Local evaluation only"}"#).unwrap();
-        zip.start_file("files/checkpoints/mr_mt3/mt3.pth", opts).unwrap();
+        zip.write_all(br#"{"text":"Local evaluation only"}"#)
+            .unwrap();
+        zip.start_file("files/checkpoints/mr_mt3/mt3.pth", opts)
+            .unwrap();
         zip.write_all(b"x").unwrap();
         let zip_bytes = zip.finish().unwrap().into_inner();
 

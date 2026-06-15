@@ -62,13 +62,13 @@ export class TransportController {
   }
 
   /**
-   * Desktop-friendly alternative: load audio directly from a SongPack.
+   * Desktop-friendly alternative: load audio directly from an AuralSong.
    *
    * This avoids moving large audio blobs over the JS<->Rust IPC boundary.
    */
-  async loadAudioFromSongPack(containerPath: string): Promise<void> {
-    if (this.timebase.loadFromSongPack) {
-      await this.timebase.loadFromSongPack(containerPath);
+  async loadAudioFromAuralSong(containerPath: string): Promise<void> {
+    if (this.timebase.loadFromAuralSong) {
+      await this.timebase.loadFromAuralSong(containerPath);
       // Some backends reset playbackRate on load; re-apply.
       this.timebase.setPlaybackRate(this.state.playbackRate || 1);
 
@@ -77,7 +77,7 @@ export class TransportController {
       return;
     }
 
-    throw new Error("timebase does not support loadFromSongPack()");
+    throw new Error("timebase does not support loadFromAuralSong()");
   }
 
   setPlaybackRate(rate: number): void {

@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://auralprimer.dev/schemas/refinement.schema.json",
+  "title": "AuralSong Refinement",
+  "description": "User-authored per-region refinement overlay applied on top of features/notes.mid for one instrument. The game's chartLoader applies these regions as a destructive overlay: any base notes whose t_on falls within [t_start, t_end) are removed and replaced by the region's notes. Stored at features/refinement.<instrument>.json (one file per instrument).",
+  "type": "object",
+  "required": ["version", "instrument", "regions"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Semantic version of this refinement file format. Same major version is forward-compatible; different major = unsupported.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "instrument": {
+      "type": "string",
+      "enum": ["keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "melodic"],
+      "description": "Which instrument's track this refinement applies to."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional opaque identifier for the editing session that produced this file."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the user began this refinement session."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Most recent save."
+    },
+    "regions": {
+      "type": "array",
+      "description": "Refined regions. Disjoint in time (no overlapping [t_start, t_end) intervals); the loader does not enforce this but tests + UI should.",
+      "items": { "$ref": "#/definitions/region" }
+    },
+    "summary": { "$ref": "#/definitions/summary" }
+  },
+  "definitions": {
+    "note": {
+      "type": "object",
+      "required": ["t_on", "t_off", "pitch", "velocity"],
+      "additionalProperties": false,
+      "properties": {
+        "t_on": { "type": "number", "minimum": 0, "description": "Onset time in seconds (song-time)." },
+        "t_off": { "type": "number", "exclusiveMinimum": 0, "description": "Offset time in seconds (song-time). Must be > t_on." },
+        "pitch": { "type": "integer", "minimum": 0, "maximum": 127, "description": "MIDI pitch number." },
+        "velocity": { "type": "integer", "minimum": 1, "maximum": 127, "description": "MIDI velocity." }
+      }
+    },
+    "region": {
+      "type": "object",
+      "required": ["id", "t_start", "t_end", "accepted_candidate", "accepted_at", "notes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Stable region identifier (e.g. 'verse1-bar3-octave'); should round-trip across re-imports." },
+        "t_start": { "type": "number", "minimum": 0 },
+        "t_end": { "type": "number", "exclusiveMinimum": 0 },
+        "section_label": { "type": "string", "description": "Optional human-readable section (e.g. 'Verse 1')." },
+        "hot_spot_type": {
+          "type": "string",
+          "enum": ["octave_ghost", "off_chord", "density_outlier", "bass_gap", "low_confidence", "manual"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "System confidence in the region's auto_picked candidate (0..1)." },
+        "accepted_candidate": { "type": "string", "minLength": 1, "description": "Candidate id (from refine_candidates.json) that the user accepted. Provenance only; the loader trusts `notes`." },
+        "accepted_at": { "type": "string", "format": "date-time" },
+        "auto_accepted": { "type": "boolean", "description": "True if accepted automatically (confidence above threshold) without explicit user action." },
+        "notes": {
+          "type": "array",
+          "description": "Materialized note list for this region after the accepted candidate is applied. The loader uses ONLY this array; refine_candidates.json is not consulted at runtime.",
+          "items": { "$ref": "#/definitions/note" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "total_regions": { "type": "integer", "minimum": 0 },
+        "reviewed": { "type": "integer", "minimum": 0 },
+        "auto_accepted": { "type": "integer", "minimum": 0 },
+        "explicitly_accepted": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

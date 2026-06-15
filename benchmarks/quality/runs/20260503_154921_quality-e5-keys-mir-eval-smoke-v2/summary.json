@@ -417,8 +417,8 @@
         "name": "Smoke - keys",
         "role": "keys",
         "family": "piano",
-        "wav_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\audio\\stems\\keys.wav",
-        "reference_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.auralsong\\audio\\stems\\keys.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_keys_auto_smoke\\Smoke.auralsong\\features\\notes.mid",
         "reference_count": 1,
         "reference_meta": {},
         "algorithms": [
@@ -841,8 +841,8 @@
         "name": "tmp_demucs_smoke - keys",
         "role": "keys",
         "family": "piano",
-        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\audio\\stems\\keys.wav",
-        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.auralsong\\audio\\stems\\keys.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp_demucs_smoke_run2.auralsong\\features\\notes.mid",
         "reference_count": 47,
         "reference_meta": {},
         "algorithms": [
@@ -2230,8 +2230,8 @@
         "name": "input - keys",
         "role": "keys",
         "family": "piano",
-        "wav_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\audio\\stems\\keys.wav",
-        "reference_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.songpack\\features\\notes.mid",
+        "wav_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.auralsong\\audio\\stems\\keys.wav",
+        "reference_path": "D:\\AuralPrimer\\tmp\\portable_sidecar_smoke\\out.auralsong\\features\\notes.mid",
         "reference_count": 6,
         "reference_meta": {},
         "algorithms": [

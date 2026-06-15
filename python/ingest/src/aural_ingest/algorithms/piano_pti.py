@@ -257,9 +257,9 @@ def merge_consensus(
 
 
 def _find_mix_audio(stem_path: Path) -> Path | None:
-    """Locate the full-mix audio for a stem in a standard SongPack layout.
+    """Locate the full-mix audio for a stem in a standard AuralSong layout.
 
-    SongPacks store stems under ``<pack>/audio/stems/<inst>.wav`` and the
+    AuralSongs store stems under ``<pack>/audio/stems/<inst>.wav`` and the
     full mix at ``<pack>/audio/mix.{wav,mp3,ogg}``. We walk up from the
     stem and look for the first existing mix file.
     """
@@ -292,7 +292,7 @@ def transcribe_consensus(
 
     Falls back to a plain stem-only transcription if ``mix_path`` can't be
     located (caller passed ``None`` and the stem isn't in a standard
-    SongPack layout). Single PianoTranscription instance is reused across
+    AuralSong layout). Single PianoTranscription instance is reused across
     the two passes to avoid reloading the 165 MB checkpoint.
     """
     try:

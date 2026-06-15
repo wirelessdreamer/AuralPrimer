@@ -9,8 +9,7 @@ use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
 mod audio_decode;
 pub mod audio_engine;
-pub mod demo_songpack;
-pub mod proprietary_archive_import;
+pub mod demo_auralsong;
 pub mod ingest_sidecar;
 mod midi_clock;
 mod midi_clock_input;
@@ -21,15 +20,15 @@ pub mod raw_song;
 pub mod stem_midi;
 pub mod wav_mix;
 
-// Shared SongPack contract logic (manifest parsing + songs-folder watcher).
+// Shared AuralSong contract logic (manifest parsing + songs-folder watcher).
 // The watcher is re-exported under the `songs_watch` path so the wiring mirrors
 // the game shell.
-use songpack_core::manifest::{
+use auralsong_core::manifest::{
     parse_manifest_json, read_dir_manifest, read_dir_manifest_raw, read_zip_manifest,
-    read_zip_manifest_raw, ManifestSummary, SongPackScanEntry,
+    read_zip_manifest_raw, ManifestSummary, AuralSongScanEntry,
 };
-use songpack_core::songs_watch;
-use songpack_core::songs_watch::SongsWatchState;
+use auralsong_core::songs_watch;
+use auralsong_core::songs_watch::SongsWatchState;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct Settings {
@@ -51,25 +50,12 @@ struct Settings {
     #[serde(default)]
     midi_output_allow_sysex: bool,
 
-    // --- Import sources ---
-    #[serde(default)]
-    proprietary_archive_import_data_root: Option<String>,
-
-    #[serde(default)]
-    proprietary_archive_import_external_decoder_cli_path: Option<String>,
-
     // --- Native audio output ---
     #[serde(default)]
     native_audio_output_host: Option<native_audio::NativeAudioHostSelection>,
 
     #[serde(default)]
     native_audio_output_device: Option<native_audio::NativeAudioDeviceSelection>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct proprietary_archive_importSettings {
-    pub data_root: Option<String>,
-    pub external_decoder_cli_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,7 +68,7 @@ struct SongsFolderPaths {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SongPackDetails {
+pub struct AuralSongDetails {
     pub container_path: String,
     pub kind: String,
     pub ok: bool,
@@ -124,7 +110,7 @@ pub struct MidiBlob {
 }
 
 #[derive(Debug, Serialize)]
-pub struct LoadedSongPackAudioInfo {
+pub struct LoadedAuralSongAudioInfo {
     pub mime: String,
     pub duration_sec: f64,
 }
@@ -228,7 +214,9 @@ fn build_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
         .iter()
         .find(|window| window.label == "main")
         .cloned()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "missing main window config"))?;
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "missing main window config")
+        })?;
 
     let mut builder = WebviewWindowBuilder::from_config(app.handle(), &window_config)?;
     if let Some(webview_data_dir) = resolve_webview_data_dir(&window_config.label) {
@@ -327,18 +315,18 @@ fn dir_list_charts(root: &Path) -> Vec<String> {
     out
 }
 
-fn zip_has_file(songpack_zip: &Path, rel: &str) -> Result<bool, String> {
-    let f = fs::File::open(songpack_zip)
-        .map_err(|e| format!("open {}: {e}", songpack_zip.display()))?;
+fn zip_has_file(auralsong_zip: &Path, rel: &str) -> Result<bool, String> {
+    let f = fs::File::open(auralsong_zip)
+        .map_err(|e| format!("open {}: {e}", auralsong_zip.display()))?;
     let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip open: {e}"))?;
     // Ensure the ZipFile temporary is dropped before `archive` is dropped.
     let exists = archive.by_name(rel).is_ok();
     Ok(exists)
 }
 
-fn zip_list_charts(songpack_zip: &Path) -> Result<Vec<String>, String> {
-    let f = fs::File::open(songpack_zip)
-        .map_err(|e| format!("open {}: {e}", songpack_zip.display()))?;
+fn zip_list_charts(auralsong_zip: &Path) -> Result<Vec<String>, String> {
+    let f = fs::File::open(auralsong_zip)
+        .map_err(|e| format!("open {}: {e}", auralsong_zip.display()))?;
     let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip open: {e}"))?;
     let mut out: Vec<String> = vec![];
     for i in 0..archive.len() {
@@ -354,14 +342,14 @@ fn zip_list_charts(songpack_zip: &Path) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-fn read_dir_audio(songpack_dir: &Path, rel: &str) -> Result<Vec<u8>, String> {
-    let p = songpack_dir.join(rel);
+fn read_dir_audio(auralsong_dir: &Path, rel: &str) -> Result<Vec<u8>, String> {
+    let p = auralsong_dir.join(rel);
     fs::read(&p).map_err(|e| format!("read {}: {e}", p.display()))
 }
 
-fn read_zip_audio(songpack_zip: &Path, rel: &str) -> Result<Vec<u8>, String> {
-    let f = fs::File::open(songpack_zip)
-        .map_err(|e| format!("open {}: {e}", songpack_zip.display()))?;
+fn read_zip_audio(auralsong_zip: &Path, rel: &str) -> Result<Vec<u8>, String> {
+    let f = fs::File::open(auralsong_zip)
+        .map_err(|e| format!("open {}: {e}", auralsong_zip.display()))?;
     let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip open: {e}"))?;
     let mut file = archive
         .by_name(rel)
@@ -373,14 +361,14 @@ fn read_zip_audio(songpack_zip: &Path, rel: &str) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-fn read_dir_text(songpack_dir: &Path, rel: &str) -> Result<String, String> {
-    let p = songpack_dir.join(rel);
+fn read_dir_text(auralsong_dir: &Path, rel: &str) -> Result<String, String> {
+    let p = auralsong_dir.join(rel);
     fs::read_to_string(&p).map_err(|e| format!("read {}: {e}", p.display()))
 }
 
-fn read_zip_text(songpack_zip: &Path, rel: &str) -> Result<String, String> {
-    let f = fs::File::open(songpack_zip)
-        .map_err(|e| format!("open {}: {e}", songpack_zip.display()))?;
+fn read_zip_text(auralsong_zip: &Path, rel: &str) -> Result<String, String> {
+    let f = fs::File::open(auralsong_zip)
+        .map_err(|e| format!("open {}: {e}", auralsong_zip.display()))?;
     let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip open: {e}"))?;
     let mut file = archive
         .by_name(rel)
@@ -391,7 +379,7 @@ fn read_zip_text(songpack_zip: &Path, rel: &str) -> Result<String, String> {
     Ok(raw)
 }
 
-fn unzip_songpack_to_dir(zip_path: &Path, dst_dir: &Path) -> Result<(), String> {
+fn unzip_auralsong_to_dir(zip_path: &Path, dst_dir: &Path) -> Result<(), String> {
     let f = fs::File::open(zip_path).map_err(|e| format!("open {}: {e}", zip_path.display()))?;
     let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip open: {e}"))?;
 
@@ -433,10 +421,10 @@ fn unzip_songpack_to_dir(zip_path: &Path, dst_dir: &Path) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn convert_songpack_to_directory(app: AppHandle, container_path: String) -> Result<String, String> {
+fn convert_auralsong_to_directory(app: AppHandle, container_path: String) -> Result<String, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
 
     // Already a directory.
@@ -448,7 +436,7 @@ fn convert_songpack_to_directory(app: AppHandle, container_path: String) -> Resu
     let name = p
         .file_name()
         .and_then(|s| s.to_str())
-        .ok_or_else(|| "invalid songpack filename".to_string())?;
+        .ok_or_else(|| "invalid auralsong filename".to_string())?;
 
     let base = songs_folder.join(name);
     let dst = if !base.exists() {
@@ -458,7 +446,7 @@ fn convert_songpack_to_directory(app: AppHandle, container_path: String) -> Resu
         let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("song");
         let mut idx = 1;
         loop {
-            let candidate = songs_folder.join(format!("{}_dir{}.songpack", stem, idx));
+            let candidate = songs_folder.join(format!("{}_dir{}.auralsong", stem, idx));
             if !candidate.exists() {
                 break candidate;
             }
@@ -469,7 +457,7 @@ fn convert_songpack_to_directory(app: AppHandle, container_path: String) -> Resu
         }
     };
 
-    unzip_songpack_to_dir(&p, &dst)?;
+    unzip_auralsong_to_dir(&p, &dst)?;
     Ok(dst.to_string_lossy().to_string())
 }
 
@@ -830,8 +818,11 @@ fn native_audio_set_output_device(
     if let Some((sample_rate_hz, channels)) = maybe_engine_cfg {
         let target_sample_rate_hz = match normalized.as_ref() {
             Some(sel) if sel.sample_rate_hz > 0 => sel.sample_rate_hz,
-            _ => native_audio::preferred_output_sample_rate_for_selection(host_selection.clone(), None)
-                .unwrap_or(sample_rate_hz),
+            _ => native_audio::preferred_output_sample_rate_for_selection(
+                host_selection.clone(),
+                None,
+            )
+            .unwrap_or(sample_rate_hz),
         };
         let new_engine = native_audio::NativeAudioHandle::new_with_output_device(
             target_sample_rate_hz,
@@ -958,110 +949,7 @@ fn native_audio_shutdown(state: tauri::State<NativeAudioState>) -> Result<(), St
 }
 
 // -----------------
-// proprietary_archive_import-DE importer (MVP)
-// -----------------
-
-#[tauri::command]
-fn proprietary_archive_import_preflight(
-    app: AppHandle,
-    data_root: Option<String>,
-    external_decoder_cli_path: Option<String>,
-) -> Result<proprietary_archive_import::proprietary_archive_importPreflight, String> {
-    let root = data_root.unwrap_or(get_proprietary_archive_import_data_root(&app)?);
-    let vgm = if external_decoder_cli_path.is_some() {
-        external_decoder_cli_path
-    } else {
-        get_proprietary_archive_import_external_decoder_path(&app)?
-    };
-    Ok(proprietary_archive_import::preflight(Path::new(&root), vgm))
-}
-
-#[tauri::command]
-fn get_proprietary_archive_import_settings(app: AppHandle) -> Result<proprietary_archive_importSettings, String> {
-    let paths = get_paths(&app)?;
-    let settings = load_settings(&paths);
-    Ok(proprietary_archive_importSettings {
-        data_root: settings.proprietary_archive_import_data_root,
-        external_decoder_cli_path: settings.proprietary_archive_import_external_decoder_cli_path,
-    })
-}
-
-#[tauri::command]
-fn set_proprietary_archive_import_settings(
-    app: AppHandle,
-    data_root: Option<String>,
-    external_decoder_cli_path: Option<String>,
-) -> Result<(), String> {
-    let paths = get_paths(&app)?;
-    let mut settings = load_settings(&paths);
-    settings.proprietary_archive_import_data_root = data_root;
-    settings.proprietary_archive_import_external_decoder_cli_path = external_decoder_cli_path;
-    save_settings(&paths, &settings)
-}
-
-fn get_proprietary_archive_import_data_root(app: &AppHandle) -> Result<String, String> {
-    let paths = get_paths(app)?;
-    let settings = load_settings(&paths);
-    settings
-        .proprietary_archive_import_data_root
-        .ok_or_else(|| "proprietary_archive_import data root not configured".to_string())
-}
-
-fn get_proprietary_archive_import_external_decoder_path(app: &AppHandle) -> Result<Option<String>, String> {
-    let paths = get_paths(app)?;
-    let settings = load_settings(&paths);
-    Ok(settings.proprietary_archive_import_external_decoder_cli_path)
-}
-
-#[tauri::command]
-async fn proprietary_archive_import_scan_dlc(
-    app: AppHandle,
-    data_root: Option<String>,
-) -> Result<Vec<proprietary_archive_import::proprietary_archive_importSongEntry>, String> {
-    let root = data_root.unwrap_or(get_proprietary_archive_import_data_root(&app)?);
-    run_blocking_command("proprietary_archive_import scan", move || proprietary_archive_import::scan_dlc(Path::new(&root))).await
-}
-
-#[tauri::command]
-async fn proprietary_archive_import_import_preview(
-    app: AppHandle,
-    checksum: String,
-    data_root: Option<String>,
-    external_decoder_cli_path: Option<String>,
-) -> Result<proprietary_archive_import::proprietary_archive_importImportResult, String> {
-    let root = data_root.unwrap_or(get_proprietary_archive_import_data_root(&app)?);
-    let vgm = if external_decoder_cli_path.is_some() {
-        external_decoder_cli_path
-    } else {
-        get_proprietary_archive_import_external_decoder_path(&app)?
-    };
-    run_blocking_command("proprietary_archive_import import preview", move || {
-        proprietary_archive_import::import_preview_to_songpack(&app, Path::new(&root), &checksum, vgm)
-    })
-    .await
-}
-
-#[tauri::command]
-async fn proprietary_archive_import_import_all(
-    app: AppHandle,
-    data_root: Option<String>,
-    external_decoder_cli_path: Option<String>,
-) -> Result<Vec<proprietary_archive_import::proprietary_archive_importImportAllResult>, String> {
-    let root = data_root.unwrap_or(get_proprietary_archive_import_data_root(&app)?);
-    let vgm = if external_decoder_cli_path.is_some() {
-        external_decoder_cli_path
-    } else {
-        get_proprietary_archive_import_external_decoder_path(&app)?
-    };
-    let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
-    run_blocking_command("proprietary_archive_import import all", move || {
-        proprietary_archive_import::import_all_to_folder(Some(&app), Path::new(&root), &songs_folder, vgm)
-    })
-    .await
-}
-
-// -----------------
-// Stem+MIDI SongPack creator
+// Stem+MIDI AuralSong creator
 // -----------------
 
 #[tauri::command]
@@ -1074,18 +962,18 @@ async fn midi_list_tracks(path: String) -> Result<Vec<stem_midi::MidiTrackInfo>,
 }
 
 #[tauri::command]
-async fn stem_midi_create_songpack(
+async fn stem_midi_create_auralsong(
     app: AppHandle,
     req: stem_midi::StemMidiCreateRequest,
 ) -> Result<stem_midi::StemMidiCreateResult, String> {
     let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
     run_blocking_command("stem+midi import", move || {
-        stem_midi::create_songpack(req, &songs_folder)
+        stem_midi::create_auralsong(req, &songs_folder)
     })
     .await
 }
 
-fn sanitize_songpack_component(raw: &str) -> String {
+fn sanitize_auralsong_component(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     for ch in raw.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -1105,7 +993,7 @@ fn sanitize_songpack_component(raw: &str) -> String {
     }
 }
 
-fn default_ingest_out_songpack_path(app: &AppHandle, source_path: &str) -> Result<String, String> {
+fn default_ingest_out_auralsong_path(app: &AppHandle, source_path: &str) -> Result<String, String> {
     let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
     fs::create_dir_all(&songs_folder).map_err(|e| format!("mkdir songs folder: {e}"))?;
 
@@ -1114,12 +1002,12 @@ fn default_ingest_out_songpack_path(app: &AppHandle, source_path: &str) -> Resul
         .file_stem()
         .and_then(|x| x.to_str())
         .unwrap_or("imported_song");
-    let base = sanitize_songpack_component(stem);
+    let base = sanitize_auralsong_component(stem);
 
-    let mut candidate = songs_folder.join(format!("ingest_{base}.songpack"));
+    let mut candidate = songs_folder.join(format!("ingest_{base}.auralsong"));
     if candidate.exists() {
         for i in 2..=9_999 {
-            let next = songs_folder.join(format!("ingest_{base}_{i}.songpack"));
+            let next = songs_folder.join(format!("ingest_{base}_{i}.auralsong"));
             if !next.exists() {
                 candidate = next;
                 break;
@@ -1139,22 +1027,19 @@ async fn ingest_import(
     mut req: ingest_sidecar::IngestImportRequest,
 ) -> Result<ingest_sidecar::IngestImportResult, String> {
     let out_missing = req
-        .out_songpack_path
+        .out_auralsong_path
         .as_ref()
         .map(|x| x.trim().is_empty())
         .unwrap_or(true);
     if out_missing {
-        req.out_songpack_path = Some(default_ingest_out_songpack_path(&app, &req.source_path)?);
+        req.out_auralsong_path = Some(default_ingest_out_auralsong_path(&app, &req.source_path)?);
     }
 
     // Capture the paths before `req` moves into the blocking closure -- we
     // need them after the sidecar returns to preserve any reference MIDI
     // the user supplied (Suno gameplay export being the canonical case).
     let source_path = req.source_path.clone();
-    let out_songpack_path = req
-        .out_songpack_path
-        .clone()
-        .unwrap_or_default();
+    let out_auralsong_path = req.out_auralsong_path.clone().unwrap_or_default();
 
     let mut result = run_blocking_command("analysis import", move || {
         ingest_sidecar::run_ingest_import_with_progress(req, Some(&app))
@@ -1162,27 +1047,27 @@ async fn ingest_import(
     .await?;
 
     // Best-effort: when the sidecar succeeded on a folder source, copy any
-    // user-supplied MIDI from the source folder into the SongPack's
+    // user-supplied MIDI from the source folder into the AuralSong's
     // features/midi/ tree and record them in assets.midi.reference_paths.
     // The Refine workspace will render these as a guide layer alongside the
     // sidecar's per-instrument transcription candidates. A failure here
     // doesn't invalidate the import -- log it on the result and move on.
-    if result.ok && !out_songpack_path.is_empty() {
+    if result.ok && !out_auralsong_path.is_empty() {
         let source = std::path::Path::new(&source_path);
-        let songpack = std::path::Path::new(&out_songpack_path);
-        match raw_song::preserve_source_midis_into_songpack(source, songpack) {
+        let auralsong = std::path::Path::new(&out_auralsong_path);
+        match raw_song::preserve_source_midis_into_auralsong(source, auralsong) {
             Ok(rel_paths) => {
                 result.preserved_reference_midis = rel_paths;
             }
             Err(e) => {
                 // Surface the failure to the user via stderr tail without
-                // failing the import -- the SongPack is still valid.
+                // failing the import -- the AuralSong is still valid.
                 if !result.stderr.is_empty() {
                     result.stderr.push('\n');
                 }
-                result.stderr.push_str(&format!(
-                    "[reference-midi-preserve] {e}"
-                ));
+                result
+                    .stderr
+                    .push_str(&format!("[reference-midi-preserve] {e}"));
             }
         }
     }
@@ -1234,13 +1119,13 @@ async fn import_raw_song_folder(
 }
 
 #[tauri::command]
-fn scan_songpacks(app: AppHandle) -> Result<Vec<SongPackScanEntry>, String> {
+fn scan_auralsongs(app: AppHandle) -> Result<Vec<AuralSongScanEntry>, String> {
     let folder = get_songs_folder(app.clone())?;
     let root = PathBuf::from(folder);
 
     // Ensure the songs folder exists on first run.
     if let Err(e) = fs::create_dir_all(&root) {
-        return Ok(vec![SongPackScanEntry {
+        return Ok(vec![AuralSongScanEntry {
             container_path: root.to_string_lossy().to_string(),
             kind: "songs_folder".to_string(),
             ok: false,
@@ -1252,14 +1137,14 @@ fn scan_songpacks(app: AppHandle) -> Result<Vec<SongPackScanEntry>, String> {
     // Ensure a tiny built-in demo song exists so the app is playable even
     // before the user imports anything.
     // Best-effort: failure should not prevent listing user songs.
-    let _ = demo_songpack::ensure_demo_songpack(&root);
+    let _ = demo_auralsong::ensure_demo_auralsong(&root);
 
-    let mut out: Vec<SongPackScanEntry> = vec![];
+    let mut out: Vec<AuralSongScanEntry> = vec![];
 
     let entries = match fs::read_dir(&root) {
         Ok(e) => e,
         Err(e) => {
-            return Ok(vec![SongPackScanEntry {
+            return Ok(vec![AuralSongScanEntry {
                 container_path: root.to_string_lossy().to_string(),
                 kind: "songs_folder".to_string(),
                 ok: false,
@@ -1272,21 +1157,21 @@ fn scan_songpacks(app: AppHandle) -> Result<Vec<SongPackScanEntry>, String> {
     for entry in entries.flatten() {
         let p = entry.path();
         let file_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let is_songpack = file_name.ends_with(".songpack");
-        if !is_songpack {
+        let is_auralsong = file_name.ends_with(".auralsong");
+        if !is_auralsong {
             continue;
         }
 
         if p.is_dir() {
             match read_dir_manifest(&p) {
-                Ok(m) => out.push(SongPackScanEntry {
+                Ok(m) => out.push(AuralSongScanEntry {
                     container_path: p.to_string_lossy().to_string(),
                     kind: "directory".to_string(),
                     ok: true,
                     manifest: Some(m),
                     error: None,
                 }),
-                Err(e) => out.push(SongPackScanEntry {
+                Err(e) => out.push(AuralSongScanEntry {
                     container_path: p.to_string_lossy().to_string(),
                     kind: "directory".to_string(),
                     ok: false,
@@ -1296,14 +1181,14 @@ fn scan_songpacks(app: AppHandle) -> Result<Vec<SongPackScanEntry>, String> {
             }
         } else {
             match read_zip_manifest(&p) {
-                Ok(m) => out.push(SongPackScanEntry {
+                Ok(m) => out.push(AuralSongScanEntry {
                     container_path: p.to_string_lossy().to_string(),
                     kind: "zip".to_string(),
                     ok: true,
                     manifest: Some(m),
                     error: None,
                 }),
-                Err(e) => out.push(SongPackScanEntry {
+                Err(e) => out.push(AuralSongScanEntry {
                     container_path: p.to_string_lossy().to_string(),
                     kind: "zip".to_string(),
                     ok: false,
@@ -1318,11 +1203,11 @@ fn scan_songpacks(app: AppHandle) -> Result<Vec<SongPackScanEntry>, String> {
 }
 
 #[tauri::command]
-fn read_songpack_audio(container_path: String) -> Result<AudioBlob, String> {
+fn read_auralsong_audio(container_path: String) -> Result<AudioBlob, String> {
     let p = PathBuf::from(&container_path);
 
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
 
     // Prefer OGG if present, otherwise MP3, otherwise WAV.
@@ -1361,14 +1246,14 @@ fn read_songpack_audio(container_path: String) -> Result<AudioBlob, String> {
 }
 
 #[tauri::command]
-fn native_audio_load_songpack_audio(
+fn native_audio_load_auralsong_audio(
     state: tauri::State<NativeAudioState>,
     container_path: String,
-) -> Result<LoadedSongPackAudioInfo, String> {
+) -> Result<LoadedAuralSongAudioInfo, String> {
     let p = PathBuf::from(&container_path);
 
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
 
     // Prefer OGG if present, otherwise MP3, otherwise WAV.
@@ -1418,20 +1303,20 @@ fn native_audio_load_songpack_audio(
         e.load_pcm16(decoded.sample_rate_hz, decoded.channels, decoded.data)
     })?;
 
-    Ok(LoadedSongPackAudioInfo {
+    Ok(LoadedAuralSongAudioInfo {
         mime: mime.to_string(),
         duration_sec,
     })
 }
 
 #[tauri::command]
-fn read_songpack_json(
+fn read_auralsong_json(
     container_path: String,
     rel_path: String,
 ) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
     if !rel_path.starts_with("features/") {
         return Err("only features/* json is allowed".to_string());
@@ -1449,10 +1334,10 @@ fn read_songpack_json(
 }
 
 #[tauri::command]
-fn read_songpack_mid(container_path: String, rel_path: String) -> Result<MidiBlob, String> {
+fn read_auralsong_mid(container_path: String, rel_path: String) -> Result<MidiBlob, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
     if !rel_path.starts_with("features/") {
         return Err("only features/* is allowed".to_string());
@@ -1472,10 +1357,10 @@ fn read_songpack_mid(container_path: String, rel_path: String) -> Result<MidiBlo
 }
 
 #[tauri::command]
-fn read_songpack_charts(container_path: String) -> Result<serde_json::Value, String> {
+fn read_auralsong_charts(container_path: String) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
 
     let chart_paths = if p.is_dir() {
@@ -1500,17 +1385,17 @@ fn read_songpack_charts(container_path: String) -> Result<serde_json::Value, Str
 }
 
 #[tauri::command]
-fn write_songpack_lyrics_json(
+fn write_auralsong_lyrics_json(
     container_path: String,
     lyrics_json: serde_json::Value,
 ) -> Result<(), String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
     if !p.is_dir() {
         return Err(
-            "writing features is only supported for directory SongPacks (not .songpack zip files)"
+            "writing features is only supported for directory AuralSongs (not .auralsong zip files)"
                 .to_string(),
         );
     }
@@ -1526,7 +1411,7 @@ fn write_songpack_lyrics_json(
     Ok(())
 }
 
-/// Write an arbitrary `features/<…>.json` file into a directory SongPack.
+/// Write an arbitrary `features/<…>.json` file into a directory AuralSong.
 ///
 /// Used by the Studio Refine workspace to persist user picks
 /// (`features/refinement.<instrument>.json`) and -- in future -- any
@@ -1534,22 +1419,22 @@ fn write_songpack_lyrics_json(
 /// safe: `rel_path` must start with `features/`, must not contain `..`,
 /// must end with `.json`.
 ///
-/// Directory SongPacks only -- writing into a `.songpack` zip would
+/// Directory AuralSongs only -- writing into a `.auralsong` zip would
 /// require re-archiving; the workspace already requires a directory
-/// SongPack for the same reason.
+/// AuralSong for the same reason.
 #[tauri::command]
-fn write_songpack_features_json(
+fn write_auralsong_features_json(
     container_path: String,
     rel_path: String,
     value: serde_json::Value,
 ) -> Result<(), String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".songpack") {
-        return Err("path does not end with .songpack".to_string());
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
     }
     if !p.is_dir() {
         return Err(
-            "writing features is only supported for directory SongPacks (not .songpack zip files)"
+            "writing features is only supported for directory AuralSongs (not .auralsong zip files)"
                 .to_string(),
         );
     }
@@ -1567,18 +1452,18 @@ fn write_songpack_features_json(
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
     }
-    let raw =
-        serde_json::to_string_pretty(&value).map_err(|e| format!("serialize features json: {e}"))?;
+    let raw = serde_json::to_string_pretty(&value)
+        .map_err(|e| format!("serialize features json: {e}"))?;
     fs::write(&out_path, raw).map_err(|e| format!("write {}: {e}", out_path.display()))?;
     Ok(())
 }
 
 #[tauri::command]
-fn get_songpack_details(container_path: String) -> Result<SongPackDetails, String> {
+fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, String> {
     let p = PathBuf::from(&container_path);
 
-    if !container_path.ends_with(".songpack") {
-        return Ok(SongPackDetails {
+    if !container_path.ends_with(".auralsong") {
+        return Ok(AuralSongDetails {
             container_path,
             kind: "unknown".to_string(),
             ok: false,
@@ -1594,16 +1479,16 @@ fn get_songpack_details(container_path: String) -> Result<SongPackDetails, Strin
             has_mix_ogg: false,
             has_mix_wav: false,
             charts: vec![],
-            error: Some("path does not end with .songpack".to_string()),
+            error: Some("path does not end with .auralsong".to_string()),
         });
     }
 
     if p.is_dir() {
-        // Directory SongPack
+        // Directory AuralSong
         let manifest_raw = match read_dir_manifest_raw(&p) {
             Ok(v) => Some(v),
             Err(e) => {
-                return Ok(SongPackDetails {
+                return Ok(AuralSongDetails {
                     container_path,
                     kind: "directory".to_string(),
                     ok: false,
@@ -1633,7 +1518,7 @@ fn get_songpack_details(container_path: String) -> Result<SongPackDetails, Strin
             Err(_) => None,
         };
 
-        Ok(SongPackDetails {
+        Ok(AuralSongDetails {
             container_path,
             kind: "directory".to_string(),
             ok: true,
@@ -1656,11 +1541,11 @@ fn get_songpack_details(container_path: String) -> Result<SongPackDetails, Strin
             error: None,
         })
     } else {
-        // Zip SongPack
+        // Zip AuralSong
         let manifest_raw = match read_zip_manifest_raw(&p) {
             Ok(v) => Some(v),
             Err(e) => {
-                return Ok(SongPackDetails {
+                return Ok(AuralSongDetails {
                     container_path,
                     kind: "zip".to_string(),
                     ok: false,
@@ -1694,7 +1579,7 @@ fn get_songpack_details(container_path: String) -> Result<SongPackDetails, Strin
             }
         };
 
-        Ok(SongPackDetails {
+        Ok(AuralSongDetails {
             container_path,
             kind: "zip".to_string(),
             ok: true,
@@ -1995,7 +1880,7 @@ pub fn run() {
             native_audio_set_output_device_and_persist,
             native_audio_load_wav_bytes,
             native_audio_load_audio_bytes,
-            native_audio_load_songpack_audio,
+            native_audio_load_auralsong_audio,
             native_audio_play,
             native_audio_pause,
             native_audio_stop,
@@ -2004,31 +1889,24 @@ pub fn run() {
             native_audio_set_playback_rate,
             native_audio_get_state,
             native_audio_shutdown,
-            // proprietary_archive_import
-            get_proprietary_archive_import_settings,
-            set_proprietary_archive_import_settings,
-            proprietary_archive_import_preflight,
-            proprietary_archive_import_scan_dlc,
-            proprietary_archive_import_import_preview,
-            proprietary_archive_import_import_all,
             // stem+midi
             midi_list_tracks,
-            stem_midi_create_songpack,
+            stem_midi_create_auralsong,
             ingest_import,
             ingest_runtime_check,
             ingest_refine_candidates,
             inspect_raw_song_folder,
             import_raw_song_folder,
-            scan_songpacks,
-            get_songpack_details,
-            read_songpack_audio,
-            read_songpack_json,
-            read_songpack_mid,
-            read_songpack_charts,
-            write_songpack_lyrics_json,
-            write_songpack_features_json,
+            scan_auralsongs,
+            get_auralsong_details,
+            read_auralsong_audio,
+            read_auralsong_json,
+            read_auralsong_mid,
+            read_auralsong_charts,
+            write_auralsong_lyrics_json,
+            write_auralsong_features_json,
             read_text_file,
-            convert_songpack_to_directory,
+            convert_auralsong_to_directory,
             // plugins
             get_visualizers_folder,
             set_visualizers_folder_override,

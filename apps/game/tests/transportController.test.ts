@@ -189,24 +189,24 @@ describe("TransportController", () => {
     tc.dispose();
   });
 
-  it("loadAudioFromSongPack throws when timebase does not support it", async () => {
+  it("loadAudioFromAuralSong throws when timebase does not support it", async () => {
     const tb = new FakeTimebase();
     const tc = new TransportController(tb);
-    await expect(tc.loadAudioFromSongPack("C:/songs/x.songpack")).rejects.toThrow(
-      "timebase does not support loadFromSongPack()"
+    await expect(tc.loadAudioFromAuralSong("C:/songs/x.auralsong")).rejects.toThrow(
+      "timebase does not support loadFromAuralSong()"
     );
     tc.dispose();
   });
 
-  it("loadAudioFromSongPack delegates when supported", async () => {
+  it("loadAudioFromAuralSong delegates when supported", async () => {
     const tb = new FakeTimebase() as FakeTimebase & {
-      loadFromSongPack: (p: string) => Promise<{ mime: string; durationSec: number }>;
+      loadFromAuralSong: (p: string) => Promise<{ mime: string; durationSec: number }>;
     };
-    tb.loadFromSongPack = vi.fn(async (_p: string) => ({ mime: "audio/wav", durationSec: 3 }));
+    tb.loadFromAuralSong = vi.fn(async (_p: string) => ({ mime: "audio/wav", durationSec: 3 }));
     const tc = new TransportController(tb);
 
-    await tc.loadAudioFromSongPack("C:/songs/x.songpack");
-    expect(tb.loadFromSongPack).toHaveBeenCalled();
+    await tc.loadAudioFromAuralSong("C:/songs/x.auralsong");
+    expect(tb.loadFromAuralSong).toHaveBeenCalled();
     expect(tc.getState().t).toBe(0);
     expect(tc.getState().isPlaying).toBe(false);
     tc.dispose();
