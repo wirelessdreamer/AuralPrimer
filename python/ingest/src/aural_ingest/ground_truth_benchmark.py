@@ -65,11 +65,15 @@ def get_drum_algorithm(algorithm_id: str) -> DrumTranscribeFn:
     return adapter
 
 
-def get_melodic_algorithm(algorithm_id: str) -> MelodicTranscribeFn:
+def get_melodic_algorithm(algorithm_id: str) -> Callable[[Path, str], list[MelodicNote]]:
     """Resolve a melodic algorithm id to a callable.
 
-    Melodic methods in the registry take ``(stem_path, instrument='...')``;
-    we wire instrument from the case at call time.
+    Returns a function with signature ``(audio_path, instrument) ->
+    list[MelodicNote]``. The instrument string flows through to the
+    underlying transcribe() so production's per-instrument frequency-
+    range gating (INSTRUMENT_FREQ_RANGES) actually fires -- without
+    this, every bass case would use the wider "melodic" range and we'd
+    see spurious octave-up matches that a real bass stem run wouldn't.
     """
     import importlib
 
@@ -81,12 +85,9 @@ def get_melodic_algorithm(algorithm_id: str) -> MelodicTranscribeFn:
     if fn is None:
         raise ValueError(f"algorithm {algorithm_id!r} has no transcribe() entry point")
 
-    def adapter(audio_path: Path) -> list[MelodicNote]:
-        # The registry's contract is ``transcribe(path, instrument=...)``;
-        # default to "melodic" when an algorithm doesn't expose an
-        # instrument knob (older modules).
+    def adapter(audio_path: Path, instrument: str) -> list[MelodicNote]:
         try:
-            return list(fn(audio_path, instrument="melodic"))
+            return list(fn(audio_path, instrument=instrument))
         except TypeError:
             return list(fn(audio_path))
 
@@ -433,12 +434,17 @@ def run_sweep(
     routine and the algorithm-resolution helper.
     """
     if family == "drums":
-        resolve = get_drum_algorithm
+        resolve_drum = get_drum_algorithm
+        drum_fns: dict[str, DrumTranscribeFn] = {
+            alg: resolve_drum(alg) for alg in algorithms
+        }
+        melodic_fns: dict[str, Callable[[Path, str], list[MelodicNote]]] = {}
         score = lambda case, pred, alg, rt: score_drum_case(  # noqa: E731
             case, pred, algorithm_id=alg, runtime_sec=rt, tolerance_sec=tolerance_sec
         )
     elif family == "melodic":
-        resolve = get_melodic_algorithm
+        drum_fns = {}
+        melodic_fns = {alg: get_melodic_algorithm(alg) for alg in algorithms}
         score = lambda case, pred, alg, rt: score_melodic_case(  # noqa: E731
             case,
             pred,
@@ -450,15 +456,17 @@ def run_sweep(
     else:
         raise ValueError(f"unknown family: {family!r}")
 
-    algo_fns = {alg: resolve(alg) for alg in algorithms}
     all_scores: list[CaseScore] = []
     case_idx = 0
     for case in cases:
         case_idx += 1
-        for alg, fn in algo_fns.items():
+        for alg in algorithms:
             start = time.perf_counter()
             try:
-                pred = fn(case.audio_path)
+                if family == "drums":
+                    pred = drum_fns[alg](case.audio_path)
+                else:
+                    pred = melodic_fns[alg](case.audio_path, case.instrument)
                 rt = time.perf_counter() - start
                 cs = score(case, pred, alg, rt)
             except Exception as exc:
