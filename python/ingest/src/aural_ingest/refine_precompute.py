@@ -32,6 +32,38 @@ Output: ``features/refine_candidates.<instrument>.json`` matching
 
 Editor-time only. The runtime game never reads this file; it only feeds
 the Studio Refine workspace.
+
+Per-instrument palette extension plan (v2)
+------------------------------------------
+
+The four-candidate palette above is keys-specific: all four runners call
+``piano_pti`` because that's the production keys pipeline. For drums,
+bass, and guitar the equivalent palette would need a per-instrument
+dispatch — different transcription families produce candidates that are
+actually distinct, not just denoise/consensus variants of the same
+algorithm.
+
+The 2026-06-14 ground-truth benchmark
+(``docs/research-ground-truth-benchmarks-2026-06-14.md``) surfaced three
+new variants that should land in those v2 palettes when added:
+
+- **drums**: ``librosa_superflux_dense`` (F1 0.102 → 0.153 on E-GMD,
+  +50%); should sit alongside ``combined_filter`` and one of the
+  multiband decoders. Demucs-stem head-to-head still needed before
+  flipping the production drum-stem default.
+- **bass**: ``melodic_pyin_bass_strict`` (F1 0.238 → 0.270 against
+  ``melodic_pyin`` on GuitarSet low strings, +13%, MAE 20ms → 13ms);
+  should sit alongside ``melodic_yin_octave_hps_fix`` and
+  ``melodic_adaptive`` in the bass palette. Currently appears in the
+  ``auto`` fallback chain as a late-stage option and in the
+  ``research_ab`` profile.
+- **guitar**: ``melodic_combined_guitar`` (recall +7%, precision -17%
+  vs ``melodic_combined`` on GuitarSet mic) — a precision/recall trade,
+  not an F1 win, so it ships as a workspace candidate rather than
+  changing the default. Currently appears in the default ``auto``
+  chain and in the ``research_ab`` profile for both guitar roles.
+
+The keys palette stays as-is until MAESTRO is added to the corpus.
 """
 
 from __future__ import annotations

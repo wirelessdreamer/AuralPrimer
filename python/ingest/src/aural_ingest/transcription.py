@@ -163,6 +163,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "basic_pitch",
                 "torchcrepe",
                 "pyin",
+                "melodic_pyin_bass_strict",
             ],
             "keys": [
                 "piano_auto",
@@ -187,6 +188,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "melodic_octave_fix",
                 "melodic_hpss_combined",
                 "melodic_combined",
+                "melodic_combined_guitar",
                 "basic_pitch",
                 "torchcrepe",
                 "pyin",
@@ -196,6 +198,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "melodic_adaptive",
                 "melodic_octave_fix",
                 "melodic_combined",
+                "melodic_combined_guitar",
                 "basic_pitch",
                 "torchcrepe",
                 "pyin",
@@ -1166,6 +1169,7 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         hpss_percussive,
         hybrid_kick_grid,
         librosa_superflux,
+        librosa_superflux_dense,
         mfcc_cepstral,
         multi_resolution,
         multi_resolution_template,
@@ -1189,6 +1193,7 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         "spectral_flux_multiband": spectral_flux_multiband.transcribe,
         "dsp_bandpass": dsp_bandpass.transcribe,
         "librosa_superflux": librosa_superflux.transcribe,
+        "librosa_superflux_dense": librosa_superflux_dense.transcribe,
         "spectral_template_multipass": spectral_template_multipass.transcribe,
         "spectral_template_with_grid": spectral_template_with_grid.transcribe,
         "multi_resolution": multi_resolution.transcribe,
@@ -1376,7 +1381,9 @@ def build_default_melodic_algorithm_registry(
     from aural_ingest.algorithms import (
         melodic_adaptive,
         melodic_basic_pitch,
+        melodic_combined_guitar,
         melodic_pyin,
+        melodic_pyin_bass_strict,
         melodic_combined,
         melodic_hpss_combined,
         melodic_octave_fix,
@@ -1548,6 +1555,12 @@ def build_default_melodic_algorithm_registry(
     def _combined(stem_path: Path) -> list[MelodicNote]:
         return melodic_combined.transcribe(stem_path, instrument=_inst)
 
+    def _combined_guitar(stem_path: Path) -> list[MelodicNote]:
+        return melodic_combined_guitar.transcribe(stem_path, instrument=_inst)
+
+    def _pyin_bass_strict(stem_path: Path) -> list[MelodicNote]:
+        return melodic_pyin_bass_strict.transcribe(stem_path, instrument=_inst)
+
     def _octave_fix(stem_path: Path) -> list[MelodicNote]:
         return melodic_octave_fix.transcribe(stem_path, instrument=_inst)
 
@@ -1716,10 +1729,12 @@ def build_default_melodic_algorithm_registry(
         "basic_pitch": _basic_pitch,
         "pyin": _pyin,
         "melodic_combined": _combined,
+        "melodic_combined_guitar": _combined_guitar,
         "melodic_octave_fix": _octave_fix,
         "melodic_yin_octave_hps_fix": _yin_octave_hps_fix,
         "melodic_adaptive": _adaptive,
         "melodic_yin_bass80": _yin_bass80,
+        "melodic_pyin_bass_strict": _pyin_bass_strict,
         "melodic_hpss_combined": _hpss_combined,
         "melodic_template_multipass": _template_multipass,
         "torchcrepe": _torchcrepe,
@@ -1904,6 +1919,7 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
                 "melodic_combined",
                 "basic_pitch",
                 "pyin",
+                "melodic_pyin_bass_strict",
             ]
         elif instrument == "keys":
             chain = [
