@@ -1,0 +1,495 @@
+{
+  "dataset": "piano_synthetic",
+  "family": "melodic",
+  "extra": {
+    "split": "test",
+    "variant": null,
+    "limit": null,
+    "tolerance_ms": 100.0,
+    "pitch_tolerance_semitones": 2
+  },
+  "case_count": 4,
+  "summary": {
+    "overall": {
+      "cases": 16,
+      "cases_ok": 4,
+      "cases_err": 12,
+      "tp": 116,
+      "fp": 1546,
+      "fn": 1,
+      "precision": 0.069795,
+      "recall": 0.991453,
+      "f1": 0.13041,
+      "onset_mae_sec": 0.03415,
+      "mean_runtime_sec": 0.2037
+    },
+    "per_algorithm": {
+      "piano_polyphonic": {
+        "cases": 4,
+        "cases_ok": 4,
+        "cases_err": 0,
+        "tp": 116,
+        "fp": 1546,
+        "fn": 1,
+        "precision": 0.069795,
+        "recall": 0.991453,
+        "f1": 0.13041,
+        "onset_mae_sec": 0.03415,
+        "mean_runtime_sec": 0.2037,
+        "buckets": {
+          "split": {
+            "synthetic": {
+              "cases": 4,
+              "cases_ok": 4,
+              "cases_err": 0,
+              "tp": 116,
+              "fp": 1546,
+              "fn": 1,
+              "precision": 0.069795,
+              "recall": 0.991453,
+              "f1": 0.13041,
+              "onset_mae_sec": 0.03415,
+              "mean_runtime_sec": 0.2037
+            }
+          },
+          "signal": {
+            "synth_additive_sine": {
+              "cases": 4,
+              "cases_ok": 4,
+              "cases_err": 0,
+              "tp": 116,
+              "fp": 1546,
+              "fn": 1,
+              "precision": 0.069795,
+              "recall": 0.991453,
+              "f1": 0.13041,
+              "onset_mae_sec": 0.03415,
+              "mean_runtime_sec": 0.2037
+            }
+          }
+        }
+      },
+      "piano_d3rm": {
+        "cases": 4,
+        "cases_ok": 0,
+        "cases_err": 4,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "onset_mae_sec": null,
+        "mean_runtime_sec": null,
+        "buckets": {
+          "split": {
+            "synthetic": {
+              "cases": 4,
+              "cases_ok": 0,
+              "cases_err": 4,
+              "tp": 0,
+              "fp": 0,
+              "fn": 0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": null
+            }
+          },
+          "signal": {
+            "synth_additive_sine": {
+              "cases": 4,
+              "cases_ok": 0,
+              "cases_err": 4,
+              "tp": 0,
+              "fp": 0,
+              "fn": 0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": null
+            }
+          }
+        }
+      },
+      "piano_hft": {
+        "cases": 4,
+        "cases_ok": 0,
+        "cases_err": 4,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "onset_mae_sec": null,
+        "mean_runtime_sec": null,
+        "buckets": {
+          "split": {
+            "synthetic": {
+              "cases": 4,
+              "cases_ok": 0,
+              "cases_err": 4,
+              "tp": 0,
+              "fp": 0,
+              "fn": 0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": null
+            }
+          },
+          "signal": {
+            "synth_additive_sine": {
+              "cases": 4,
+              "cases_ok": 0,
+              "cases_err": 4,
+              "tp": 0,
+              "fp": 0,
+              "fn": 0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": null
+            }
+          }
+        }
+      },
+      "piano_transkun": {
+        "cases": 4,
+        "cases_ok": 0,
+        "cases_err": 4,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "onset_mae_sec": null,
+        "mean_runtime_sec": null,
+        "buckets": {
+          "split": {
+            "synthetic": {
+              "cases": 4,
+              "cases_ok": 0,
+              "cases_err": 4,
+              "tp": 0,
+              "fp": 0,
+              "fn": 0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": null
+            }
+          },
+          "signal": {
+            "synth_additive_sine": {
+              "cases": 4,
+              "cases_ok": 0,
+              "cases_err": 4,
+              "tp": 0,
+              "fp": 0,
+              "fn": 0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": null
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "piano_synth:block_chords",
+      "algorithm_id": "piano_polyphonic",
+      "runtime_sec": 0.2066,
+      "tp": 23,
+      "fp": 282,
+      "fn": 1,
+      "precision": 0.07541,
+      "recall": 0.958333,
+      "f1": 0.139818,
+      "onset_mae_sec": 0.031951,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "block_chords"
+      }
+    },
+    {
+      "case_id": "piano_synth:block_chords",
+      "algorithm_id": "piano_d3rm",
+      "runtime_sec": 0.0193,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "block_chords"
+      },
+      "error": "piano_d3rm requires AURAL_PIANO_D3RM_COMMAND with {audio}, {midi}, {checkpoint} (and optionally {config}) placeholders"
+    },
+    {
+      "case_id": "piano_synth:block_chords",
+      "algorithm_id": "piano_hft",
+      "runtime_sec": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "block_chords"
+      },
+      "error": "piano_hft requires AURAL_PIANO_HFT_CHECKPOINT"
+    },
+    {
+      "case_id": "piano_synth:block_chords",
+      "algorithm_id": "piano_transkun",
+      "runtime_sec": 0.0007,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "block_chords"
+      },
+      "error": "piano_transkun requires the optional 'transkun' package in the ingest runtime"
+    },
+    {
+      "case_id": "piano_synth:scale_c_2oct",
+      "algorithm_id": "piano_polyphonic",
+      "runtime_sec": 0.271,
+      "tp": 29,
+      "fp": 507,
+      "fn": 0,
+      "precision": 0.054104,
+      "recall": 1.0,
+      "f1": 0.102655,
+      "onset_mae_sec": 0.036619,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "scale_c_2oct"
+      }
+    },
+    {
+      "case_id": "piano_synth:scale_c_2oct",
+      "algorithm_id": "piano_d3rm",
+      "runtime_sec": 0.0026,
+      "tp": 0,
+      "fp": 0,
+      "fn": 29,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "scale_c_2oct"
+      },
+      "error": "piano_d3rm requires AURAL_PIANO_D3RM_COMMAND with {audio}, {midi}, {checkpoint} (and optionally {config}) placeholders"
+    },
+    {
+      "case_id": "piano_synth:scale_c_2oct",
+      "algorithm_id": "piano_hft",
+      "runtime_sec": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 29,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "scale_c_2oct"
+      },
+      "error": "piano_hft requires AURAL_PIANO_HFT_CHECKPOINT"
+    },
+    {
+      "case_id": "piano_synth:scale_c_2oct",
+      "algorithm_id": "piano_transkun",
+      "runtime_sec": 0.0006,
+      "tp": 0,
+      "fp": 0,
+      "fn": 29,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "scale_c_2oct"
+      },
+      "error": "piano_transkun requires the optional 'transkun' package in the ingest runtime"
+    },
+    {
+      "case_id": "piano_synth:triad_arp_progression",
+      "algorithm_id": "piano_polyphonic",
+      "runtime_sec": 0.1752,
+      "tp": 32,
+      "fp": 307,
+      "fn": 0,
+      "precision": 0.094395,
+      "recall": 1.0,
+      "f1": 0.172507,
+      "onset_mae_sec": 0.036027,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "triad_arp_progression"
+      }
+    },
+    {
+      "case_id": "piano_synth:triad_arp_progression",
+      "algorithm_id": "piano_d3rm",
+      "runtime_sec": 0.0029,
+      "tp": 0,
+      "fp": 0,
+      "fn": 32,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "triad_arp_progression"
+      },
+      "error": "piano_d3rm requires AURAL_PIANO_D3RM_COMMAND with {audio}, {midi}, {checkpoint} (and optionally {config}) placeholders"
+    },
+    {
+      "case_id": "piano_synth:triad_arp_progression",
+      "algorithm_id": "piano_hft",
+      "runtime_sec": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 32,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "triad_arp_progression"
+      },
+      "error": "piano_hft requires AURAL_PIANO_HFT_CHECKPOINT"
+    },
+    {
+      "case_id": "piano_synth:triad_arp_progression",
+      "algorithm_id": "piano_transkun",
+      "runtime_sec": 0.0006,
+      "tp": 0,
+      "fp": 0,
+      "fn": 32,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "triad_arp_progression"
+      },
+      "error": "piano_transkun requires the optional 'transkun' package in the ingest runtime"
+    },
+    {
+      "case_id": "piano_synth:two_voice",
+      "algorithm_id": "piano_polyphonic",
+      "runtime_sec": 0.1619,
+      "tp": 32,
+      "fp": 450,
+      "fn": 0,
+      "precision": 0.06639,
+      "recall": 1.0,
+      "f1": 0.124514,
+      "onset_mae_sec": 0.032004,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "two_voice"
+      }
+    },
+    {
+      "case_id": "piano_synth:two_voice",
+      "algorithm_id": "piano_d3rm",
+      "runtime_sec": 0.0029,
+      "tp": 0,
+      "fp": 0,
+      "fn": 32,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "two_voice"
+      },
+      "error": "piano_d3rm requires AURAL_PIANO_D3RM_COMMAND with {audio}, {midi}, {checkpoint} (and optionally {config}) placeholders"
+    },
+    {
+      "case_id": "piano_synth:two_voice",
+      "algorithm_id": "piano_hft",
+      "runtime_sec": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 32,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "two_voice"
+      },
+      "error": "piano_hft requires AURAL_PIANO_HFT_CHECKPOINT"
+    },
+    {
+      "case_id": "piano_synth:two_voice",
+      "algorithm_id": "piano_transkun",
+      "runtime_sec": 0.0007,
+      "tp": 0,
+      "fp": 0,
+      "fn": 32,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "two_voice"
+      },
+      "error": "piano_transkun requires the optional 'transkun' package in the ingest runtime"
+    }
+  ]
+}
