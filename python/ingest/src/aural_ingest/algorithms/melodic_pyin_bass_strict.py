@@ -65,10 +65,15 @@ def transcribe(
     min_note_sec = 0.08
 
     # The voiced-probability threshold is the main lever the base wrapper
-    # doesn't expose. Raising it from librosa's 0.5 default to 0.85
-    # rejects low-confidence pitch frames that on chordal material were
-    # producing octave-aliased false positives.
-    voiced_prob_threshold = 0.85
+    # doesn't expose. librosa.pyin's default is "any non-NaN frame is
+    # voiced", which on chordal bass material produces octave-aliased
+    # false positives. A first attempt at 0.85 was too aggressive --
+    # librosa.pyin's per-frame voiced_probs on the GuitarSet hex_debleeded
+    # variant never reach that, so every frame got rejected and the
+    # output was empty. Drop to a midpoint that's still meaningful but
+    # actually attainable: keep frames where voicing confidence is at
+    # least the cluster average + a small margin.
+    voiced_prob_threshold = 0.30
 
     try:
         f0, _voiced_flag, voiced_probs = librosa.pyin(

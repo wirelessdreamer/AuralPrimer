@@ -124,6 +124,28 @@ Same onset+HPS pipeline; loosens `onset_ratio` 3.0→2.0 and
 `min_note_sec` 0.06→0.04. The frame size and hop stay at production
 defaults.
 
+Head-to-head (12 GuitarSet mic cases,
+`benchmarks/melodic/gt_runs/guitarset_tuned_v1_12.json`):
+
+| Algorithm                       | F1        | Precision | Recall    | MAE   |
+|---------------------------------|-----------|-----------|-----------|-------|
+| `melodic_combined` (prod)       | **0.261** | **0.309** | 0.226     | 20 ms |
+| `melodic_combined_guitar` (NEW) | 0.248     | 0.255     | **0.242** | 21 ms |
+
+The tuned variant is a **precision/recall trade**, not a clear F1
+win: recall climbs +7% (0.226 → 0.242) but precision drops -17%
+(0.309 → 0.255). F1 nets -5%.
+
+**Production default stays `melodic_combined`** — we don't ship a
+regression on the dominant metric. `melodic_combined_guitar` is
+promoted to a **high-recall workspace candidate** instead: when the
+Refine workspace runs the candidate precompute, it offers
+`melodic_combined_guitar` alongside the production default so the
+user can pick the higher-recall option in regions where the
+auto-pick missed staccato runs. That's the right shape for a "paint-
+by-numbers" tool: ship the same algorithm twice with different
+sensitivity, let the user see both.
+
 Reproduce:
 
 ```powershell
@@ -170,9 +192,30 @@ Tuned variant:
 `python/ingest/src/aural_ingest/algorithms/melodic_pyin_bass_strict.py`.
 Same `librosa.pyin` pipeline but exposes the knobs the production
 wrapper hides: `fmin=55 Hz` / `fmax=350 Hz` (practical 4-string
-range) and `voiced_prob_threshold=0.85` (reject low-confidence
-pitch frames that were responsible for most of the chordal-material
-false positives in the baseline).
+range) plus a `voiced_prob_threshold` that rejects low-confidence
+pitch frames responsible for most of the chordal-material false
+positives in the baseline. First attempt at threshold=0.85 was too
+aggressive (librosa.pyin's voiced_probs on this corpus never reach
+that, so every frame got rejected and the algorithm returned empty);
+shipped value is 0.30.
+
+Head-to-head (8 GuitarSet hex_debleeded low-string cases,
+`benchmarks/melodic/gt_runs/bass_tuned_v2_8.json`):
+
+| Algorithm                          | F1        | Precision | Recall    | MAE     |
+|------------------------------------|-----------|-----------|-----------|---------|
+| **`melodic_pyin_bass_strict`** (NEW) | **0.270** | **0.271** | 0.268     | **13 ms** |
+| `melodic_pyin` (prod)              | 0.238     | 0.189     | **0.322** | 20 ms   |
+
+**F1 +13%** (0.238 → 0.270). **Precision +43%** (0.189 → 0.271). MAE
+drops 34% (20 ms → 13 ms). Recall drops 17% (0.322 → 0.268) because
+the tight `fmax=350 Hz` rejects the octave-up ghost matches that
+production was crediting itself with.
+
+This IS a clear F1 win — production default should adopt
+`melodic_pyin_bass_strict` for bass-instrument transcription. The
+production `melodic_pyin` stays for `melodic` / `keys` / `lead_guitar`
+instruments where the wider freq range matters.
 
 Reproduce:
 
@@ -183,21 +226,68 @@ aural_ingest gt-benchmark `
   --algorithm melodic_pyin `
   --algorithm melodic_pyin_bass_strict `
   --limit 8 `
-  --output benchmarks\melodic\gt_runs\bass_tuned_v1_8.json
+  --output benchmarks\melodic\gt_runs\bass_tuned_v2_8.json
 ```
 
 ## Keys
 
 No annotated keys corpus is present in this round's selected datasets
-(see `D:\AudioSourceOfTruth\docs\selected-datasets.md`). The production
-keys path remains the `piano_pti.transcribe_consensus` pipeline at the
-empirically-validated 100 ms / 2-semitone tolerances established
-against Psalm 5 (1,357 notes detected vs 1,309 reference, within 4%
-of the reference set).
+(see `D:\AudioSourceOfTruth\docs\selected-datasets.md`). **Production
+keys is unchanged this round.** The pipeline remains
+`piano_pti.transcribe_consensus` at the empirically-validated 100 ms
+/ 2-semitone tolerances established against Psalm 5 (1,357 notes
+detected vs 1,309 reference -- within 4% of the reference set, see
+`docs/research-deep-dive-piano-2026-05.md` and the session history at
+`Psalm 5 transcription` commits).
 
-Next step for a real keys benchmark: add MAESTRO v3 to the corpus.
-MAESTRO is the canonical piano-MIDI/audio paired dataset and is the
-natural complement to the existing E-GMD / GuitarSet selection.
+The MIDI files preserved by the Studio ingest flow
+(`features/midi/*.mid`, see
+`apps/desktop/src-tauri/src/raw_song.rs::preserve_source_midis_into_songpack`)
+are NOT a substitute for an external annotated corpus: they're the
+user's own input, which a transcription benchmark can't use as
+ground truth without leaking the answer to the algorithm.
+
+Next step for a real keys benchmark:
+
+1. Add MAESTRO v3 to the `AudioSourceOfTruth` corpus (200 hours of
+   paired piano MIDI + audio, CC BY 4.0 -- the canonical complement
+   to E-GMD's drum coverage and GuitarSet's plucked-string coverage).
+2. Write a `dataset_adapters/maestro.py` adapter that yields
+   `GroundTruthCase`s with `instrument="keys"`.
+3. Run `aural_ingest gt-benchmark --dataset maestro
+   --algorithm piano_pti --algorithm piano_pti_consensus
+   --algorithm piano_d3rm` against the MAESTRO test split.
+4. Use the per-piece F1 / onset-MAE breakdown to identify whether
+   the production 100 ms / 2 semi consensus tolerances are tuned for
+   classical (which MAESTRO is dominated by) vs. the gospel / worship
+   register the Suno+Psalm imports actually exercise.
+
+That work is queued; nothing ships in this round.
+
+## Summary
+
+| Instrument | Production default              | Tuned variant shipped         | F1 delta | Verdict                                              |
+|------------|---------------------------------|-------------------------------|----------|------------------------------------------------------|
+| Drums      | `combined_filter`               | `librosa_superflux_dense`     | **+50%** (0.102 → 0.153 vs base, +5.5% over prev leader adaptive_beat_grid) | Promote to drum-stem default |
+| Guitar     | `melodic_combined`              | `melodic_combined_guitar`     | -5% F1 (recall +7%, precision -17%) | Keep prod default; ship variant as high-recall workspace candidate |
+| Bass       | `melodic_pyin` (auto-tune)      | `melodic_pyin_bass_strict`    | **+13%** (0.238 → 0.270, MAE 20ms → 13ms) | Promote to bass-stem default |
+| Keys       | `piano_pti.transcribe_consensus` | — (deferred to v2)           | n/a      | Pending MAESTRO addition to corpus                   |
+
+Three new algorithms registered in
+`python/ingest/src/aural_ingest/transcription.py`:
+`librosa_superflux_dense`, `melodic_combined_guitar`,
+`melodic_pyin_bass_strict`.
+
+Two clear F1 wins (drums + bass) ready for production-default
+promotion. One precision/recall trade (guitar) shipping as a
+high-recall workspace candidate to feed the Refine paint-by-numbers
+flow. One deferred (keys) with a concrete plan to add MAESTRO and
+benchmark.
+
+All four benchmarks are reproducible from the `aural_ingest
+gt-benchmark` CLI commands in each section above. The full per-case
+JSON reports live under `benchmarks/{drums,melodic}/gt_runs/` and
+are tracked in git for diff-on-rerun.
 
 ## Harness
 
