@@ -1,0 +1,257 @@
+{
+  "dataset": "piano_synthetic",
+  "family": "melodic",
+  "extra": {
+    "split": "test",
+    "variant": null,
+    "limit": null,
+    "tolerance_ms": 100.0,
+    "pitch_tolerance_semitones": 2
+  },
+  "case_count": 4,
+  "summary": {
+    "overall": {
+      "cases": 8,
+      "cases_ok": 8,
+      "cases_err": 0,
+      "tp": 151,
+      "fp": 4,
+      "fn": 83,
+      "precision": 0.974194,
+      "recall": 0.645299,
+      "f1": 0.77635,
+      "onset_mae_sec": 0.013901,
+      "mean_runtime_sec": 7.6248
+    },
+    "per_algorithm": {
+      "piano_pti_clean_dedup_pyin": {
+        "cases": 4,
+        "cases_ok": 4,
+        "cases_err": 0,
+        "tp": 82,
+        "fp": 2,
+        "fn": 35,
+        "precision": 0.97619,
+        "recall": 0.700855,
+        "f1": 0.81592,
+        "onset_mae_sec": 0.013396,
+        "mean_runtime_sec": 13.1835,
+        "buckets": {
+          "split": {
+            "synthetic": {
+              "cases": 4,
+              "cases_ok": 4,
+              "cases_err": 0,
+              "tp": 82,
+              "fp": 2,
+              "fn": 35,
+              "precision": 0.97619,
+              "recall": 0.700855,
+              "f1": 0.81592,
+              "onset_mae_sec": 0.013396,
+              "mean_runtime_sec": 13.1835
+            }
+          },
+          "signal": {
+            "synth_additive_sine": {
+              "cases": 4,
+              "cases_ok": 4,
+              "cases_err": 0,
+              "tp": 82,
+              "fp": 2,
+              "fn": 35,
+              "precision": 0.97619,
+              "recall": 0.700855,
+              "f1": 0.81592,
+              "onset_mae_sec": 0.013396,
+              "mean_runtime_sec": 13.1835
+            }
+          }
+        }
+      },
+      "piano_pti_clean_dedup": {
+        "cases": 4,
+        "cases_ok": 4,
+        "cases_err": 0,
+        "tp": 69,
+        "fp": 2,
+        "fn": 48,
+        "precision": 0.971831,
+        "recall": 0.589744,
+        "f1": 0.734043,
+        "onset_mae_sec": 0.014405,
+        "mean_runtime_sec": 2.0661,
+        "buckets": {
+          "split": {
+            "synthetic": {
+              "cases": 4,
+              "cases_ok": 4,
+              "cases_err": 0,
+              "tp": 69,
+              "fp": 2,
+              "fn": 48,
+              "precision": 0.971831,
+              "recall": 0.589744,
+              "f1": 0.734043,
+              "onset_mae_sec": 0.014405,
+              "mean_runtime_sec": 2.0661
+            }
+          },
+          "signal": {
+            "synth_additive_sine": {
+              "cases": 4,
+              "cases_ok": 4,
+              "cases_err": 0,
+              "tp": 69,
+              "fp": 2,
+              "fn": 48,
+              "precision": 0.971831,
+              "recall": 0.589744,
+              "f1": 0.734043,
+              "onset_mae_sec": 0.014405,
+              "mean_runtime_sec": 2.0661
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "piano_synth:block_chords",
+      "algorithm_id": "piano_pti_clean_dedup_pyin",
+      "runtime_sec": 7.3408,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "block_chords"
+      }
+    },
+    {
+      "case_id": "piano_synth:block_chords",
+      "algorithm_id": "piano_pti_clean_dedup",
+      "runtime_sec": 1.4355,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "block_chords"
+      }
+    },
+    {
+      "case_id": "piano_synth:scale_c_2oct",
+      "algorithm_id": "piano_pti_clean_dedup_pyin",
+      "runtime_sec": 21.1182,
+      "tp": 29,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.935484,
+      "recall": 1.0,
+      "f1": 0.966667,
+      "onset_mae_sec": 0.013735,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "scale_c_2oct"
+      }
+    },
+    {
+      "case_id": "piano_synth:scale_c_2oct",
+      "algorithm_id": "piano_pti_clean_dedup",
+      "runtime_sec": 3.0849,
+      "tp": 21,
+      "fp": 2,
+      "fn": 8,
+      "precision": 0.913043,
+      "recall": 0.724138,
+      "f1": 0.807692,
+      "onset_mae_sec": 0.015191,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "scale_c_2oct"
+      }
+    },
+    {
+      "case_id": "piano_synth:triad_arp_progression",
+      "algorithm_id": "piano_pti_clean_dedup_pyin",
+      "runtime_sec": 12.1035,
+      "tp": 31,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.96875,
+      "f1": 0.984127,
+      "onset_mae_sec": 0.015499,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "triad_arp_progression"
+      }
+    },
+    {
+      "case_id": "piano_synth:triad_arp_progression",
+      "algorithm_id": "piano_pti_clean_dedup",
+      "runtime_sec": 1.8734,
+      "tp": 30,
+      "fp": 0,
+      "fn": 2,
+      "precision": 1.0,
+      "recall": 0.9375,
+      "f1": 0.967742,
+      "onset_mae_sec": 0.016016,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "triad_arp_progression"
+      }
+    },
+    {
+      "case_id": "piano_synth:two_voice",
+      "algorithm_id": "piano_pti_clean_dedup_pyin",
+      "runtime_sec": 12.1714,
+      "tp": 22,
+      "fp": 0,
+      "fn": 10,
+      "precision": 1.0,
+      "recall": 0.6875,
+      "f1": 0.814815,
+      "onset_mae_sec": 0.010955,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "two_voice"
+      }
+    },
+    {
+      "case_id": "piano_synth:two_voice",
+      "algorithm_id": "piano_pti_clean_dedup",
+      "runtime_sec": 1.8706,
+      "tp": 18,
+      "fp": 0,
+      "fn": 14,
+      "precision": 1.0,
+      "recall": 0.5625,
+      "f1": 0.72,
+      "onset_mae_sec": 0.012008,
+      "metadata": {
+        "split": "synthetic",
+        "signal": "synth_additive_sine",
+        "case_name": "two_voice"
+      }
+    }
+  ]
+}
