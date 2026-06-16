@@ -3670,6 +3670,132 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
     return 0 if overall_ok else 1
 
 
+def cmd_gt_benchmark(args: argparse.Namespace) -> int:
+    """Run a ground-truth benchmark sweep and write the JSON report.
+
+    Resolves the dataset adapter + algorithm family, iterates cases,
+    scores each prediction, and aggregates per-bucket summaries.
+
+    Per-case progress goes to stderr (optional ``--progress`` flag) so
+    stdout stays a single JSON object suitable for piping.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    from .ground_truth_benchmark import run_sweep, write_report
+
+    dataset = args.dataset
+    corpus_root = _Path(args.corpus_root)
+    if not corpus_root.is_dir():
+        print(
+            json.dumps(
+                {"ok": False, "error": f"corpus root not a directory: {corpus_root}"},
+                sort_keys=True,
+            )
+        )
+        return 1
+
+    if dataset == "egmd":
+        from .dataset_adapters.egmd import yield_cases
+
+        cases = list(yield_cases(corpus_root, split=args.split, limit=args.limit))
+        family = "drums"
+    elif dataset == "guitarset":
+        from .dataset_adapters.guitarset import yield_cases as _yc
+
+        cases = list(
+            _yc(corpus_root, variant=args.variant or "mic", limit=args.limit)
+        )
+        family = "melodic"
+    elif dataset == "guitarset_bass":
+        from .dataset_adapters.guitarset import yield_low_string_cases
+
+        cases = list(
+            yield_low_string_cases(
+                corpus_root,
+                variant=args.variant or "hex_debleeded",
+                limit=args.limit,
+            )
+        )
+        family = "melodic"
+    elif dataset == "guitar_techs":
+        from .dataset_adapters.guitar_techs import yield_cases as _yc
+
+        cases = list(
+            _yc(corpus_root, signal=args.variant or "directinput", limit=args.limit)
+        )
+        family = "melodic"
+    else:
+        print(json.dumps({"ok": False, "error": f"unknown dataset: {dataset}"}))
+        return 1
+
+    if not cases:
+        print(json.dumps({"ok": False, "error": "no cases yielded"}))
+        return 1
+
+    progress = bool(args.progress)
+
+    def on_case(idx: int, score) -> None:
+        if progress:
+            print(
+                f"[{idx:>4}/{len(cases)}] {score.algorithm_id}  "
+                f"{score.case_id}  f1={score.f1:.3f} tp={score.tp} fp={score.fp} fn={score.fn}",
+                file=_sys.stderr,
+                flush=True,
+            )
+
+    scores = run_sweep(
+        cases,
+        algorithms=list(args.algorithm),
+        family=family,
+        tolerance_sec=args.tolerance_ms / 1000.0,
+        pitch_tolerance_semitones=int(args.pitch_tolerance_semitones),
+        on_case=on_case,
+    )
+
+    out_path = _Path(args.output)
+    report = write_report(
+        scores,
+        out_path=out_path,
+        dataset=dataset,
+        family=family,
+        extra={
+            "split": args.split,
+            "variant": args.variant,
+            "limit": args.limit,
+            "tolerance_ms": args.tolerance_ms,
+            "pitch_tolerance_semitones": args.pitch_tolerance_semitones,
+        },
+    )
+
+    summary = report["summary"]["overall"]
+    per_alg = {
+        alg: {
+            "cases": stats["cases"],
+            "f1": stats["f1"],
+            "precision": stats["precision"],
+            "recall": stats["recall"],
+            "onset_mae_sec": stats["onset_mae_sec"],
+        }
+        for alg, stats in report["summary"]["per_algorithm"].items()
+    }
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "dataset": dataset,
+                "family": family,
+                "case_count": report["case_count"],
+                "overall": summary,
+                "per_algorithm": per_alg,
+                "report_path": str(out_path),
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="aural_ingest")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -3776,6 +3902,82 @@ def build_parser() -> argparse.ArgumentParser:
         help="Instrument to precompute. May be repeated. Defaults to 'keys' if omitted.",
     )
     s_refine_candidates.set_defaults(func=cmd_refine_candidates)
+
+    s_gt_benchmark = sub.add_parser(
+        "gt-benchmark",
+        help=(
+            "Sweep transcription algorithms across an annotated ground-truth "
+            "dataset (E-GMD / GuitarSet / Guitar-TECHS) and emit a JSON report."
+        ),
+    )
+    s_gt_benchmark.add_argument(
+        "--dataset",
+        required=True,
+        choices=sorted(["egmd", "guitarset", "guitarset_bass", "guitar_techs"]),
+        help=(
+            "Annotated corpus to sweep. ``guitarset_bass`` is the low-string"
+            " filter of GuitarSet for bass-pitch benchmarks."
+        ),
+    )
+    s_gt_benchmark.add_argument(
+        "--corpus-root",
+        required=True,
+        help="Filesystem root containing the dataset's extracted subtrees.",
+    )
+    s_gt_benchmark.add_argument(
+        "--algorithm",
+        action="append",
+        required=True,
+        help=(
+            "Algorithm id to evaluate (e.g. ``combined_filter``, "
+            "``melodic_basic_pitch``). Repeat to sweep multiple."
+        ),
+    )
+    s_gt_benchmark.add_argument(
+        "--split",
+        default="test",
+        help=(
+            "Dataset split when applicable (E-GMD: train/test/validation). "
+            "Ignored by datasets without a published split."
+        ),
+    )
+    s_gt_benchmark.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap the number of cases (useful for smoke runs).",
+    )
+    s_gt_benchmark.add_argument(
+        "--tolerance-ms",
+        type=float,
+        default=50.0,
+        help="Onset tolerance for greedy pairing (default 50ms).",
+    )
+    s_gt_benchmark.add_argument(
+        "--pitch-tolerance-semitones",
+        type=int,
+        default=0,
+        help="Melodic pitch tolerance (default 0 = pitch-exact).",
+    )
+    s_gt_benchmark.add_argument(
+        "--variant",
+        default=None,
+        help=(
+            "Dataset-specific variant: GuitarSet (mic/pickup_mix/hex_*); "
+            "Guitar-TECHS (directinput/micamp)."
+        ),
+    )
+    s_gt_benchmark.add_argument(
+        "--output",
+        required=True,
+        help="Path to write the JSON report.",
+    )
+    s_gt_benchmark.add_argument(
+        "--progress",
+        action="store_true",
+        help="Print a per-case progress line on stderr.",
+    )
+    s_gt_benchmark.set_defaults(func=cmd_gt_benchmark)
 
     return p
 
