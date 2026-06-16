@@ -91,11 +91,100 @@ aural_ingest gt-benchmark `
 
 ## Guitar
 
-<!-- Filled in after the running guitarset_baseline_12 benchmark completes. -->
+**Production default before this pass:** `melodic_combined`.
+**This pass shipped:** `melodic_combined_guitar` (head-to-head numbers
+land in the next commit; baseline below).
+
+Twelve GuitarSet test cases (mic variant), four-algo baseline shootout
+(`benchmarks/melodic/gt_runs/guitarset_baseline_12.json`):
+
+| Algorithm                       | F1     | Precision | Recall | Onset MAE | Note          |
+|---------------------------------|--------|-----------|--------|-----------|---------------|
+| **`melodic_combined`** (prod)   | **0.261** | **0.309** | **0.226** | 20 ms | ✓ winner     |
+| `melodic_yin_octave_hps_fix`    | 0.207  | 0.257     | 0.174  | 19 ms     |               |
+| `melodic_basic_pitch`           | 0.032  | 0.049     | 0.024  | 17 ms     | ONNX missing  |
+| `melodic_torchcrepe`            | 0.000  | 0.000     | 0.000  | —         | torch missing |
+
+Two algorithms can't be evaluated here without dependencies the venv
+doesn't have:
+
+- `melodic_basic_pitch` needs `basic-pitch[onnx]` (instructions are
+  in the warning the library prints on import).
+- `melodic_torchcrepe` needs `torchcrepe` and `torch`.
+
+For the production winner `melodic_combined`, the bottleneck is recall
+(0.226) — three-quarters of the genuine notes are getting missed. The
+onset detector's `onset_ratio=3.0` and the 60 ms minimum note length
+were tuned to be conservative on noisy stems; on clean GuitarSet audio
+they reject too much.
+
+Tuned variant:
+`python/ingest/src/aural_ingest/algorithms/melodic_combined_guitar.py`.
+Same onset+HPS pipeline; loosens `onset_ratio` 3.0→2.0 and
+`min_note_sec` 0.06→0.04. The frame size and hop stay at production
+defaults.
+
+Reproduce:
+
+```powershell
+aural_ingest gt-benchmark `
+  --dataset guitarset `
+  --corpus-root E:\AudioSourceOfTruthData\extracted\guitarset `
+  --variant mic `
+  --algorithm melodic_combined `
+  --algorithm melodic_combined_guitar `
+  --algorithm melodic_yin_octave_hps_fix `
+  --limit 12 `
+  --output benchmarks\melodic\gt_runs\guitarset_tuned_v1_12.json
+```
 
 ## Bass
 
-<!-- Filled in after the running bass_baseline_8 benchmark completes. -->
+**Production default before this pass:** `melodic_pyin` (auto-tunes
+for `instrument="bass"` via hop=256 + min_note_sec=80 ms).
+**This pass shipped:** `melodic_pyin_bass_strict` (head-to-head numbers
+in the next commit; baseline below).
+
+Bass corpus: GuitarSet, low-E + A strings only, hex_debleeded variant.
+Eight cases × two algorithms
+(`benchmarks/melodic/gt_runs/bass_baseline_8.json`):
+
+| Algorithm                  | F1     | Precision | Recall | Onset MAE | Note         |
+|----------------------------|--------|-----------|--------|-----------|--------------|
+| **`melodic_pyin`** (prod) | **0.238** | 0.189 | **0.322** | 20 ms     | ✓ winner    |
+| `melodic_yin_bass80`       | 0.000  | 0.000     | 0.000  | —         | returns []   |
+
+`melodic_yin_bass80` returns zero notes for every case in this
+corpus, despite the algorithm being live in `KNOWN_MELODIC_METHODS`.
+That's a separate diagnostic queued for a follow-up — likely a frame-
+length / sample-rate interaction at the YIN core, not a tuning
+problem in the wrapper.
+
+Per-case F1 for the production `melodic_pyin` swings hard:
+0.038 → 0.652 across just four `BN1` test cases on the same player.
+The lows correspond to chordal (`_comp`) material where multiple
+strings are sounding; YIN's pitch tracker locks onto the loudest
+harmonic and emits octave-up false positives.
+
+Tuned variant:
+`python/ingest/src/aural_ingest/algorithms/melodic_pyin_bass_strict.py`.
+Same `librosa.pyin` pipeline but exposes the knobs the production
+wrapper hides: `fmin=55 Hz` / `fmax=350 Hz` (practical 4-string
+range) and `voiced_prob_threshold=0.85` (reject low-confidence
+pitch frames that were responsible for most of the chordal-material
+false positives in the baseline).
+
+Reproduce:
+
+```powershell
+aural_ingest gt-benchmark `
+  --dataset guitarset_bass `
+  --corpus-root E:\AudioSourceOfTruthData\extracted\guitarset `
+  --algorithm melodic_pyin `
+  --algorithm melodic_pyin_bass_strict `
+  --limit 8 `
+  --output benchmarks\melodic\gt_runs\bass_tuned_v1_8.json
+```
 
 ## Keys
 
