@@ -325,6 +325,24 @@ case is strictly improved or unchanged versus the next-best variant:
    prevents pyin's 8 polyphonic FPs from leaking in) while recovering
    13 TPs on the other three cases with zero FPs.
 
+### Production deployment
+
+`piano_chord_supplement` was wired into the production
+`build_default_melodic_algorithm_registry` and `KNOWN_MELODIC_METHODS`
+so the ingest pipeline can actually run it via
+`--melodic-method=piano_chord_supplement`. The driver script
+`python/ingest/scripts/import_piano_psalms.py` walks
+`D:/Psalms/Piano Psalms/` and imports each Suno-stem folder as a
+SongPack with the new pipeline.
+
+On real audio (Psalm 121, 128.9 s, single-piano arrangement) the
+production manifest reports `used_engine=piano_chord_supplement` with
+`attempt_scores=0.7` and `features/notes.mid` containing 650 keys
+note_on events. PTI dominates on real piano timbre (hammer-attack
+transients are exactly what its onset head was trained on); the
+chord_supplement analytical fallback is correctly gated to only fire
+when PTI returns nothing, which on real piano material it doesn't.
+
 3. **Analytical chord-onset supplement** (`piano_chord_supplement`):
    On `block_chords` neither PTI nor the pyin gate help -- PTI's
    onset head rejects simultaneous sine attacks entirely, and pyin
