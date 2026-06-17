@@ -68,16 +68,34 @@ def find_stems_in_psalm_dir(psalm_dir: Path) -> dict[str, Path]:
     return out
 
 
-def derive_title(psalm_dir: Path) -> str:
+def derive_title_and_variant(psalm_dir: Path) -> tuple[str, str | None]:
+    """Strip trailing ' - [piano] [Instrumental] Stems' but keep variant marker.
+
+    Returns (title, variant_marker). The variant marker is "instrumental"
+    for the no-vocals stems folders, None otherwise. This is what
+    distinguishes the two Suno exports per Psalm (with + without vocals).
+    """
     name = psalm_dir.name
+    is_instrumental = bool(re.search(r"instrumental", name, flags=re.IGNORECASE))
+    name = re.sub(
+        r"\s+-\s+(piano\s+)?Instrumental\s+Stems\s*$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
     name = re.sub(r"\s+-\s+(piano\s+)?Stems\s*$", "", name, flags=re.IGNORECASE)
-    name = re.sub(r"\s+-\s+(piano\s+)?Instrumental\s+Stems\s*$", "", name, flags=re.IGNORECASE)
-    return name.strip()
+    # Final fallback: trailing " Stems" or " - Stems" without "piano" between.
+    name = re.sub(r"\s+-?\s*Stems\s*$", "", name, flags=re.IGNORECASE)
+    variant = "instrumental" if is_instrumental else None
+    return name.strip(), variant
 
 
-def derive_pack_dirname(title: str) -> str:
+def derive_pack_dirname(title: str, variant: str | None) -> str:
     s = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
-    return s.lower() or "song"
+    s = s.lower() or "song"
+    if variant:
+        s = f"{s}_{variant}"
+    return s
 
 
 def run_import(
@@ -179,9 +197,10 @@ def main() -> int:
 
     results: list[tuple[Path, bool, str]] = []
     for psalm_dir in psalm_dirs:
-        title = derive_title(psalm_dir)
-        pack_dirname = derive_pack_dirname(title)
+        title, variant = derive_title_and_variant(psalm_dir)
+        pack_dirname = derive_pack_dirname(title, variant)
         out_dir = out_root / pack_dirname
+        display_title = f"{title} (instrumental)" if variant else title
 
         if args.skip_existing and (out_dir / "manifest.json").is_file():
             print(f"[skip-existing] {pack_dirname}: already imported")
@@ -191,17 +210,17 @@ def main() -> int:
         if out_dir.exists():
             shutil.rmtree(out_dir, ignore_errors=True)
 
-        print(f"[importing ] {title}  ->  {out_dir}")
+        print(f"[importing ] {display_title}  ->  {out_dir}")
         ok, msg = run_import(
             psalm_dir=psalm_dir,
             out_dir=out_dir,
-            title=title,
+            title=display_title,
             melodic_method=args.melodic_method,
             venv_python=venv_python,
             ingest_src=ingest_src,
         )
         flag = "ok       " if ok else "FAIL     "
-        print(f"[{flag}] {title}: {msg}")
+        print(f"[{flag}] {display_title}: {msg}")
         results.append((psalm_dir, ok, msg))
 
     print()
