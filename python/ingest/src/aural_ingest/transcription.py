@@ -56,6 +56,9 @@ KNOWN_MELODIC_METHODS: tuple[str, ...] = (
     "piano_transkun_clean",
     "piano_pti",
     "piano_pti_clean",
+    "piano_pti_clean_dedup",
+    "piano_pti_clean_dedup_pyin",
+    "piano_chord_supplement",
     "piano_pti_consensus",
     "piano_pti_consensus_clean",
     "piano_hft",
@@ -1393,10 +1396,13 @@ def build_default_melodic_algorithm_registry(
         melodic_yin_octave_hps_fix,
         piano_cleanup,
         piano_d3rm,
+        piano_chord_supplement,
         piano_denoise,
         piano_hft,
         piano_polyphonic,
         piano_pti,
+        piano_pti_clean_dedup,
+        piano_pti_clean_dedup_pyin,
         piano_transkun,
     )
 
@@ -1676,6 +1682,15 @@ def build_default_melodic_algorithm_registry(
             notes = piano_pti.transcribe(in_path, instrument=_inst)
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
+    def _piano_pti_clean_dedup(stem_path: Path) -> list[MelodicNote]:
+        return piano_pti_clean_dedup.transcribe(stem_path, instrument=_inst)
+
+    def _piano_pti_clean_dedup_pyin(stem_path: Path) -> list[MelodicNote]:
+        return piano_pti_clean_dedup_pyin.transcribe(stem_path, instrument=_inst)
+
+    def _piano_chord_supplement(stem_path: Path) -> list[MelodicNote]:
+        return piano_chord_supplement.transcribe(stem_path, instrument=_inst)
+
     def _piano_pti_consensus(stem_path: Path) -> list[MelodicNote]:
         # Two PTI passes (stem + full mix) intersected by onset+pitch.
         # Mix discovery walks up from <pack>/audio/stems/keys.wav to
@@ -1720,6 +1735,9 @@ def build_default_melodic_algorithm_registry(
         "piano_transkun_clean": _piano_transkun_clean,
         "piano_pti": _piano_pti,
         "piano_pti_clean": _piano_pti_clean,
+        "piano_pti_clean_dedup": _piano_pti_clean_dedup,
+        "piano_pti_clean_dedup_pyin": _piano_pti_clean_dedup_pyin,
+        "piano_chord_supplement": _piano_chord_supplement,
         "piano_pti_consensus": _piano_pti_consensus,
         "piano_pti_consensus_clean": _piano_pti_consensus_clean,
         "piano_hft": _piano_hft,
