@@ -91,20 +91,17 @@ def derive_title_and_variant(psalm_dir: Path) -> tuple[str, str | None]:
 
 
 def derive_pack_dirname(title: str, variant: str | None) -> str:
-    """Returns the SongPack directory name with a trailing extension
-    the game's discovery loop accepts. The currently shipping portable
-    binary (built 2026-06-14, before the source-level rename) filters
-    on ``.songpack``; the newer source filter at
-    apps/game/src-tauri/src/lib.rs around line 1106 expects
-    ``.auralsong``. Until the next portable rebuild we use the older
-    extension so the running binary picks the pack up. After a fresh
-    portable build, switch this to ``.auralsong`` (or rename in place).
+    """Returns the SongPack directory name (with the trailing
+    ``.auralsong`` extension that the game's discovery loop requires --
+    see apps/game/src-tauri/src/lib.rs around line 1106). Packs without
+    that suffix are silently filtered out of the song library scan, so
+    they never appear in the in-game Play Songs panel.
     """
     s = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
     s = s.lower() or "song"
     if variant:
         s = f"{s}_{variant}"
-    return f"{s}.songpack"
+    return f"{s}.auralsong"
 
 
 def run_import(
