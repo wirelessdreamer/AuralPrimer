@@ -110,7 +110,7 @@ export function appShellHtml(): string {
                     id="scrollSpeedSlider"
                     type="range"
                     min="0.5"
-                    max="3"
+                    max="6"
                     step="0.05"
                     value="1"
                     aria-label="Scroll speed multiplier"
@@ -118,6 +118,9 @@ export function appShellHtml(): string {
                   />
                   <span id="scrollSpeedValue" class="meta" style="min-width:3.5em;text-align:right">1.00x</span>
                   <button id="scrollSpeedReset" title="Reset to 1.00x">Reset</button>
+                </div>
+                <div class="meta" style="margin: 4px 0 0 6px; opacity: 0.7; font-size: 11px">
+                  In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.
                 </div>
 
                 <div class="row">

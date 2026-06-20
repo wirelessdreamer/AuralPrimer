@@ -89,7 +89,7 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     expect(src).toMatch(/id="scrollSpeedSlider"/);
     expect(src).toMatch(/id="scrollSpeedValue"/);
     expect(src).toMatch(/id="scrollSpeedReset"/);
-    expect(src).toMatch(/min="0\.5"[\s\S]*max="3"/);
+    expect(src).toMatch(/min="0\.5"[\s\S]*max="6"/);
   });
 
   it("main.ts calls initScrollSpeedController with transportController + onChange", () => {

@@ -273,7 +273,14 @@ export function inferKeySignature(notes: MelodicNote[]): KeySignatureAnalysis | 
   ) => {
     const template = mode === "major" ? MAJOR_PROFILE : MINOR_PROFILE;
     const score = cosineSimilarity(weights, template, pitchClass);
-    const noteLabelStyle: NoteLabelStyle = accidentalKind === "flat" ? "flat" : accidentalKind === "sharp" ? "sharp" : "dual";
+    // For sharp / flat keys, follow the convention. For natural keys
+    // (C major, A minor) the prior "dual" label style produced
+    // contradictory output -- the HUD said "C major, 0 accidentals"
+    // while every black-key label showed "C#/Db". Pick a single
+    // convention (sharps) so the key signature read-out and the note
+    // labels agree.
+    const noteLabelStyle: NoteLabelStyle =
+      accidentalKind === "flat" ? "flat" : accidentalKind === "sharp" ? "sharp" : "sharp";
     const candidate: KeySignatureAnalysis = {
       tonic,
       mode,

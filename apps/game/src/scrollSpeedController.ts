@@ -89,5 +89,28 @@ export function initScrollSpeedController(deps: ScrollSpeedDeps): ScrollSpeedCon
     applyScrollSpeed(1);
   });
 
+  // StepMania-style live hotkeys: [ spreads notes (raises multiplier),
+  // ] compresses (lowers multiplier). Held Shift = 5x finer step for
+  // people who want to tune in. Ignored when focus is in any text
+  // input, textarea, or contenteditable element so it doesn't fight
+  // typing in the Refine workspace or Studio.
+  const STEP_COARSE = 0.25;
+  const STEP_FINE = 0.05;
+  function focusIsTyping(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    return target.isContentEditable;
+  }
+  window.addEventListener("keydown", (ev) => {
+    if (focusIsTyping(ev.target)) return;
+    if (ev.key !== "[" && ev.key !== "]") return;
+    ev.preventDefault();
+    const step = ev.shiftKey ? STEP_FINE : STEP_COARSE;
+    const current = Number(slider.value);
+    const delta = ev.key === "[" ? +step : -step;
+    applyScrollSpeed(current + delta);
+  });
+
   return { apply: applyScrollSpeed };
 }

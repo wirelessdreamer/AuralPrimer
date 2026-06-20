@@ -31,7 +31,9 @@ export type TransportState = {
 /** Coerce an arbitrary scroll-speed input into the safe range visualizers
  * use. Centralized so every viz applies the same clamp and zero-/NaN-guard. */
 export const SCROLL_SPEED_MIN = 0.3;
-export const SCROLL_SPEED_MAX = 3.0;
+// Raised from 3.0 -> 6.0 to give piano-roll users StepMania-style
+// spread when tracks have dense polyphony (chord pads, fast runs).
+export const SCROLL_SPEED_MAX = 6.0;
 export function clampScrollSpeedMultiplier(value: number | undefined | null): number {
   if (value === undefined || value === null || !Number.isFinite(value) || value <= 0) {
     return 1.0;
