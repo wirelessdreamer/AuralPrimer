@@ -307,6 +307,54 @@ mod tests {
     }
 
     #[test]
+    fn suno_backing_vocals_label_does_not_get_tagged_as_vocals() {
+        // Pinned regression test for the "Backing Vocals beats Vocals"
+        // bug we hit on the piano-psalms corpus: the Suno stem
+        // "Psalm 6 - How Long - piano (Backing Vocals).wav" was being
+        // routed into the input_stem_paths["vocals"] slot ahead of the
+        // louder lead-vocal stem because both labels collapsed to the
+        // same role. The Studio TS layer relies on this Rust tagging
+        // staying disambiguated -- if "Backing Vocals" ever maps to
+        // "vocals" detected_role, buildIngestInputStemPaths in
+        // apps/desktop/src/main.ts silently regresses.
+        let backing_tokens = vec![
+            "psalm".to_string(),
+            "6".to_string(),
+            "how".to_string(),
+            "long".to_string(),
+            "piano".to_string(),
+            "backing".to_string(),
+            "vocals".to_string(),
+        ];
+        assert_eq!(
+            detect_part_role_from_tokens(&backing_tokens, false),
+            "backing_vocals",
+        );
+
+        let lead_tokens = vec![
+            "psalm".to_string(),
+            "6".to_string(),
+            "how".to_string(),
+            "long".to_string(),
+            "piano".to_string(),
+            "vocals".to_string(),
+        ];
+        assert_eq!(
+            detect_part_role_from_tokens(&lead_tokens, false),
+            "vocals",
+        );
+
+        // Both still collapse to the same gameplay role -- that's
+        // intentional and tested here so a future split doesn't make
+        // the call site assume the strings are interchangeable.
+        assert_eq!(map_detected_role_to_game_role("vocals"), Some("vocals"));
+        assert_eq!(
+            map_detected_role_to_game_role("backing_vocals"),
+            Some("vocals"),
+        );
+    }
+
+    #[test]
     fn midi_bytes_to_timed_notes_respects_cross_track_tempo_map() {
         let midi = build_tempo_change_test_midi();
         let notes = midi_bytes_to_timed_notes(&midi).expect("parse timed notes");

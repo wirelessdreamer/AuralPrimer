@@ -2801,9 +2801,26 @@ function buildIngestInputStemPaths(inspection: RawSongFolderInspection): Partial
     paths[role] = path;
   };
 
+  // Pass 1: stems whose Rust-side detected_role normalizes to a target
+  // InputStemRole get first pick (e.g. detected "vocals" beats detected
+  // "backing_vocals" which normalizes to null and is skipped here).
+  //
+  // The "backing_vocals" / "fx" / "synth" labels all currently fall to
+  // null in normalizeInputStemRole, so the loop quietly enforces the
+  // canonical-stem-wins rule today. Documenting it explicitly because
+  // adding any of those raw labels to the InputStemRole switch later
+  // would silently re-introduce the "Backing Vocals" wins regression
+  // we just fixed in the Python driver.
   for (const part of inspection.stem_parts) {
     assign(normalizeInputStemRole(part.detected_role), part.path);
   }
+
+  // Pass 2: fall back to the Rust-side game_role mapping. Both
+  // "vocals" and "backing_vocals" detected_role values collapse to
+  // game_role "vocals", so this pass only matters when pass 1 left
+  // a role unfilled (e.g. only a "Backing Vocals" stem exists in the
+  // folder). The early-return inside `assign` preserves whatever
+  // pass 1 already chose.
   for (const part of inspection.stem_parts) {
     assign(normalizeInputStemRole(part.game_role), part.path);
   }
