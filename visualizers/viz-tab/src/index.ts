@@ -602,19 +602,63 @@ export class TabRenderer {
       ctx.stroke();
     }
 
-    const hitBandGrad = ctx.createLinearGradient(0, hitY - 16, 0, hitY + 10);
+    // Hit zone -- the "play the note now" line. Tuned to match the
+    // viz-drum-highway treatment so the user reads the same "this is
+    // where notes land" cue across instruments. The piano roll's hit
+    // zone sits right above the keyboard, so the cue has to compete
+    // visually with both the falling notes and the keyboard itself.
+    //
+    // Layered (back to front):
+    //   1. A taller, role-tinted glow band above the line.
+    //   2. A wider white outer stroke (the "play here" lane edge).
+    //   3. A narrower role-colored accent stroke on top (the actual
+    //      "play now" marker -- saturated gold for keys, matches the
+    //      note color so the eye reads it as "notes hit HERE").
+    //   4. A "PLAY HERE" label on the side, low-priority but explicit.
+    const hitBandH = 36;
+    const hitBandY = hitY - hitBandH * 0.78;
+    const roleAccent = ROLE_COLORS[this.role];
+    const roleGlowRgba = ROLE_GLOW_COLORS[this.role];
+    const hitBandGrad = ctx.createLinearGradient(0, hitBandY, 0, hitBandY + hitBandH);
     hitBandGrad.addColorStop(0, "rgba(255,255,255,0.00)");
-    hitBandGrad.addColorStop(0.42, "rgba(255,255,255,0.12)");
+    hitBandGrad.addColorStop(0.55, roleGlowRgba);
     hitBandGrad.addColorStop(1, "rgba(255,255,255,0.02)");
     ctx.fillStyle = hitBandGrad;
-    ctx.fillRect(layoutPadX, hitY - 16, keyboardWidth, 28);
+    roundRectPath(
+      ctx,
+      layoutPadX,
+      hitBandY,
+      keyboardWidth,
+      hitBandH,
+      10,
+    );
+    ctx.fill();
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
-    ctx.lineWidth = 2;
+    ctx.save();
+    ctx.shadowColor = roleAccent;
+    ctx.shadowBlur = 18;
+    ctx.strokeStyle = "rgba(244, 250, 255, 0.92)";
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(layoutPadX, hitY);
     ctx.lineTo(layoutPadX + keyboardWidth, hitY);
     ctx.stroke();
+    ctx.restore();
+
+    ctx.strokeStyle = roleAccent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(layoutPadX + 4, hitY);
+    ctx.lineTo(layoutPadX + keyboardWidth - 4, hitY);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.fillStyle = "rgba(223,237,255,0.72)";
+    ctx.font = "700 10px ui-monospace, SFMono-Regular, Consolas, monospace";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "bottom";
+    ctx.fillText("PLAY HERE", layoutPadX + keyboardWidth, hitBandY - 4);
+    ctx.restore();
 
     for (const note of track.notes) {
       if (note.t_off < t - lookBehindSec || note.t_on > t + lookAheadSec) continue;
