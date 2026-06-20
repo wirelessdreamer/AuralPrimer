@@ -686,17 +686,73 @@ export class TabRenderer {
       const glowColor = noteGlowColor(key.isBlack, approach, velocity);
       const bodyColor = noteBodyColor(key.isBlack, approach);
 
+      // Notes fall downward. The BOTTOM of the pill is the onset moment
+      // (the note's t_on, which arrives at hitY first). The body of the
+      // pill extending upward represents the sustain.
+      //
+      // Per user request: render the onset as a solid bright cap and
+      // the hold body as a more transparent fill so the two read as
+      // visually distinct events instead of a single solid column.
+      const onsetCapHeight = Math.min(10, Math.max(4, height * 0.35));
+      const holdTop = visibleTop;
+      const holdBottom = Math.max(holdTop, visibleBottom - onsetCapHeight);
+      const onsetTop = holdBottom;
+      const onsetBottomVisible = visibleBottom;
+
+      // Soft outer glow halo around the whole pill, scaled with how
+      // close the onset is to the line.
       ctx.fillStyle = glowColor;
       roundRectPath(ctx, noteX - 2, visibleTop - 2, noteW + 4, height + 4, Math.min(8, noteW * 0.4));
       ctx.fill();
 
+      // Hold body: transparent fill (alpha ~0.35) over the sustain
+      // portion. Re-uses the role body color but with reduced opacity
+      // so the eye reads it as "the note is still ringing, but the
+      // attack has already passed."
+      if (holdBottom > holdTop + 1) {
+        ctx.save();
+        ctx.globalAlpha = 0.40;
+        ctx.fillStyle = bodyColor;
+        roundRectPath(
+          ctx,
+          noteX,
+          holdTop,
+          noteW,
+          holdBottom - holdTop,
+          Math.min(7, noteW * 0.4),
+        );
+        ctx.fill();
+        ctx.restore();
+
+        // Inner gradient stripe to suggest motion along the sustain.
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+        const holdGrad = ctx.createLinearGradient(0, holdTop, 0, holdBottom);
+        holdGrad.addColorStop(0, "rgba(255,255,255,0.00)");
+        holdGrad.addColorStop(1, "rgba(255,255,255,0.20)");
+        ctx.fillStyle = holdGrad;
+        ctx.fillRect(noteX + 1, holdTop, Math.max(1, noteW - 2), holdBottom - holdTop);
+        ctx.restore();
+      }
+
+      // Onset cap: bright solid at the bottom. This is the "play me
+      // now" moment -- visually loud so the user's eye locks on as it
+      // descends toward the hit line.
       ctx.fillStyle = bodyColor;
-      roundRectPath(ctx, noteX, visibleTop, noteW, height, Math.min(7, noteW * 0.4));
+      roundRectPath(
+        ctx,
+        noteX,
+        onsetTop,
+        noteW,
+        Math.max(2, onsetBottomVisible - onsetTop),
+        Math.min(6, noteW * 0.4),
+      );
       ctx.fill();
 
-      ctx.fillStyle = "rgba(255,255,255,0.18)";
-      roundRectPath(ctx, noteX + 1, visibleTop + 1, Math.max(2, noteW - 2), Math.max(2, height * 0.15), 2);
-      ctx.fill();
+      // Top-edge highlight on the onset cap so the leading edge reads
+      // as a distinct bar even at small sizes.
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillRect(noteX + 1, onsetTop, Math.max(1, noteW - 2), 1.6);
 
       if (dt <= 0.08 && note.t_off >= t - 0.02) {
         activeKeys.set(note.pitch, Math.max(activeKeys.get(note.pitch) ?? 0, 0.35 + velocity * 0.65));

@@ -108,7 +108,33 @@ export function initPlayersPanel(deps: PlayersPanelDeps): PlayersPanelHandle {
     throw new Error("initPlayersPanel: required DOM (#players/#addPlayer) missing");
   }
 
-  let players: Player[] = [{ id: "p1", name: "Player 1", instrument: "drums" }];
+  // Persist the user's last-chosen Player 1 instrument across song loads
+  // and app restarts. Without this, resetForSongSetup() would slam Player 1
+  // back to "drums" every time a new song is picked, which was clobbering
+  // the user's repeated "Keys" selection and forcing them to re-pick.
+  const PRIMARY_INSTRUMENT_STORAGE_KEY = "auralprimer.primaryPlayerInstrument";
+  function readPersistedPrimaryInstrument(): Instrument {
+    try {
+      const raw = window.localStorage.getItem(PRIMARY_INSTRUMENT_STORAGE_KEY);
+      if (raw && (raw in INSTRUMENT_LABELS)) {
+        return raw as Instrument;
+      }
+    } catch {
+      // localStorage may be unavailable in some embedded webviews; default safely.
+    }
+    return "drums";
+  }
+  function persistPrimaryInstrument(inst: Instrument): void {
+    try {
+      window.localStorage.setItem(PRIMARY_INSTRUMENT_STORAGE_KEY, inst);
+    } catch {
+      // Best-effort.
+    }
+  }
+
+  let players: Player[] = [
+    { id: "p1", name: "Player 1", instrument: readPersistedPrimaryInstrument() },
+  ];
 
   function primaryPlayerInstrument(): Instrument | null {
     return players[0]?.instrument ?? null;
@@ -166,6 +192,11 @@ export function initPlayersPanel(deps: PlayersPanelDeps): PlayersPanelHandle {
         const inst = sel.value as Instrument;
         deps.setPluginSelectionModeAuto();
         players = players.map((p) => (p.id === id ? { ...p, instrument: inst } : p));
+        // Player 1 is the primary; remember their instrument across
+        // song loads so resetForSongSetup picks it up next time.
+        if (id === "p1") {
+          persistPrimaryInstrument(inst);
+        }
         deps.syncMelodicTrackSelectionFromPlayers();
         const pluginChanged = deps.syncPreferredPluginSelection();
         if (pluginChanged) {
@@ -204,7 +235,11 @@ export function initPlayersPanel(deps: PlayersPanelDeps): PlayersPanelHandle {
 
   function resetForSongSetup(): void {
     deps.setPluginSelectionModeAuto();
-    players = [{ id: "p1", name: "Player 1", instrument: "drums" }];
+    // Read from localStorage instead of hardcoding "drums" so the user's
+    // last instrument choice survives a song change.
+    players = [
+      { id: "p1", name: "Player 1", instrument: readPersistedPrimaryInstrument() },
+    ];
     rerenderAndApplyAvailability();
     deps.syncPreferredPluginSelection();
   }

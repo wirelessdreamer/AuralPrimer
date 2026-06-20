@@ -38,11 +38,26 @@ SUNO_ROLE_MAP: dict[str, str | None] = {
     "Bass": "bass",
     "Drums": "drums",
     "Guitar": "guitar",
+    # NOTE: order matters here -- find_stems_in_psalm_dir picks the FIRST
+    # match per role, so put the louder/canonical Suno label ("Vocals")
+    # before the supplemental ("Backing Vocals") to avoid silent imports
+    # when both stems exist.
     "Vocals": "vocals",
     "Backing Vocals": "vocals",
     "Synth": "other",
     "FX": "other",
     "Percussion": "drums",
+}
+
+# Per-role priority order. When the source folder has multiple stems for
+# the same role, the lower-indexed Suno label wins. This is the lever
+# that fixed "Vocals" outranking "Backing Vocals" -- without it, the
+# alphabetical scan in find_stems_in_psalm_dir picked the wrong stem
+# and the user heard near-silent vocals in the in-game mix.
+SUNO_ROLE_PRIORITY: dict[str, list[str]] = {
+    "vocals": ["Vocals", "Backing Vocals"],
+    "drums": ["Drums", "Percussion"],
+    "other": ["Synth", "FX"],
 }
 
 DEFAULT_MELODIC_METHOD = "piano_chord_supplement"
@@ -58,13 +73,28 @@ def parse_role_from_stem_name(stem_name: str) -> tuple[str, str | None]:
 
 
 def find_stems_in_psalm_dir(psalm_dir: Path) -> dict[str, Path]:
-    """Return {normalized_role: wav_path}. Picks the FIRST matching wav per role."""
+    """Return {normalized_role: wav_path}.
+
+    For roles that have a SUNO_ROLE_PRIORITY entry (e.g. "vocals" with
+    "Vocals" preferred over "Backing Vocals"), pick the highest-priority
+    Suno label that actually exists in the folder. For all other roles
+    fall back to alphabetical first-match, which is stable when only one
+    candidate exists.
+    """
+    wavs_by_raw_role: dict[str, Path] = {}
     out: dict[str, Path] = {}
     for wav in sorted(psalm_dir.glob("*.wav")):
-        _raw, normalized = parse_role_from_stem_name(wav.stem)
+        raw, normalized = parse_role_from_stem_name(wav.stem)
         if normalized is None:
             continue
+        wavs_by_raw_role.setdefault(raw, wav)
         out.setdefault(normalized, wav)
+
+    for role, priority_order in SUNO_ROLE_PRIORITY.items():
+        for preferred_label in priority_order:
+            if preferred_label in wavs_by_raw_role:
+                out[role] = wavs_by_raw_role[preferred_label]
+                break
     return out
 
 
