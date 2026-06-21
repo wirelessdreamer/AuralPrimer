@@ -91,15 +91,22 @@ Per-case breakdowns, JSON reports, reproducibility commands, and the
 
 ### Research docs (start here)
 
+- [**Piano transcription cleanup deep-dive — 2026-06-20**](docs/research-piano-cleanup-deep-dive-2026-06-20.md)
+  Standalone narrative of the keys F1=0.706 → 0.928 climb. Tells each
+  of the four steps end-to-end: the failure mode found by inspecting
+  the previous step's output, the fix's gating contract, per-case
+  numbers, and the "what didn't work" log (naive ensembles, onset-
+  threshold sweeps, other engines). The doc to read first if you
+  want the story behind the headline number.
+
 - [**Ground-truth benchmarks — 2026-06-14**](docs/research-ground-truth-benchmarks-2026-06-14.md)
-  Full per-instrument deep dive. Builds the annotated-corpus benchmark
-  harness, ships dataset adapters for E-GMD / GuitarSet / Guitar-TECHS,
-  documents every tuned variant we tried (the wins AND the failures),
-  and pins reproducibility commands so anyone can re-run a sweep with
-  one `aural_ingest gt-benchmark` invocation. Covers drums, bass,
-  guitar, and the four-step climb on keys
-  (`piano_pti` → `piano_pti_clean` → `piano_pti_clean_dedup` →
-  `piano_pti_clean_dedup_pyin` → `piano_chord_supplement`).
+  Full per-instrument deep dive across all four instruments. Builds
+  the annotated-corpus benchmark harness, ships dataset adapters for
+  E-GMD / GuitarSet / Guitar-TECHS, documents every tuned variant we
+  tried (the wins AND the failures), and pins reproducibility commands
+  so anyone can re-run a sweep with one `aural_ingest gt-benchmark`
+  invocation. Covers drums, bass, guitar, and the round summary for
+  keys (deep-dive doc above expands the keys section).
 
 - [**ADT architecture deep-dive — 2026-05-07**](docs/research-deep-dive-adt-2026-05-07.md)
   2024–2025 ADT / transcription literature scan that revised 10

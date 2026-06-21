@@ -231,6 +231,11 @@ aural_ingest gt-benchmark `
 
 ## Keys
 
+> See [**research-piano-cleanup-deep-dive-2026-06-20.md**](research-piano-cleanup-deep-dive-2026-06-20.md)
+> for the standalone narrative of the F1=0.706 → 0.928 climb (each
+> step's failure mode, gating contract, per-case numbers, and the
+> "what didn't work" log). This section is the round summary.
+
 No external annotated keys corpus is present in this round's selected
 datasets (see `D:\AudioSourceOfTruth\docs\selected-datasets.md`). To
 still deliver a keys improvement pass, this round added a small
