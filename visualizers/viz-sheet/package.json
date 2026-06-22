@@ -1,5 +1,5 @@
 {
-  "name": "@auralprimer/viz-nashville",
+  "name": "@auralprimer/viz-sheet",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,4 +11,3 @@
     "@auralprimer/viz-tab": "*"
   }
 }
-

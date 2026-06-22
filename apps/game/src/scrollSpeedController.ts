@@ -104,6 +104,8 @@ export function initScrollSpeedController(deps: ScrollSpeedDeps): ScrollSpeedCon
   }
   window.addEventListener("keydown", (ev) => {
     if (focusIsTyping(ev.target)) return;
+    // Ctrl/Meta + bracket is reserved for the A/V sync calibration nudge.
+    if (ev.ctrlKey || ev.metaKey) return;
     if (ev.key !== "[" && ev.key !== "]") return;
     ev.preventDefault();
     const step = ev.shiftKey ? STEP_FINE : STEP_COARSE;

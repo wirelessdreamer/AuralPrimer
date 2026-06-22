@@ -123,6 +123,16 @@ export function appShellHtml(): string {
                   In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.
                 </div>
 
+                <div class="row" id="nashvilleRow">
+                  <label class="meta" for="nashvilleMode" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input id="nashvilleMode" type="checkbox" />
+                    Nashville numbers
+                  </label>
+                  <span class="meta" style="opacity:0.7;font-size:11px">
+                    Label piano-roll notes by scale degree (1-7) in the song's key.
+                  </span>
+                </div>
+
                 <div class="row">
                   <button id="vizStart">Start visualizer</button>
                   <button id="vizStop" disabled>Stop</button>
@@ -154,7 +164,7 @@ export function appShellHtml(): string {
                   <button id="audioOutputDeviceApply">Apply</button>
                 </div>
                 <div class="row">
-                  <label class="meta">Slowdown</label>
+                  <label class="meta">Speed (keeps pitch)</label>
                   <input id="playbackRate" type="number" min="0.25" max="2" step="0.05" value="1" />
                   <button id="playbackRateApply">Set rate</button>
                 </div>
@@ -191,6 +201,10 @@ export function appShellHtml(): string {
 
                 <div id="instrumentSelector" class="instrumentSelector" style="display:none">
                   <span class="meta">Instrument:</span>
+                  <div id="displayModeToggle" class="displayModeToggle" role="group" aria-label="Display mode">
+                    <button id="displayModePiano" class="displayModeBtn isActive" data-mode="piano" type="button">Piano roll</button>
+                    <button id="displayModeSheet" class="displayModeBtn" data-mode="sheet" type="button">Sheet music</button>
+                  </div>
                 </div>
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
 
@@ -255,6 +269,22 @@ export function appShellHtml(): string {
             <h4>Installed</h4>
             <pre id="modelsStatus">(not loaded)</pre>
 
+          </section>
+
+          <section class="panel">
+            <div class="panelHeader">
+              <h2>Audio</h2>
+              <div class="meta">Output sync calibration</div>
+            </div>
+
+            <h3>A/V Sync</h3>
+            <p class="meta">Align the falling notes with what you hear. Calibrate once per output device — especially for Bluetooth headphones, which add 150–250&nbsp;ms of delay. Fine-tune anytime with Ctrl+[ / Ctrl+].</p>
+            <div class="row">
+              <label class="meta">Current offset</label>
+              <span id="avSyncValue" class="meta">0 ms</span>
+              <button id="avSyncCalibrate">Calibrate…</button>
+              <button id="avSyncReset">Reset</button>
+            </div>
           </section>
 
           <section class="panel">

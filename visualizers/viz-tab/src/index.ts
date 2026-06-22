@@ -42,6 +42,14 @@ export type PianoRenderOptions = {
    * matching how the viz-* highway plugins scale. Tempo-lock preserved.
    */
   scrollSpeedMultiplier?: number;
+  /**
+   * Nashville Number System mode. When true, the piano roll labels notes
+   * by their scale-degree number relative to the inferred song key
+   * (1..7 for diatonic notes, b/# of the nearest degree for chromatic
+   * notes) instead of note names. Falls back to note-name labels when the
+   * key signature can't be inferred. Default: false (note names).
+   */
+  nashville?: boolean;
 };
 
 export type PianoLiveInputNote = {
@@ -180,6 +188,44 @@ export function midiToNoteName(pitch: number, style: NoteLabelStyle = "sharp"): 
   const name = noteNameForPitchClass(pitchClass, style);
   const octave = Math.floor(pitch / 12) - 1;
   return `${name}${octave}`;
+}
+
+// Nashville Number System scale degrees, indexed by the semitone offset of
+// the note above the tonic (0..11). Diatonic (major-scale) degrees map to
+// plain numbers; chromatic degrees are spelled as a flat or sharp of the
+// nearest degree, chosen by the key's note-label convention.
+//
+// Minor-key decision: degrees are spelled relative to the *relative major*
+// is NOT used. Instead we number against the actual minor tonic using the
+// natural-minor scale (1 2 b3 4 5 b6 b7). This is what musicians playing in
+// a minor key expect — the tonic is "1" and the minor third is "b3". The
+// `pitchClass` from inferKeySignature is the minor tonic's pitch class, so
+// no relative-major remapping is needed.
+const NASHVILLE_MAJOR_SHARP = ["1", "#1", "2", "#2", "3", "4", "#4", "5", "#5", "6", "#6", "7"];
+const NASHVILLE_MAJOR_FLAT = ["1", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7"];
+const NASHVILLE_MINOR_SHARP = ["1", "#1", "2", "3", "#3", "4", "#4", "5", "6", "#6", "7", "#7"];
+const NASHVILLE_MINOR_FLAT = ["1", "b2", "2", "3", "b4", "4", "b5", "5", "b6", "6", "b7", "b8"];
+
+/**
+ * Map a MIDI pitch to its Nashville scale-degree label relative to the
+ * analysed key. Returns null when no key analysis is available so callers
+ * can fall back to note names. Octave-independent (degree is the same in
+ * every octave). Chromatic notes are spelled sharp/flat following the key's
+ * `noteLabelStyle` (flat keys -> flats, otherwise sharps).
+ */
+export function pitchToNashville(pitch: number, analysis: KeySignatureAnalysis | null): string | null {
+  if (!analysis) return null;
+  const degree = mod(pitch - analysis.pitchClass, 12);
+  const useFlat = analysis.noteLabelStyle === "flat";
+  const table =
+    analysis.mode === "minor"
+      ? useFlat
+        ? NASHVILLE_MINOR_FLAT
+        : NASHVILLE_MINOR_SHARP
+      : useFlat
+        ? NASHVILLE_MAJOR_FLAT
+        : NASHVILLE_MAJOR_SHARP;
+  return table[degree];
 }
 
 function roundRectPath(
@@ -553,6 +599,9 @@ export class TabRenderer {
     const activeKeys = new Map<number, number>();
     const liveKeys = new Map<number, { intensity: number; heldBySustain: boolean }>();
     const noteStyle = this.keySignature?.noteLabelStyle ?? "dual";
+    // Nashville mode is only meaningful when we have a key to number
+    // against; otherwise transparently fall back to note-name labels.
+    const nashville = Boolean(opts.nashville) && Boolean(this.keySignature);
 
     const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
     bgGrad.addColorStop(0, "#0f1520");
@@ -699,27 +748,52 @@ export class TabRenderer {
       const onsetTop = holdBottom;
       const onsetBottomVisible = visibleBottom;
 
-      // Soft outer glow halo around the whole pill, scaled with how
-      // close the onset is to the line.
+      // The sustain renders as a THIN centered stem; the onset cap keeps
+      // the full key width. The width contrast (not just brightness) is
+      // what makes the attack read as a distinct event from the ring-out.
+      const holdW = Math.max(2, noteW * 0.42);
+      const holdX = noteX + (noteW - holdW) * 0.5;
+      const hasHold = holdBottom > holdTop + 1;
+
+      // Soft outer glow halo. The onset gets a full-width halo so the
+      // attack pops; the hold only gets a thin halo matching its stem,
+      // so the glow doesn't fatten the sustain back up.
       ctx.fillStyle = glowColor;
-      roundRectPath(ctx, noteX - 2, visibleTop - 2, noteW + 4, height + 4, Math.min(8, noteW * 0.4));
+      if (hasHold) {
+        roundRectPath(
+          ctx,
+          holdX - 1.5,
+          visibleTop - 2,
+          holdW + 3,
+          holdBottom - holdTop + 4,
+          Math.min(6, holdW * 0.5),
+        );
+        ctx.fill();
+      }
+      roundRectPath(
+        ctx,
+        noteX - 2,
+        onsetTop - 2,
+        noteW + 4,
+        onsetBottomVisible - onsetTop + 4,
+        Math.min(8, noteW * 0.4),
+      );
       ctx.fill();
 
-      // Hold body: transparent fill (alpha ~0.35) over the sustain
-      // portion. Re-uses the role body color but with reduced opacity
-      // so the eye reads it as "the note is still ringing, but the
-      // attack has already passed."
-      if (holdBottom > holdTop + 1) {
+      // Hold body: thin transparent stem over the sustain portion.
+      // Reduced opacity so the eye reads it as "the note is still
+      // ringing, but the attack has already passed."
+      if (hasHold) {
         ctx.save();
         ctx.globalAlpha = 0.40;
         ctx.fillStyle = bodyColor;
         roundRectPath(
           ctx,
-          noteX,
+          holdX,
           holdTop,
-          noteW,
+          holdW,
           holdBottom - holdTop,
-          Math.min(7, noteW * 0.4),
+          Math.min(5, holdW * 0.5),
         );
         ctx.fill();
         ctx.restore();
@@ -731,13 +805,13 @@ export class TabRenderer {
         holdGrad.addColorStop(0, "rgba(255,255,255,0.00)");
         holdGrad.addColorStop(1, "rgba(255,255,255,0.20)");
         ctx.fillStyle = holdGrad;
-        ctx.fillRect(noteX + 1, holdTop, Math.max(1, noteW - 2), holdBottom - holdTop);
+        ctx.fillRect(holdX + 0.5, holdTop, Math.max(1, holdW - 1), holdBottom - holdTop);
         ctx.restore();
       }
 
-      // Onset cap: bright solid at the bottom. This is the "play me
-      // now" moment -- visually loud so the user's eye locks on as it
-      // descends toward the hit line.
+      // Onset cap: bright solid full-width bar at the bottom. This is the
+      // "play me now" moment -- visually loud and the full key width so the
+      // user's eye locks on as it descends toward the hit line.
       ctx.fillStyle = bodyColor;
       roundRectPath(
         ctx,
@@ -753,6 +827,23 @@ export class TabRenderer {
       // as a distinct bar even at small sizes.
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fillRect(noteX + 1, onsetTop, Math.max(1, noteW - 2), 1.6);
+
+      // Nashville mode: stamp the scale-degree number on the onset cap so
+      // the falling note reads as its number in the key. Only drawn when
+      // the cap is wide enough to fit a glyph legibly.
+      if (nashville && noteW >= 9) {
+        const degree = pitchToNashville(note.pitch, this.keySignature);
+        if (degree) {
+          ctx.save();
+          ctx.fillStyle = "#08111c";
+          ctx.font = `700 ${noteW >= 13 ? 10 : 8}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const capCenterY = clamp((onsetTop + onsetBottomVisible) * 0.5, rollTop + 5, hitY - 5);
+          ctx.fillText(degree, noteX + noteW * 0.5, capCenterY);
+          ctx.restore();
+        }
+      }
 
       if (dt <= 0.08 && note.t_off >= t - 0.02) {
         activeKeys.set(note.pitch, Math.max(activeKeys.get(note.pitch) ?? 0, 0.35 + velocity * 0.65));
@@ -841,12 +932,21 @@ export class TabRenderer {
       ctx.lineWidth = 1;
       ctx.strokeRect(key.x, keyboardTop, key.w, keyboardHeight);
 
-      if (mod(key.midi, 12) === 0) {
+      // In note-name mode, label only the C keys as octave anchors. In
+      // Nashville mode, label the tonic of every octave with "1" so the
+      // user can orient against the key's home note across the keyboard.
+      const isTonic = nashville && this.keySignature
+        ? mod(key.midi, 12) === mod(this.keySignature.pitchClass, 12)
+        : mod(key.midi, 12) === 0;
+      if (isTonic) {
         ctx.fillStyle = intensity > 0 ? "rgba(12,20,28,0.92)" : "rgba(22,30,38,0.52)";
         ctx.font = "10px ui-monospace, SFMono-Regular, Consolas, monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        ctx.fillText(midiToNoteName(key.midi, noteStyle), key.centerX, h - 6);
+        const label = nashville
+          ? pitchToNashville(key.midi, this.keySignature) ?? midiToNoteName(key.midi, noteStyle)
+          : midiToNoteName(key.midi, noteStyle);
+        ctx.fillText(label, key.centerX, h - 6);
       }
     }
 
@@ -888,7 +988,10 @@ export class TabRenderer {
         ctx.font = "8px ui-monospace, SFMono-Regular, Consolas, monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(noteNameForPitchClass(mod(key.midi, 12), noteStyle), key.centerX, keyboardTop + blackKeyHeight * 0.55);
+        const blackLabel = nashville
+          ? pitchToNashville(key.midi, this.keySignature) ?? noteNameForPitchClass(mod(key.midi, 12), noteStyle)
+          : noteNameForPitchClass(mod(key.midi, 12), noteStyle);
+        ctx.fillText(blackLabel, key.centerX, keyboardTop + blackKeyHeight * 0.55);
       }
     }
 
@@ -896,7 +999,8 @@ export class TabRenderer {
     ctx.font = "11px system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(this.keySignature?.label ?? "Piano roll", 18, keyboardTop - 8);
+    const rollLabel = this.keySignature?.label ?? "Piano roll";
+    ctx.fillText(nashville ? `${rollLabel}  •  Nashville numbers` : rollLabel, 18, keyboardTop - 8);
   }
 
   dispose(): void {
@@ -905,3 +1009,5 @@ export class TabRenderer {
     this.canvas.remove();
   }
 }
+
+export { SheetMusicRenderer } from "./sheetMusic";

@@ -21,10 +21,19 @@
  */
 
 import type { InstrumentRole, MelodicTrackSelection } from "./chartLoader";
-import { TabRenderer } from "./tabRenderer";
+import { TabRenderer, SheetMusicRenderer } from "./tabRenderer";
 import type { PianoLiveInputNote } from "./tabRenderer";
 import type { PlayersPanelHandle } from "./playersPanel";
 import type { ConsoleBridge } from "./consoleBridge";
+
+/** Display mode for the melodic play surface. */
+export type DisplayMode = "piano" | "sheet";
+
+/**
+ * Both renderers expose the same imperative surface, so the controller can
+ * hold one behind a single handle and swap implementations on mode change.
+ */
+type MelodicRenderer = TabRenderer | SheetMusicRenderer;
 
 /** Per-frame state required by TabRenderer.render(). */
 export type TabRenderFrame = {
@@ -32,6 +41,8 @@ export type TabRenderFrame = {
   timeSignature: [number, number];
   liveInputNotes: PianoLiveInputNote[];
   scrollSpeedMultiplier?: number;
+  /** Label falling notes by scale-degree number (Nashville Number System). */
+  nashville?: boolean;
 };
 
 const INSTRUMENT_ROLE_LABELS: Record<string, string> = {
@@ -50,6 +61,8 @@ export type PlaySurfaceControllerDeps = {
   consoleBridge: ConsoleBridge;
   getSelectedMelodicTracks: () => MelodicTrackSelection[];
   getCurrentRoute: () => string;
+  /** Initial display mode (persisted by the host). Defaults to "piano". */
+  initialDisplayMode?: DisplayMode;
 };
 
 export type PlaySurfaceControllerHandle = {
@@ -68,6 +81,10 @@ export type PlaySurfaceControllerHandle = {
   renderTabFrame: (t: number, frame: TabRenderFrame) => void;
   /** Currently-active instrument role (null if none selected). */
   getActiveTabInstrument: () => InstrumentRole | null;
+  /** Switch between the piano-roll and sheet-music renderers. */
+  setDisplayMode: (mode: DisplayMode) => void;
+  /** Currently-active display mode. */
+  getDisplayMode: () => DisplayMode;
 };
 
 export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): PlaySurfaceControllerHandle {
@@ -77,8 +94,15 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     throw new Error("initPlaySurfaceController: required DOM (#instrumentSelector/#tabContainer) missing");
   }
 
-  let tabRenderer: TabRenderer | null = null;
+  let tabRenderer: MelodicRenderer | null = null;
   let activeTabInstrument: InstrumentRole | null = null;
+  let displayMode: DisplayMode = deps.initialDisplayMode ?? "piano";
+
+  function createRenderer(): MelodicRenderer {
+    return displayMode === "sheet"
+      ? new SheetMusicRenderer(tabContainerEl!)
+      : new TabRenderer(tabContainerEl!);
+  }
 
   function findMelodicTrack(role: InstrumentRole | null): MelodicTrackSelection | null {
     if (!role) return null;
@@ -118,7 +142,7 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     // Create or update tab renderer.
     if (!tabRenderer) {
       tabContainerEl!.innerHTML = "";
-      tabRenderer = new TabRenderer(tabContainerEl!);
+      tabRenderer = createRenderer();
     }
     tabRenderer.setTrack(track);
     activeTabInstrument = role;
@@ -153,8 +177,9 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     }
     activeTabInstrument = null;
 
-    // Clear old buttons (keep the label span).
-    const buttons = instrumentSelectorEl!.querySelectorAll("button");
+    // Clear old instrument buttons (keep the label span AND the
+    // display-mode toggle, which also lives in this row).
+    const buttons = instrumentSelectorEl!.querySelectorAll("button.instrumentBtn");
     buttons.forEach((b) => b.remove());
 
     const tracks = deps.getSelectedMelodicTracks();
@@ -187,6 +212,20 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     tabRenderer.render(t, frame);
   }
 
+  function setDisplayMode(mode: DisplayMode): void {
+    if (mode === displayMode) return;
+    displayMode = mode;
+    // Rebuild the active renderer in place, preserving the current track.
+    if (tabRenderer && activeTabInstrument) {
+      const role = activeTabInstrument;
+      tabRenderer.dispose();
+      tabContainerEl!.innerHTML = "";
+      tabRenderer = null;
+      selectInstrumentTrack(role);
+    }
+    deps.consoleBridge.log("play", `display mode: ${mode}`);
+  }
+
   return {
     syncSurfaceMode,
     syncMelodicTrackSelectionFromPlayers,
@@ -194,5 +233,7 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     selectInstrumentTrack,
     renderTabFrame,
     getActiveTabInstrument: () => activeTabInstrument,
+    setDisplayMode,
+    getDisplayMode: () => displayMode,
   };
 }

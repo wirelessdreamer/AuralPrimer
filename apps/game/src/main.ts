@@ -2,6 +2,7 @@ import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
 import { TransportController } from "./transportController";
+import { initAvCalibration } from "./avCalibration";
 import type { TransportTimebase } from "./audioBackend";
 import { HtmlAudioTimebase } from "./htmlAudioTimebase";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
@@ -39,7 +40,7 @@ import { initPauseMenu, type PauseMenuHandle } from "./pauseMenu";
 import { initCapsPanel, type CapsPanelHandle, type SongCapabilities, type AuralSongChartsByPath } from "./capsPanel";
 import { initPluginsPanel, type PluginsPanelHandle } from "./pluginsPanel";
 import { initSongDetailsView, type SongDetailsViewHandle } from "./songDetailsView";
-import { initPlaySurfaceController, type PlaySurfaceControllerHandle } from "./playSurfaceController";
+import { initPlaySurfaceController, type PlaySurfaceControllerHandle, type DisplayMode } from "./playSurfaceController";
 import { initRouteController, type RouteControllerHandle, type Route } from "./routeController";
 import { initAudioTransportPanel, type AudioTransportPanelHandle } from "./audioTransportPanel";
 import { appShellHtml } from "./appShellHtml";
@@ -51,7 +52,7 @@ import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
-import { loadAuralSongAudioIntoTransport } from "./auralsongAudioLoader";
+import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
 function haveTauri(): boolean {
@@ -153,6 +154,26 @@ const playLyricsNextEl = document.getElementById("playLyricsNext") as HTMLDivEle
 const vizStatusEl = document.getElementById("vizStatus") as HTMLPreElement;
 const instrumentSelectorEl = document.getElementById("instrumentSelector") as HTMLDivElement;
 const tabContainerEl = document.getElementById("tabContainer") as HTMLDivElement;
+const displayModeToggleEl = document.getElementById("displayModeToggle") as HTMLDivElement | null;
+
+// Persisted "Piano roll ↔ Sheet music" display mode for the melodic surface.
+const DISPLAY_MODE_STORAGE_KEY = "auralprimer.displayMode";
+function readPersistedDisplayMode(): DisplayMode {
+  try {
+    const raw = window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY);
+    if (raw === "sheet" || raw === "piano") return raw;
+  } catch {
+    // localStorage may be unavailable in some embedded webviews; default safely.
+  }
+  return "piano";
+}
+function persistDisplayMode(mode: DisplayMode): void {
+  try {
+    window.localStorage.setItem(DISPLAY_MODE_STORAGE_KEY, mode);
+  } catch {
+    // Best-effort.
+  }
+}
 const appMainEl = document.querySelector(".appMain") as HTMLDivElement;
 const pluginSelect = document.getElementById("pluginSelect") as HTMLSelectElement;
 const pluginRefreshBtn = document.getElementById("pluginRefresh") as HTMLButtonElement;
@@ -584,7 +605,28 @@ const playSurfaceController: PlaySurfaceControllerHandle = initPlaySurfaceContro
   consoleBridge,
   getSelectedMelodicTracks: () => selectedMelodicTracks,
   getCurrentRoute: () => routeController.getCurrentRoute(),
+  initialDisplayMode: readPersistedDisplayMode(),
 });
+
+// Wire the "Piano roll ↔ Sheet music" display-mode toggle. Reflect the
+// persisted initial mode onto the buttons, then switch + persist on click.
+function syncDisplayModeButtons(mode: DisplayMode): void {
+  if (!displayModeToggleEl) return;
+  for (const btn of Array.from(displayModeToggleEl.querySelectorAll<HTMLButtonElement>("button.displayModeBtn"))) {
+    btn.classList.toggle("isActive", btn.dataset.mode === mode);
+  }
+}
+if (displayModeToggleEl) {
+  syncDisplayModeButtons(playSurfaceController.getDisplayMode());
+  displayModeToggleEl.addEventListener("click", (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("button.displayModeBtn");
+    const mode = btn?.dataset.mode;
+    if (mode !== "piano" && mode !== "sheet") return;
+    playSurfaceController.setDisplayMode(mode);
+    persistDisplayMode(mode);
+    syncDisplayModeButtons(mode);
+  });
+}
 
 // Secondary-stages controller — owns the per-player Visualizer instances
 // for Players 2..N. Init AFTER playersPanel + pluginsPanel + playSurfaceController
@@ -734,6 +776,15 @@ async function selectAuralSong(containerPath: string) {
     const chartSelection = await readSongChartSelection({ containerPath, details, consoleBridge });
     selectedDrumChartSelection = chartSelection.drumSelection;
     selectedMelodicTracks = chartSelection.melodicTracks;
+
+    // Now that the melodic notes are loaded, refresh the HUD key/mode from the
+    // primary melodic track (keys/piano when present) so the header shows the
+    // data-driven key instead of the manifest default.
+    const keyTrack =
+      selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+    if (keyTrack) {
+      songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack.notes);
+    }
 
     // Populate instrument selector with available melodic tracks.
     updateInstrumentSelector();
@@ -980,6 +1031,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
         timeSignature: transport.timeSignature,
         liveInputNotes: midiPanel.inputActiveNotes().activeNotes,
         scrollSpeedMultiplier: transport.scrollSpeedMultiplier,
+        nashville: nashvilleMode,
       });
     }
 
@@ -1043,6 +1095,31 @@ initScrollSpeedController({
   },
 });
 
+// Nashville Number System toggle — labels piano-roll notes by scale degree
+// relative to the inferred song key instead of note names. Persisted per
+// webview in localStorage. Read each frame by the tab render call below.
+const NASHVILLE_STORAGE_KEY = "auralprimer.nashvilleMode";
+function readNashvilleMode(): boolean {
+  try {
+    return window.localStorage.getItem(NASHVILLE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+let nashvilleMode = readNashvilleMode();
+const nashvilleCheckbox = document.getElementById("nashvilleMode") as HTMLInputElement | null;
+if (nashvilleCheckbox) {
+  nashvilleCheckbox.checked = nashvilleMode;
+  nashvilleCheckbox.addEventListener("change", () => {
+    nashvilleMode = nashvilleCheckbox.checked;
+    try {
+      window.localStorage.setItem(NASHVILLE_STORAGE_KEY, nashvilleMode ? "1" : "0");
+    } catch {
+      // Best-effort — session-only persistence is acceptable.
+    }
+  });
+}
+
 // Metronome controls live in playbackRateAndMetronomePanel.ts (Phase 2.V).
 
 // MIDI follow defaults to enabled.
@@ -1080,6 +1157,80 @@ window.addEventListener("keydown", (ev) => {
 
   ev.preventDefault();
   pauseMenu.show("loaded");
+});
+
+// --- Audio/visual sync calibration -------------------------------------
+// Aligns the falling notes with the audible beat. The backend's auto output-
+// latency estimate handles the bulk; this manual offset covers the residual,
+// which is most visible at high Note spacing (a fixed time error becomes more
+// pixels as notes fall faster). Nudge with Ctrl+[ (earlier) / Ctrl+] (later),
+// reset with Ctrl+0. Persisted across sessions. Default 0 = no change.
+const AV_OFFSET_STORAGE_KEY = "auralprimer.avOffsetMs";
+const AV_OFFSET_STEP_MS = 5;
+
+function persistAvOffsetMs(ms: number): void {
+  try {
+    window.localStorage.setItem(AV_OFFSET_STORAGE_KEY, String(ms));
+  } catch {
+    // localStorage may be unavailable in some embedded webviews.
+  }
+}
+
+function applyAvOffsetMs(ms: number): void {
+  const clamped = Math.max(-500, Math.min(500, Math.round(ms)));
+  transportController.setAudioVisualOffsetSec(clamped / 1000);
+  persistAvOffsetMs(clamped);
+  const sign = clamped > 0 ? "+" : "";
+  const avValueEl = document.getElementById("avSyncValue");
+  if (avValueEl) avValueEl.textContent = `${sign}${clamped} ms`;
+  setAudioStatus(
+    `A/V sync offset: ${sign}${clamped} ms (notes ${clamped >= 0 ? "later" : "earlier"} vs audio)`,
+  );
+  consoleBridge.log("gamestate", "a/v sync offset changed", { offsetMs: clamped });
+}
+
+// Rock Band-style latency calibrator (tap-to-the-beat). Measures true
+// end-to-end audio latency — including Bluetooth — and applies it as the
+// A/V offset.
+const avCalibration = initAvCalibration({
+  onApply: (offsetMs) => applyAvOffsetMs(offsetMs),
+  getInitialOffsetMs: () => Math.round(transportController.getAudioVisualOffsetSec() * 1000),
+  log: (message, details) => consoleBridge.log("gamestate", message, details),
+});
+document.getElementById("avSyncCalibrate")?.addEventListener("click", () => avCalibration.open());
+document.getElementById("avSyncReset")?.addEventListener("click", () => applyAvOffsetMs(0));
+
+(function initAvOffset() {
+  let stored = 0;
+  try {
+    const raw = window.localStorage.getItem(AV_OFFSET_STORAGE_KEY);
+    const v = raw == null ? 0 : Number(raw);
+    if (Number.isFinite(v)) stored = v;
+  } catch {
+    stored = 0;
+  }
+  // Apply the persisted offset to the transport AND the on-screen readout.
+  applyAvOffsetMs(stored);
+})();
+
+window.addEventListener("keydown", (ev) => {
+  if (!ev.ctrlKey || ev.metaKey || ev.repeat) return;
+  const target = ev.target;
+  if (target instanceof HTMLElement) {
+    const tag = target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+  }
+  const curMs = Math.round(transportController.getAudioVisualOffsetSec() * 1000);
+  if (ev.key === "[") {
+    ev.preventDefault();
+    applyAvOffsetMs(curMs - AV_OFFSET_STEP_MS);
+  } else if (ev.key === "]") {
+    ev.preventDefault();
+    applyAvOffsetMs(curMs + AV_OFFSET_STEP_MS);
+  } else if (ev.key === "0") {
+    ev.preventDefault();
+    applyAvOffsetMs(0);
+  }
 });
 
 // audioSeekGoBtn / loopSetBtn / loopClearBtn handlers all live inside audioTransportPanel.ts.

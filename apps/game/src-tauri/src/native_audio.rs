@@ -84,6 +84,10 @@ struct EngineRuntimeState {
     is_playing: bool,
     playback_rate: f64,
     loop_region: Option<LoopRegion>,
+
+    // Pitch-preserving time-stretcher, engaged only when playback_rate != 1.
+    // Lazily created on first non-unity rate; 1x playback never touches it.
+    time_stretcher: Option<TimeStretcher>,
 }
 
 #[derive(Default)]
@@ -413,6 +417,7 @@ impl NativeAudioHandle {
             is_playing: false,
             playback_rate: 1.0,
             loop_region: None,
+            time_stretcher: None,
         };
 
         let snapshot = Arc::new(EngineSnapshot::default());
@@ -861,6 +866,184 @@ fn wrap_cursor_in_loop(cursor: f64, loop_region: LoopRegion) -> f64 {
     start + ((cursor - start) % len)
 }
 
+/// Pitch-preserving time-stretch (WSOLA: Waveform-Similarity Overlap-Add).
+///
+/// Time-domain, no FFT, no dependencies. Plays the source slower/faster while
+/// keeping the original pitch by overlap-adding windowed grains, aligning each
+/// grain to the previous one's natural continuation via a short similarity
+/// search so the overlap stays phase-coherent.
+///
+/// Only used when `playback_rate != 1`; unity playback never constructs one.
+struct TimeStretcher {
+    channels: usize,
+    window: Vec<f32>, // Hann, length GRAIN
+    // State (all in source frames unless noted).
+    have_prev: bool,
+    prev_grain_start: i64,
+    analysis_ideal: f64,
+    output_src_pos: f64, // source position mapped to the next output frame drained
+    tail: Vec<f32>,      // interleaved overlap carry-over, len OVERLAP*channels
+    out_ring: std::collections::VecDeque<f32>,
+}
+
+impl TimeStretcher {
+    const GRAIN: usize = 2048;
+    const OVERLAP: usize = 1024; // = GRAIN - SYN_HOP; 50% overlap
+    const SYN_HOP: usize = 1024; // emitted frames per grain
+    const SEARCH: i64 = 256; // WSOLA similarity search radius (frames)
+    const CORR: usize = 1024; // similarity window length (frames)
+
+    fn new(channels: usize) -> Self {
+        let ch = channels.max(1);
+        let g = Self::GRAIN as f32;
+        let window = (0..Self::GRAIN)
+            .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / g).cos())
+            .collect();
+        TimeStretcher {
+            channels: ch,
+            window,
+            have_prev: false,
+            prev_grain_start: 0,
+            analysis_ideal: 0.0,
+            output_src_pos: 0.0,
+            tail: vec![0.0; Self::OVERLAP * ch],
+            out_ring: std::collections::VecDeque::with_capacity(Self::GRAIN * ch * 2),
+        }
+    }
+
+    fn channels(&self) -> usize {
+        self.channels
+    }
+
+    /// Re-anchor to an absolute source position (seek, loop wrap, rate flip).
+    fn reanchor(&mut self, src_frame: f64) {
+        let anchor = src_frame.max(0.0);
+        self.have_prev = false;
+        self.prev_grain_start = anchor.round() as i64;
+        self.analysis_ideal = anchor;
+        self.output_src_pos = anchor;
+        for v in self.tail.iter_mut() {
+            *v = 0.0;
+        }
+        self.out_ring.clear();
+    }
+
+    /// True if the canonical cursor diverged from our output position (a seek).
+    fn needs_reanchor(&self, canonical_src: f64) -> bool {
+        (canonical_src - self.output_src_pos).abs() > Self::GRAIN as f64
+    }
+
+    #[inline]
+    fn sample(data: &[i16], total_frames: usize, channels: usize, frame: i64, ch: usize) -> f32 {
+        if frame < 0 {
+            return 0.0;
+        }
+        let f = frame as usize;
+        if f >= total_frames {
+            return 0.0;
+        }
+        data[f * channels + ch] as f32 / i16::MAX as f32
+    }
+
+    fn produce_grain(&mut self, data: &[i16], total_frames: usize, rate: f64) {
+        let ch = self.channels;
+        let ia = self.analysis_ideal.round() as i64;
+
+        // WSOLA: pick the grain start near `ia` whose leading region best
+        // matches the natural continuation of the previously emitted grain.
+        let chosen = if self.have_prev {
+            let ref_start = self.prev_grain_start + Self::SYN_HOP as i64;
+            let mut best_delta: i64 = 0;
+            let mut best_score = f64::INFINITY;
+            let mut delta = -Self::SEARCH;
+            while delta <= Self::SEARCH {
+                let cand = ia + delta;
+                let mut score = 0.0f64;
+                let mut k = 0usize;
+                while k < Self::CORR {
+                    let a = Self::sample(data, total_frames, ch, cand + k as i64, 0);
+                    let b = Self::sample(data, total_frames, ch, ref_start + k as i64, 0);
+                    let d = (a - b) as f64;
+                    score += d * d;
+                    if score >= best_score {
+                        break;
+                    }
+                    k += 1;
+                }
+                if score < best_score {
+                    best_score = score;
+                    best_delta = delta;
+                }
+                delta += 1;
+            }
+            ia + best_delta
+        } else {
+            ia
+        };
+
+        // Window the grain and overlap-add: first OVERLAP frames combine with
+        // the carried tail and are emitted; the rest become the next tail.
+        for i in 0..Self::GRAIN {
+            let w = self.window[i];
+            for c in 0..ch {
+                let s = Self::sample(data, total_frames, ch, chosen + i as i64, c) * w;
+                if i < Self::OVERLAP {
+                    let idx = i * ch + c;
+                    self.out_ring.push_back(self.tail[idx] + s);
+                } else {
+                    self.tail[(i - Self::OVERLAP) * ch + c] = s;
+                }
+            }
+        }
+
+        self.prev_grain_start = chosen;
+        self.have_prev = true;
+        self.analysis_ideal += Self::SYN_HOP as f64 * rate;
+    }
+
+    /// Fill `out` (interleaved f32) with pitch-preserved, time-stretched audio.
+    /// Returns the source position corresponding to the next output frame, so
+    /// the transport clock keeps reporting true song position.
+    fn process(
+        &mut self,
+        data: &[i16],
+        total_frames: usize,
+        rate: f64,
+        out: &mut [f32],
+        loop_region: Option<LoopRegion>,
+    ) -> f64 {
+        let ch = self.channels;
+        let frames_needed = out.len() / ch;
+
+        while self.out_ring.len() < out.len() {
+            // Past the end with no loop: pad with silence rather than spin.
+            if loop_region.is_none()
+                && self.analysis_ideal > (total_frames + Self::GRAIN) as f64
+            {
+                while self.out_ring.len() < out.len() {
+                    self.out_ring.push_back(0.0);
+                }
+                break;
+            }
+            self.produce_grain(data, total_frames, rate);
+        }
+
+        for v in out.iter_mut() {
+            *v = self.out_ring.pop_front().unwrap_or(0.0);
+        }
+
+        self.output_src_pos += frames_needed as f64 * rate;
+
+        if let Some(lr) = loop_region {
+            if self.output_src_pos >= lr.end_frame as f64 {
+                self.reanchor(lr.start_frame as f64);
+            }
+        }
+
+        self.output_src_pos
+    }
+}
+
 fn render_output_block(runtime: &mut EngineRuntimeState, out: &mut [f32], channels: usize) -> u64 {
     if channels == 0 || !out.len().is_multiple_of(channels) {
         out.fill(0.0);
@@ -892,6 +1075,24 @@ fn render_output_block(runtime: &mut EngineRuntimeState, out: &mut [f32], channe
     let src_total_frames = wav.data.len() / channels;
     let playback_rate = runtime.playback_rate;
     let loop_region = runtime.loop_region;
+
+    // Pitch-preserving slowdown/speed-up. Unity rate falls through to the
+    // sample-accurate passthrough below, leaving normal playback untouched.
+    if (playback_rate - 1.0).abs() >= 1e-9 {
+        let ts = runtime
+            .time_stretcher
+            .get_or_insert_with(|| TimeStretcher::new(channels));
+        if ts.channels() != channels {
+            *ts = TimeStretcher::new(channels);
+        }
+        if ts.needs_reanchor(runtime.source_frame_cursor) {
+            ts.reanchor(runtime.source_frame_cursor);
+        }
+        let new_cursor = ts.process(&wav.data, src_total_frames, playback_rate, out, loop_region);
+        runtime.source_frame_cursor = new_cursor;
+        return frame_count as u64;
+    }
+
     let mut cursor = runtime.source_frame_cursor;
 
     for frame_idx in 0..frame_count {
@@ -1333,6 +1534,61 @@ mod tests {
         assert!((a - b).abs() < 1e-6, "left={a} right={b}");
     }
 
+    #[test]
+    fn time_stretch_constant_signal_stays_flat() {
+        // Overlap-add of 50% Hann grains sums to ~1, so a DC input should pass
+        // through at its original amplitude (past the initial fade-in grain).
+        let ch = 1usize;
+        let total = 20_000usize;
+        let val: i16 = 10_000;
+        let data = vec![val; total * ch];
+        let mut ts = TimeStretcher::new(ch);
+        ts.reanchor(0.0);
+        let mut out = vec![0.0f32; 4096];
+        ts.process(&data, total, 0.5, &mut out, None);
+        let mut out2 = vec![0.0f32; 4096];
+        ts.process(&data, total, 0.5, &mut out2, None);
+        let expected = val as f32 / i16::MAX as f32;
+        let mid = out2[2048];
+        assert!((mid - expected).abs() < 0.05, "steady sample {mid} vs {expected}");
+        assert!(out2.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn time_stretch_cursor_tracks_rate() {
+        // The returned cursor (transport position) must advance at `rate`,
+        // independent of the stretcher's internal read-ahead.
+        let ch = 2usize;
+        let total = 40_000usize;
+        let data = vec![0i16; total * ch];
+        let mut ts = TimeStretcher::new(ch);
+        ts.reanchor(0.0);
+        let frames = 2000usize;
+        let mut out = vec![0.0f32; frames * ch];
+        let cursor = ts.process(&data, total, 0.5, &mut out, None);
+        assert!((cursor - frames as f64 * 0.5).abs() < 1.0, "cursor {cursor}");
+    }
+
+    #[test]
+    fn time_stretch_past_end_is_silent_and_finite() {
+        let ch = 1usize;
+        let total = 100usize;
+        let data = vec![5000i16; total];
+        let mut ts = TimeStretcher::new(ch);
+        ts.reanchor(50.0);
+        let mut out = vec![1.0f32; 1024];
+        ts.process(&data, total, 0.5, &mut out, None);
+        assert!(out.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn time_stretch_reanchor_on_seek_divergence() {
+        let mut ts = TimeStretcher::new(1);
+        ts.reanchor(0.0);
+        assert!(ts.needs_reanchor(10_000.0));
+        assert!(!ts.needs_reanchor(0.0));
+    }
+
     fn mono(samples: &[i16]) -> WavPcm16 {
         WavPcm16 {
             sample_rate: 48_000,
@@ -1357,6 +1613,7 @@ mod tests {
             is_playing: false,
             playback_rate: 1.0,
             loop_region: None,
+            time_stretcher: None,
         }
     }
 

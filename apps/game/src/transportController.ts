@@ -21,6 +21,13 @@ export class TransportController {
   // Simulated clock fields (used when duration is unknown / nothing loaded)
   private simT = 0;
 
+  // Manual audio/visual sync calibration. Positive = compensate for MORE
+  // audio output latency, i.e. show an earlier song position so falling
+  // notes reach the hit line LATER (use when the visual leads the audio).
+  // Stacks on top of the backend's auto latency estimate. Default 0 = no
+  // change to prior behavior. Clamped to +/-500ms.
+  private avOffsetSec = 0;
+
   // External clock following (MIDI clock input)
   private followExternalClock = false;
   private externalBpm: number | null = null;
@@ -141,6 +148,20 @@ export class TransportController {
     return this.state.playbackRate;
   }
 
+  /**
+   * Manual audio/visual sync offset, in seconds. Positive pushes falling
+   * notes LATER relative to the audio (fixes "visual leads audio"); negative
+   * pulls them earlier. Clamped to +/-0.5s.
+   */
+  setAudioVisualOffsetSec(sec: number): void {
+    if (!Number.isFinite(sec)) return;
+    this.avOffsetSec = Math.max(-0.5, Math.min(0.5, sec));
+  }
+
+  getAudioVisualOffsetSec(): number {
+    return this.avOffsetSec;
+  }
+
   setLoop(loop?: { t0: number; t1: number }): void {
     if (!loop) {
       this.state = { ...this.state, loop: undefined };
@@ -230,7 +251,9 @@ export class TransportController {
       const isPlaying = this.timebase.getIsPlaying();
       const playbackRate = this.timebase.getPlaybackRate();
       const outputLatencySec = isPlaying ? Math.max(0, this.timebase.getOutputLatencySec?.() ?? 0) : 0;
-      const audibleT = Math.max(0, audioT - outputLatencySec * playbackRate);
+      // Subtract the backend's auto latency estimate AND the user's manual
+      // calibration offset so `t` tracks what is actually audible right now.
+      const audibleT = Math.max(0, audioT - outputLatencySec * playbackRate - this.avOffsetSec);
 
       let t = clampToLoop(audibleT, this.state.loop);
 

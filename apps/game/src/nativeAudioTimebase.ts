@@ -390,7 +390,13 @@ export class NativeAudioTimebase implements TransportTimebase {
     if (!sampleRate || this._lastOutputBufferFrames == null) {
       return undefined;
     }
-    return this._lastOutputBufferFrames / sampleRate;
+    // A callback-driven output stream keeps at least two buffers in flight:
+    // the one currently being played out by the device and the one being
+    // filled in the callback. A single buffer period therefore UNDER-counts
+    // the true output latency (notes reach the hit line before they are
+    // audible). Model the double buffering so the auto estimate lands closer;
+    // any residual is dialed in via the manual A/V calibration offset.
+    return (this._lastOutputBufferFrames * 2) / sampleRate;
   }
 
   dispose(): void {

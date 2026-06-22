@@ -51,6 +51,12 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     id: "viz-drum-highway",
     name: "Drum Highway (built-in)",
     packageName: "@auralprimer/viz-drum-highway"
+  },
+  {
+    source: "builtin",
+    id: "viz-sheet",
+    name: "Sheet Music (built-in)",
+    packageName: "@auralprimer/viz-sheet"
   }
 ];
 
@@ -68,7 +74,8 @@ const BUILTIN_PACKAGE_IMPORTERS: Record<string, () => Promise<any>> = {
   "@auralprimer/viz-lyrics": () => import("@auralprimer/viz-lyrics"),
   "@auralprimer/viz-nashville": () => import("@auralprimer/viz-nashville"),
   "@auralprimer/viz-fretboard": () => import("@auralprimer/viz-fretboard"),
-  "@auralprimer/viz-drum-highway": () => import("@auralprimer/viz-drum-highway")
+  "@auralprimer/viz-drum-highway": () => import("@auralprimer/viz-drum-highway"),
+  "@auralprimer/viz-sheet": () => import("@auralprimer/viz-sheet")
 };
 
 export function isVisualizerModule(mod: any): mod is VisualizerModule {

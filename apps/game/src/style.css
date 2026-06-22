@@ -560,7 +560,12 @@ label.meta {
   grid-template-columns: minmax(320px, 360px) 1fr;
   gap: 14px;
   align-items: stretch;
-  min-height: clamp(520px, 78vh, 920px);
+  /* Constrain the play area to the viewport so it never grows past the screen
+     (START stays visible). The rail scrolls internally; the stage's tab
+     container flex-shrinks to fit instead of forcing a tall page. */
+  min-height: 0;
+  height: clamp(320px, calc(100dvh - 172px), 1100px);
+  overflow: hidden;
 }
 
 .bandSetupRail {
@@ -573,7 +578,7 @@ label.meta {
   background: rgba(8, 11, 20, 0.42);
   overflow-y: auto;
   min-height: 0;
-  max-height: clamp(520px, 78vh, 920px);
+  max-height: 100%;
   scrollbar-gutter: stable;
 }
 
@@ -599,6 +604,7 @@ label.meta {
   gap: 10px;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .bandSetupStage #viz,
@@ -701,9 +707,10 @@ label.meta {
   height: clamp(360px, 58vh, 620px);
 }
 
-/* In the new flex stage, let the tabContainer grow with the column. */
+/* In the new flex stage, the tabContainer fills remaining column height but
+   may shrink (min-height: 0) so it never pushes START past the viewport. */
 .bandSetupStage .playSurface.isPianoPrimary .tabContainer {
-  min-height: clamp(360px, 70vh, 920px);
+  min-height: 0;
   height: auto;
   flex: 1 1 auto;
 }
@@ -782,7 +789,7 @@ label.meta {
 }
 
 .playLayout.isFocus .bandSetupStage .playSurface.isPianoPrimary .tabContainer {
-  min-height: clamp(360px, 70vh, 920px);
+  min-height: 0;
   height: auto;
   flex: 1 1 auto;
 }
@@ -1230,6 +1237,39 @@ li {
   border-color: rgba(34, 211, 238, 0.70);
   background: linear-gradient(180deg, rgba(14, 90, 104, 0.72), rgba(7, 53, 62, 0.72));
   box-shadow: 0 0 12px rgba(34, 211, 238, 0.20), 0 0 0 2px rgba(34, 211, 238, 0.10);
+  color: rgba(240, 255, 255, 0.95);
+}
+
+/* ─── Display-mode toggle (Piano roll ↔ Sheet music) ─────────── */
+
+.displayModeToggle {
+  display: inline-flex;
+  margin-left: auto;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 170, 255, 0.22);
+  background: rgba(12, 16, 28, 0.55);
+  overflow: hidden;
+}
+
+.displayModeBtn {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(245, 247, 255, 0.66);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.displayModeBtn:hover {
+  color: rgba(245, 247, 255, 0.92);
+}
+
+.displayModeBtn.isActive {
+  background: linear-gradient(180deg, rgba(14, 90, 104, 0.72), rgba(7, 53, 62, 0.72));
   color: rgba(240, 255, 255, 0.95);
 }
 

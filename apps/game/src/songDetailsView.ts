@@ -13,6 +13,7 @@
 
 import type { AuralSongDetails } from "./auralsong";
 import { extractKeyModeFromManifest } from "./hud";
+import { inferKeySignature, type MelodicNote } from "./tabRenderer";
 import type { SongLibraryPanelHandle } from "./songLibraryPanel";
 import type { ConsoleBridge } from "./consoleBridge";
 
@@ -23,8 +24,13 @@ export type SongDetailsViewDeps = {
 };
 
 export type SongDetailsViewHandle = {
-  /** Update the HUD key/mode chip from a raw manifest blob. */
-  setHudKeyMode: (manifestRaw: unknown) => void;
+  /**
+   * Update the HUD key/mode chip. Prefers a data-driven key inferred from the
+   * primary melodic track's notes (the same `inferKeySignature` the tab view
+   * uses), so the header matches the on-screen key signature. Falls back to the
+   * manifest, then to the default, when no notes are available.
+   */
+  setHudKeyMode: (manifestRaw: unknown, melodicNotes?: MelodicNote[] | null) => void;
   /** Replace the right-rail details slot with the given AuralSong details. */
   renderDetails: (details: AuralSongDetails) => void;
   /** Update the band-setup widget's title/artist/path + playStart gate. */
@@ -51,7 +57,14 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
 
   const esc = deps.escapeHtml;
 
-  function setHudKeyMode(manifestRaw: unknown): void {
+  function setHudKeyMode(manifestRaw: unknown, melodicNotes?: MelodicNote[] | null): void {
+    if (melodicNotes && melodicNotes.length > 0) {
+      const ks = inferKeySignature(melodicNotes);
+      if (ks) {
+        hudKeyModeEl!.textContent = ks.label;
+        return;
+      }
+    }
     const km = extractKeyModeFromManifest(manifestRaw);
     hudKeyModeEl!.textContent = `${km.key} ${km.mode}`;
   }
