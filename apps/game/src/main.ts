@@ -785,6 +785,7 @@ async function selectAuralSong(containerPath: string) {
     if (keyTrack) {
       songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack.notes);
     }
+    if (learnMode) buildLearnGroups();
 
     // Populate instrument selector with available melodic tracks.
     updateInstrumentSelector();
@@ -1001,6 +1002,10 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     lastFrameMs = ms;
 
     transport = transportController.tick(dt);
+    if (learnMode) {
+      learnGateTick();
+      transport = transportController.getState();
+    }
     renderPlaybackLyrics(transport.t);
 
     // If MIDI clock out is enabled, keep its BPM tracking the transport.
@@ -1116,6 +1121,115 @@ if (nashvilleCheckbox) {
       window.localStorage.setItem(NASHVILLE_STORAGE_KEY, nashvilleMode ? "1" : "0");
     } catch {
       // Best-effort — session-only persistence is acceptable.
+    }
+  });
+}
+
+// --- Note-progression "learn" mode --------------------------------------
+// Playback waits at each note onset until the correct note(s) are played on
+// MIDI input, then advances. Notes are grouped by onset (chords held together).
+const LEARN_STORAGE_KEY = "auralprimer.learnMode";
+type LearnGroup = { t: number; pitches: number[] };
+let learnMode = (() => {
+  try {
+    return window.localStorage.getItem(LEARN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+})();
+let learnGroups: LearnGroup[] = [];
+let learnIdx = 0;
+const learnHit = new Set<number>();
+let learnPrevActive = new Set<number>();
+let learnWaiting = false;
+
+function learnNoteName(p: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  return `${names[((p % 12) + 12) % 12]}${Math.floor(p / 12) - 1}`;
+}
+
+function buildLearnGroups(): void {
+  learnGroups = [];
+  const track = selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+  if (track) {
+    const sorted = [...track.notes].sort((a, b) => a.t_on - b.t_on);
+    let cur: LearnGroup | null = null;
+    for (const n of sorted) {
+      if (!cur || n.t_on - cur.t > 0.05) {
+        cur = { t: n.t_on, pitches: [n.pitch] };
+        learnGroups.push(cur);
+      } else if (!cur.pitches.includes(n.pitch)) {
+        cur.pitches.push(n.pitch);
+      }
+    }
+  }
+  resetLearnFromTime(transportController.getState().t);
+}
+
+function resetLearnFromTime(t: number): void {
+  learnHit.clear();
+  learnWaiting = false;
+  learnPrevActive = new Set();
+  const idx = learnGroups.findIndex((g) => g.t >= t - 0.02);
+  learnIdx = idx < 0 ? learnGroups.length : idx;
+}
+
+function learnRegisterPlayed(pitch: number): void {
+  if (!learnWaiting || learnIdx >= learnGroups.length) return;
+  const g = learnGroups[learnIdx];
+  if (g.pitches.includes(pitch)) learnHit.add(pitch);
+  if (g.pitches.every((p) => learnHit.has(p))) {
+    learnIdx += 1;
+    learnHit.clear();
+    learnWaiting = false;
+    void transportController.play();
+  }
+}
+
+function learnGateTick(): void {
+  if (!learnGroups.length) return;
+  // Rising-edge MIDI note detection (newly pressed = note-on).
+  const snap = midiPanel.inputActiveNotes();
+  const active = new Set<number>(
+    (snap.activeNotes ?? []).map((n: { pitch: number }) => n.pitch),
+  );
+  for (const p of active) {
+    if (!learnPrevActive.has(p)) learnRegisterPlayed(p);
+  }
+  learnPrevActive = active;
+
+  if (learnIdx >= learnGroups.length) return;
+  const g = learnGroups[learnIdx];
+  const st = transportController.getState();
+  if (!learnWaiting && st.isPlaying && st.t >= g.t - 0.02) {
+    if (g.pitches.every((p) => learnHit.has(p))) {
+      learnIdx += 1;
+      learnHit.clear();
+    } else {
+      transportController.pause();
+      transportController.seek(g.t);
+      learnWaiting = true;
+      setAudioStatus(`Wait mode — play: ${g.pitches.map(learnNoteName).join(" + ")}`);
+    }
+  }
+}
+
+const learnCheckbox = document.getElementById("learnMode") as HTMLInputElement | null;
+if (learnCheckbox) {
+  learnCheckbox.checked = learnMode;
+  learnCheckbox.addEventListener("change", () => {
+    learnMode = learnCheckbox.checked;
+    try {
+      window.localStorage.setItem(LEARN_STORAGE_KEY, learnMode ? "1" : "0");
+    } catch {
+      // best-effort
+    }
+    if (learnMode) {
+      buildLearnGroups();
+    } else if (learnWaiting) {
+      // Un-stick: if we were holding, let playback continue.
+      learnWaiting = false;
+      void transportController.play();
     }
   });
 }

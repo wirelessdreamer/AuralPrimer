@@ -133,6 +133,16 @@ export function appShellHtml(): string {
                   </span>
                 </div>
 
+                <div class="row" id="learnModeRow">
+                  <label class="meta" for="learnMode" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input id="learnMode" type="checkbox" />
+                    Note progression (wait for MIDI)
+                  </label>
+                  <span class="meta" style="opacity:0.7;font-size:11px">
+                    Playback pauses at each note until you play it on your MIDI keyboard.
+                  </span>
+                </div>
+
                 <div class="row">
                   <button id="vizStart">Start visualizer</button>
                   <button id="vizStop" disabled>Stop</button>
