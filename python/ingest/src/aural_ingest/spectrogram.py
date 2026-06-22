@@ -12,7 +12,9 @@ Layout written under ``<pack>/features/spectrogram/<role>/``::
 
 Alignment: ``MIDI(row r) = fmin_midi + r / bins_per_semitone`` (row 0 = lowest
 pitch). With bins_per_octave=12, fmin=C1 (MIDI 24) this is exactly bin k = MIDI
-24+k. Dequantize: ``dB = db_floor + (u8 / 255) * (db_ceil - db_floor)``.
+24+k. Magnitude is 16-bit, RG-packed into an RGB PNG (R=high byte, G=low byte);
+the client reconstructs ``level16 = R*256 + G`` then
+``dB = db_floor + (level16/65535) * (db_ceil - db_floor)``.
 
 See docs/research-spectrogram-overlay-2026-06-22.md.
 """
@@ -73,10 +75,25 @@ def compute_cqt_db(
     }
 
 
-def _quantize_u8(db: np.ndarray) -> np.ndarray:
+def _quantize_u16(db: np.ndarray) -> np.ndarray:
+    """dB -> 16-bit level over [DB_FLOOR, DB_CEIL]."""
     q = (db - DB_FLOOR) / (DB_CEIL - DB_FLOOR)
     q = np.clip(q, 0.0, 1.0)
-    return (q * 255.0 + 0.5).astype(np.uint8)
+    return (q * 65535.0 + 0.5).astype(np.uint16)
+
+
+def _pack_rg(u16: np.ndarray) -> np.ndarray:
+    """Pack a uint16 matrix into an (H, W, 3) uint8 RGB image: R=high, G=low.
+
+    Browsers decode 16-bit grayscale PNG down to 8-bit, so we carry the two
+    bytes in separate channels; the WebGL shader reconstructs the magnitude as
+    (R*256 + G) / 65535.
+    """
+    h, w = u16.shape
+    rgb = np.zeros((h, w, 3), dtype=np.uint8)
+    rgb[:, :, 0] = (u16 >> 8).astype(np.uint8)
+    rgb[:, :, 1] = (u16 & 0xFF).astype(np.uint8)
+    return rgb
 
 
 def write_spectrogram_artifact(
@@ -93,8 +110,8 @@ def write_spectrogram_artifact(
     from PIL import Image
 
     res = compute_cqt_db(audio_path, **kwargs)
-    u8 = _quantize_u8(res["db"])  # (n_bins, n_frames)
-    n_bins, n_frames = u8.shape
+    rgb = _pack_rg(_quantize_u16(res["db"]))  # (n_bins, n_frames, 3)
+    n_bins, n_frames = rgb.shape[0], rgb.shape[1]
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -103,7 +120,7 @@ def write_spectrogram_artifact(
     for i, c0 in enumerate(range(0, max(1, n_frames), TILE_WIDTH)):
         c1 = min(c0 + TILE_WIDTH, n_frames)
         fname = f"tile_{i:03d}.png"
-        Image.fromarray(np.ascontiguousarray(u8[:, c0:c1]), mode="L").save(
+        Image.fromarray(np.ascontiguousarray(rgb[:, c0:c1, :]), mode="RGB").save(
             out / fname, optimize=True
         )
         tiles.append({"file": fname, "col_start": int(c0), "col_end": int(c1)})
@@ -127,6 +144,9 @@ def write_spectrogram_artifact(
         "duration_sec": n_frames / fps if fps else 0.0,
         "db_floor": DB_FLOOR,
         "db_ceil": DB_CEIL,
+        "bit_depth": 16,
+        "packing": "rg16",
+        "dequant": "level16 = R*256 + G ; dB = db_floor + (level16/65535)*(db_ceil - db_floor)",
         "row_0_is": "lowest_pitch",
         "tile_width": TILE_WIDTH,
         "tiles": tiles,

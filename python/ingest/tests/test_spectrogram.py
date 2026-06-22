@@ -8,7 +8,6 @@ import numpy as np
 from aural_ingest.spectrogram import (
     FMIN_MIDI,
     compute_cqt_db,
-    _quantize_u8,
     write_spectrogram_artifact,
 )
 
@@ -28,8 +27,7 @@ def test_cqt_bin_aligns_to_midi(tmp_path):
     wav = tmp_path / "c4.wav"
     _write_tone(wav, 60)
     res = compute_cqt_db(str(wav))
-    u8 = _quantize_u8(res["db"])
-    brightest_row = int(np.argmax(u8.mean(axis=1)))
+    brightest_row = int(np.argmax(res["db"].mean(axis=1)))
     expected_row = 60 - FMIN_MIDI
     assert abs(brightest_row - expected_row) <= 1
 
@@ -42,6 +40,8 @@ def test_write_artifact_tiles_and_geometry(tmp_path):
     assert geom["fmin_midi"] == FMIN_MIDI
     assert geom["n_bins"] == 84
     assert geom["bins_per_semitone"] == 1
+    assert geom["bit_depth"] == 16
+    assert geom["packing"] == "rg16"
     assert geom["tiles"], "expected at least one tile"
     # geometry round-trips to disk and tile files exist
     on_disk = json.loads((tmp_path / "spec" / "spectrogram.json").read_text(encoding="utf-8"))
