@@ -3668,7 +3668,7 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
     Prints a JSON status line per CLI convention so callers (Studio,
     benchmark harnesses) can parse the result without re-grepping stdout.
     """
-    from .refine_precompute import precompute_refine_candidates
+    from aural_ingest.refine_precompute import precompute_refine_candidates
 
     auralsong = Path(args.auralsong_dir)
     if not auralsong.is_dir():
@@ -3717,7 +3717,7 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
     import sys as _sys
     from pathlib import Path as _Path
 
-    from .ground_truth_benchmark import run_sweep, write_report
+    from aural_ingest.ground_truth_benchmark import run_sweep, write_report
 
     dataset = args.dataset
     corpus_root = _Path(args.corpus_root)
