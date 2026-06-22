@@ -31,7 +31,7 @@
  */
 
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
-import { inferKeySignature } from "./index";
+import { inferKeySignature, pitchToNashville } from "./index";
 import type {
   InstrumentRole,
   KeySignatureAnalysis,
@@ -310,15 +310,23 @@ export class SheetMusicRenderer {
     // Build clef layout. Step coordinate is octave*7 + letterIndex.
     // Treble: top line = F5. F5 is octave 5, letter 3 (F) => 5*7 + 3 = 38.
     // Bass: top line = A3. A3 is octave 3, letter 5 (A) => 3*7 + 5 = 26.
+    // Centre the staff block in the usable area, reserving ledger-line headroom
+    // above the top staff and below the bottom staff so extreme notes stay on
+    // screen instead of being truncated.
+    const usable = h - headerH - 16;
     const clefs: Clef[] = [];
     if (this.grandStaff) {
-      const trebleTop = headerH + staffSpacing * 0.7;
+      const blockSpaces = 5 + 4 + 3.2 + 4 + 5; // = 21.2
+      const startY = headerH + Math.max(0, (usable - blockSpaces * staffSpacing) / 2);
+      const trebleTop = startY + staffSpacing * 5;
       const bassTop = trebleTop + staffSpacing * 4 + staffSpacing * 3.2;
       clefs.push({ kind: "treble", topLineY: trebleTop, topLineStep: 38 });
       clefs.push({ kind: "bass", topLineY: bassTop, topLineStep: 26 });
     } else {
       const single = this.role === "bass" ? "bass" : "treble";
-      const top = headerH + (h - headerH) * 0.5 - staffSpacing * 2;
+      const blockSpaces = 4 + 4 + 4; // = 12
+      const startY = headerH + Math.max(0, (usable - blockSpaces * staffSpacing) / 2);
+      const top = startY + staffSpacing * 4;
       clefs.push({
         kind: single,
         topLineY: top,
@@ -364,19 +372,36 @@ export class SheetMusicRenderer {
 
       this.drawLedgerLines(x, y, clef, staffSpacing, halfSpace, step, alpha);
       this.drawNote(x, y, glyph, accidental, staffSpacing, stemDir, color, glow, alpha);
+
+      // Nashville numbers overlay: scale-degree centred on the note head.
+      if (opts.nashville && this.keySignature) {
+        const degree = pitchToNashville(note.pitch, this.keySignature);
+        if (degree) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = "#0a1018";
+          ctx.font = `700 ${Math.max(8, Math.round(staffSpacing * 0.85))}px ui-monospace, Consolas, monospace`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(degree, x, y);
+          ctx.restore();
+        }
+      }
     }
 
-    this.drawHeader(w);
+    this.drawHeader(w, opts);
   }
 
   private computeStaffSpacing(h: number, headerH: number): number {
     const usable = h - headerH - 16;
     if (this.grandStaff) {
-      // Two 5-line staves (each 4 spaces) + a gap of ~3.2 spaces between.
-      // total spaces ≈ 4 + 3.2 + 4 = 11.2, plus top/bottom margins.
-      return clamp(usable / 13.5, 7, 16);
+      // Reserve ~5 spaces of ledger-line headroom above the treble and below
+      // the bass so high/low notes aren't truncated:
+      // 5 + treble(4) + gap(3.2) + bass(4) + 5 ≈ 21.2 spaces.
+      return clamp(usable / 21.5, 6, 15);
     }
-    return clamp(usable / 9, 9, 22);
+    // 4 ledger margin + staff(4) + 4 ledger margin = 12 spaces.
+    return clamp(usable / 12, 8, 20);
   }
 
   private pickClef(pitch: number, clefs: Clef[]): Clef {
@@ -630,7 +655,7 @@ export class SheetMusicRenderer {
     ctx.restore();
   }
 
-  private drawHeader(w: number): void {
+  private drawHeader(w: number, opts: PianoRenderOptions = {}): void {
     const { ctx } = this;
     const track = this.track;
     if (!track) return;
@@ -647,7 +672,8 @@ export class SheetMusicRenderer {
     ctx.textAlign = "right";
     const keyLabel = this.keySignature?.label ?? "Key unknown";
     const staffLabel = this.grandStaff ? "Grand staff" : this.role === "bass" ? "Bass clef" : "Treble clef";
-    ctx.fillText(`${keyLabel}  •  ${staffLabel}`, w - 12, 9);
+    const nash = opts.nashville && this.keySignature ? "  •  Nashville #" : "";
+    ctx.fillText(`${keyLabel}  •  ${staffLabel}${nash}`, w - 12, 9);
     ctx.restore();
   }
 
