@@ -742,7 +742,11 @@ export class TabRenderer {
       // Per user request: render the onset as a solid bright cap and
       // the hold body as a more transparent fill so the two read as
       // visually distinct events instead of a single solid column.
-      const onsetCapHeight = Math.min(10, Math.max(4, height * 0.35));
+      // Nashville mode needs a taller full-width cap to fit the degree glyph
+      // legibly (the thin-hold stem can't hold text).
+      const onsetCapHeight = nashville
+        ? Math.min(18, Math.max(14, height * 0.45))
+        : Math.min(10, Math.max(4, height * 0.35));
       const holdTop = visibleTop;
       const holdBottom = Math.max(holdTop, visibleBottom - onsetCapHeight);
       const onsetTop = holdBottom;

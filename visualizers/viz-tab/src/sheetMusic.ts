@@ -477,12 +477,14 @@ export class SheetMusicRenderer {
   private drawClefsAndKey(clefs: Clef[], spacing: number): void {
     const { ctx } = this;
     const clefBg = "rgba(10, 16, 26, 0.82)";
+    const accCount = this.keySignature?.accidentals.length ?? 0;
+    const backingW = Math.max(96, 50 + accCount * spacing * 0.95 + 16);
 
     for (const clef of clefs) {
       const cy = clef.topLineY + spacing * 2;
       // Backing so the clef + key sig stay legible over staff lines.
       ctx.fillStyle = clefBg;
-      ctx.fillRect(0, clef.topLineY - spacing * 0.8, 96, spacing * 5.6);
+      ctx.fillRect(0, clef.topLineY - spacing * 0.8, backingW, spacing * 5.6);
 
       ctx.fillStyle = TEXT_COLOR;
       ctx.textAlign = "left";
@@ -494,15 +496,31 @@ export class SheetMusicRenderer {
       ctx.fillText(glyph, 6, cy);
     }
 
-    // Key signature: list accidental glyphs to the right of the clef.
+    // Key signature: place each accidental on its CANONICAL staff line/space.
+    // Sharp order F C G D A E B / flat order B E A D G C F, with the standard
+    // treble-clef step positions (step = octave*7 + letterIndex). Bass clef is
+    // the same pattern two octaves lower (-14 steps).
     const key = this.keySignature;
     if (key && key.accidentals.length) {
-      const sym = key.accidentalKind === "flat" ? "♭" : "♯"; // ♭ / ♯
-      const label = key.accidentals.map(() => sym).join(" ");
-      ctx.font = `${Math.round(spacing * 2.0)}px "Segoe UI Symbol", serif`;
+      const isFlat = key.accidentalKind === "flat";
+      const sym = isFlat ? "♭" : "♯";
+      const baseSteps = isFlat
+        ? [34, 37, 33, 36, 32, 35, 31] // B4 E5 A4 D5 G4 C5 F4
+        : [38, 35, 39, 36, 33, 37, 34]; // F5 C5 G5 D5 A4 E5 B4
+      const halfSpace = spacing * 0.5;
+      const x0 = 50;
+      const dx = spacing * 0.95;
+      ctx.font = `${Math.round(spacing * 1.9)}px "Segoe UI Symbol", serif`;
       ctx.fillStyle = "rgba(255, 245, 214, 0.92)";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       for (const clef of clefs) {
-        ctx.fillText(label, 50, clef.topLineY + spacing * 2);
+        const stepOffset = clef.kind === "bass" ? -14 : 0;
+        for (let i = 0; i < key.accidentals.length && i < baseSteps.length; i += 1) {
+          const step = baseSteps[i] + stepOffset;
+          const y = clef.topLineY + (clef.topLineStep - step) * halfSpace;
+          ctx.fillText(sym, x0 + i * dx, y);
+        }
       }
     }
   }
