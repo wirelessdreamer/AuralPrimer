@@ -26,6 +26,8 @@ import {
   type RefinementNote,
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
+import { invoke } from "@tauri-apps/api/core";
+import { SpectrogramEditor, type SpectrogramGeometry } from "./spectrogramEditor";
 
 const PITCH_LOW = 21; // A0
 const PITCH_HIGH = 108; // C8
@@ -134,6 +136,116 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (empty && containerPath) {
       emptyCmdEl!.textContent = `aural_ingest refine-candidates "${containerPath}" --instrument ${instrument}`;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Spectrogram overlay editor (interactive guided-edit surface). Mounts over
+  // the classic Canvas-2D timeline when a CQT spectrogram artifact exists for
+  // the current stem; edits become a per-region "manual" decision.
+  // -------------------------------------------------------------------------
+  let spectroEditor: SpectrogramEditor | null = null;
+  let spectroContainer: HTMLDivElement | null = null;
+  let spectroLoadedKey: string | null = null; // `${containerPath}|${instrument}`
+  const spectroTileUrls: string[] = [];
+
+  function revokeSpectroUrls(): void {
+    for (const u of spectroTileUrls) {
+      try {
+        URL.revokeObjectURL(u);
+      } catch {
+        /* ignore */
+      }
+    }
+    spectroTileUrls.length = 0;
+  }
+
+  function ensureSpectroEditor(): SpectrogramEditor {
+    if (spectroEditor) return spectroEditor;
+    spectroContainer = document.createElement("div");
+    spectroContainer.className = "rfSpectroEditor";
+    spectroContainer.style.cssText = "width:100%;height:520px;display:none;";
+    timelineSurfaceEl!.appendChild(spectroContainer);
+    spectroEditor = new SpectrogramEditor(spectroContainer, {
+      onNotesChanged: (notes) => {
+        if (!session || !focusedRegionId) return;
+        session.decisions.set(focusedRegionId, {
+          region_id: focusedRegionId,
+          candidate_id: "manual",
+          notes: notes.map((n) => ({
+            t_on: n.t_on,
+            t_off: n.t_off,
+            pitch: n.pitch,
+            velocity: typeof n.velocity === "number" ? n.velocity : 100,
+          })),
+          edited_at: new Date().toISOString(),
+        });
+        setDirty(true);
+        renderWorklist();
+      },
+    });
+    return spectroEditor;
+  }
+
+  function setSpectroActive(active: boolean): void {
+    if (spectroContainer) spectroContainer.style.display = active ? "block" : "none";
+    timelineCanvas!.style.display = active ? "none" : "block";
+    pitchRulerEl!.style.display = active ? "none" : "block";
+  }
+
+  async function loadSpectrogramForInstrument(): Promise<void> {
+    if (!containerPath) {
+      setSpectroActive(false);
+      return;
+    }
+    const role = instrument;
+    const key = `${containerPath}|${role}`;
+    if (key === spectroLoadedKey && spectroEditor) {
+      setSpectroActive(true);
+      syncSpectroNotes();
+      return;
+    }
+    try {
+      const geom = (await invoke("read_auralsong_json", {
+        containerPath,
+        relPath: `features/spectrogram/${role}/spectrogram.json`,
+      })) as SpectrogramGeometry;
+      if (!geom || !Array.isArray(geom.tiles) || geom.tiles.length === 0) {
+        setSpectroActive(false);
+        return;
+      }
+      revokeSpectroUrls();
+      const urls: string[] = [];
+      for (const tile of geom.tiles) {
+        const bytes = (await invoke("read_auralsong_bytes", {
+          containerPath,
+          relPath: `features/spectrogram/${role}/${tile.file}`,
+        })) as number[];
+        const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "image/png" }));
+        urls.push(url);
+        spectroTileUrls.push(url);
+      }
+      await ensureSpectroEditor().load(geom, urls, []);
+      spectroLoadedKey = key;
+      setSpectroActive(true);
+      syncSpectroNotes();
+    } catch {
+      // No artifact for this stem (or read failed) -> classic timeline.
+      setSpectroActive(false);
+      spectroLoadedKey = null;
+    }
+  }
+
+  function syncSpectroNotes(): void {
+    if (!spectroEditor || !session || !focusedRegionId) return;
+    const active = activeNotesForRegion(session, focusedRegionId);
+    spectroEditor.setNotes(
+      (active?.notes ?? []).map((n) => ({
+        t_on: n.t_on,
+        t_off: n.t_off,
+        pitch: n.pitch,
+        velocity: n.velocity,
+      })),
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -391,6 +503,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     }
     renderWorklist();
     renderTimeline();
+    syncSpectroNotes();
     renderPalette();
     renderRegionInfo();
     syncAudition();
@@ -528,6 +641,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       }
       session = loaded;
       setEmpty(false);
+      void loadSpectrogramForInstrument();
       // Focus the first non-clean region by default so the user lands on
       // something interesting. Fall back to the first region.
       const firstHotSpot = loaded.candidates.regions.find(

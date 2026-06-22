@@ -1356,6 +1356,28 @@ fn read_auralsong_mid(container_path: String, rel_path: String) -> Result<MidiBl
     Ok(MidiBlob { bytes })
 }
 
+/// Read raw bytes of an arbitrary features/* file (e.g. spectrogram tile PNGs)
+/// from an .auralsong dir or zip. Used by the guided-edit spectrogram overlay.
+#[tauri::command]
+fn read_auralsong_bytes(container_path: String, rel_path: String) -> Result<Vec<u8>, String> {
+    let p = PathBuf::from(&container_path);
+    if !container_path.ends_with(".auralsong") {
+        return Err("path does not end with .auralsong".to_string());
+    }
+    if !rel_path.starts_with("features/") {
+        return Err("only features/* is allowed".to_string());
+    }
+    if rel_path.contains("..") {
+        return Err("rel_path must not contain ..".to_string());
+    }
+    if p.is_dir() {
+        let abs = p.join(&rel_path);
+        fs::read(&abs).map_err(|e| format!("read {}: {e}", abs.display()))
+    } else {
+        read_zip_audio(&p, &rel_path)
+    }
+}
+
 #[tauri::command]
 fn read_auralsong_charts(container_path: String) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
@@ -1902,6 +1924,7 @@ pub fn run() {
             read_auralsong_audio,
             read_auralsong_json,
             read_auralsong_mid,
+            read_auralsong_bytes,
             read_auralsong_charts,
             write_auralsong_lyrics_json,
             write_auralsong_features_json,
