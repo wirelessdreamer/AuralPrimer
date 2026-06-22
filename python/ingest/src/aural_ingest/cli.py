@@ -193,6 +193,7 @@ STAGES: list[Stage] = [
     ),
     Stage(id="transcribe_drums", version="0.2.0", outputs=["features/notes.mid"]),
     Stage(id="midi_finalize", version="0.1.0", outputs=["features/notes.mid"]),
+    Stage(id="spectrogram", version="0.1.0", outputs=["features/spectrogram/"]),
 ]
 
 
@@ -3450,6 +3451,40 @@ def cmd_import(args: argparse.Namespace) -> int:
         )
     (out / "features" / "notes.mid").write_bytes(notes_mid)
     emit(ProgressEvent(type="stage_done", id="transcribe_drums", progress=0.97, artifact="features/notes.mid"))
+
+    # Pitch-aligned CQT spectrogram artifacts (one per melodic stem) for the
+    # interactive guided-edit overlay. Best-effort: never fail import over it.
+    emit(ProgressEvent(type="stage_start", id="spectrogram", progress=0.97))
+    spectro_roles: list[str] = []
+    try:
+        from aural_ingest.spectrogram import write_spectrogram_artifact
+
+        spec_sources: dict[str, Path] = dict(instrument_stems)
+        if not spec_sources:
+            fallback = lead_stem if lead_stem.is_file() else dst_wav
+            if Path(fallback).is_file():
+                spec_sources = {"melodic": fallback}
+        for role, stem_path in spec_sources.items():
+            if not Path(stem_path).is_file():
+                continue
+            try:
+                write_spectrogram_artifact(
+                    stem_path, out / "features" / "spectrogram" / role, role=role
+                )
+                spectro_roles.append(role)
+            except Exception as e:  # noqa: BLE001
+                log(f"spectrogram failed for {role}: {e}")
+    except Exception as e:  # noqa: BLE001
+        log(f"spectrogram stage skipped: {e}")
+    emit(
+        ProgressEvent(
+            type="stage_done",
+            id="spectrogram",
+            progress=0.97,
+            message=f"spectrograms: {', '.join(spectro_roles) or 'none'}",
+            artifact="features/spectrogram/" if spectro_roles else None,
+        )
+    )
 
     # Write events.json with per-instrument tracks.
     events_json = _events_json_from_drum_result(

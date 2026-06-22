@@ -25,14 +25,43 @@ separate reassignment-based one.)
 2. **Compute in the Python sidecar at import** (we already have librosa). A
    desktop editing surface doesn't need realtime, and in-browser WebAudio FFT
    can't produce a clean CQT.
-3. **Artifact — pre-rendered PNG (rows = semitone bins, cols = time frames) +
-   geometry JSON** `{fmin_midi, bins_per_semitone, frames_per_sec, time_range,
-   midi_range}` stored per-stem in the `.auralsong` pack. PNG is compact, tiles
-   for long songs, and `drawImage`s fast.
-4. **Overlay** — draw the spectrogram on an offscreen canvas as a static layer
-   *beneath* the editable note layer; row for MIDI p = `(p − fmin_midi) ×
-   bins_per_semitone`; draw notes with a contrasting translucent outline
-   (cyan/green) over the dark→hot colormap.
+3. **Artifact — quantized CQT magnitude MATRIX, NOT a pre-coloured PNG**
+   (see "Interactive rendering" below — the static-PNG idea is superseded).
+   Rows = 12×octaves (`bin k = MIDI 24+k`), cols = time frames, dB-domain,
+   8-bit (16-bit if dB-floor sweeps band), tiled + mip pyramid, plus geometry
+   JSON `{fmin_midi, bins_per_semitone, frames_per_sec, time_range, midi_range}`.
+4. **Overlay** — render the spectrogram in WebGL beneath the editable note layer;
+   row for MIDI p = `(p − fmin_midi) × bins_per_semitone`; notes as a contrasting
+   translucent outline over the heat colormap.
+
+## Interactive rendering (2026-06-22 follow-up — SUPERSEDES the static-PNG plan)
+
+The user wants Sonic Visualiser's LIVE interactivity (zoom/pan/gain/contrast/
+threshold/colormap), not a baked image. Verified architecture (24/25 confirmed):
+
+- **SV separates a cached magnitude model (FFTModel) from the renderer
+  (SpectrogramLayer).** Gain, threshold, colour-scale, colormap, rotation, and
+  normalization are render-time display properties applied to cached bins with
+  NO recompute. Only window size / overlap / oversampling / window shape /
+  transform type force a recompute.
+- **Reproduce it on the web: precompute the magnitude matrix in the sidecar →
+  upload as a single-channel texture → recolor/scale/zoom live in a WebGL
+  fragment shader.** Gain = per-pixel multiply; colormap = a 1D LUT texture
+  indexed by magnitude (swapping colormap = swap LUT). Pattern: `calebj0seph/
+  spectro`. NOT in-browser FFT, NOT a coloured PNG.
+- **Tiling + mip pyramid mandatory:** cross-platform-safe `MAX_TEXTURE_SIZE` is
+  4096px ≈ 48s at ~86 cols/s — multi-minute songs tile across textures with a
+  multiscale pyramid for smooth zoom-out.
+- **Pure-render (client, instant):** gain, contrast, threshold, dB-floor,
+  colormap, zoom, pan, normalization. **Needs sidecar recompute:** window/overlap/
+  window-shape/transform, CQT bpo/fmin.
+- **Licensing:** SV (GPL-2.0+) and Friture (GPL-3) → technique only. **wavesurfer.js
+  (BSD-3)** is the only permissive prior art — takes a precomputed matrix
+  (`frequenciesDataUrl`) with gainDB/rangeDB/colorMap, but Canvas-2D only (no
+  shader recolor) → reference/fallback or player/timeline substrate, not the full
+  solution.
+- Caveat: `calebj0seph/spectro` is a realtime mic demo (pattern transfers by
+  analogy); 8-bit over 80 dB ≈ 0.3 dB steps (validate banding on steep dB-floor).
 
 ## Prior art / UX
 
