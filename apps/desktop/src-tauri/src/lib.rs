@@ -2740,7 +2740,10 @@ mod feedpak_read_tests {
         // The import pipeline writes feedpak content; the output name must match,
         // or the app resolves aural/ vs features/ against the wrong layout.
         assert_eq!(ingest_out_filename("song", None), "ingest_song.feedpak");
-        assert_eq!(ingest_out_filename("song", Some(2)), "ingest_song_2.feedpak");
+        assert_eq!(
+            ingest_out_filename("song", Some(2)),
+            "ingest_song_2.feedpak"
+        );
         assert!(!ingest_out_filename("song", None).ends_with(".auralsong"));
     }
 
