@@ -66,7 +66,7 @@ class NashvilleVisualizer implements Visualizer {
 
     const t = frame.state.t;
     const scrollMul = clampScrollSpeedMultiplier(frame.state.scrollSpeedMultiplier);
-    const pxPerSec = BASE_PX_PER_SEC * scrollMul;
+    const pxPerSecond = BASE_PX_PER_SEC * scrollMul;
     const laneW = w - ORIGIN_X;
     const { windowSec } = scrollWindow({ heightPx: laneW, basePxPerSec: BASE_PX_PER_SEC, scrollMul });
 
@@ -106,8 +106,8 @@ class NashvilleVisualizer implements Visualizer {
     const tEnd = t + windowSec;
     for (const note of this.notes) {
       if (note.t_off < t - 0.3 || note.t_on > tEnd) continue;
-      const x = ORIGIN_X + (note.t_on - t) * pxPerSec;
-      const noteW = Math.max(8, (note.t_off - note.t_on) * pxPerSec);
+      const x = ORIGIN_X + (note.t_on - t) * pxPerSecond;
+      const noteW = Math.max(8, (note.t_off - note.t_on) * pxPerSecond);
       const y = pitchToY(note.pitch) - rowH / 2;
       const degree = pitchToNashville(note.pitch, this.key);
       const isTonic = degree === "1";

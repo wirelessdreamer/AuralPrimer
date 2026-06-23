@@ -39,6 +39,9 @@ export default defineConfig({
       //   - **/*.css          stylesheets bundled by Vite, not code
       //   - **/tabRenderer.ts  large canvas renderer driven by the visualizer
       //                        host; covered by host/plugin contract layers
+      //   - **/spectrogramEditor.ts  large WebGL spectrogram renderer + edit
+      //                        surface driven by the Refine workspace host;
+      //                        exercised via GUI/integration, not unit tests
       //   - html/webAudioTimebase.ts  browser-only timebase backends; the
       //                        native backend (nativeAudioTimebase.ts) carries
       //                        the dedicated 100% playback-coverage gate via
@@ -54,6 +57,7 @@ export default defineConfig({
         "**/main.ts",
         "**/*.css",
         "**/tabRenderer.ts",
+        "**/spectrogramEditor.ts",
         "**/htmlAudioTimebase.ts",
         "**/webAudioTimebase.ts"
       ],
