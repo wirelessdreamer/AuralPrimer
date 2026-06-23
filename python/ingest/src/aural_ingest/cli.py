@@ -27,6 +27,7 @@ from aural_ingest.drum_benchmark import (
     load_drum_reference,
 )
 from aural_ingest.device import select_device
+from aural_ingest.feedpak_writer import write_feedpak
 from aural_ingest.guitar_split import split_lead_rhythm_guitar_stem
 from aural_ingest.mt3_compat import ensure_mt3_transformers_compat
 from aural_ingest.progress import ProgressEvent, emit, log
@@ -78,6 +79,11 @@ class Stage:
 
 PIPELINE_ID = "aural_ingest"
 PIPELINE_VERSION = "0.1.0"
+# Stage 6a of the native-pack migration: import builds its working
+# ``.auralsong`` layout exactly as before, then converts it in place to a
+# ``.feedpak`` as the durable artifact. Tests that assert the intermediate
+# ``.auralsong`` layout set this False to opt out of the final conversion.
+IMPORT_EMIT_FEEDPAK = True
 SCHEMA_VERSION = "1.0.0"
 DEMUCS_MODELPACK_ID = "demucs_6"
 DEMUCS_MODELPACK_FILENAME = "demucs_6.zip"
@@ -2942,6 +2948,35 @@ def cmd_runtime_check(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def _convert_auralsong_to_feedpak(working_dir: Path) -> Path:
+    """Convert a finished ``.auralsong`` working dir in place to a ``.feedpak``.
+
+    Writes ``<name>.feedpak`` next to ``working_dir`` via the feedpak writer,
+    removes the ``.auralsong`` working dir, and renames the feedpak onto the
+    exact path the caller requested (``working_dir``) so the durable artifact at
+    ``--out`` becomes the ``.feedpak``. Returns the final feedpak path.
+    """
+    parent = working_dir.parent
+    summary = write_feedpak(working_dir, parent)
+    feedpak_dir = Path(summary["feedpak_dir"])
+
+    # Free the requested path, then move the feedpak onto it. If the writer
+    # already emitted to exactly ``working_dir`` (same name sans extension),
+    # stage via a temp name so we don't delete what we just wrote.
+    if feedpak_dir.resolve() == working_dir.resolve():
+        staged = parent / (working_dir.name + ".feedpak.tmp")
+        if staged.exists():
+            shutil.rmtree(staged)
+        feedpak_dir.rename(staged)
+        feedpak_dir = staged
+
+    shutil.rmtree(working_dir, ignore_errors=True)
+    if working_dir.exists():
+        shutil.rmtree(working_dir)
+    feedpak_dir.rename(working_dir)
+    return working_dir
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     src = Path(args.input_audio_path)
     out = Path(args.out)
@@ -3590,6 +3625,33 @@ def cmd_import(args: argparse.Namespace) -> int:
     if args.duration_sec is not None:
         manifest["duration_sec"] = float(args.duration_sec)
         _write_json(out / "manifest.json", manifest)
+
+    # Stage 6a: convert the finished .auralsong working layout in place to a
+    # .feedpak so the durable artifact at --out is the native pack format.
+    if IMPORT_EMIT_FEEDPAK:
+        try:
+            feedpak_path = _convert_auralsong_to_feedpak(out)
+        except Exception as exc:  # noqa: BLE001 -- surface but don't crash import
+            log(f"feedpak conversion failed: {exc}")
+            emit(
+                ProgressEvent(
+                    type="stage_done",
+                    id="write_feedpak",
+                    progress=1.0,
+                    message="failed",
+                    artifact=None,
+                )
+            )
+            return 5
+        emit(
+            ProgressEvent(
+                type="stage_done",
+                id="write_feedpak",
+                progress=1.0,
+                message=str(feedpak_path),
+                artifact="manifest.yaml",
+            )
+        )
 
     return 0
 

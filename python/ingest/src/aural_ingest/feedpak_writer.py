@@ -294,6 +294,37 @@ def _build_notation(
     }
 
 
+def _build_placeholder_notation(
+    measures_template: list[dict[str, Any]],
+    bpm: float,
+) -> dict[str, Any]:
+    """Build a minimal, schema-valid notation with no notes.
+
+    Used as the arrangement fallback when an import has no derivable melodic
+    notes (e.g. the sine demo). Emits a single treble staff and a single empty
+    measure (no staves/voices) carrying the song's time signature + tempo so the
+    feedpak stays valid and renderable.
+    """
+    first = measures_template[0] if measures_template else None
+    measure: dict[str, Any] = {"idx": 1, "t": 0.0}
+    if isinstance(first, dict):
+        measure["t"] = float(first.get("t", 0.0))
+        if "ts" in first:
+            measure["ts"] = first["ts"]
+        if "tempo" in first:
+            measure["tempo"] = first["tempo"]
+    if "ts" not in measure:
+        measure["ts"] = [4, 4]
+    if "tempo" not in measure:
+        measure["tempo"] = float(bpm) if bpm > 0 else 120.0
+    return {
+        "version": 1,
+        "instrument": "keys",
+        "staves": [{"id": "treble", "clef": "G2"}],
+        "measures": [measure],
+    }
+
+
 def _build_song_timeline(
     tempo_map: dict[str, Any],
     beats: dict[str, Any] | None,
@@ -461,6 +492,18 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
         _copy_tree(src, feedpak_dir / dst_rel)
         stem_entries.append({"id": role, "file": dst_rel, "default": i == 0})
 
+    # feedpak requires >=1 stem. If the .auralsong carried no usable stem
+    # (e.g. stem separation was skipped), fall back to the full mix as a single
+    # "mix" stem so every import still yields a schema-valid feedpak.
+    if not stem_entries:
+        mix_rel = audio.get("mix_path") if isinstance(audio, dict) else None
+        if isinstance(mix_rel, str) and mix_rel and (auralsong_dir / mix_rel).exists():
+            mix_src = auralsong_dir / mix_rel
+            ext = mix_src.suffix or ".wav"
+            dst_rel = f"audio/stems/mix{ext}"
+            _copy_tree(mix_src, feedpak_dir / dst_rel)
+            stem_entries.append({"id": "mix", "file": dst_rel, "default": True})
+
     # --- arrangements + notation ----------------------------------------
     arrangement_entries: list[dict[str, Any]] = []
     notation_files: dict[str, dict[str, Any]] = {}
@@ -511,9 +554,20 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
             drum_tab_doc = _build_drum_tab(drum_inst, "drums")
 
     if not arrangement_entries:
-        raise ValueError(
-            f"no melodic arrangement could be derived from {auralsong_dir} "
-            "(no matching MIDI instrument for any stem)"
+        # feedpak requires >=1 arrangement. A pack with no derivable melodic
+        # notes (e.g. the sine demo, or a no-matching-instrument MIDI) still has
+        # to yield a valid feedpak, so emit a minimal placeholder notation:
+        # one empty treble staff with a single empty measure.
+        placeholder = _build_placeholder_notation(measures_template, bpm)
+        rel = "arrangements/notation_keys.json"
+        notation_files[rel] = placeholder
+        arrangement_entries.append(
+            {
+                "id": "keys",
+                "name": "Keys",
+                "type": "piano",
+                "notation": rel,
+            }
         )
 
     # --- write notation + side files ------------------------------------

@@ -187,6 +187,9 @@ def _use_fast_standard_beat_default_for_import_smokes(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(cli, "DEFAULT_BEAT_ANALYSIS_MODE", "standard")
     monkeypatch.setattr(cli, "DEFAULT_STEM_SEPARATION_PROVIDER", "none")
+    # These tests assert the intermediate .auralsong working layout; opt out of
+    # the stage-6a in-place .feedpak conversion so it stays inspectable.
+    monkeypatch.setattr(cli, "IMPORT_EMIT_FEEDPAK", False)
 
 
 @pytest.mark.parametrize("bpm", [90.0, 120.0])

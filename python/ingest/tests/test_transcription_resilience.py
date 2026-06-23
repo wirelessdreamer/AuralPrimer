@@ -6,6 +6,16 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _keep_auralsong_layout_for_resilience_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests inspect the intermediate .auralsong layout; opt out of the
+    stage-6a in-place .feedpak conversion."""
+
+    from aural_ingest import cli
+
+    monkeypatch.setattr(cli, "IMPORT_EMIT_FEEDPAK", False)
+
+
 def _write_clicktrack_wav(path: Path, *, sr: int, duration_sec: float, bpm: float) -> None:
     period_samples = int(round((60.0 / bpm) * sr))
     total_samples = int(round(duration_sec * sr))
