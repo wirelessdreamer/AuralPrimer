@@ -77,25 +77,46 @@ def _find_stem(auralsong_dir: Path, instrument: str) -> Path | None:
 
 
 def _load_ground_truth(auralsong_dir: Path, instrument: str) -> list[MelodicNote] | None:
-    """Read the hand-corrected reference MIDI, if the Studio has saved one."""
-    p = auralsong_dir / "features" / f"ground_truth.{instrument}.mid"
-    if not p.is_file():
+    """Read the hand-corrected reference, if the Studio has saved one.
+
+    Prefers the editor-native JSON (``ground_truth.<role>.json``, written via the
+    existing write_auralsong_features_json Tauri command) over an externally
+    imported MIDI (``ground_truth.<role>.mid``) -- the in-app correction wins.
+    """
+    feats = auralsong_dir / "features"
+    j = feats / f"ground_truth.{instrument}.json"
+    if j.is_file():
+        doc = json.loads(j.read_text(encoding="utf-8"))
+        notes = [
+            MelodicNote(
+                t_on=float(n["t_on"]),
+                t_off=float(n["t_off"]),
+                pitch=int(n["pitch"]),
+                velocity=int(n.get("velocity", 100)),
+                instrument=instrument,
+            )
+            for n in doc.get("notes", [])
+        ]
+        notes.sort(key=lambda x: x.t_on)
+        return notes
+
+    m = feats / f"ground_truth.{instrument}.mid"
+    if not m.is_file():
         return None
     import pretty_midi
 
-    pm = pretty_midi.PrettyMIDI(str(p))
-    notes: list[MelodicNote] = []
-    for inst in pm.instruments:
-        for n in inst.notes:
-            notes.append(
-                MelodicNote(
-                    t_on=float(n.start),
-                    t_off=float(n.end),
-                    pitch=int(n.pitch),
-                    velocity=int(n.velocity),
-                    instrument=instrument,
-                )
-            )
+    pm = pretty_midi.PrettyMIDI(str(m))
+    notes = [
+        MelodicNote(
+            t_on=float(n.start),
+            t_off=float(n.end),
+            pitch=int(n.pitch),
+            velocity=int(n.velocity),
+            instrument=instrument,
+        )
+        for inst in pm.instruments
+        for n in inst.notes
+    ]
     notes.sort(key=lambda x: x.t_on)
     return notes
 
@@ -203,7 +224,7 @@ def run_benchmark_overlay(
         "match": {"onset_tolerance_sec": onset_tolerance_sec, "pitch_tolerance_semitones": 0},
         "ground_truth": {
             "present": gt is not None,
-            "rel_path": f"features/ground_truth.{instrument}.mid",
+            "rel_path": f"features/ground_truth.{instrument}.json",
             "note_count": len(gt) if gt is not None else 0,
         },
         "engines": engines_meta,
