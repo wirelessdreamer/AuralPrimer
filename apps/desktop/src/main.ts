@@ -1390,9 +1390,40 @@ async function getRoleReadiness(
   return readiness;
 }
 
-// Determine a pack's melodic stems by probing each common role for either a
-// spectrogram or refine-candidates artifact. "keys" is always offered as the
-// primary fallback so a freshly-imported / unprepared song is still actionable.
+// Cache of the melodic stem roles a pack actually contains (read from its
+// manifest). Static per pack, so we never re-read.
+const stemRolesCache = new Map<string, string[]>();
+
+// The melodic stem roles (keys/bass/lead_guitar/rhythm_guitar) a pack actually
+// has audio for, read from its manifest's `stems` list. Empty when it has none
+// (a mix-only demo, or an old import that was never stem-split). This is what
+// makes a guitar-only song build its guitar stems instead of a bogus "keys".
+async function melodicStemRoles(pack: string): Promise<string[]> {
+  const cached = stemRolesCache.get(pack);
+  if (cached) return cached;
+  let out: string[] = [];
+  try {
+    const details = await invoke<AuralSongDetails>("get_auralsong_details", {
+      containerPath: pack,
+    });
+    const raw = details.manifest_raw as { stems?: Array<{ id?: string }> } | null | undefined;
+    const ids = new Set(
+      (raw?.stems ?? [])
+        .map((s) => s?.id)
+        .filter((x): x is string => typeof x === "string"),
+    );
+    out = (MELODIC_ROLES as readonly string[]).filter((r) => ids.has(r));
+  } catch {
+    out = [];
+  }
+  stemRolesCache.set(pack, out);
+  return out;
+}
+
+// Determine a pack's melodic stems. Roles with a built spectrogram/candidate
+// artifact win; otherwise we offer the melodic stems the pack actually has
+// (per its manifest), falling back to "keys" only when it lists none — so the
+// build always targets real audio rather than a hardcoded role.
 async function detectMelodicStems(
   pack: string,
 ): Promise<{ roles: string[]; primary: string; readiness: Map<string, RoleReadiness> }> {
@@ -1408,11 +1439,14 @@ async function detectMelodicStems(
   // Preserve the canonical role order.
   const roles = MELODIC_ROLES.filter((r) => present.includes(r)) as string[];
   if (roles.length === 0) {
-    // Nothing built yet: offer keys (the import + refine default) so the user
-    // can still kick off a build.
-    roles.push("keys");
-    if (!readiness.has("keys")) {
-      readiness.set("keys", await getRoleReadiness(pack, "keys"));
+    // Nothing built yet: offer the melodic stems the pack actually has.
+    const stemRoles = await melodicStemRoles(pack);
+    const chosen = stemRoles.length ? stemRoles : ["keys"];
+    for (const role of chosen) {
+      roles.push(role);
+      if (!readiness.has(role)) {
+        readiness.set(role, await getRoleReadiness(pack, role));
+      }
     }
   }
   const primary = roles.includes("keys") ? "keys" : roles[0]!;
