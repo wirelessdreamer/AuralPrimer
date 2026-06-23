@@ -391,11 +391,6 @@ def test_melodic_basic_pitch_strict_mode_rejects_fallback(
         melodic_basic_pitch.transcribe(stem, allow_fallback=False)
 
 
-@pytest.mark.xfail(
-    reason="spectral_flux_multiband does not yet detect simultaneous kick+hat in the "
-    "synthetic rebuild fixture; pre-existing algorithm gap, tracked separately",
-    strict=False,
-)
 def test_spectral_flux_multiband_emits_simultaneous_hits(tmp_path: Path) -> None:
     """The key structural improvement: kick + hat events within 50ms of each other."""
     from aural_ingest.algorithms import spectral_flux_multiband
@@ -421,11 +416,6 @@ def test_spectral_flux_multiband_emits_simultaneous_hits(tmp_path: Path) -> None
     assert simultaneous >= 1, f"expected simultaneous kick+hat events, got {simultaneous}"
 
 
-@pytest.mark.xfail(
-    reason="spectral_flux_multiband hi-hat detection emits 0 hits on the synthetic "
-    "rebuild fixture; pre-existing algorithm gap, tracked separately",
-    strict=False,
-)
 def test_spectral_flux_multiband_detects_hihats_in_rebuild_fixture(tmp_path: Path) -> None:
     """Hi-hat detection is the weakest lane in existing algorithms. Verify non-zero."""
     from aural_ingest.algorithms import spectral_flux_multiband

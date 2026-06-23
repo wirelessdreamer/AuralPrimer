@@ -1150,31 +1150,61 @@ def high_decay_fine(
     time_sec: float,
     *,
     high_hz: tuple[float, float] = (5500.0, 12000.0),
+    search_ms: float = 18.0,
 ) -> tuple[float, float, float]:
     """Measure high-frequency RMS in three micro-windows: 0-5ms, 5-15ms, 15-30ms.
 
     Returns (rms_0_5, rms_5_15, rms_15_30) allowing fine-grained decay analysis.
     Hi-hats decay much faster than snare high-frequency components.
+
+    The micro-windows are anchored on the local high-band transient rather than
+    the raw ``time_sec``: peak-picking and soft grid-snapping can place the
+    supplied time a few milliseconds *before* the true onset, which would leave
+    the 0-5ms window measuring pre-onset silence and invert the decay ratio
+    (a fast-decaying hi-hat then reads as a sustained cymbal). Searching a short
+    span forward for the band-energy peak makes the decay estimate robust to
+    that timing jitter.
     """
-    start = max(0, int(time_sec * sr))
-    windows_ms = [(0, 5), (5, 15), (15, 30)]
-    result: list[float] = []
+    if not samples or sr <= 0:
+        return 0.0, 0.0, 0.0
 
-    for ms_start, ms_end in windows_ms:
-        w_start = start + int(ms_start * sr / 1000.0)
-        w_end = start + int(ms_end * sr / 1000.0)
-        w_end = min(w_end, len(samples))
-        if w_end <= w_start:
-            result.append(0.0)
-            continue
-        seg = samples[w_start:w_end]
-        band = band_pass_one_pole(seg, sr, high_hz[0], high_hz[1])
-        if not band:
-            result.append(0.0)
-            continue
-        result.append(math.sqrt(sum(x * x for x in band) / float(len(band))))
+    n = len(samples)
+    center = max(0, int(time_sec * sr))
+    back = int(0.004 * sr)
+    search = max(1, int(search_ms * sr / 1000.0))
+    tail = int(0.030 * sr)
 
-    return result[0], result[1], result[2]
+    region_start = max(0, center - back)
+    region_end = min(n, center + search + tail)
+    if region_end - region_start < 8:
+        return 0.0, 0.0, 0.0
+
+    region = band_pass_one_pole(samples[region_start:region_end], sr, high_hz[0], high_hz[1])
+    if not region:
+        return 0.0, 0.0, 0.0
+
+    # Locate the transient peak within the search span (the onset can sit a few
+    # ms either side of the supplied time); measure decay forward from there.
+    search_end = min(len(region), (center + search) - region_start)
+    if search_end <= 0:
+        search_end = len(region)
+    peak_off = max(range(search_end), key=lambda i: abs(region[i]))
+
+    def _rms(a: int, b: int) -> float:
+        b = min(b, len(region))
+        if b <= a:
+            return 0.0
+        seg = region[a:b]
+        return math.sqrt(sum(x * x for x in seg) / float(len(seg)))
+
+    s5 = int(0.005 * sr)
+    s15 = int(0.015 * sr)
+    s30 = int(0.030 * sr)
+    return (
+        _rms(peak_off, peak_off + s5),
+        _rms(peak_off + s5, peak_off + s15),
+        _rms(peak_off + s15, peak_off + s30),
+    )
 
 
 def centroid_trajectory(
