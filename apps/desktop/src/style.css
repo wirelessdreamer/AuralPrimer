@@ -1063,6 +1063,10 @@ li {
 .ctBtn.ctBuild { border-color: var(--accent); }
 .ctBtn.ctOpen { border-color: var(--accent2); }
 
+.cleanupSongRow.isBuilding { background: rgba(124, 58, 237, 0.16); }
+.ctBuilding { color: var(--accent); animation: ctPulse 1s ease-in-out infinite; }
+@keyframes ctPulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
 .cleanupSongTitle {
   font-weight: 600;
   white-space: nowrap;

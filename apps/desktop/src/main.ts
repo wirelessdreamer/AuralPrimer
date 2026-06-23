@@ -944,22 +944,34 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
   let built = 0;
   let noStem = 0;
   let failed = 0;
+  const tally = (): string => {
+    const parts: string[] = [];
+    if (built) parts.push(`${built} built`);
+    if (noStem) parts.push(`${noStem} skipped`);
+    if (failed) parts.push(`${failed} failed`);
+    return parts.length ? ` · ${parts.join(", ")}` : "";
+  };
   for (let i = 0; i < todo.length; i++) {
     const t = todo[i]!;
-    setStatus(`Building ${i + 1}/${todo.length}: ${t.title}…`);
+    setStatus(`Building ${i + 1}/${todo.length}: ${t.title}…${tally()}`);
+    markRowBuilding(t.path);
+    let outcome: SpectroOutcome = "error";
     try {
       const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
         req: { container_path: t.path, instruments: t.roles },
       });
-      const kind = classifySpectroResult(res);
-      if (kind === "ok") built += 1;
-      else if (kind === "nostem") noStem += 1;
-      else failed += 1;
+      outcome = classifySpectroResult(res);
     } catch {
-      failed += 1;
+      outcome = "error";
     }
+    if (outcome === "ok") built += 1;
+    else if (outcome === "nostem") noStem += 1;
+    else failed += 1;
     invalidateCleanupCache(t.path);
     await refreshRowReadyChip(t.path);
+    listEl
+      .querySelector(`tr.cleanupSongRow[data-path="${cssEscape(t.path)}"]`)
+      ?.classList.remove("isBuilding");
   }
   cleanupBuildAllBtn.disabled = false;
   const parts = [`Built ${built} song${built === 1 ? "" : "s"}`];
@@ -1663,6 +1675,24 @@ function applyRowReadiness(path: string, r: RowReady): void {
       btn.innerHTML = `Prep <i class="ti ti-chevron-right" aria-hidden="true"></i>`;
     }
   }
+}
+
+// Mark a table row as actively building during "Build all unbuilt", so the
+// table itself shows progress (current row highlighted + spinner) rather than
+// only a one-line header status.
+function markRowBuilding(path: string): void {
+  const row = listEl.querySelector<HTMLTableRowElement>(
+    `tr.cleanupSongRow[data-path="${cssEscape(path)}"]`,
+  );
+  if (!row) return;
+  row.classList.add("isBuilding");
+  const btn = row.querySelector<HTMLButtonElement>("button[data-act]");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Building…";
+  }
+  const spec = row.querySelector('td[data-cell="spec"]');
+  if (spec) spec.innerHTML = `<span class="ctBuilding" aria-hidden="true">⋯</span>`;
 }
 
 // Classify a spectrogram build result: "ok" | "nostem" (no separated melodic

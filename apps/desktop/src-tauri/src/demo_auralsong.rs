@@ -48,7 +48,12 @@ fn write_demo_wav(path: &Path) -> Result<f64, String> {
 /// - `Ok(None)` when it already existed
 pub fn ensure_demo_auralsong(songs_folder: &Path) -> Result<Option<PathBuf>, String> {
     let out_dir = demo_auralsong_dir(songs_folder);
-    if out_dir.exists() {
+    // Don't recreate the legacy .auralsong demo if a feedpak demo is already
+    // present — post-migration libraries carry demo_sine_440hz.feedpak, and
+    // regenerating the .auralsong twin produces a duplicate "Demo Sine Wave"
+    // row every launch.
+    let feedpak_twin = songs_folder.join("demo_sine_440hz.feedpak");
+    if out_dir.exists() || feedpak_twin.exists() {
         return Ok(None);
     }
 
