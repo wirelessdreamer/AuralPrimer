@@ -2,12 +2,13 @@
  * Refine Candidates I/O — read precomputed candidates + read/write the
  * user's accepted picks back to the AuralSong.
  *
- * The data contract is locked by the JSON Schemas:
- *   - features/refine_candidates.<instrument>.json  ← Python emits via
+ * The data contract is locked by the JSON Schemas (feedpak relocates these
+ * under aural/; legacy .auralsong packs use features/):
+ *   - aural/refine_candidates.<instrument>.json  ← Python emits via
  *     `aural_ingest refine-candidates`, the workspace consumes (read-only)
- *   - features/refinement.<instrument>.json         ← workspace writes
+ *   - aural/refinement.<instrument>.json         ← workspace writes
  *     the user's accepted notes per region; the runtime game reads this
- *     at AuralSong load and overlays it onto features/notes.mid
+ *     at song load and overlays it onto aural/notes.mid
  *
  * Validators (`validateRefineCandidates`, `validateRefinement`) live in
  * `@auralprimer/auralsong`. We re-use them here so a malformed file
@@ -45,6 +46,17 @@ export {
 };
 
 const REFINEMENT_SCHEMA_VERSION = "0.1.0";
+
+/**
+ * In-container subdir for refine artifacts. feedpak relocates the candidates
+ * + refinement files under `aural/` (manifest key `aural_refine_candidates`
+ * maps each role -> `aural/refine_candidates.<role>.json`, the path this
+ * convention reproduces); legacy `.auralsong` packs keep them under
+ * `features/`. The Tauri read/write commands accept either prefix.
+ */
+function refineDir(containerPath: string): "aural" | "features" {
+  return containerPath.endsWith(".feedpak") ? "aural" : "features";
+}
 
 /**
  * The decision a user has registered for one region: which candidate id
@@ -110,7 +122,7 @@ export async function loadCandidates(
   containerPath: string,
   instrument: RefinementInstrument,
 ): Promise<RefineCandidatesFile | null> {
-  const rel = `features/refine_candidates.${instrument}.json`;
+  const rel = `${refineDir(containerPath)}/refine_candidates.${instrument}.json`;
   let raw: unknown;
   try {
     raw = await readAuralSongJson(containerPath, rel);
@@ -142,7 +154,7 @@ export async function loadDecisions(
   containerPath: string,
   instrument: RefinementInstrument,
 ): Promise<Map<string, RefineDecision>> {
-  const rel = `features/refinement.${instrument}.json`;
+  const rel = `${refineDir(containerPath)}/refinement.${instrument}.json`;
   let raw: unknown;
   try {
     raw = await readAuralSongJson(containerPath, rel);
@@ -204,7 +216,7 @@ export async function loadSession(
 }
 
 /**
- * Persist the user's decisions back to `features/refinement.<inst>.json`
+ * Persist the user's decisions back to `<aural|features>/refinement.<inst>.json`
  * in the schema-compliant shape the runtime game expects. The candidates
  * file is left untouched -- it's editor-time only.
  *
@@ -237,7 +249,7 @@ export async function saveDecisions(session: RefineSession): Promise<void> {
     instrument: session.instrument,
     regions: regions.sort((a, b) => a.t_start - b.t_start),
   };
-  const rel = `features/refinement.${session.instrument}.json`;
+  const rel = `${refineDir(session.containerPath)}/refinement.${session.instrument}.json`;
   await writeAuralSongFeaturesJson(session.containerPath, rel, file);
 }
 

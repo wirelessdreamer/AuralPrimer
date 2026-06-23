@@ -27,7 +27,7 @@
 // Public types
 // ---------------------------------------------------------------------------
 
-/** Geometry sidecar (spectrogram.json) — see features/spectrogram/<role>/. */
+/** Geometry sidecar (spectrogram.json) — see aural/spectrogram/<role>/. */
 export interface SpectrogramTile {
   /** Tile PNG filename (relative to the spectrogram dir). */
   file: string;

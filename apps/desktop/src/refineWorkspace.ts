@@ -204,10 +204,13 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       syncSpectroNotes();
       return;
     }
+    // feedpak relocates the spectrogram artifacts under aural/ (legacy:
+    // features/); pick the subdir by container suffix.
+    const fd = containerPath.endsWith(".feedpak") ? "aural" : "features";
     try {
       const geom = (await invoke("read_auralsong_json", {
         containerPath,
-        relPath: `features/spectrogram/${role}/spectrogram.json`,
+        relPath: `${fd}/spectrogram/${role}/spectrogram.json`,
       })) as SpectrogramGeometry;
       if (!geom || !Array.isArray(geom.tiles) || geom.tiles.length === 0) {
         setSpectroActive(false);
@@ -218,7 +221,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       for (const tile of geom.tiles) {
         const bytes = (await invoke("read_auralsong_bytes", {
           containerPath,
-          relPath: `features/spectrogram/${role}/${tile.file}`,
+          relPath: `${fd}/spectrogram/${role}/${tile.file}`,
         })) as number[];
         const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "image/png" }));
         urls.push(url);

@@ -34,6 +34,9 @@ pub mod wav_mix;
 // Shared AuralSong contract logic (manifest parsing + songs-folder watcher).
 // The watcher is re-exported under the `songs_watch` path so the wiring mirrors
 // the game shell.
+use auralsong_core::feedpak::{
+    read_dir_feedpak_manifest, read_zip_feedpak_manifest, scan_feedpak, FeedpakManifest,
+};
 use auralsong_core::manifest::{
     parse_manifest_json, read_dir_manifest, read_dir_manifest_raw, read_zip_manifest,
     read_zip_manifest_raw, AuralSongScanEntry, ManifestSummary,
@@ -388,6 +391,98 @@ fn read_zip_text(auralsong_zip: &Path, rel: &str) -> Result<String, String> {
     file.read_to_string(&mut raw)
         .map_err(|e| format!("zip read {rel}: {e}"))?;
     Ok(raw)
+}
+
+// -----------------
+// feedpak container support
+//
+// Stage 5 of the .auralsong -> feedpak migration. The active native format is
+// now `.feedpak` (manifest.yaml; features relocated under `aural/`, audio under
+// `audio/stems/`). The Tauri read commands accept BOTH suffixes: a path ending
+// in `.feedpak` is read via the auralsong-core feedpak reader, a path ending in
+// `.auralsong` keeps the legacy manifest.json/features/ layout. The frontend
+// passes the new in-container paths (`aural/...`) for feedpak containers.
+// -----------------
+
+/// True when the container path is a feedpak (directory or zip).
+fn is_feedpak_path(container_path: &str) -> bool {
+    container_path.ends_with(".feedpak")
+}
+
+/// True when the container path is a legacy `.auralsong`.
+fn is_auralsong_path(container_path: &str) -> bool {
+    container_path.ends_with(".auralsong")
+}
+
+/// Accept either native container suffix.
+fn is_supported_container(container_path: &str) -> bool {
+    is_feedpak_path(container_path) || is_auralsong_path(container_path)
+}
+
+/// Whether a frontend-supplied `rel_path` is an allowed feature/asset path.
+///
+/// Legacy `.auralsong` packs use `features/...`; feedpak packs relocate the
+/// same artifacts under `aural/...` (spectrogram, refine candidates, notes.mid,
+/// refinement) and notation under `arrangements/...`. Any of those prefixes is
+/// accepted; `..` is always rejected (path-traversal guard).
+fn is_allowed_feature_rel(rel_path: &str) -> bool {
+    if rel_path.contains("..") {
+        return false;
+    }
+    rel_path.starts_with("features/")
+        || rel_path.starts_with("aural/")
+        || rel_path.starts_with("arrangements/")
+}
+
+/// Read+parse a feedpak `manifest.yaml` from a directory or zip container.
+fn read_feedpak_manifest(p: &Path) -> Result<FeedpakManifest, String> {
+    if p.is_dir() {
+        read_dir_feedpak_manifest(p)
+    } else {
+        read_zip_feedpak_manifest(p)
+    }
+}
+
+/// Read the raw `manifest.yaml` text from a feedpak (dir or zip) — used for the
+/// details pane's verbatim manifest display.
+fn read_feedpak_manifest_yaml_text(p: &Path) -> Result<String, String> {
+    if p.is_dir() {
+        read_dir_text(p, "manifest.yaml")
+    } else {
+        read_zip_text(p, "manifest.yaml")
+    }
+}
+
+/// Resolve the in-container relative path + MIME of a feedpak's playable audio.
+///
+/// Prefers the stem flagged `default: true`, otherwise the first stem. The MIME
+/// is inferred from the stem file extension (wav/ogg/mp3/flac), defaulting to
+/// `audio/wav`.
+fn feedpak_default_stem(manifest: &FeedpakManifest) -> Result<(String, &'static str), String> {
+    let stem = manifest
+        .stems
+        .iter()
+        .find(|s| match &s.default {
+            Some(serde_yaml::Value::Bool(b)) => *b,
+            Some(serde_yaml::Value::String(s)) => {
+                matches!(s.to_ascii_lowercase().as_str(), "true" | "yes" | "on" | "1")
+            }
+            _ => false,
+        })
+        .or_else(|| manifest.stems.first())
+        .ok_or_else(|| "feedpak has no stems".to_string())?;
+
+    let lower = stem.file.to_ascii_lowercase();
+    let mime = if lower.ends_with(".ogg") {
+        "audio/ogg"
+    } else if lower.ends_with(".mp3") {
+        "audio/mpeg"
+    } else if lower.ends_with(".flac") {
+        "audio/flac"
+    } else {
+        "audio/wav"
+    };
+    Ok((stem.file.clone(), mime))
 }
 
 fn unzip_auralsong_to_dir(zip_path: &Path, dst_dir: &Path) -> Result<(), String> {
@@ -1182,57 +1277,98 @@ fn scan_auralsongs(app: AppHandle) -> Result<Vec<AuralSongScanEntry>, String> {
     for entry in entries.flatten() {
         let p = entry.path();
         let file_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let is_auralsong = file_name.ends_with(".auralsong");
-        if !is_auralsong {
+        let path_str = p.to_string_lossy().to_string();
+        let kind = if p.is_dir() { "directory" } else { "zip" };
+
+        // feedpak is the active native format; scan it via the feedpak reader
+        // and map its summary onto the shared ManifestSummary shape the library
+        // panel renders.
+        if file_name.ends_with(".feedpak") {
+            match scan_feedpak(&p) {
+                Ok(summary) => out.push(AuralSongScanEntry {
+                    container_path: path_str,
+                    kind: kind.to_string(),
+                    ok: true,
+                    manifest: Some(feedpak_summary_to_manifest(&summary)),
+                    error: None,
+                }),
+                Err(e) => out.push(AuralSongScanEntry {
+                    container_path: path_str,
+                    kind: kind.to_string(),
+                    ok: false,
+                    manifest: None,
+                    error: Some(e),
+                }),
+            }
             continue;
         }
 
-        if p.is_dir() {
-            match read_dir_manifest(&p) {
-                Ok(m) => out.push(AuralSongScanEntry {
-                    container_path: p.to_string_lossy().to_string(),
-                    kind: "directory".to_string(),
-                    ok: true,
-                    manifest: Some(m),
-                    error: None,
-                }),
-                Err(e) => out.push(AuralSongScanEntry {
-                    container_path: p.to_string_lossy().to_string(),
-                    kind: "directory".to_string(),
-                    ok: false,
-                    manifest: None,
-                    error: Some(e),
-                }),
-            }
+        if !file_name.ends_with(".auralsong") {
+            continue;
+        }
+
+        let manifest_result = if p.is_dir() {
+            read_dir_manifest(&p)
         } else {
-            match read_zip_manifest(&p) {
-                Ok(m) => out.push(AuralSongScanEntry {
-                    container_path: p.to_string_lossy().to_string(),
-                    kind: "zip".to_string(),
-                    ok: true,
-                    manifest: Some(m),
-                    error: None,
-                }),
-                Err(e) => out.push(AuralSongScanEntry {
-                    container_path: p.to_string_lossy().to_string(),
-                    kind: "zip".to_string(),
-                    ok: false,
-                    manifest: None,
-                    error: Some(e),
-                }),
-            }
+            read_zip_manifest(&p)
+        };
+        match manifest_result {
+            Ok(m) => out.push(AuralSongScanEntry {
+                container_path: path_str,
+                kind: kind.to_string(),
+                ok: true,
+                manifest: Some(m),
+                error: None,
+            }),
+            Err(e) => out.push(AuralSongScanEntry {
+                container_path: path_str,
+                kind: kind.to_string(),
+                ok: false,
+                manifest: None,
+                error: Some(e),
+            }),
         }
     }
 
     Ok(out)
 }
 
+/// Map a [`FeedpakSummary`] onto the shared [`ManifestSummary`] the Studio
+/// library panel renders. feedpak carries no `schema_version`/`song_id`; the
+/// title/artist/duration come straight from the manifest.
+fn feedpak_summary_to_manifest(
+    summary: &auralsong_core::feedpak::FeedpakSummary,
+) -> ManifestSummary {
+    ManifestSummary {
+        schema_version: summary.feedpak_version.clone(),
+        song_id: None,
+        title: Some(summary.title.clone()),
+        artist: Some(summary.artist.clone()),
+        duration_sec: Some(summary.duration),
+    }
+}
+
 #[tauri::command]
 fn read_auralsong_audio(container_path: String) -> Result<AudioBlob, String> {
     let p = PathBuf::from(&container_path);
 
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
+    }
+
+    // feedpak: read the default stem named in manifest.yaml.
+    if is_feedpak_path(&container_path) {
+        let manifest = read_feedpak_manifest(&p)?;
+        let (rel, mime) = feedpak_default_stem(&manifest)?;
+        let bytes = if p.is_dir() {
+            read_dir_audio(&p, &rel)?
+        } else {
+            read_zip_audio(&p, &rel)?
+        };
+        return Ok(AudioBlob {
+            mime: mime.to_string(),
+            bytes,
+        });
     }
 
     // Prefer OGG if present, otherwise MP3, otherwise WAV.
@@ -1275,36 +1411,39 @@ fn native_audio_load_auralsong_audio(
 ) -> Result<LoadedAuralSongAudioInfo, String> {
     let p = PathBuf::from(&container_path);
 
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
     }
 
-    // Prefer OGG if present, otherwise MP3, otherwise WAV.
-    let (rel, mime) = if p.is_dir() {
+    // Resolve the playable audio: feedpak default stem, else legacy mix.*.
+    let (rel, mime): (String, &str) = if is_feedpak_path(&container_path) {
+        let manifest = read_feedpak_manifest(&p)?;
+        feedpak_default_stem(&manifest)?
+    } else if p.is_dir() {
         if dir_has_file(&p, "audio/mix.ogg") {
-            ("audio/mix.ogg", "audio/ogg")
+            ("audio/mix.ogg".to_string(), "audio/ogg")
         } else if dir_has_file(&p, "audio/mix.mp3") {
-            ("audio/mix.mp3", "audio/mpeg")
+            ("audio/mix.mp3".to_string(), "audio/mpeg")
         } else if dir_has_file(&p, "audio/mix.wav") {
-            ("audio/mix.wav", "audio/wav")
+            ("audio/mix.wav".to_string(), "audio/wav")
         } else {
             return Err("no audio/mix.ogg, audio/mix.mp3, or audio/mix.wav found".to_string());
         }
     } else if zip_has_file(&p, "audio/mix.ogg").unwrap_or(false) {
-        ("audio/mix.ogg", "audio/ogg")
+        ("audio/mix.ogg".to_string(), "audio/ogg")
     } else if zip_has_file(&p, "audio/mix.mp3").unwrap_or(false) {
-        ("audio/mix.mp3", "audio/mpeg")
+        ("audio/mix.mp3".to_string(), "audio/mpeg")
     } else if zip_has_file(&p, "audio/mix.wav").unwrap_or(false) {
-        ("audio/mix.wav", "audio/wav")
+        ("audio/mix.wav".to_string(), "audio/wav")
     } else {
         return Err("no audio/mix.ogg, audio/mix.mp3, or audio/mix.wav found".to_string());
     };
 
     // Read audio bytes on the Rust side (no IPC transfer).
     let bytes = if p.is_dir() {
-        read_dir_audio(&p, rel)?
+        read_dir_audio(&p, &rel)?
     } else {
-        read_zip_audio(&p, rel)?
+        read_zip_audio(&p, &rel)?
     };
 
     // Decode + load into engine (this may reinit engine to match SR/channels).
@@ -1336,11 +1475,11 @@ fn read_auralsong_json(
     rel_path: String,
 ) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
     }
-    if !rel_path.starts_with("features/") {
-        return Err("only features/* json is allowed".to_string());
+    if !is_allowed_feature_rel(&rel_path) {
+        return Err("only features/* or aural/* json is allowed".to_string());
     }
     if !rel_path.ends_with(".json") {
         return Err("rel_path must be a .json".to_string());
@@ -1357,11 +1496,11 @@ fn read_auralsong_json(
 #[tauri::command]
 fn read_auralsong_mid(container_path: String, rel_path: String) -> Result<MidiBlob, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
     }
-    if !rel_path.starts_with("features/") {
-        return Err("only features/* is allowed".to_string());
+    if !is_allowed_feature_rel(&rel_path) {
+        return Err("only features/* or aural/* is allowed".to_string());
     }
     if !rel_path.ends_with(".mid") && !rel_path.ends_with(".midi") {
         return Err("rel_path must be a .mid/.midi".to_string());
@@ -1382,14 +1521,11 @@ fn read_auralsong_mid(container_path: String, rel_path: String) -> Result<MidiBl
 #[tauri::command]
 fn read_auralsong_bytes(container_path: String, rel_path: String) -> Result<Vec<u8>, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
     }
-    if !rel_path.starts_with("features/") {
-        return Err("only features/* is allowed".to_string());
-    }
-    if rel_path.contains("..") {
-        return Err("rel_path must not contain ..".to_string());
+    if !is_allowed_feature_rel(&rel_path) {
+        return Err("only features/* or aural/* is allowed".to_string());
     }
     if p.is_dir() {
         let abs = p.join(&rel_path);
@@ -1402,8 +1538,8 @@ fn read_auralsong_bytes(container_path: String, rel_path: String) -> Result<Vec<
 #[tauri::command]
 fn read_auralsong_charts(container_path: String) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
     }
 
     let chart_paths = if p.is_dir() {
@@ -1433,17 +1569,24 @@ fn write_auralsong_lyrics_json(
     lyrics_json: serde_json::Value,
 ) -> Result<(), String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
     }
     if !p.is_dir() {
         return Err(
-            "writing features is only supported for directory AuralSongs (not .auralsong zip files)"
+            "writing features is only supported for directory containers (not zip packs)"
                 .to_string(),
         );
     }
 
-    let features_dir = p.join("features");
+    // feedpak relocates feature artifacts under `aural/`; legacy packs use
+    // `features/`.
+    let subdir = if is_feedpak_path(&container_path) {
+        "aural"
+    } else {
+        "features"
+    };
+    let features_dir = p.join(subdir);
     fs::create_dir_all(&features_dir)
         .map_err(|e| format!("mkdir {}: {e}", features_dir.display()))?;
     let out_path = features_dir.join("lyrics.json");
@@ -1454,17 +1597,18 @@ fn write_auralsong_lyrics_json(
     Ok(())
 }
 
-/// Write an arbitrary `features/<…>.json` file into a directory AuralSong.
+/// Write an arbitrary feature JSON file into a directory container.
 ///
 /// Used by the Studio Refine workspace to persist user picks
-/// (`features/refinement.<instrument>.json`) and -- in future -- any
-/// other small editor-time JSON the workspace produces. Path-traversal
-/// safe: `rel_path` must start with `features/`, must not contain `..`,
-/// must end with `.json`.
+/// (feedpak: `aural/refinement.<instrument>.json`; legacy:
+/// `features/refinement.<instrument>.json`) and -- in future -- any other
+/// small editor-time JSON the workspace produces. Path-traversal safe:
+/// `rel_path` must start with `features/`, `aural/`, or `arrangements/`,
+/// must not contain `..`, and must end with `.json`.
 ///
-/// Directory AuralSongs only -- writing into a `.auralsong` zip would
-/// require re-archiving; the workspace already requires a directory
-/// AuralSong for the same reason.
+/// Directory containers only -- writing into a zip pack would require
+/// re-archiving; the workspace already requires a directory container for
+/// the same reason.
 #[tauri::command]
 fn write_auralsong_features_json(
     container_path: String,
@@ -1472,20 +1616,17 @@ fn write_auralsong_features_json(
     value: serde_json::Value,
 ) -> Result<(), String> {
     let p = PathBuf::from(&container_path);
-    if !container_path.ends_with(".auralsong") {
-        return Err("path does not end with .auralsong".to_string());
+    if !is_supported_container(&container_path) {
+        return Err("path does not end with .feedpak or .auralsong".to_string());
     }
     if !p.is_dir() {
         return Err(
-            "writing features is only supported for directory AuralSongs (not .auralsong zip files)"
+            "writing features is only supported for directory containers (not zip packs)"
                 .to_string(),
         );
     }
-    if !rel_path.starts_with("features/") {
-        return Err("rel_path must start with features/".to_string());
-    }
-    if rel_path.contains("..") {
-        return Err("rel_path must not contain '..'".to_string());
+    if !is_allowed_feature_rel(&rel_path) {
+        return Err("rel_path must start with features/, aural/, or arrangements/".to_string());
     }
     if !rel_path.ends_with(".json") {
         return Err("rel_path must end with .json".to_string());
@@ -1501,11 +1642,87 @@ fn write_auralsong_features_json(
     Ok(())
 }
 
+/// Build [`AuralSongDetails`] for a feedpak container.
+///
+/// feedpak relocates the per-feature artifacts the legacy scan probed under
+/// `features/` into `aural/` and folds the beats/sections/tempo tracks into a
+/// single `song_timeline.json`; so `has_beats`/`has_tempo_map`/`has_sections`
+/// are reported together off `song_timeline` (or the transcribed notes MIDI).
+/// Audio presence reflects the default stem's container.
+fn feedpak_details(container_path: String, p: &Path) -> AuralSongDetails {
+    let manifest = match read_feedpak_manifest(p) {
+        Ok(m) => m,
+        Err(e) => {
+            return AuralSongDetails {
+                container_path,
+                kind: if p.is_dir() { "directory" } else { "zip" }.to_string(),
+                ok: false,
+                manifest_summary: None,
+                manifest_raw: None,
+                has_beats: false,
+                has_tempo_map: false,
+                has_sections: false,
+                has_events: false,
+                has_lyrics: false,
+                has_notes_mid: false,
+                has_mix_mp3: false,
+                has_mix_ogg: false,
+                has_mix_wav: false,
+                charts: vec![],
+                error: Some(e),
+            };
+        }
+    };
+
+    let kind = if p.is_dir() { "directory" } else { "zip" }.to_string();
+    let summary =
+        feedpak_summary_to_manifest(&auralsong_core::feedpak::scan_feedpak(p).unwrap_or_default());
+    // Raw manifest for the details pane: re-read the YAML text and reshape it
+    // into a JSON value (serde_yaml::Value -> serde_json::Value). Best-effort;
+    // the typed summary/flags already carry what the panel needs.
+    let manifest_raw = read_feedpak_manifest_yaml_text(p)
+        .ok()
+        .and_then(|raw| serde_yaml::from_str::<serde_json::Value>(&raw).ok());
+
+    let has_timeline = manifest.song_timeline.is_some();
+    let has_notes_mid = manifest.aural_notes_mid.is_some();
+    let has_structure = has_timeline || has_notes_mid;
+
+    // Default-stem container -> audio presence flag.
+    let (has_mix_ogg, has_mix_mp3, has_mix_wav) = match feedpak_default_stem(&manifest) {
+        Ok((_, "audio/ogg")) => (true, false, false),
+        Ok((_, "audio/mpeg")) => (false, true, false),
+        Ok(_) => (false, false, true),
+        Err(_) => (false, false, false),
+    };
+
+    AuralSongDetails {
+        container_path,
+        kind,
+        ok: true,
+        manifest_summary: Some(summary),
+        manifest_raw,
+        has_beats: has_structure,
+        has_tempo_map: has_structure,
+        has_sections: has_structure,
+        has_events: has_notes_mid,
+        has_lyrics: manifest.lyrics.is_some(),
+        has_notes_mid,
+        has_mix_mp3,
+        has_mix_ogg,
+        has_mix_wav,
+        // feedpak notation lives under arrangements/, surfaced separately; the
+        // legacy charts/ list is empty for feedpak.
+        charts: vec![],
+        error: None,
+    }
+}
+
 #[tauri::command]
 fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, String> {
     let p = PathBuf::from(&container_path);
 
-    if !container_path.ends_with(".auralsong") {
+    if !is_supported_container(&container_path) {
         return Ok(AuralSongDetails {
             container_path,
             kind: "unknown".to_string(),
@@ -1522,8 +1739,14 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
             has_mix_ogg: false,
             has_mix_wav: false,
             charts: vec![],
-            error: Some("path does not end with .auralsong".to_string()),
+            error: Some("path does not end with .feedpak or .auralsong".to_string()),
         });
+    }
+
+    // feedpak: parse manifest.yaml and report the relocated `aural/...`
+    // structure + stem audio presence.
+    if is_feedpak_path(&container_path) {
+        return Ok(feedpak_details(container_path, &p));
     }
 
     if p.is_dir() {
@@ -2484,4 +2707,72 @@ fn midi_clock_input_stop(state: tauri::State<MidiClockInputState>) -> Result<(),
     let mut lock = state.conn.lock().unwrap();
     *lock = None;
     Ok(())
+}
+
+#[cfg(test)]
+mod feedpak_read_tests {
+    //! Stage-5 feedpak read path: the container guards, the feature-rel
+    //! allow-list, default-stem resolution, and the details mapping pinned
+    //! against the committed `minimal.feedpak` fixture.
+
+    use super::*;
+
+    fn minimal_feedpak_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../packages/feedpak/fixtures/minimal.feedpak")
+    }
+
+    #[test]
+    fn container_suffix_guards() {
+        assert!(is_feedpak_path("x.feedpak"));
+        assert!(!is_feedpak_path("x.auralsong"));
+        assert!(is_auralsong_path("x.auralsong"));
+        assert!(is_supported_container("x.feedpak"));
+        assert!(is_supported_container("x.auralsong"));
+        assert!(!is_supported_container("x.zip"));
+    }
+
+    #[test]
+    fn feature_rel_allow_list() {
+        assert!(is_allowed_feature_rel(
+            "aural/spectrogram/keys/spectrogram.json"
+        ));
+        assert!(is_allowed_feature_rel("aural/refine_candidates.keys.json"));
+        assert!(is_allowed_feature_rel("features/notes.mid"));
+        assert!(is_allowed_feature_rel("arrangements/notation_keys.json"));
+        assert!(!is_allowed_feature_rel("audio/stems/keys.wav"));
+        assert!(!is_allowed_feature_rel("aural/../../escape.json"));
+    }
+
+    #[test]
+    fn default_stem_from_minimal_fixture() {
+        let m = read_feedpak_manifest(&minimal_feedpak_dir()).expect("parse manifest");
+        let (rel, mime) = feedpak_default_stem(&m).expect("default stem");
+        assert_eq!(rel, "audio/stems/keys.wav");
+        assert_eq!(mime, "audio/wav");
+    }
+
+    #[test]
+    fn details_for_minimal_fixture() {
+        let dir = minimal_feedpak_dir();
+        let d = feedpak_details(dir.to_string_lossy().to_string(), &dir);
+        assert!(d.ok, "{:?}", d.error);
+        assert_eq!(d.kind, "directory");
+        assert_eq!(
+            d.manifest_summary.as_ref().unwrap().title.as_deref(),
+            Some("Minimal Fixture")
+        );
+        // song_timeline + notes.mid both present in the fixture.
+        assert!(d.has_notes_mid);
+        assert!(d.has_beats && d.has_tempo_map && d.has_sections);
+        assert!(d.has_events); // notes.mid present
+        assert!(!d.has_lyrics);
+        assert!(d.has_mix_wav && !d.has_mix_ogg && !d.has_mix_mp3);
+        // Raw manifest reshaped to JSON carries the typed aural_* key.
+        let raw = d.manifest_raw.expect("manifest_raw");
+        assert_eq!(
+            raw.get("aural_notes_mid").and_then(|v| v.as_str()),
+            Some("aural/notes.mid")
+        );
+    }
 }

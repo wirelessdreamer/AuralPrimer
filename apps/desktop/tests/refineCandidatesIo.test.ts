@@ -180,6 +180,15 @@ describe("loadCandidates", () => {
     invokeMock.mockResolvedValueOnce({ version: "bad", instrument: "keys" });
     await expect(loadCandidates("/c", "keys")).rejects.toThrow(/malformed/);
   });
+
+  it("reads from aural/ for a feedpak container", async () => {
+    invokeMock.mockResolvedValueOnce(candidatesFile());
+    await loadCandidates("/songs/x.feedpak", "keys");
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_json", {
+      containerPath: "/songs/x.feedpak",
+      relPath: "aural/refine_candidates.keys.json",
+    });
+  });
 });
 
 describe("loadDecisions", () => {
@@ -285,5 +294,19 @@ describe("saveDecisions", () => {
     await saveDecisions(makeSession());
     const written = invokeMock.mock.calls[0][1].value as { regions: unknown[] };
     expect(written.regions).toEqual([]);
+  });
+
+  it("writes refinement under aural/ for a feedpak container", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+    const s = makeSession();
+    s.containerPath = "/songs/x.feedpak";
+    await saveDecisions(s);
+    expect(invokeMock).toHaveBeenCalledWith(
+      "write_auralsong_features_json",
+      expect.objectContaining({
+        containerPath: "/songs/x.feedpak",
+        relPath: "aural/refinement.keys.json",
+      }),
+    );
   });
 });

@@ -95,6 +95,16 @@ async function waitForUiPaint(): Promise<void> {
   });
 }
 
+/**
+ * In-container subdirectory holding feature artifacts (notes.mid, lyrics.json,
+ * spectrogram, refine candidates). feedpak relocates these under `aural/`;
+ * legacy `.auralsong` packs keep them under `features/`. The Tauri read
+ * commands accept both prefixes, so callers select by container suffix.
+ */
+function featureDir(containerPath: string): "aural" | "features" {
+  return containerPath.endsWith(".feedpak") ? "aural" : "features";
+}
+
 type AuralSongDetails = {
   container_path: string;
   kind: string;
@@ -1271,7 +1281,7 @@ function renderDetails(details: AuralSongDetails) {
       <span class="meta">Per-region candidate cleanup. Run <code>aural_ingest refine-candidates &lt;auralsong&gt; --instrument keys</code> first.</span>
     </div>
 
-    <h4>manifest.json</h4>
+    <h4>${escapeHtml(details.container_path.endsWith(".feedpak") ? "manifest.yaml" : "manifest.json")}</h4>
     <pre>${escapeHtml(raw)}</pre>
   `;
   // Wire the Refine button after innerHTML replaces it.
@@ -1342,9 +1352,11 @@ async function getRoleReadiness(
     const cached = cleanupReadinessCache.get(key);
     if (cached) return cached;
   }
+  // feedpak relocates these artifacts under aural/ (legacy: features/).
+  const fd = featureDir(pack);
   const [spectrogram, candidates] = await Promise.all([
-    auralsongJsonExists(pack, `features/spectrogram/${role}/spectrogram.json`),
-    auralsongJsonExists(pack, `features/refine_candidates.${role}.json`),
+    auralsongJsonExists(pack, `${fd}/spectrogram/${role}/spectrogram.json`),
+    auralsongJsonExists(pack, `${fd}/refine_candidates.${role}.json`),
   ]);
   const readiness: RoleReadiness = { spectrogram, candidates };
   cleanupReadinessCache.set(key, readiness);
@@ -1654,13 +1666,14 @@ async function readDrumChartSelection(containerPath: string, details: AuralSongD
   }
 
   try {
-    const midi = await invoke<MidiBlob>("read_auralsong_mid", { containerPath, relPath: "features/notes.mid" });
+    const relPath = `${featureDir(containerPath)}/notes.mid`;
+    const midi = await invoke<MidiBlob>("read_auralsong_mid", { containerPath, relPath });
     if (!midi.bytes.length) {
       return null;
     }
     return selectDrumChartFromMidiBytes(new Uint8Array(midi.bytes));
   } catch (e) {
-    warnConsole("debugging", `failed to load/parse features/notes.mid from ${containerPath}`, e);
+    warnConsole("debugging", `failed to load/parse notes.mid from ${containerPath}`, e);
     return null;
   }
 }
@@ -2012,7 +2025,7 @@ async function generateLyricsForSelectedAuralSong(): Promise<void> {
   // If it's a zip auralsong, offer to convert to a directory auralsong so we can write features.
   if (selectedAuralSongDetails.kind !== "directory") {
     const ok = confirm(
-      "This AuralSong is a zipped .auralsong file (read-only).\n\nConvert it to a directory AuralSong so we can write features/lyrics.json?"
+      "This song is a zipped pack (read-only).\n\nConvert it to a directory pack so we can write the lyrics file?"
     );
     if (!ok) {
       setVizStatus("Lyrics generation cancelled");
@@ -2059,7 +2072,7 @@ async function generateLyricsForSelectedAuralSong(): Promise<void> {
     // Update local state so viz init sees it without requiring the user to click Details again.
     currentLyrics = lyricsJson as unknown as LyricsFile;
 
-    setVizStatus("Generated features/lyrics.json (MVP line-level timings)");
+    setVizStatus("Generated lyrics.json (MVP line-level timings)");
     await refresh();
   } catch (e) {
     setVizStatus(`Lyrics generation failed: ${String(e)}`);
@@ -3496,7 +3509,10 @@ async function selectAuralSong(containerPath: string, opts?: { autoLoadAudio?: b
     );
 
     try {
-      const lyr = await invoke<unknown>("read_auralsong_json", { containerPath, relPath: "features/lyrics.json" });
+      const lyr = await invoke<unknown>("read_auralsong_json", {
+        containerPath,
+        relPath: `${featureDir(containerPath)}/lyrics.json`,
+      });
       currentLyrics = (lyr ?? null) as LyricsFile | null;
     } catch {
       currentLyrics = null;

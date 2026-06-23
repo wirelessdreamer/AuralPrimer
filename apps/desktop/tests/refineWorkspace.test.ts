@@ -524,6 +524,32 @@ describe("spectrogram overlay", () => {
     expect(session.decisions.get("r0")?.notes[1]?.velocity).toBe(100);
   });
 
+  it("reads spectrogram tiles from aural/ for a feedpak container", async () => {
+    loadSessionMock.mockResolvedValue(makeSession());
+    const geom = {
+      fmin_midi: 24,
+      tiles: [{ file: "tile0.png", col_start: 0, col_end: 10 }],
+      n_frames: 10,
+    };
+    const relPaths: string[] = [];
+    invokeMock.mockImplementation((cmd: string, args: { relPath?: string }) => {
+      if (args?.relPath) relPaths.push(args.relPath);
+      if (cmd === "read_auralsong_json") return Promise.resolve(geom);
+      if (cmd === "read_auralsong_bytes") return Promise.resolve([1, 2, 3]);
+      return Promise.reject(new Error("unexpected"));
+    });
+    vi.stubGlobal("Blob", class {
+      constructor(public parts: unknown[], public opts: unknown) {}
+    });
+    const h = initRefineWorkspace(makeDeps());
+    await h.openForAuralSong("/songs/x.feedpak");
+    await flush();
+    await flush();
+    await flush();
+    expect(relPaths).toContain("aural/spectrogram/keys/spectrogram.json");
+    expect(relPaths).toContain("aural/spectrogram/keys/tile0.png");
+  });
+
   it("treats empty/absent tiles as no artifact (classic timeline)", async () => {
     loadSessionMock.mockResolvedValue(makeSession());
     invokeMock.mockImplementation((cmd: string) => {
