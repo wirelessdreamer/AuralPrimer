@@ -3656,6 +3656,32 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
             temp_mix_ctx.cleanup()
 
 
+def cmd_benchmark_transcribers(args: argparse.Namespace) -> int:
+    """Run a transcriber roster on one stem -> features/benchmark/<role>/.
+
+    Per-engine note sets + a manifest for the Studio's side-by-side spectrogram
+    comparison view. Scores each engine against features/ground_truth.<role>.mid
+    when present. Prints a JSON status line.
+    """
+    from aural_ingest.benchmark_overlay import run_benchmark_overlay
+
+    auralsong = Path(args.auralsong_dir)
+    if not auralsong.is_dir():
+        print(json.dumps({"ok": False, "error": f"auralsong not a directory: {auralsong}"}, sort_keys=True))
+        return 1
+    engines = None
+    if args.engines:
+        engines = [e.strip() for e in str(args.engines).split(",") if e.strip()]
+    result = run_benchmark_overlay(
+        auralsong,
+        args.instrument,
+        engine_ids=engines,
+        onset_tolerance_sec=args.onset_tolerance,
+    )
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result.get("ok") else 1
+
+
 def cmd_refine_candidates(args: argparse.Namespace) -> int:
     """Pre-compute per-region candidate transcriptions for the Refine workspace.
 
@@ -3942,6 +3968,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Instrument to precompute. May be repeated. Defaults to 'keys' if omitted.",
     )
     s_refine_candidates.set_defaults(func=cmd_refine_candidates)
+
+    s_bench_overlay = sub.add_parser(
+        "benchmark-transcribers",
+        help="Run a transcriber roster on one stem -> features/benchmark/<role>/ for the Studio comparison view.",
+    )
+    s_bench_overlay.add_argument(
+        "auralsong_dir",
+        help="Path to an existing AuralSong root (the directory containing manifest.json + audio/).",
+    )
+    s_bench_overlay.add_argument(
+        "--instrument",
+        default="keys",
+        choices=sorted(["keys", "bass", "lead_guitar", "rhythm_guitar", "melodic"]),
+        help="Instrument stem to benchmark. Defaults to 'keys'.",
+    )
+    s_bench_overlay.add_argument(
+        "--engines",
+        default=None,
+        help="Comma-separated engine ids to run (override the per-instrument default roster).",
+    )
+    s_bench_overlay.add_argument(
+        "--onset-tolerance",
+        type=float,
+        default=0.05,
+        help="Onset match tolerance (seconds) for ground-truth scoring. Default 0.05.",
+    )
+    s_bench_overlay.set_defaults(func=cmd_benchmark_transcribers)
 
     s_gt_benchmark = sub.add_parser(
         "gt-benchmark",
