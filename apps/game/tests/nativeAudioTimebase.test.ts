@@ -159,7 +159,7 @@ describe("NativeAudioTimebase", () => {
 
     expect(tb.getIsPlaying()).toBe(true);
     expect(tb.getCurrentTimeSec()).toBeCloseTo(3.5, 6);
-    expect(tb.getOutputLatencySec()).toBeCloseTo(240 / 48_000, 6);
+    expect(tb.getOutputLatencySec()).toBeCloseTo((2 * 240) / 48_000, 6);
   });
 
   it("play waits for callback activity before reporting playing", async () => {
@@ -1174,7 +1174,7 @@ describe("NativeAudioTimebase", () => {
     expect(tb.getCurrentTimeSec()).toBeCloseTo(1.23, 6);
     await Promise.resolve();
     expect(tb.getIsPlaying()).toBe(true);
-    expect(tb.getOutputLatencySec()).toBeCloseTo(480 / 48_000, 6);
+    expect(tb.getOutputLatencySec()).toBeCloseTo((2 * 480) / 48_000, 6);
 
     tb.pause();
     expect(tb.getIsPlaying()).toBe(false);
@@ -1308,7 +1308,7 @@ describe("NativeAudioTimebase", () => {
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase({ sampleRateHz: 44_100 });
     (tb as unknown as { _lastOutputBufferFrames: number | null })._lastOutputBufferFrames = 441;
-    expect(tb.getOutputLatencySec()).toBeCloseTo(0.01, 6);
+    expect(tb.getOutputLatencySec()).toBeCloseTo((2 * 441) / 44_100, 6);
   });
 
   it("getOutputLatencySec returns undefined when sample rate is unavailable even with buffered frames", async () => {
