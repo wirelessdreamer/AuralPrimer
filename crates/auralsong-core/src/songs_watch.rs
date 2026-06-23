@@ -258,10 +258,9 @@ mod tests {
 
         // Some backends (FSEvents, ReadDirectoryChangesW) take a tick to
         // bubble events up. 1s is generous and matches the spec.
-        let signal = sink_rx
+        sink_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("expected at least one event within 1s");
-        let _ = signal;
     }
 
     #[test]

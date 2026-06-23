@@ -8,12 +8,20 @@
 //! Modules:
 //! - [`manifest`] — manifest parsing (with UTF-8 BOM strip), the dir/zip
 //!   readers, and the [`ManifestSummary`] / [`AuralSongScanEntry`] summary types.
+//! - [`feedpak`] — reader for the feedpak container (`manifest.yaml`), the
+//!   second native format. Added alongside [`manifest`] for the format
+//!   migration; the old reader stays until a later cutover stage.
 //! - [`songs_watch`] — filesystem watcher that emits a debounced
 //!   `songs_folder_changed` Tauri event when the songs folder changes.
 
+pub mod feedpak;
 pub mod manifest;
 pub mod songs_watch;
 
+pub use feedpak::{
+    parse_feedpak_manifest_yaml, read_dir_feedpak_manifest, read_zip_feedpak_manifest,
+    scan_feedpak, FeedpakArrangement, FeedpakManifest, FeedpakStem, FeedpakSummary,
+};
 pub use manifest::{
     parse_manifest_json, parse_manifest_raw, read_dir_manifest, read_dir_manifest_raw,
     read_zip_manifest, read_zip_manifest_raw, AuralSongScanEntry, ManifestSummary,
