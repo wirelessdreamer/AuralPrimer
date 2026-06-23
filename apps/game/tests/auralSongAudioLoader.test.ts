@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { loadAuralSongAudioIntoTransport, type AuralSongAudioLoadTransport } from "../src/auralsongAudioLoader";
+import { loadAuralSongAudioIntoTransport, type AuralSongAudioLoadTransport } from "../src/auralSongAudioLoader";
 import type { TransportTimebase } from "../src/audioBackend";
 
 function makeTimebase(withDirectLoad: boolean): TransportTimebase {
