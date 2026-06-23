@@ -905,21 +905,9 @@ const cleanupBuildAllStatusEl = document.getElementById("cleanupBuildAllStatus")
 
 async function refreshRowReadyChip(path: string): Promise<void> {
   try {
-    const { primary } = await detectMelodicStems(path);
-    const r = await getRoleReadiness(path, primary, { force: true });
-    const chipEl = listEl.querySelector<HTMLSpanElement>(
-      `span.cleanupChip[data-chip-for="${cssEscape(path)}"]`,
-    );
-    if (!chipEl) return;
-    if (r.spectrogram && r.candidates) {
-      chipEl.className = "cleanupChip cleanupChipReady";
-      chipEl.innerHTML = `<i class="ti ti-circle-check" aria-hidden="true"></i> Ready`;
-    } else {
-      chipEl.className = "cleanupChip cleanupChipPending";
-      chipEl.innerHTML = `<i class="ti ti-tool" aria-hidden="true"></i> Needs prep`;
-    }
+    applyRowReadiness(path, await probeRowReadiness(path));
   } catch {
-    /* leave the chip as-is on probe failure */
+    /* leave the row's status cells as-is on probe failure */
   }
 }
 
@@ -928,7 +916,7 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
   const setStatus = (m: string) => {
     if (cleanupBuildAllStatusEl) cleanupBuildAllStatusEl.textContent = m;
   };
-  const rows = Array.from(listEl.querySelectorAll<HTMLLIElement>("li.cleanupSongRow:not(.isInvalid)"));
+  const rows = Array.from(listEl.querySelectorAll<HTMLTableRowElement>("tr.cleanupSongRow:not(.isInvalid)"));
   setStatus("Checking…");
   const todo: { path: string; title: string; roles: string[] }[] = [];
   for (const row of rows) {
@@ -1610,6 +1598,91 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
   lyricsBtn.addEventListener("click", () => {
     void generateLyricsForSelectedAuralSong().catch((e) => setAuralSongEditorStatus(String(e)));
   });
+}
+
+// -----------------
+// Cleanup & Edit status table — per-row readiness + inline actions
+// -----------------
+
+type RowReady = { spec: boolean; cand: boolean; lyr: boolean };
+
+// Last-probed readiness per pack, so the table can re-sort without re-probing.
+const cleanupRowReady = new Map<string, RowReady>();
+
+// Probe a song's primary melodic stem (spectrogram + candidates) plus whether
+// it has timed lyrics — the three status columns of the Cleanup & Edit table.
+async function probeRowReadiness(path: string): Promise<RowReady> {
+  const { primary, readiness } = await detectMelodicStems(path);
+  const r = readiness.get(primary) ?? (await getRoleReadiness(path, primary));
+  const lyr = await auralsongJsonExists(path, `${featureDir(path)}/lyrics.json`);
+  return { spec: r.spectrogram, cand: r.candidates, lyr };
+}
+
+function ctStatCell(state: "yes" | "no" | "pending"): string {
+  if (state === "yes") return `<i class="ti ti-circle-check cleanupOk" aria-hidden="true"></i>`;
+  if (state === "no") return `<span class="ctDash">—</span>`;
+  return `<span class="ctDash ctPending" aria-hidden="true">·</span>`;
+}
+
+// Fill a row's status cells + contextual action button once readiness is known.
+// No-op if the row isn't in the DOM (e.g. filtered out).
+function applyRowReadiness(path: string, r: RowReady): void {
+  cleanupRowReady.set(path, r);
+  const row = listEl.querySelector<HTMLTableRowElement>(
+    `tr.cleanupSongRow[data-path="${cssEscape(path)}"]`,
+  );
+  if (!row) return;
+  const set = (cell: string, v: boolean): void => {
+    const td = row.querySelector(`td[data-cell="${cell}"]`);
+    if (td) td.innerHTML = ctStatCell(v ? "yes" : "no");
+  };
+  set("spec", r.spec);
+  set("cand", r.cand);
+  set("lyr", r.lyr);
+  const btn = row.querySelector<HTMLButtonElement>("button[data-act]");
+  if (btn) {
+    if (r.spec && r.cand) {
+      btn.dataset.act = "open";
+      btn.className = "ctBtn ctOpen";
+      btn.innerHTML = `Open <i class="ti ti-chevron-right" aria-hidden="true"></i>`;
+    } else if (!r.spec) {
+      btn.dataset.act = "build";
+      btn.className = "ctBtn ctBuild";
+      btn.textContent = "Build";
+    } else {
+      // spectrogram built but candidates not computed yet -> route to the detail
+      // panel, where "Compute candidates" (the dependency-gated step) lives.
+      btn.dataset.act = "select";
+      btn.className = "ctBtn";
+      btn.innerHTML = `Prep <i class="ti ti-chevron-right" aria-hidden="true"></i>`;
+    }
+  }
+}
+
+// Run the spectrogram build for one song (shared by the inline table action +
+// "Build all unbuilt"). Returns a short status message.
+async function buildSpectrogramForSong(path: string): Promise<{ ok: boolean; msg: string }> {
+  const { roles } = await detectMelodicStems(path);
+  try {
+    const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
+      req: { container_path: path, instruments: roles },
+    });
+    invalidateCleanupCache(path);
+    if (res.ok) return { ok: true, msg: "Spectrogram built" };
+    const tail = res.stderr.trim().split(/\r?\n/).slice(-2).join(" ");
+    return { ok: false, msg: `Build failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
+  } catch (e) {
+    invalidateCleanupCache(path);
+    return { ok: false, msg: `Build failed: ${String(e)}` };
+  }
+}
+
+// Open the per-song cleanup (refine) editor — the table's "Open" inline action.
+function openCleanupEditorForSong(path: string, role?: string): void {
+  if (role) cleanupSelectedRole = role;
+  void selectAuralSong(path, { autoLoadAudio: false });
+  setRoute("refine");
+  void refineWorkspace.openForAuralSong(path);
 }
 
 // -----------------
@@ -4067,87 +4140,149 @@ async function refresh() {
     songsFolderInput.value = songsFolder;
     statusEl.textContent = `songsFolder: ${songsFolder}\ncount: ${entries.length}`;
 
-    listEl.innerHTML = `
-      <ul class="cleanupSongList">
-        ${entries
-          .map((e) => {
-            const title = e.manifest?.title ?? "(missing title)";
-            const artist = e.manifest?.artist ?? "";
-            const err = e.error ? `<pre class="error">${escapeHtml(e.error)}</pre>` : "";
-            const selected = e.container_path === selectedAuralSongPath ? " isSelected" : "";
-            const disabledRow = e.ok ? "" : " isInvalid";
-            // Chip starts as "Needs prep" (neutral) and is upgraded to "Ready"
-            // asynchronously once readiness is probed.
-            const chip = e.ok
-              ? `<span class="cleanupChip cleanupChipPending" data-chip-for="${escapeHtml(e.container_path)}"><i class="ti ti-tool" aria-hidden="true"></i> Needs prep</span>`
-              : `<span class="cleanupChip cleanupChipInvalid"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Invalid</span>`;
-            return `
-              <li class="cleanupSongRow${selected}${disabledRow}" data-path="${escapeHtml(e.container_path)}" ${e.ok ? 'role="button" tabindex="0"' : ""}>
-                <div class="cleanupSongMain">
-                  <div class="cleanupSongTitle">${escapeHtml(title)}</div>
-                  <div class="meta cleanupSongArtist">${escapeHtml(artist || "(unknown artist)")}</div>
-                </div>
-                ${chip}
-                ${err}
-              </li>
-            `;
-          })
-          .join("\n")}
-      </ul>
-    `;
+    // ---- Status table: Song | Spectrogram | Candidates | Lyrics | action ----
+    let sortKey: "title" | "spec" | "cand" | "lyr" = "title";
+    let sortDir: 1 | -1 = 1;
 
-    // Wire up row selection (click + keyboard).
-    for (const row of Array.from(listEl.querySelectorAll<HTMLLIElement>("li.cleanupSongRow"))) {
-      if (row.classList.contains("isInvalid")) continue;
-      const containerPath = row.getAttribute("data-path");
-      if (!containerPath) continue;
-      const select = () => {
-        for (const r of Array.from(listEl.querySelectorAll("li.cleanupSongRow"))) {
-          r.classList.toggle("isSelected", r === row);
+    const rowHtml = (e: AuralSongScanEntry): string => {
+      const title = e.manifest?.title ?? "(missing title)";
+      const artist = e.manifest?.artist ?? "";
+      const selected = e.container_path === selectedAuralSongPath ? " isSelected" : "";
+      if (!e.ok) {
+        const err = escapeHtml(e.error || "invalid pack");
+        return `<tr class="cleanupSongRow isInvalid" data-path="${escapeHtml(e.container_path)}">`
+          + `<td class="ctSong"><div class="cleanupSongTitle">${escapeHtml(title)}</div>`
+          + `<div class="meta ctErr" title="${err}">${err}</div></td>`
+          + `<td class="ctStat ctInvalid" colspan="3"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Invalid</td>`
+          + `<td class="ctAction"></td></tr>`;
+      }
+      const known = cleanupRowReady.get(e.container_path);
+      const cell = (k: keyof RowReady): string =>
+        ctStatCell(known ? (known[k] ? "yes" : "no") : "pending");
+      let act = "select";
+      let actCls = "ctBtn";
+      let actLabel = `Open <i class="ti ti-chevron-right" aria-hidden="true"></i>`;
+      if (known) {
+        if (known.spec && known.cand) { act = "open"; actCls = "ctBtn ctOpen"; }
+        else if (!known.spec) { act = "build"; actCls = "ctBtn ctBuild"; actLabel = "Build"; }
+        else { actLabel = `Prep <i class="ti ti-chevron-right" aria-hidden="true"></i>`; }
+      }
+      return `<tr class="cleanupSongRow${selected}" data-path="${escapeHtml(e.container_path)}" role="button" tabindex="0">`
+        + `<td class="ctSong"><div class="cleanupSongTitle">${escapeHtml(title)}</div>`
+        + `<div class="meta cleanupSongArtist">${escapeHtml(artist || "(unknown artist)")}</div></td>`
+        + `<td class="ctStat" data-cell="spec">${cell("spec")}</td>`
+        + `<td class="ctStat" data-cell="cand">${cell("cand")}</td>`
+        + `<td class="ctStat" data-cell="lyr">${cell("lyr")}</td>`
+        + `<td class="ctAction"><button type="button" class="${actCls}" data-act="${act}">${actLabel}</button></td></tr>`;
+    };
+
+    const sortedEntries = (): AuralSongScanEntry[] => {
+      const arr = [...entries];
+      arr.sort((a, b) => {
+        if (a.ok !== b.ok) return a.ok ? -1 : 1; // valid songs always first
+        if (sortKey === "title") {
+          const at = (a.manifest?.title ?? "").toLowerCase();
+          const bt = (b.manifest?.title ?? "").toLowerCase();
+          return at.localeCompare(bt) * sortDir;
         }
-        void selectAuralSong(containerPath, { autoLoadAudio: false });
-      };
-      row.addEventListener("click", select);
-      row.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") {
-          ev.preventDefault();
-          select();
-        }
+        const av = cleanupRowReady.get(a.container_path)?.[sortKey] ? 1 : 0;
+        const bv = cleanupRowReady.get(b.container_path)?.[sortKey] ? 1 : 0;
+        return (bv - av) * sortDir;
       });
-    }
+      return arr;
+    };
 
-    // Probe readiness for each valid song's primary melodic stem and upgrade
-    // the chip to "Ready" (green) when both spectrogram + candidates exist.
+    const inlineBuild = async (path: string, btn: HTMLButtonElement): Promise<void> => {
+      btn.disabled = true;
+      btn.textContent = "Building…";
+      const res = await buildSpectrogramForSong(path);
+      statusEl.textContent = res.msg;
+      try {
+        applyRowReadiness(path, await probeRowReadiness(path));
+      } catch {
+        /* leave the row's cells as-is */
+      }
+      if (path === selectedAuralSongPath && selectedAuralSongDetails) {
+        void renderCleanupAction(selectedAuralSongDetails);
+      }
+    };
+
+    const wireRows = (): void => {
+      for (const row of Array.from(listEl.querySelectorAll<HTMLTableRowElement>("tr.cleanupSongRow"))) {
+        if (row.classList.contains("isInvalid")) continue;
+        const path = row.getAttribute("data-path");
+        if (!path) continue;
+        const select = (): void => {
+          for (const r of Array.from(listEl.querySelectorAll("tr.cleanupSongRow"))) {
+            r.classList.toggle("isSelected", r === row);
+          }
+          void selectAuralSong(path, { autoLoadAudio: false });
+        };
+        row.addEventListener("click", (ev) => {
+          const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>("button[data-act]");
+          if (btn) {
+            ev.stopPropagation();
+            const act = btn.dataset.act;
+            if (act === "open") { openCleanupEditorForSong(path); return; }
+            if (act === "build") { void inlineBuild(path, btn); return; }
+            select();
+            return;
+          }
+          select();
+        });
+        row.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(); }
+        });
+      }
+    };
+
+    const renderTable = (): void => {
+      const arrow = (k: string): string => (sortKey === k ? (sortDir === 1 ? " ▲" : " ▼") : "");
+      listEl.innerHTML = `
+        <table class="cleanupTable">
+          <thead><tr>
+            <th class="ctColSong" data-sort="title">Song${arrow("title")}</th>
+            <th class="ctColStat" data-sort="spec" title="Spectrogram overlay">Spec${arrow("spec")}</th>
+            <th class="ctColStat" data-sort="cand" title="Note candidates">Cand${arrow("cand")}</th>
+            <th class="ctColStat" data-sort="lyr" title="Timed lyrics">Lyrics${arrow("lyr")}</th>
+            <th class="ctColAct"></th>
+          </tr></thead>
+          <tbody>${sortedEntries().map(rowHtml).join("")}</tbody>
+        </table>`;
+      wireRows();
+      for (const th of Array.from(listEl.querySelectorAll<HTMLTableCellElement>("th[data-sort]"))) {
+        th.addEventListener("click", () => {
+          const k = th.getAttribute("data-sort") as typeof sortKey;
+          if (sortKey === k) sortDir = sortDir === 1 ? -1 : 1;
+          else { sortKey = k; sortDir = k === "title" ? 1 : -1; }
+          renderTable();
+        });
+      }
+    };
+
+    renderTable();
+
+    // Probe readiness for each valid song and fill its status cells + action.
     void Promise.all(
       entries
         .filter((e) => e.ok)
         .map(async (e) => {
           try {
-            const { primary, readiness } = await detectMelodicStems(e.container_path);
-            const r = readiness.get(primary);
-            if (!r || !(r.spectrogram && r.candidates)) return;
-            const chipEl = listEl.querySelector<HTMLSpanElement>(
-              `span.cleanupChip[data-chip-for="${cssEscape(e.container_path)}"]`,
-            );
-            if (chipEl) {
-              chipEl.className = "cleanupChip cleanupChipReady";
-              chipEl.innerHTML = `<i class="ti ti-circle-check" aria-hidden="true"></i> Ready`;
-            }
+            applyRowReadiness(e.container_path, await probeRowReadiness(e.container_path));
           } catch {
-            // Leave the chip at "Needs prep" if probing fails.
+            /* leave the row pending if probing fails */
           }
         }),
     );
 
-    // UX improvement: if nothing is selected yet, preload the first valid AuralSong into the editor view.
+    // UX: if nothing is selected yet, preload the first valid AuralSong.
     if (!selectedAuralSongPath) {
       const firstOk = entries.find((e) => e.ok);
       if (firstOk?.container_path) {
         await selectAuralSong(firstOk.container_path, { autoLoadAudio: false });
-        const row = listEl.querySelector<HTMLLIElement>(
-          `li.cleanupSongRow[data-path="${cssEscape(firstOk.container_path)}"]`,
-        );
-        row?.classList.add("isSelected");
+        listEl.querySelector<HTMLTableRowElement>(
+          `tr.cleanupSongRow[data-path="${cssEscape(firstOk.container_path)}"]`,
+        )?.classList.add("isSelected");
       }
     }
   } catch (e) {

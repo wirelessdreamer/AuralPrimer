@@ -979,7 +979,7 @@ li {
 .ti-edit::before { content: "\270E"; }           /* pencil */
 
 .cleanupLayout {
-  grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(440px, 1.15fr) minmax(0, 1fr);
   align-items: start;
 }
 
@@ -998,50 +998,70 @@ li {
   overflow-y: auto;
 }
 
-.cleanupSongList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
+/* Status table (Song | Spectrogram | Candidates | Lyrics | action) */
+.cleanupTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
 }
+
+.cleanupTable thead th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+
+.cleanupTable thead th:hover { color: var(--text); }
+.cleanupTable th.ctColStat { width: 58px; text-align: center; }
+.cleanupTable th.ctColAct { width: 88px; }
+
+.cleanupTable td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.cleanupTable td.ctStat { text-align: center; }
 
 .cleanupSongRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel2);
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: background 0.12s ease;
+}
+.cleanupSongRow:hover { background: rgba(124, 58, 237, 0.10); }
+.cleanupSongRow.isSelected { background: rgba(34, 211, 238, 0.12); }
+.cleanupSongRow.isInvalid { cursor: default; opacity: 0.65; }
+.cleanupSongRow:focus-visible { outline: 2px solid var(--accent2); outline-offset: -2px; }
+
+.ctSong { overflow: hidden; }
+.cleanupOk { color: var(--accent3); font-size: 16px; }
+.ctDash { color: var(--muted); }
+.ctDash.ctPending { opacity: 0.45; }
+.ctInvalid { color: var(--danger); font-size: 12px; white-space: nowrap; }
+.ctErr {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  font-size: 11px;
 }
 
-.cleanupSongRow:hover {
-  border-color: var(--border2);
-  background: rgba(124, 58, 237, 0.10);
-}
-
-.cleanupSongRow.isSelected {
-  border-color: var(--accent2);
-  background: rgba(34, 211, 238, 0.12);
-}
-
-.cleanupSongRow.isInvalid {
-  cursor: default;
-  opacity: 0.7;
-}
-
-.cleanupSongRow:focus-visible {
-  outline: 2px solid var(--accent2);
-  outline-offset: 1px;
-}
-
-.cleanupSongMain {
-  flex: 1 1 auto;
-  min-width: 0;
-}
+.ctAction { text-align: right; }
+.ctBtn { font-size: 12px; padding: 4px 9px; white-space: nowrap; }
+.ctBtn.ctBuild { border-color: var(--accent); }
+.ctBtn.ctOpen { border-color: var(--accent2); }
 
 .cleanupSongTitle {
   font-weight: 600;
