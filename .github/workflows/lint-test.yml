@@ -105,6 +105,7 @@ jobs:
             libayatana-appindicator3-dev \
             libsoup-3.0-dev \
             libxdo-dev \
+            libasound2-dev \
             libssl-dev \
             build-essential \
             file
@@ -139,9 +140,12 @@ jobs:
             if [ -f "$crate/Cargo.toml" ]; then
               found=1
               echo "::group::cargo fmt/clippy/test ($crate)"
+              # NOTE: no --all-features. The only non-default feature is `asio`
+              # (cpal/asio), which is Windows-only and pulls the Steinberg ASIO
+              # SDK; it cannot build on the ubuntu-latest runner. default = [].
               ( cd "$crate"
                 cargo fmt --all -- --check
-                cargo clippy --all-targets --all-features -- -D warnings
+                cargo clippy --all-targets -- -D warnings
                 cargo test --all )
               echo "::endgroup::"
             fi
@@ -164,7 +168,7 @@ jobs:
               found=1
               echo "::group::cargo llvm-cov ($crate)"
               ( cd "$crate"
-                cargo llvm-cov --workspace --all-features --lcov --output-path target/coverage/lcov.info --fail-under-lines 75 )
+                cargo llvm-cov --workspace --lcov --output-path target/coverage/lcov.info --fail-under-lines 75 )
               echo "::endgroup::"
             fi
           done
