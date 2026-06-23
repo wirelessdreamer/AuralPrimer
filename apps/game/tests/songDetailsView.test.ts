@@ -141,7 +141,7 @@ describe("initSongDetailsView", () => {
     const html = setDetailsHTML.mock.calls[0][0] as string;
     expect(html).toContain("(missing title)");
     expect(html).toContain("(no manifest)");
-    expect(html).toContain("(none)");
+    expect(html).toContain("(derived from aural/notes.mid)");
     expect(html).toContain("boom");
   });
 

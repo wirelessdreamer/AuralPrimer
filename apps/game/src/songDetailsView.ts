@@ -94,15 +94,15 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
 
       <h4>Audio</h4>
       <ul>
-        <li>mix.mp3: ${esc(yesNo(details.has_mix_mp3))}</li>
-        <li>mix.ogg: ${esc(yesNo(details.has_mix_ogg))}</li>
-        <li>mix.wav: ${esc(yesNo(Boolean(details.has_mix_wav)))}</li>
+        <li>stem.mp3: ${esc(yesNo(details.has_mix_mp3))}</li>
+        <li>stem.ogg: ${esc(yesNo(details.has_mix_ogg))}</li>
+        <li>stem.wav: ${esc(yesNo(Boolean(details.has_mix_wav)))}</li>
       </ul>
 
       <h4>Charts</h4>
-      ${details.charts.length ? `<ul>${details.charts.map((c) => `<li>${esc(c)}</li>`).join("\n")}</ul>` : "(none)"}
+      ${details.charts.length ? `<ul>${details.charts.map((c) => `<li>${esc(c)}</li>`).join("\n")}</ul>` : "(derived from aural/notes.mid)"}
 
-      <h4>manifest.json</h4>
+      <h4>manifest.yaml</h4>
       <pre>${esc(raw)}</pre>
     `);
   }

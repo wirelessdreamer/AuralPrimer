@@ -500,7 +500,7 @@ function refinementMatchesRole(
 
 /**
  * Apply a list of per-instrument refinement overlays to the melodic
- * tracks produced from `features/notes.mid`. Each refinement targets a
+ * tracks produced from `aural/notes.mid`. Each refinement targets a
  * single instrument; tracks whose role does not match any refinement are
  * returned unchanged. Pure function — does not mutate inputs.
  *

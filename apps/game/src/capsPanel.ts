@@ -154,16 +154,16 @@ export function initCapsPanel(deps: CapsPanelDeps): CapsPanelHandle {
     };
 
     const featurePills = [
-      pill("beats", caps.features.beats, "features/notes.mid (structure track beat pulses)"),
-      pill("tempo", caps.features.tempo_map, "features/notes.mid (SetTempo + TimeSignature meta)"),
-      pill("sections", caps.features.sections, "features/notes.mid (section markers)"),
-      pill("events", caps.features.events, "features/notes.mid (drums ch10 + melodic ch1 notes)"),
-      pill("lyrics", caps.features.lyrics, "features/lyrics.json"),
-      pill("midi", caps.features.notes_mid, "features/notes.mid"),
+      pill("beats", caps.features.beats, "aural/notes.mid (structure track beat pulses)"),
+      pill("tempo", caps.features.tempo_map, "aural/notes.mid (SetTempo + TimeSignature meta)"),
+      pill("sections", caps.features.sections, "aural/notes.mid (section markers)"),
+      pill("events", caps.features.events, "aural/notes.mid (drums ch10 + melodic ch1 notes)"),
+      pill("lyrics", caps.features.lyrics, "manifest lyrics pointer"),
+      pill("midi", caps.features.notes_mid, "aural/notes.mid"),
     ].join("\n");
 
     const drumHint = drumSelection
-      ? `features/notes.mid (${drumSelection.mode}, ${drumSelection.reason}, events=${drumSelection.events.length})`
+      ? `aural/notes.mid (${drumSelection.mode}, ${drumSelection.reason}, events=${drumSelection.events.length})`
       : "chart availability (heuristic)";
     const chartPills = (Object.keys(INSTRUMENT_LABELS) as Instrument[])
       .map((inst) => {
@@ -172,10 +172,12 @@ export function initCapsPanel(deps: CapsPanelDeps): CapsPanelHandle {
       })
       .join("\n");
 
+    // feedpak has no mixdown; audio is the default stem. The has_mix_* flags
+    // are repurposed in get_auralsong_details to report the stem's codec.
     const audioPills = [
-      pill("mix.wav", caps.audio.wav),
-      pill("mix.mp3", caps.audio.mp3),
-      pill("mix.ogg", caps.audio.ogg),
+      pill("stem.wav", caps.audio.wav, "default stem (audio/stems/<role>.wav)"),
+      pill("stem.mp3", caps.audio.mp3, "default stem (mp3)"),
+      pill("stem.ogg", caps.audio.ogg, "default stem (ogg)"),
     ].join("\n");
 
     deps.capsEl.innerHTML = `

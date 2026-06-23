@@ -1,5 +1,5 @@
 /**
- * Loads + parses features/notes.mid for a selected AuralSong and applies
+ * Loads + parses aural/notes.mid for a selected feedpak and applies
  * any per-instrument refinement overlays. Returns BOTH the drum chart
  * selection AND the melodic tracks so the caller can write both into its
  * state in one shot.
@@ -39,7 +39,7 @@ export type ReadSongChartSelectionArgs = {
 };
 
 /**
- * Reads features/notes.mid from an AuralSong, extracts drum + melodic
+ * Reads aural/notes.mid from a feedpak, extracts drum + melodic
  * tracks, and applies refinement overlays if present.
  *
  *  - No notes.mid → returns `{ drumSelection: null, melodicTracks: [] }`.
@@ -55,7 +55,7 @@ export async function readSongChartSelection(args: ReadSongChartSelectionArgs): 
   try {
     const midi = await invoke<MidiBlob>("read_auralsong_mid", {
       containerPath,
-      relPath: "features/notes.mid",
+      relPath: "aural/notes.mid",
     });
     if (!midi.bytes.length) {
       return { drumSelection: null, melodicTracks: [] };
@@ -64,7 +64,7 @@ export async function readSongChartSelection(args: ReadSongChartSelectionArgs): 
 
     // Extract melodic instrument tracks alongside drums.
     const baseMelodicTracks = selectMelodicTracksFromMidiBytes(midiBytes);
-    // Apply per-instrument refinement overlays from features/refinement.<role>.json
+    // Apply per-instrument refinement overlays from aural/refine_candidates.<role>.json
     // if present. Best-effort: missing or invalid refinement files are
     // logged and skipped; the base notes.mid track is rendered unchanged.
     const refinements = await loadRefinementsForRoles(
@@ -87,7 +87,7 @@ export async function readSongChartSelection(args: ReadSongChartSelectionArgs): 
       melodicTracks,
     };
   } catch (e) {
-    consoleBridge.warn("debugging", `failed to load/parse features/notes.mid from ${containerPath}`, e);
+    consoleBridge.warn("debugging", `failed to load/parse aural/notes.mid from ${containerPath}`, e);
     return { drumSelection: null, melodicTracks: [] };
   }
 }

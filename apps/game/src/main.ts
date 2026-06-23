@@ -795,11 +795,20 @@ async function selectAuralSong(containerPath: string) {
     capsPanel.applyAvailability(details, selectedDrumChartSelection, selectedAuralSongCharts);
     pluginsPanel.render();
 
-    // Load lyrics (best-effort)
-    try {
-      const lyr = await invoke<unknown>("read_auralsong_json", { containerPath, relPath: "features/lyrics.json" });
-      currentLyrics = (lyr ?? null) as LyricsFile | null;
-    } catch {
+    // Load lyrics (best-effort). feedpak points to the lyrics doc via the
+    // manifest `lyrics` key (no fixed features/lyrics.json path).
+    const lyricsRel =
+      typeof (details.manifest_raw as { lyrics?: unknown } | undefined)?.lyrics === "string"
+        ? ((details.manifest_raw as { lyrics: string }).lyrics)
+        : null;
+    if (lyricsRel) {
+      try {
+        const lyr = await invoke<unknown>("read_auralsong_json", { containerPath, relPath: lyricsRel });
+        currentLyrics = (lyr ?? null) as LyricsFile | null;
+      } catch {
+        currentLyrics = null;
+      }
+    } else {
       currentLyrics = null;
     }
     renderPlaybackLyrics(transport.t);
@@ -954,7 +963,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
 
   if (plugin.id === "viz-lyrics" && !currentLyrics) {
     setVizStatus(
-      "viz-lyrics: features/lyrics.json missing. Generate it in AuralStudio, then reopen this AuralSong."
+      "viz-lyrics: no lyrics in this feedpak. Generate them in AuralStudio, then reopen this song."
     );
   }
 

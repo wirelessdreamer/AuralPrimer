@@ -74,9 +74,9 @@ function pluginRequirements(id: string): {
 } {
   switch (id) {
     case "viz-lyrics":
-      return { ok: (d) => Boolean(d?.has_lyrics), reason: "Requires features/lyrics.json" };
+      return { ok: (d) => Boolean(d?.has_lyrics), reason: "Requires lyrics (manifest lyrics pointer)" };
     case "viz-drum-highway":
-      return { ok: (d) => Boolean(d?.has_notes_mid), reason: "Requires features/notes.mid" };
+      return { ok: (d) => Boolean(d?.has_notes_mid), reason: "Requires aural/notes.mid" };
     default:
       return { ok: () => true, reason: "" };
   }

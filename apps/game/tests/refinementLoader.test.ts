@@ -49,11 +49,11 @@ describe("loadRefinementsForRoles", () => {
     expect(out).toHaveLength(2);
     expect(invoke).toHaveBeenCalledWith("read_auralsong_json", {
       containerPath: "/song",
-      relPath: "features/refinement.bass.json",
+      relPath: "aural/refine_candidates.bass.json",
     });
     expect(invoke).toHaveBeenCalledWith("read_auralsong_json", {
       containerPath: "/song",
-      relPath: "features/refinement.keys.json",
+      relPath: "aural/refine_candidates.keys.json",
     });
     expect(warn).not.toHaveBeenCalled();
   });
@@ -98,7 +98,7 @@ describe("loadRefinementsForRoles", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       "play",
-      "refinement.bass.json failed validation; ignoring",
+      "refine_candidates.bass.json failed validation; ignoring",
       [{ path: "version", message: "missing" }],
     );
   });
@@ -132,7 +132,7 @@ describe("loadRefinementsForRoles", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       "play",
-      "refinement.rhythm_guitar.json failed validation; ignoring",
+      "refine_candidates.rhythm_guitar.json failed validation; ignoring",
       [{ path: "x", message: "y" }],
     );
   });

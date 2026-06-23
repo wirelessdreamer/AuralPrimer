@@ -155,7 +155,7 @@ describe("main.ts wiring (source-level pin)", () => {
     const loaderSrc = read("apps/game/src/refinementLoader.ts");
     expect(loaderSrc).toMatch(/async\s+function\s+loadRefinementsForRoles\s*\(/);
     expect(loaderSrc).toMatch(/read_auralsong_json/);
-    expect(loaderSrc).toMatch(/features\/refinement\.\$\{role\}\.json/);
+    expect(loaderSrc).toMatch(/aural\/refine_candidates\.\$\{role\}\.json/);
     expect(loaderSrc).toMatch(/validateRefinement\s*\(\s*raw\s*\)/);
     // Invalid files warn + continue, never throw.
     expect(loaderSrc).toMatch(/result\.ok/);

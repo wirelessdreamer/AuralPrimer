@@ -123,7 +123,7 @@ describe("readSongChartSelection", () => {
     );
     expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
       containerPath: "/c",
-      relPath: "features/notes.mid",
+      relPath: "aural/notes.mid",
     });
   });
 

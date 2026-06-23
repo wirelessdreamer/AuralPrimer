@@ -2,7 +2,7 @@
  * Per-instrument refinement overlay loader.
  *
  * For each `InstrumentRole`, best-effort fetches
- * `features/refinement.<role>.json` from an AuralSong via the existing
+ * `aural/refine_candidates.<role>.json` from a feedpak via the existing
  * `read_auralsong_json` Tauri command. Missing files are silent (the
  * common case — no refinement has been authored). Invalid files are
  * surfaced via the caller-provided `warn` callback and skipped, so a
@@ -31,7 +31,7 @@ export async function loadRefinementsForRoles(
 ): Promise<RefinementFile[]> {
   const out: RefinementFile[] = [];
   for (const role of roles) {
-    const relPath = `features/refinement.${role}.json`;
+    const relPath = `aural/refine_candidates.${role}.json`;
     let raw: unknown;
     try {
       raw = await invoke<unknown>("read_auralsong_json", { containerPath, relPath });
@@ -44,7 +44,7 @@ export async function loadRefinementsForRoles(
     if (!result.ok) {
       deps.warn(
         "play",
-        `refinement.${role}.json failed validation; ignoring`,
+        `refine_candidates.${role}.json failed validation; ignoring`,
         result.errors,
       );
       continue;
