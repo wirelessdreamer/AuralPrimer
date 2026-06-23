@@ -171,19 +171,16 @@ pub fn list_midi_tracks(midi_bytes: &[u8]) -> Result<Vec<MidiTrackInfo>, String>
                     }
                 }
                 TrackEventKind::Midi { channel, message } => {
-                    let ch = channel.as_int() as u8;
-                    match message {
-                        midly::MidiMessage::NoteOn { key, vel } => {
-                            let v = vel.as_int();
-                            if v > 0 {
-                                let p = key.as_int() as u8;
-                                note_count += 1;
-                                channels.insert(ch);
-                                pitch_min = Some(pitch_min.map_or(p, |m: u8| m.min(p)));
-                                pitch_max = Some(pitch_max.map_or(p, |m: u8| m.max(p)));
-                            }
+                    let ch = channel.as_int();
+                    if let midly::MidiMessage::NoteOn { key, vel } = message {
+                        let v = vel.as_int();
+                        if v > 0 {
+                            let p = key.as_int();
+                            note_count += 1;
+                            channels.insert(ch);
+                            pitch_min = Some(pitch_min.map_or(p, |m: u8| m.min(p)));
+                            pitch_max = Some(pitch_max.map_or(p, |m: u8| m.max(p)));
                         }
-                        _ => {}
                     }
                 }
                 _ => {}
@@ -319,7 +316,7 @@ fn midi_to_events_json(
         open_notes.clear();
 
         for ev in track {
-            t_ticks = t_ticks.saturating_add(ev.delta.as_int() as u32);
+            t_ticks = t_ticks.saturating_add(ev.delta.as_int());
             match &ev.kind {
                 TrackEventKind::Meta(m) => {
                     if let midly::MetaMessage::Tempo(us) = m {
@@ -327,11 +324,11 @@ fn midi_to_events_json(
                     }
                 }
                 TrackEventKind::Midi { channel, message } => {
-                    let ch = channel.as_int() as u8;
+                    let ch = channel.as_int();
                     match message {
                         midly::MidiMessage::NoteOn { key, vel } => {
-                            let pitch = key.as_int() as u8;
-                            let v = vel.as_int() as u8;
+                            let pitch = key.as_int();
+                            let v = vel.as_int();
                             if v == 0 {
                                 if let Some(on) = open_notes.remove(&(ch, pitch)) {
                                     notes_out.push(serde_json::json!({
@@ -349,7 +346,7 @@ fn midi_to_events_json(
                             }
                         }
                         midly::MidiMessage::NoteOff { key, .. } => {
-                            let pitch = key.as_int() as u8;
+                            let pitch = key.as_int();
                             if let Some(on) = open_notes.remove(&(ch, pitch)) {
                                 notes_out.push(serde_json::json!({
                                     "track_id": role,

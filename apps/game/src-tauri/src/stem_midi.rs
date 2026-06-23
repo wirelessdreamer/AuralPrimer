@@ -156,7 +156,7 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
     for track in &smf.tracks {
         let mut t_ticks: u32 = 0;
         for ev in track {
-            t_ticks = t_ticks.saturating_add(ev.delta.as_int() as u32);
+            t_ticks = t_ticks.saturating_add(ev.delta.as_int());
             match &ev.kind {
                 TrackEventKind::Meta(m) => {
                     if let midly::MetaMessage::Tempo(us) = m {
@@ -164,11 +164,11 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
                     }
                 }
                 TrackEventKind::Midi { channel, message } => {
-                    let ch = channel.as_int() as u8;
+                    let ch = channel.as_int();
                     match message {
                         midly::MidiMessage::NoteOn { key, vel } => {
-                            let pitch = key.as_int() as u8;
-                            let v = vel.as_int() as u8;
+                            let pitch = key.as_int();
+                            let v = vel.as_int();
                             if v == 0 {
                                 // treat NoteOn vel=0 as NoteOff
                                 if let Some(on) = open_notes.remove(&(ch, pitch)) {
@@ -187,7 +187,7 @@ fn midi_to_events_json(midi_bytes: &[u8]) -> Result<serde_json::Value, String> {
                             }
                         }
                         midly::MidiMessage::NoteOff { key, .. } => {
-                            let pitch = key.as_int() as u8;
+                            let pitch = key.as_int();
                             if let Some(on) = open_notes.remove(&(ch, pitch)) {
                                 notes_out.push(serde_json::json!({
                                     "track_id": "midi",

@@ -206,7 +206,7 @@ fn sanitize_outbound_midi_message(bytes: &[u8], allow_sysex: bool) -> Result<Vec
                 return Err("channel voice data bytes must be 7-bit".to_string());
             }
         }
-        0xC0..=0xCF | 0xD0..=0xDF => {
+        0xC0..=0xDF => {
             if bytes.len() != 2 {
                 return Err("expected 2-byte channel voice message".to_string());
             }

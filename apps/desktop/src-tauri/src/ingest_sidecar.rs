@@ -679,9 +679,7 @@ pub fn run_ingest_refine_candidates(
     }
 
     let app = app.ok_or_else(|| {
-        format!(
-            "Tauri AppHandle required for sidecar execution; ingest_refine_candidates can't run headless",
-        )
+        "Tauri AppHandle required for sidecar execution; ingest_refine_candidates can't run headless".to_string()
     })?;
     run_tauri_sidecar_capture(app, &args)
 }
