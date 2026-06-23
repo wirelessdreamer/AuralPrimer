@@ -684,6 +684,50 @@ pub fn run_ingest_refine_candidates(
     run_tauri_sidecar_capture(app, &args)
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct SpectrogramRequest {
+    /// Path to the AuralSong directory (must end with `.auralsong` and be a
+    /// directory, not a zip — same constraint as `RefineCandidatesRequest`).
+    pub container_path: String,
+    /// One or more melodic instruments to build. Empty defaults to all
+    /// melodic stems present in the pack.
+    #[serde(default)]
+    pub instruments: Vec<String>,
+}
+
+/// Run the sidecar's `spectrogram` subcommand against an existing AuralSong.
+/// Writes `features/spectrogram/<role>/` (tiles + spectrogram.json) per
+/// melodic stem; the Studio's Refine (cleanup) workspace then renders them.
+///
+/// Used by the "Build spectrogram" CTA so a song can be prepped for cleanup
+/// on-demand without a full re-import.
+pub fn run_ingest_spectrogram(
+    req: SpectrogramRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let container = req.container_path.trim();
+    if container.is_empty() {
+        return Err("missing container_path".to_string());
+    }
+    let instruments: Vec<String> = req
+        .instruments
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut args: Vec<String> = vec!["spectrogram".to_string(), container.to_string()];
+    for inst in &instruments {
+        args.push("--instrument".to_string());
+        args.push(inst.clone());
+    }
+
+    let app = app.ok_or_else(|| {
+        "Tauri AppHandle required for sidecar execution; ingest_spectrogram can't run headless".to_string()
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

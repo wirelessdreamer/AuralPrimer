@@ -3731,6 +3731,69 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
     return 0 if overall_ok else 1
 
 
+def cmd_build_spectrogram(args: argparse.Namespace) -> int:
+    """Build the CQT spectrogram overlay artifact(s) for an existing AuralSong.
+
+    Mirrors the spectrogram stage of import, but on-demand: for each requested
+    melodic stem at ``audio/stems/<role>.wav`` (drums/vocals excluded), compute
+    the pitch-aligned CQT and write ``features/spectrogram/<role>/``. The Studio
+    Refine (cleanup) workspace consumes those tiles + spectrogram.json.
+
+    Prints a JSON status line per CLI convention so callers can parse the result.
+    """
+    from aural_ingest.spectrogram import write_spectrogram_artifact
+
+    auralsong = Path(args.auralsong_dir)
+    if not auralsong.is_dir():
+        print(
+            json.dumps(
+                {"ok": False, "error": f"auralsong not a directory: {auralsong}"},
+                sort_keys=True,
+            )
+        )
+        return 1
+
+    stems_dir = auralsong / "audio" / "stems"
+    excluded = {"drums", "vocals"}
+    present: dict[str, Path] = {}
+    for stem_path in sorted(stems_dir.glob("*.wav")):
+        role = stem_path.stem
+        if role in excluded:
+            continue
+        present[role] = stem_path
+
+    requested = list(args.instrument or [])
+    if requested and "melodic" not in requested:
+        target_roles = [r for r in requested if r in present]
+    else:
+        # Default (or explicit "melodic"): all melodic stems present.
+        target_roles = sorted(present.keys())
+
+    results: dict[str, dict[str, object]] = {}
+    for role in target_roles:
+        stem_path = present[role]
+        try:
+            geom = write_spectrogram_artifact(
+                stem_path,
+                auralsong / "features" / "spectrogram" / role,
+                role=role,
+            )
+            results[role] = {
+                "ok": True,
+                "n_frames": int(geom.get("n_frames", 0)),
+                "tiles": len(geom.get("tiles", []) or []),
+            }
+        except Exception as exc:  # noqa: BLE001
+            results[role] = {"ok": False, "error": str(exc)}
+
+    overall_ok = bool(results) and any(bool(r.get("ok")) for r in results.values())
+    payload: dict[str, object] = {"ok": overall_ok, "roles": results}
+    if args.instrument:
+        payload["instrument"] = list(args.instrument)
+    print(json.dumps(payload, sort_keys=True))
+    return 0 if overall_ok else 1
+
+
 def cmd_gt_benchmark(args: argparse.Namespace) -> int:
     """Run a ground-truth benchmark sweep and write the JSON report.
 
@@ -3968,6 +4031,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Instrument to precompute. May be repeated. Defaults to 'keys' if omitted.",
     )
     s_refine_candidates.set_defaults(func=cmd_refine_candidates)
+
+    s_spectrogram = sub.add_parser(
+        "spectrogram",
+        help="Build the CQT spectrogram overlay artifact(s) for an existing AuralSong's melodic stems.",
+    )
+    s_spectrogram.add_argument(
+        "auralsong_dir",
+        help="Path to an existing AuralSong root (the directory containing manifest.json + audio/).",
+    )
+    s_spectrogram.add_argument(
+        "--instrument",
+        action="append",
+        choices=sorted(["keys", "bass", "lead_guitar", "rhythm_guitar", "melodic"]),
+        help="Melodic stem to build. May be repeated. Defaults to all melodic stems present.",
+    )
+    s_spectrogram.set_defaults(func=cmd_build_spectrogram)
 
     s_bench_overlay = sub.add_parser(
         "benchmark-transcribers",

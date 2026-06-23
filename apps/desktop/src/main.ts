@@ -344,35 +344,30 @@ root.innerHTML = `
       </section>
 
       <section class="route" data-route="play">
-        <div class="twoCol playLayout" id="playLayout">
-          <section class="panel">
+        <div class="twoCol cleanupLayout playLayout" id="playLayout">
+          <section class="panel cleanupListPanel">
             <div class="panelHeader">
               <h2>Cleanup &amp; Edit</h2>
-              <div class="row" style="margin:0">
+              <div class="row" style="margin:0;gap:8px;align-items:center">
+                <span id="cleanupBuildAllStatus" class="meta cleanupBuildAllStatus"></span>
+                <button id="cleanupBuildAll" title="Build the spectrogram for every listed song that doesn't have one yet">Build all unbuilt</button>
                 <button id="refresh">Refresh</button>
               </div>
             </div>
-
-            <pre id="status">(not loaded)</pre>
-            <div class="twoCol" style="grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr); gap: 12px;">
-              <div id="list"></div>
-              <div id="details" class="details"></div>
-            </div>
+            <p class="meta cleanupListHint">Pick a song to prepare for cleanup. Studio focuses on inspection and authoring; use <strong>AuralPrimer</strong> for live playback.</p>
+            <pre id="status" class="cleanupStatusLine">(not loaded)</pre>
+            <div id="list" class="cleanupList"></div>
           </section>
 
-          <section class="panel">
-            <div class="panelHeader">
-              <h2>Selected AuralSong</h2>
-              <div class="meta">editor tools</div>
+          <section class="panel cleanupActionPanel">
+            <div id="cleanupAction" class="cleanupAction">
+              <p class="meta">(select an AuralSong on the left)</p>
             </div>
-            <p class="meta">
-              Studio stays focused on inspection and authoring. Use <strong>AuralPrimer</strong> for live playback and performance.
-            </p>
-            <div class="row">
-              <button id="auralsongRefreshSelection">Reload selection</button>
-              <button id="auralsongGenerateLyrics">Generate lyrics.json from .txt</button>
-            </div>
-            <pre id="auralsongEditorStatus" class="meta">(select an AuralSong to inspect or edit)</pre>
+            <pre id="auralsongEditorStatus" class="meta" style="display:none">(select an AuralSong to inspect or edit)</pre>
+            <details class="cleanupRawDetails">
+              <summary>Raw details (features / audio / manifest)</summary>
+              <div id="details" class="details"></div>
+            </details>
           </section>
         </div>
       </section>
@@ -884,9 +879,89 @@ const songsFolderInput = document.getElementById("songsFolder") as HTMLInputElem
 const setOverrideBtn = document.getElementById("setOverride") as HTMLButtonElement;
 const clearOverrideBtn = document.getElementById("clearOverride") as HTMLButtonElement;
 
-const auralsongRefreshSelectionBtn = document.getElementById("auralsongRefreshSelection") as HTMLButtonElement;
-const auralsongGenerateLyricsBtn = document.getElementById("auralsongGenerateLyrics") as HTMLButtonElement;
 const auralsongEditorStatusEl = document.getElementById("auralsongEditorStatus") as HTMLPreElement;
+const cleanupActionEl = document.getElementById("cleanupAction") as HTMLDivElement;
+
+// "Build all unbuilt" -- batch-build the spectrogram for every listed song
+// whose melodic stems lack one. Sequential (CPU-heavy); spectrogram only --
+// candidate precompute is the slower, dependency-gated step kept per-song.
+const cleanupBuildAllBtn = document.getElementById("cleanupBuildAll") as HTMLButtonElement | null;
+const cleanupBuildAllStatusEl = document.getElementById("cleanupBuildAllStatus") as HTMLSpanElement | null;
+
+async function refreshRowReadyChip(path: string): Promise<void> {
+  try {
+    const { primary } = await detectMelodicStems(path);
+    const r = await getRoleReadiness(path, primary, { force: true });
+    const chipEl = listEl.querySelector<HTMLSpanElement>(
+      `span.cleanupChip[data-chip-for="${cssEscape(path)}"]`,
+    );
+    if (!chipEl) return;
+    if (r.spectrogram && r.candidates) {
+      chipEl.className = "cleanupChip cleanupChipReady";
+      chipEl.innerHTML = `<i class="ti ti-circle-check" aria-hidden="true"></i> Ready`;
+    } else {
+      chipEl.className = "cleanupChip cleanupChipPending";
+      chipEl.innerHTML = `<i class="ti ti-tool" aria-hidden="true"></i> Needs prep`;
+    }
+  } catch {
+    /* leave the chip as-is on probe failure */
+  }
+}
+
+cleanupBuildAllBtn?.addEventListener("click", async () => {
+  if (!cleanupBuildAllBtn) return;
+  const setStatus = (m: string) => {
+    if (cleanupBuildAllStatusEl) cleanupBuildAllStatusEl.textContent = m;
+  };
+  const rows = Array.from(listEl.querySelectorAll<HTMLLIElement>("li.cleanupSongRow:not(.isInvalid)"));
+  setStatus("Checking…");
+  const todo: { path: string; title: string; roles: string[] }[] = [];
+  for (const row of rows) {
+    const path = row.getAttribute("data-path");
+    if (!path) continue;
+    const { roles } = await detectMelodicStems(path);
+    let needs = false;
+    for (const role of roles) {
+      const rr = await getRoleReadiness(path, role, { force: true });
+      if (!rr.spectrogram) {
+        needs = true;
+        break;
+      }
+    }
+    if (needs) {
+      const title = row.querySelector(".cleanupSongTitle")?.textContent ?? path;
+      todo.push({ path, title, roles });
+    }
+  }
+  if (todo.length === 0) {
+    setStatus("All spectrograms already built.");
+    return;
+  }
+  cleanupBuildAllBtn.disabled = true;
+  let built = 0;
+  let failed = 0;
+  for (let i = 0; i < todo.length; i++) {
+    const t = todo[i]!;
+    setStatus(`Building ${i + 1}/${todo.length}: ${t.title}…`);
+    try {
+      const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
+        req: { container_path: t.path, instruments: t.roles },
+      });
+      if (res.ok) built += 1;
+      else failed += 1;
+    } catch {
+      failed += 1;
+    }
+    invalidateCleanupCache(t.path);
+    await refreshRowReadyChip(t.path);
+  }
+  cleanupBuildAllBtn.disabled = false;
+  setStatus(`Built ${built} song${built === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.`);
+  // Refresh the open action panel so its readiness/buttons reflect the new state.
+  if (selectedAuralSongPath) {
+    void selectAuralSong(selectedAuralSongPath, { autoLoadAudio: false });
+  }
+});
 
 // Disable desktop-only actions when running without the Tauri runtime.
 if (!haveTauri()) {
@@ -984,6 +1059,14 @@ function escapeHtml(s: string): string {
 
 function yesNo(v: boolean): string {
   return v ? "yes" : "no";
+}
+
+// Escape a value for safe use inside a CSS attribute selector. Container paths
+// hold backslashes + colons on Windows, which break unescaped selectors.
+function cssEscape(s: string): string {
+  const cssApi = (window as unknown as { CSS?: { escape?: (v: string) => string } }).CSS;
+  if (cssApi?.escape) return cssApi.escape(s);
+  return s.replace(/["\\\]:.]/g, "\\$&");
 }
 
 function formatModelPackLicense(pack: InstalledModelPack): string {
@@ -1201,6 +1284,299 @@ function renderDetails(details: AuralSongDetails) {
       void refineWorkspace?.openForAuralSong(path);
     });
   }
+}
+
+// -----------------
+// Cleanup & Edit — readiness + action panel
+// -----------------
+
+// Melodic stem roles we probe for (drums/vocals are never melodic targets).
+const MELODIC_ROLES = ["keys", "bass", "lead_guitar", "rhythm_guitar"] as const;
+type MelodicRole = (typeof MELODIC_ROLES)[number];
+
+const MELODIC_ROLE_LABELS: Record<string, string> = {
+  keys: "Keys",
+  bass: "Bass",
+  lead_guitar: "Lead guitar",
+  rhythm_guitar: "Rhythm guitar",
+  melodic: "Melodic",
+};
+
+type RoleReadiness = { spectrogram: boolean; candidates: boolean };
+
+// Cache keyed by `${containerPath}|${role}`. Invalidated after a build/compute
+// so the readout re-checks freshly written artifacts.
+const cleanupReadinessCache = new Map<string, RoleReadiness>();
+
+function cleanupCacheKey(pack: string, role: string): string {
+  return `${pack}|${role}`;
+}
+
+function invalidateCleanupCache(pack: string, role?: string): void {
+  if (role) {
+    cleanupReadinessCache.delete(cleanupCacheKey(pack, role));
+    return;
+  }
+  for (const key of Array.from(cleanupReadinessCache.keys())) {
+    if (key.startsWith(`${pack}|`)) cleanupReadinessCache.delete(key);
+  }
+}
+
+// True iff read_auralsong_json resolves for relPath (throws => artifact absent).
+async function auralsongJsonExists(pack: string, relPath: string): Promise<boolean> {
+  try {
+    await invoke("read_auralsong_json", { containerPath: pack, relPath });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getRoleReadiness(
+  pack: string,
+  role: string,
+  opts?: { force?: boolean },
+): Promise<RoleReadiness> {
+  const key = cleanupCacheKey(pack, role);
+  if (!opts?.force) {
+    const cached = cleanupReadinessCache.get(key);
+    if (cached) return cached;
+  }
+  const [spectrogram, candidates] = await Promise.all([
+    auralsongJsonExists(pack, `features/spectrogram/${role}/spectrogram.json`),
+    auralsongJsonExists(pack, `features/refine_candidates.${role}.json`),
+  ]);
+  const readiness: RoleReadiness = { spectrogram, candidates };
+  cleanupReadinessCache.set(key, readiness);
+  return readiness;
+}
+
+// Determine a pack's melodic stems by probing each common role for either a
+// spectrogram or refine-candidates artifact. "keys" is always offered as the
+// primary fallback so a freshly-imported / unprepared song is still actionable.
+async function detectMelodicStems(
+  pack: string,
+): Promise<{ roles: string[]; primary: string; readiness: Map<string, RoleReadiness> }> {
+  const readiness = new Map<string, RoleReadiness>();
+  const present: string[] = [];
+  await Promise.all(
+    MELODIC_ROLES.map(async (role: MelodicRole) => {
+      const r = await getRoleReadiness(pack, role);
+      readiness.set(role, r);
+      if (r.spectrogram || r.candidates) present.push(role);
+    }),
+  );
+  // Preserve the canonical role order.
+  const roles = MELODIC_ROLES.filter((r) => present.includes(r)) as string[];
+  if (roles.length === 0) {
+    // Nothing built yet: offer keys (the import + refine default) so the user
+    // can still kick off a build.
+    roles.push("keys");
+    if (!readiness.has("keys")) {
+      readiness.set("keys", await getRoleReadiness(pack, "keys"));
+    }
+  }
+  const primary = roles.includes("keys") ? "keys" : roles[0]!;
+  return { roles, primary, readiness };
+}
+
+function statusIcon(ok: boolean): string {
+  return ok
+    ? `<i class="ti ti-circle-check cleanupOk" aria-hidden="true"></i>`
+    : `<i class="ti ti-circle-dashed cleanupPending" aria-hidden="true"></i>`;
+}
+
+// Parse the trailing JSON status line from a sidecar run's stdout.
+function parseSidecarStatusLine(stdout: string): Record<string, unknown> | null {
+  try {
+    const lines = stdout.trim().split(/\r?\n/);
+    const parsed = JSON.parse(lines[lines.length - 1] ?? "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+type SidecarRunResult = {
+  ok: boolean;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+  payload?: unknown;
+};
+
+// Currently selected melodic stem for the cleanup action panel.
+let cleanupSelectedRole = "keys";
+
+async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
+  const pack = details.container_path;
+  const title = details.manifest_summary?.title ?? "(missing title)";
+  const artist = details.manifest_summary?.artist ?? "";
+
+  cleanupActionEl.innerHTML = `<p class="meta">Checking readiness…</p>`;
+
+  const { roles, primary, readiness } = await detectMelodicStems(pack);
+  if (!roles.includes(cleanupSelectedRole)) cleanupSelectedRole = primary;
+  const role = cleanupSelectedRole;
+  const r = readiness.get(role) ?? (await getRoleReadiness(pack, role));
+
+  const roleLabel = (x: string) => MELODIC_ROLE_LABELS[x] ?? x;
+
+  const optionsHtml = roles
+    .map(
+      (rr) =>
+        `<option value="${escapeHtml(rr)}" ${rr === role ? "selected" : ""}>${escapeHtml(roleLabel(rr))}</option>`,
+    )
+    .join("");
+
+  const bothReady = r.spectrogram && r.candidates;
+
+  cleanupActionEl.innerHTML = `
+    <div class="cleanupHeader">
+      <h3 class="cleanupTitle">${escapeHtml(title)}</h3>
+      <div class="meta cleanupArtist">${escapeHtml(artist || "(unknown artist)")}</div>
+      <div class="meta cleanupPath" title="${escapeHtml(pack)}">${escapeHtml(pack)}</div>
+    </div>
+
+    <div class="cleanupInstRow">
+      <label class="meta" for="cleanupInstrument">Instrument</label>
+      <select id="cleanupInstrument">${optionsHtml}</select>
+    </div>
+
+    <div class="cleanupReadout">
+      <div class="cleanupReadoutRow">
+        ${statusIcon(r.spectrogram)}
+        <div class="cleanupReadoutText">
+          <div class="cleanupReadoutTitle">Spectrogram overlay</div>
+          <div class="meta">the pitch view you edit against</div>
+        </div>
+        <div class="cleanupReadoutState ${r.spectrogram ? "isReady" : ""}">${r.spectrogram ? "built" : "not built yet"}</div>
+      </div>
+      <div class="cleanupReadoutRow">
+        ${statusIcon(r.candidates)}
+        <div class="cleanupReadoutText">
+          <div class="cleanupReadoutTitle">Note candidates</div>
+          <div class="meta">the transcription you clean up</div>
+        </div>
+        <div class="cleanupReadoutState ${r.candidates ? "isReady" : ""}">${r.candidates ? "ready" : "not computed yet"}</div>
+      </div>
+    </div>
+
+    <div class="cleanupActions">
+      <button id="cleanupBuildSpectro" class="${r.spectrogram ? "" : "cleanupPrimary"}">
+        <i class="ti ti-photo" aria-hidden="true"></i> ${r.spectrogram ? "Rebuild spectrogram" : "Build spectrogram"}
+      </button>
+      <button id="cleanupComputeCandidates" class="${r.candidates ? "" : "cleanupPrimary"}">
+        <i class="ti ti-wand" aria-hidden="true"></i> Compute candidates
+      </button>
+      <button id="cleanupOpenEditor" class="${bothReady ? "cleanupPrimary" : ""}" ${bothReady ? "" : "disabled"}>
+        <i class="ti ti-edit" aria-hidden="true"></i> Open cleanup editor
+      </button>
+    </div>
+    <pre id="cleanupRunStatus" class="meta cleanupRunStatus" style="display:none"></pre>
+
+    <div class="cleanupTools">
+      <div class="meta cleanupToolsLabel">Tools</div>
+      <div class="row">
+        <button id="auralsongRefreshSelection">Reload selection</button>
+        <button id="auralsongGenerateLyrics">Generate lyrics.json from .txt</button>
+      </div>
+    </div>
+  `;
+
+  const runStatusEl = document.getElementById("cleanupRunStatus") as HTMLPreElement;
+  const instSelect = document.getElementById("cleanupInstrument") as HTMLSelectElement;
+  const buildSpectroBtn = document.getElementById("cleanupBuildSpectro") as HTMLButtonElement;
+  const computeBtn = document.getElementById("cleanupComputeCandidates") as HTMLButtonElement;
+  const openEditorBtn = document.getElementById("cleanupOpenEditor") as HTMLButtonElement;
+  const reloadBtn = document.getElementById("auralsongRefreshSelection") as HTMLButtonElement;
+  const lyricsBtn = document.getElementById("auralsongGenerateLyrics") as HTMLButtonElement;
+
+  instSelect.addEventListener("change", () => {
+    cleanupSelectedRole = instSelect.value || primary;
+    void renderCleanupAction(details);
+  });
+
+  const setRunStatus = (msg: string) => {
+    runStatusEl.style.display = "block";
+    runStatusEl.textContent = msg;
+  };
+
+  const reRenderAfterRun = async () => {
+    invalidateCleanupCache(pack);
+    await renderCleanupAction(details);
+  };
+
+  buildSpectroBtn.addEventListener("click", async () => {
+    buildSpectroBtn.disabled = true;
+    setRunStatus(`Building spectrogram for ${roleLabel(role)}…`);
+    try {
+      const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
+        req: { container_path: pack, instruments: roles },
+      });
+      if (res.ok) {
+        const parsed = parseSidecarStatusLine(res.stdout);
+        const rolesObj = (parsed?.roles ?? {}) as Record<string, { n_frames?: number }>;
+        const summary = Object.entries(rolesObj)
+          .map(([k, v]) => `${roleLabel(k)}=${v?.n_frames ?? "?"}f`)
+          .join(", ");
+        setRunStatus(`Spectrogram built: ${summary || `exit ${res.exit_code}`}`);
+      } else {
+        const tail = res.stderr.trim().split(/\r?\n/).slice(-3).join("\n");
+        setRunStatus(`Build failed (exit ${res.exit_code}):\n${tail || "(no stderr)"}`);
+      }
+    } catch (e) {
+      setRunStatus(`Build failed: ${String(e)}`);
+    } finally {
+      await reRenderAfterRun();
+    }
+  });
+
+  computeBtn.addEventListener("click", async () => {
+    computeBtn.disabled = true;
+    setRunStatus(`Computing candidates for ${roleLabel(role)}…`);
+    try {
+      const res = await safeInvoke<SidecarRunResult>("ingest_refine_candidates", {
+        req: { container_path: pack, instruments: [role] },
+      });
+      if (res.ok) {
+        const parsed = parseSidecarStatusLine(res.stdout);
+        const instsObj = (parsed?.instruments ?? {}) as Record<string, { regions?: number }>;
+        const summary = Object.entries(instsObj)
+          .map(([k, v]) => `${roleLabel(k)}=${v?.regions ?? "?"}r`)
+          .join(", ");
+        setRunStatus(`Candidates ready: ${summary || `exit ${res.exit_code}`}`);
+      } else {
+        const tail = res.stderr.trim().split(/\r?\n/).slice(-3).join("\n");
+        setRunStatus(`Compute failed (exit ${res.exit_code}):\n${tail || "(no stderr)"}`);
+      }
+    } catch (e) {
+      setRunStatus(`Compute failed: ${String(e)}`);
+    } finally {
+      await reRenderAfterRun();
+    }
+  });
+
+  openEditorBtn.addEventListener("click", () => {
+    if (openEditorBtn.disabled) return;
+    cleanupSelectedRole = role;
+    setRoute("refine");
+    void refineWorkspace.openForAuralSong(pack);
+  });
+
+  reloadBtn.addEventListener("click", () => {
+    if (!selectedAuralSongPath) {
+      setAuralSongEditorStatus("Select an AuralSong first");
+      return;
+    }
+    void selectAuralSong(selectedAuralSongPath, { autoLoadAudio: false }).catch((e) =>
+      setAuralSongEditorStatus(String(e)),
+    );
+  });
+
+  lyricsBtn.addEventListener("click", () => {
+    void generateLyricsForSelectedAuralSong().catch((e) => setAuralSongEditorStatus(String(e)));
+  });
 }
 
 // -----------------
@@ -3115,6 +3491,9 @@ async function selectAuralSong(containerPath: string, opts?: { autoLoadAudio?: b
     renderDetails(details);
     selectedAuralSongDetails = details;
     selectedDrumChartSelection = null;
+    void renderCleanupAction(details).catch((e) =>
+      setAuralSongEditorStatus(`readiness check failed: ${String(e)}`),
+    );
 
     try {
       const lyr = await invoke<unknown>("read_auralsong_json", { containerPath, relPath: "features/lyrics.json" });
@@ -3640,23 +4019,26 @@ async function refresh() {
     statusEl.textContent = `songsFolder: ${songsFolder}\ncount: ${entries.length}`;
 
     listEl.innerHTML = `
-      <ul>
+      <ul class="cleanupSongList">
         ${entries
           .map((e) => {
             const title = e.manifest?.title ?? "(missing title)";
             const artist = e.manifest?.artist ?? "";
-            const ok = e.ok ? "OK" : "INVALID";
             const err = e.error ? `<pre class="error">${escapeHtml(e.error)}</pre>` : "";
-            const disabled = e.ok ? "" : "disabled";
+            const selected = e.container_path === selectedAuralSongPath ? " isSelected" : "";
+            const disabledRow = e.ok ? "" : " isInvalid";
+            // Chip starts as "Needs prep" (neutral) and is upgraded to "Ready"
+            // asynchronously once readiness is probed.
+            const chip = e.ok
+              ? `<span class="cleanupChip cleanupChipPending" data-chip-for="${escapeHtml(e.container_path)}"><i class="ti ti-tool" aria-hidden="true"></i> Needs prep</span>`
+              : `<span class="cleanupChip cleanupChipInvalid"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Invalid</span>`;
             return `
-              <li>
-                <div class="row">
-                  <div class="grow">
-                    <strong>${escapeHtml(title)}</strong> ${escapeHtml(artist)}
-                    <div class="meta">${escapeHtml(ok)} | ${escapeHtml(e.kind)} | ${escapeHtml(e.container_path)}</div>
-                  </div>
-                  <button class="detailsBtn" data-path="${escapeHtml(e.container_path)}" ${disabled}>Details</button>
+              <li class="cleanupSongRow${selected}${disabledRow}" data-path="${escapeHtml(e.container_path)}" ${e.ok ? 'role="button" tabindex="0"' : ""}>
+                <div class="cleanupSongMain">
+                  <div class="cleanupSongTitle">${escapeHtml(title)}</div>
+                  <div class="meta cleanupSongArtist">${escapeHtml(artist || "(unknown artist)")}</div>
                 </div>
+                ${chip}
                 ${err}
               </li>
             `;
@@ -3665,22 +4047,58 @@ async function refresh() {
       </ul>
     `;
 
-    // Wire up Details buttons.
-    for (const btn of Array.from(listEl.querySelectorAll("button.detailsBtn"))) {
-      btn.addEventListener("click", async (ev) => {
-        const el = ev.currentTarget as HTMLButtonElement;
-        const containerPath = el.getAttribute("data-path");
-        if (!containerPath) return;
-
-        await selectAuralSong(containerPath, { autoLoadAudio: false });
+    // Wire up row selection (click + keyboard).
+    for (const row of Array.from(listEl.querySelectorAll<HTMLLIElement>("li.cleanupSongRow"))) {
+      if (row.classList.contains("isInvalid")) continue;
+      const containerPath = row.getAttribute("data-path");
+      if (!containerPath) continue;
+      const select = () => {
+        for (const r of Array.from(listEl.querySelectorAll("li.cleanupSongRow"))) {
+          r.classList.toggle("isSelected", r === row);
+        }
+        void selectAuralSong(containerPath, { autoLoadAudio: false });
+      };
+      row.addEventListener("click", select);
+      row.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          select();
+        }
       });
     }
+
+    // Probe readiness for each valid song's primary melodic stem and upgrade
+    // the chip to "Ready" (green) when both spectrogram + candidates exist.
+    void Promise.all(
+      entries
+        .filter((e) => e.ok)
+        .map(async (e) => {
+          try {
+            const { primary, readiness } = await detectMelodicStems(e.container_path);
+            const r = readiness.get(primary);
+            if (!r || !(r.spectrogram && r.candidates)) return;
+            const chipEl = listEl.querySelector<HTMLSpanElement>(
+              `span.cleanupChip[data-chip-for="${cssEscape(e.container_path)}"]`,
+            );
+            if (chipEl) {
+              chipEl.className = "cleanupChip cleanupChipReady";
+              chipEl.innerHTML = `<i class="ti ti-circle-check" aria-hidden="true"></i> Ready`;
+            }
+          } catch {
+            // Leave the chip at "Needs prep" if probing fails.
+          }
+        }),
+    );
 
     // UX improvement: if nothing is selected yet, preload the first valid AuralSong into the editor view.
     if (!selectedAuralSongPath) {
       const firstOk = entries.find((e) => e.ok);
       if (firstOk?.container_path) {
         await selectAuralSong(firstOk.container_path, { autoLoadAudio: false });
+        const row = listEl.querySelector<HTMLLIElement>(
+          `li.cleanupSongRow[data-path="${cssEscape(firstOk.container_path)}"]`,
+        );
+        row?.classList.add("isSelected");
       }
     }
   } catch (e) {
@@ -3694,20 +4112,6 @@ async function refresh() {
 }
 
 refreshBtn.addEventListener("click", () => void refresh());
-
-auralsongRefreshSelectionBtn.addEventListener("click", () => {
-  if (!selectedAuralSongPath) {
-    setAuralSongEditorStatus("Select an AuralSong first");
-    return;
-  }
-  void selectAuralSong(selectedAuralSongPath, { autoLoadAudio: false }).catch((e) =>
-    setAuralSongEditorStatus(String(e))
-  );
-});
-
-auralsongGenerateLyricsBtn.addEventListener("click", () => {
-  void generateLyricsForSelectedAuralSong().catch((e) => setAuralSongEditorStatus(String(e)));
-});
 
 setOverrideBtn.addEventListener("click", () => {
   const v = songsFolderInput.value.trim();

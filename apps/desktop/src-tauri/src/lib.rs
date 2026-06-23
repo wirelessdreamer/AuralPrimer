@@ -1111,6 +1111,17 @@ async fn ingest_refine_candidates(
 }
 
 #[tauri::command]
+async fn ingest_spectrogram(
+    app: AppHandle,
+    req: ingest_sidecar::SpectrogramRequest,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("spectrogram build", move || {
+        ingest_sidecar::run_ingest_spectrogram(req, Some(&app))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn inspect_raw_song_folder(
     folder_path: String,
 ) -> Result<raw_song::RawSongFolderInspection, String> {
@@ -1927,6 +1938,7 @@ pub fn run() {
             ingest_import,
             ingest_runtime_check,
             ingest_refine_candidates,
+            ingest_spectrogram,
             inspect_raw_song_folder,
             import_raw_song_folder,
             scan_auralsongs,

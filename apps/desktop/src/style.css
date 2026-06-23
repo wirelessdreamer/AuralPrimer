@@ -949,3 +949,289 @@ li {
     gap: 4px;
   }
 }
+
+/* -------------------------------------------------------------------------
+   Cleanup & Edit (data-route="play") — two-pane prep + action flow
+   ------------------------------------------------------------------------- */
+
+/* Tabler-style icon classes used by the cleanup panel. The project does not
+   bundle the Tabler webfont, so render glyphs via unicode ::before fallbacks
+   (the `ti ti-*` class names are kept so they upgrade automatically if the
+   font is ever added). */
+.cleanupLayout .ti,
+.cleanupSongList .ti {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  line-height: 1;
+}
+.cleanupLayout .ti::before,
+.cleanupSongList .ti::before {
+  font-style: normal;
+}
+.ti-circle-check::before { content: "\2714"; }   /* heavy check */
+.ti-circle-dashed::before { content: "\25CB"; }  /* hollow circle */
+.ti-tool::before { content: "\2692"; }           /* hammer & pick */
+.ti-alert-triangle::before { content: "\26A0"; } /* warning */
+.ti-photo::before { content: "\1F5BC"; }         /* framed picture */
+.ti-wand::before { content: "\2728"; }           /* sparkles */
+.ti-edit::before { content: "\270E"; }           /* pencil */
+
+.cleanupLayout {
+  grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.15fr);
+  align-items: start;
+}
+
+.cleanupListHint {
+  margin: 4px 0 8px;
+}
+
+.cleanupStatusLine {
+  margin: 0 0 10px;
+  max-height: 88px;
+  overflow: auto;
+}
+
+.cleanupList {
+  max-height: clamp(280px, 60vh, 720px);
+  overflow-y: auto;
+}
+
+.cleanupSongList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.cleanupSongRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel2);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.cleanupSongRow:hover {
+  border-color: var(--border2);
+  background: rgba(124, 58, 237, 0.10);
+}
+
+.cleanupSongRow.isSelected {
+  border-color: var(--accent2);
+  background: rgba(34, 211, 238, 0.12);
+}
+
+.cleanupSongRow.isInvalid {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.cleanupSongRow:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 1px;
+}
+
+.cleanupSongMain {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cleanupSongTitle {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cleanupSongArtist {
+  margin-top: 1px;
+}
+
+.cleanupChip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border2);
+  white-space: nowrap;
+}
+
+.cleanupChip .ti {
+  font-size: 14px;
+}
+
+.cleanupChipReady {
+  color: var(--accent3);
+  border-color: rgba(163, 255, 18, 0.45);
+  background: rgba(163, 255, 18, 0.10);
+}
+
+.cleanupChipPending {
+  color: var(--muted);
+  background: rgba(140, 170, 255, 0.06);
+}
+
+.cleanupChipInvalid {
+  color: var(--danger);
+  border-color: rgba(255, 92, 122, 0.4);
+  background: rgba(255, 92, 122, 0.08);
+}
+
+/* Right action panel */
+.cleanupAction {
+  display: grid;
+  gap: 14px;
+}
+
+.cleanupHeader {
+  display: grid;
+  gap: 2px;
+}
+
+.cleanupTitle {
+  margin: 0;
+}
+
+.cleanupPath {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cleanupInstRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cleanupInstRow select {
+  min-width: 160px;
+}
+
+.cleanupReadout {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel2);
+}
+
+.cleanupReadoutRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cleanupReadoutRow .ti {
+  font-size: 20px;
+  flex: 0 0 auto;
+}
+
+.cleanupOk {
+  color: var(--accent3);
+}
+
+.cleanupPending {
+  color: var(--muted2);
+}
+
+.cleanupReadoutText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cleanupReadoutTitle {
+  font-weight: 600;
+}
+
+.cleanupReadoutState {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cleanupReadoutState.isReady {
+  color: var(--accent3);
+  font-weight: 600;
+}
+
+.cleanupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cleanupActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+button.cleanupPrimary {
+  border-color: var(--accent2);
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #06121a;
+  font-weight: 600;
+}
+
+button.cleanupPrimary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.cleanupRunStatus {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.cleanupTools {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.cleanupToolsLabel {
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+
+.cleanupRawDetails {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--panel2);
+}
+
+.cleanupRawDetails > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.cleanupRawDetails[open] > summary {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 980px) {
+  .cleanupLayout {
+    grid-template-columns: 1fr;
+  }
+}
