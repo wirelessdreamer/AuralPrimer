@@ -28,6 +28,8 @@ import { generateLyricsJsonFromPlainText } from "./lyricsGenerator";
 import { selectDrumChartFromMidiBytes, type DrumChartSelection } from "./chartLoader";
 import { refineWorkspaceHtml } from "./refineWorkspaceHtml";
 import { initRefineWorkspace, type RefineWorkspaceHandle } from "./refineWorkspace";
+import { lyricTimingHtml } from "./lyricTimingHtml";
+import { initLyricTimingWorkspace, type LyricTimingHandle } from "./lyricTimingWorkspace";
 
 function haveTauri(): boolean {
   // Tauri v2 does **not** necessarily expose `window.__TAURI__` unless
@@ -516,6 +518,8 @@ root.innerHTML = `
 
       ${refineWorkspaceHtml()}
 
+      ${lyricTimingHtml()}
+
       <section class="route" data-route="config">
         <div class="twoCol">
           <section class="panel">
@@ -657,7 +661,7 @@ root.innerHTML = `
   }
 }
 
-type Route = "home" | "play" | "make" | "refine" | "config";
+type Route = "home" | "play" | "make" | "refine" | "lyrics" | "config";
 
 type ConsoleLogCategory = "gamestate" | "play" | "debugging" | "ingest";
 type ConsoleLogLevel = "log" | "warn" | "error";
@@ -731,6 +735,7 @@ function setRoute(route: Route) {
     play: "navPlay",
     make: "navMake",
     refine: "navRefine",  // no top-bar nav button for refine yet -- entered via the Cleanup & Edit details pane
+    lyrics: "navLyrics",  // no top-bar nav button -- entered via the Cleanup & Edit details pane
     config: "navConfig"
   };
 
@@ -1281,6 +1286,12 @@ function renderDetails(details: AuralSongDetails) {
       <span class="meta">Per-region candidate cleanup. Run <code>aural_ingest refine-candidates &lt;auralsong&gt; --instrument keys</code> first.</span>
     </div>
 
+    <h4>Lyric Timing</h4>
+    <div class="row">
+      <button id="openLyricTiming" data-auralsong-path="${escapeHtml(details.container_path)}">Open Lyric Timing editor</button>
+      <span class="meta">DAW-style lyric/syllable timing editor. Generate lyrics first if this song has none.</span>
+    </div>
+
     <h4>${escapeHtml(details.container_path.endsWith(".feedpak") ? "manifest.yaml" : "manifest.json")}</h4>
     <pre>${escapeHtml(raw)}</pre>
   `;
@@ -1292,6 +1303,16 @@ function renderDetails(details: AuralSongDetails) {
       if (!path) return;
       setRoute("refine");
       void refineWorkspace?.openForAuralSong(path);
+    });
+  }
+  // Wire the Lyric Timing button after innerHTML replaces it.
+  const lyricBtn = document.getElementById("openLyricTiming") as HTMLButtonElement | null;
+  if (lyricBtn) {
+    lyricBtn.addEventListener("click", () => {
+      const path = lyricBtn.getAttribute("data-auralsong-path") || "";
+      if (!path) return;
+      setRoute("lyrics");
+      void lyricTimingWorkspace?.openForAuralSong(path);
     });
   }
 }
@@ -4007,6 +4028,18 @@ const refineWorkspace: RefineWorkspaceHandle = initRefineWorkspace({
   setStatus: (msg) => {
     audioStatusEl.textContent = msg;
     logConsole("gamestate", `refine: ${msg}`);
+  },
+  onBack: () => setRoute("play"),
+});
+
+// Lyric-timing workspace -- a DAW-style editor for feedpak lyrics (a port of
+// AuraWave's "Waveform timing editor"). Like the refine workspace it lives
+// inside `root.innerHTML` so it's initialized late, and its back button
+// returns to Cleanup & Edit (the `play` route).
+const lyricTimingWorkspace: LyricTimingHandle = initLyricTimingWorkspace({
+  setStatus: (msg) => {
+    audioStatusEl.textContent = msg;
+    logConsole("gamestate", `lyrics: ${msg}`);
   },
   onBack: () => setRoute("play"),
 });
