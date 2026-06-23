@@ -158,7 +158,7 @@ pub fn list_installed_modelpacks(app_data_dir: &Path) -> Vec<InstalledModelPack>
     }
 
     // deterministic ordering
-    out.sort_by(|a, b| (a.id.clone(), a.version.clone()).cmp(&(b.id.clone(), b.version.clone())));
+    out.sort_by_key(|x| (x.id.clone(), x.version.clone()));
     out
 }
 
