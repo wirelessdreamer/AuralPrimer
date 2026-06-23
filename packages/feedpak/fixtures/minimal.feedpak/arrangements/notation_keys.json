@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "instrument": "piano",
+  "staves": [
+    {
+      "id": "rh",
+      "clef": "G2"
+    },
+    {
+      "id": "lh",
+      "clef": "F4"
+    }
+  ],
+  "measures": [
+    {
+      "idx": 1,
+      "t": 0.0,
+      "ts": [
+        4,
+        4
+      ],
+      "tempo": 120.0,
+      "staves": {
+        "rh": {
+          "voices": [
+            {
+              "v": 1,
+              "beats": [
+                {
+                  "t": 0.0,
+                  "dur": 4,
+                  "notes": [
+                    {
+                      "midi": 60
+                    }
+                  ]
+                },
+                {
+                  "t": 0.5,
+                  "dur": 4,
+                  "notes": [
+                    {
+                      "midi": 64
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "lh": {
+          "voices": [
+            {
+              "v": 1,
+              "beats": [
+                {
+                  "t": 0.0,
+                  "dur": 1,
+                  "notes": [
+                    {
+                      "midi": 48
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

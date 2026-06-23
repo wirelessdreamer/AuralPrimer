@@ -1,0 +1,15 @@
+feedpak_version: 1.11.0
+title: Minimal Fixture
+artist: AuralPrimer
+duration: 2.0
+arrangements:
+- id: keys
+  name: Keys
+  type: piano
+  notation: arrangements/notation_keys.json
+stems:
+- id: keys
+  file: audio/stems/keys.wav
+  default: true
+song_timeline: song_timeline.json
+aural_notes_mid: aural/notes.mid
