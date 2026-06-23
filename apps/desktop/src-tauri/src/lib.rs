@@ -1113,10 +1113,13 @@ fn default_ingest_out_auralsong_path(app: &AppHandle, source_path: &str) -> Resu
         .unwrap_or("imported_song");
     let base = sanitize_auralsong_component(stem);
 
-    let mut candidate = songs_folder.join(format!("ingest_{base}.auralsong"));
+    // The import pipeline writes feedpak content (manifest.yaml + aural/ ...),
+    // so the durable artifact must carry the .feedpak extension — otherwise the
+    // app's extension-keyed path resolution (aural/ vs features/) breaks.
+    let mut candidate = songs_folder.join(format!("ingest_{base}.feedpak"));
     if candidate.exists() {
         for i in 2..=9_999 {
-            let next = songs_folder.join(format!("ingest_{base}_{i}.auralsong"));
+            let next = songs_folder.join(format!("ingest_{base}_{i}.feedpak"));
             if !next.exists() {
                 candidate = next;
                 break;

@@ -942,6 +942,7 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
   }
   cleanupBuildAllBtn.disabled = true;
   let built = 0;
+  let noStem = 0;
   let failed = 0;
   for (let i = 0; i < todo.length; i++) {
     const t = todo[i]!;
@@ -950,7 +951,9 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
         req: { container_path: t.path, instruments: t.roles },
       });
-      if (res.ok) built += 1;
+      const kind = classifySpectroResult(res);
+      if (kind === "ok") built += 1;
+      else if (kind === "nostem") noStem += 1;
       else failed += 1;
     } catch {
       failed += 1;
@@ -959,7 +962,10 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     await refreshRowReadyChip(t.path);
   }
   cleanupBuildAllBtn.disabled = false;
-  setStatus(`Built ${built} song${built === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.`);
+  const parts = [`Built ${built} song${built === 1 ? "" : "s"}`];
+  if (noStem) parts.push(`${noStem} with no melodic stem`);
+  if (failed) parts.push(`${failed} failed`);
+  setStatus(`${parts.join(", ")}.`);
   // Refresh the open action panel so its readiness/buttons reflect the new state.
   if (selectedAuralSongPath) {
     void selectAuralSong(selectedAuralSongPath, { autoLoadAudio: false });
@@ -1659,21 +1665,38 @@ function applyRowReadiness(path: string, r: RowReady): void {
   }
 }
 
+// Classify a spectrogram build result: "ok" | "nostem" (no separated melodic
+// stem to build from — e.g. a mix-only demo) | "error" (a real failure). The
+// sidecar reports a stem-less pack as ok:false with an empty roles object and
+// no stderr, which we'd otherwise surface as a scary "failed".
+type SpectroOutcome = "ok" | "nostem" | "error";
+function classifySpectroResult(res: SidecarRunResult): SpectroOutcome {
+  if (res.ok) return "ok";
+  const parsed = parseSidecarStatusLine(res.stdout);
+  const roles = (parsed?.roles ?? {}) as Record<string, unknown>;
+  if (Object.keys(roles).length === 0 && !res.stderr.trim()) return "nostem";
+  return "error";
+}
+
 // Run the spectrogram build for one song (shared by the inline table action +
-// "Build all unbuilt"). Returns a short status message.
-async function buildSpectrogramForSong(path: string): Promise<{ ok: boolean; msg: string }> {
+// "Build all unbuilt"). Returns the outcome + a short status message.
+async function buildSpectrogramForSong(
+  path: string,
+): Promise<{ kind: SpectroOutcome; msg: string }> {
   const { roles } = await detectMelodicStems(path);
   try {
     const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
       req: { container_path: path, instruments: roles },
     });
     invalidateCleanupCache(path);
-    if (res.ok) return { ok: true, msg: "Spectrogram built" };
+    const kind = classifySpectroResult(res);
+    if (kind === "ok") return { kind, msg: "Spectrogram built" };
+    if (kind === "nostem") return { kind, msg: "No melodic stem — nothing to build" };
     const tail = res.stderr.trim().split(/\r?\n/).slice(-2).join(" ");
-    return { ok: false, msg: `Build failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
+    return { kind, msg: `Build failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
   } catch (e) {
     invalidateCleanupCache(path);
-    return { ok: false, msg: `Build failed: ${String(e)}` };
+    return { kind: "error", msg: `Build failed: ${String(e)}` };
   }
 }
 
