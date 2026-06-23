@@ -42,6 +42,18 @@ jobs:
       - name: Build AuralStudio frontend (apps/desktop)
         run: npm -w @auralprimer/studio run build
 
+      # Headless-browser render smoke test (apps/desktop/tests/e2e). Catches the
+      # blank-screen / layout-collapse regression class that jsdom unit tests
+      # cannot: the DAW editor routes mount a WebGL stage sized with flex:1, and
+      # a broken CSS height-chain silently collapses it to 0px. Runs against the
+      # freshly built AuralStudio dist served by vite preview (configured in the
+      # root playwright.config.ts webServer). Chromium only.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: AuralStudio render smoke test (e2e)
+        run: npm run test:e2e
+
       - name: Playback Coverage Gate (100%)
         run: npm run test:coverage:playback --if-present
 

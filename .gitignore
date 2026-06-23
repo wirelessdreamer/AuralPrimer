@@ -13,6 +13,11 @@ node_modules/
 **/.eslintcache
 **/*.log
 
+# Playwright (e2e render smoke test) — run artifacts + downloaded browsers
+test-results/
+playwright-report/
+**/.playwright/
+
 # Rust
 target/
 **/target/
