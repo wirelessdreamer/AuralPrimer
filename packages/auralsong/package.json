@@ -10,6 +10,13 @@
     "./migrations": "./src/migrations.ts",
     "./version": "./src/version.ts",
     "./refinement": "./src/refinement.ts",
-    "./refineCandidates": "./src/refineCandidates.ts"
+    "./refineCandidates": "./src/refineCandidates.ts",
+    "./feedpak": "./src/feedpak/index.ts"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9"
   }
 }

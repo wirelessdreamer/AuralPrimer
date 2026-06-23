@@ -24,3 +24,7 @@ export * from "./buildAuralSongZip";
 // Refinement (Studio Refine workspace data contract + game-side overlay)
 export * from "./refinement";
 export * from "./refineCandidates";
+
+// feedpak reader (read-only; stage 3 of the .auralsong -> feedpak migration).
+// Lives alongside the loadAuralSong reader above; cutover is a later stage.
+export * from "./feedpak";
