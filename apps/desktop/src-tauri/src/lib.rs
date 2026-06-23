@@ -1102,6 +1102,16 @@ fn sanitize_auralsong_component(raw: &str) -> String {
     }
 }
 
+// The durable import artifact is feedpak content (manifest.yaml + aural/ …), so
+// its filename MUST carry the .feedpak extension — a .auralsong-named feedpak
+// breaks the app's extension-keyed aural/ vs features/ path resolution.
+fn ingest_out_filename(base: &str, idx: Option<u32>) -> String {
+    match idx {
+        None => format!("ingest_{base}.feedpak"),
+        Some(i) => format!("ingest_{base}_{i}.feedpak"),
+    }
+}
+
 fn default_ingest_out_auralsong_path(app: &AppHandle, source_path: &str) -> Result<String, String> {
     let songs_folder = PathBuf::from(get_songs_folder(app.clone())?);
     fs::create_dir_all(&songs_folder).map_err(|e| format!("mkdir songs folder: {e}"))?;
@@ -1116,10 +1126,10 @@ fn default_ingest_out_auralsong_path(app: &AppHandle, source_path: &str) -> Resu
     // The import pipeline writes feedpak content (manifest.yaml + aural/ ...),
     // so the durable artifact must carry the .feedpak extension — otherwise the
     // app's extension-keyed path resolution (aural/ vs features/) breaks.
-    let mut candidate = songs_folder.join(format!("ingest_{base}.feedpak"));
+    let mut candidate = songs_folder.join(ingest_out_filename(&base, None));
     if candidate.exists() {
         for i in 2..=9_999 {
-            let next = songs_folder.join(format!("ingest_{base}_{i}.feedpak"));
+            let next = songs_folder.join(ingest_out_filename(&base, Some(i)));
             if !next.exists() {
                 candidate = next;
                 break;
@@ -2723,6 +2733,15 @@ mod feedpak_read_tests {
     fn minimal_feedpak_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../../packages/feedpak/fixtures/minimal.feedpak")
+    }
+
+    #[test]
+    fn ingest_out_filename_uses_feedpak_extension() {
+        // The import pipeline writes feedpak content; the output name must match,
+        // or the app resolves aural/ vs features/ against the wrong layout.
+        assert_eq!(ingest_out_filename("song", None), "ingest_song.feedpak");
+        assert_eq!(ingest_out_filename("song", Some(2)), "ingest_song_2.feedpak");
+        assert!(!ingest_out_filename("song", None).ends_with(".auralsong"));
     }
 
     #[test]
