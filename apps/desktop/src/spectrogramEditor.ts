@@ -783,6 +783,50 @@ export class SpectrogramEditor {
     this.requestRender();
   }
 
+  /** Total content duration in seconds (0 if not loaded). */
+  getDurationSec(): number {
+    return this.geom?.duration_sec ?? 0;
+  }
+
+  /** The currently-visible time window in seconds. */
+  getViewTimeWindow(): { start: number; end: number } {
+    return {
+      start: this.frameToTime(this.view.originX),
+      end: this.frameToTime(this.view.originX + this.view.spanX),
+    };
+  }
+
+  /**
+   * Set the visible time window in seconds (leaves the pitch view untouched).
+   * Used by section-jump navigation in the host.
+   */
+  setViewTimeWindow(startSec: number, endSec: number): void {
+    if (!this.geom) return;
+    const f0 = this.timeToFrame(startSec);
+    const f1 = this.timeToFrame(endSec);
+    this.view.spanX = Math.max(8, f1 - f0);
+    this.view.originX = f0;
+    this.clampView();
+    this.requestRender();
+  }
+
+  /**
+   * Scroll horizontally so time `t` (seconds) stays visible — used to make
+   * the view follow the playhead during transport. `lead` (0..1) is how far
+   * from the left edge to re-anchor when the playhead scrolls off-screen.
+   */
+  scrollTimeIntoView(t: number, lead = 0.15): void {
+    if (!this.geom) return;
+    const f = this.timeToFrame(t);
+    const left = this.view.originX;
+    const right = this.view.originX + this.view.spanX;
+    if (f < left || f > right) {
+      this.view.originX = f - this.view.spanX * lead;
+      this.clampView();
+      this.requestRender();
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Pointer interactions: select / move / resize / add / pan
   // -------------------------------------------------------------------------

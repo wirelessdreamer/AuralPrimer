@@ -1,221 +1,396 @@
 /**
- * Refine workspace controller — owns the Cleanup & Edit route.
+ * Refine workspace controller — owns the Cleanup & Edit route, laid out as a
+ * DAW: a full-width spectrogram piano-roll editor (SpectrogramEditor) with a
+ * transport bar above and a thin note/candidate inspector below.
  *
- * Responsibilities:
- *  - load + persist refine_candidates / refinement JSON via refineCandidatesIo
- *  - render the worklist (left), timeline (center), candidate palette (right)
- *  - wire keyboard shortcuts (1–4 = pick candidate, Enter = accept, → = skip)
- *  - track focused region, current instrument, and a dirty flag for unsaved
- *    decisions
+ * Interaction model (per the v2 redesign):
+ *  - The WHOLE song's transcription is loaded into the editor as one editable
+ *    note set. The user edits notes directly — drag to retime/repitch, drag
+ *    edges to resize, click empty space to add, Delete to remove, scroll to
+ *    zoom, Alt-drag (or middle-drag) to pan. All of that lives in
+ *    SpectrogramEditor; this controller wires it to the song data + transport.
+ *  - The precomputed per-region candidates become optional "apply" chips in
+ *    the inspector: select a note, pick a candidate, and that region's slice of
+ *    notes is replaced by the candidate's transcription.
+ *  - The 12+ hot-spot regions are navigation only — a "Jump" dropdown scrolls
+ *    the editor view to a section start.
+ *  - Transport plays the SYNTHESISED notes (refineAudition) with a wall-clock
+ *    playhead. Playing the original stem audio under the spectrogram is a
+ *    follow-up (it needs streaming the multi-MB stem, not an IPC byte array).
  *
- * Built so the host (Studio's main.ts) does `initRefineWorkspace({...})` and
- * gets a handle with `openForAuralSong(containerPath)`. Internal panels are
- * functions in this module rather than separate files; the workspace is
- * ~600 lines which is fine for v1. If it grows we can split worklist /
- * timeline / palette into siblings, mirroring the Phase 2 Game pattern.
+ * On save, the edited note set is partitioned back into the candidate regions
+ * as per-region "manual" decisions and written to refinement.<inst>.json —
+ * the same schema the runtime game overlays onto notes.mid.
  */
 
 import {
   loadSession,
   saveDecisions,
-  pickCandidateForRegion,
   activeNotesForRegion,
   type RefineSession,
   type RefineCandidatesRegion,
   type RefinementInstrument,
-  type RefinementNote,
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
+import type { RefinementNote } from "./refineCandidatesIo";
 import { invoke } from "@tauri-apps/api/core";
-import { SpectrogramEditor, type SpectrogramGeometry } from "./spectrogramEditor";
+import {
+  SpectrogramEditor,
+  type SpectrogramGeometry,
+  type SpectroNote,
+} from "./spectrogramEditor";
 
-const PITCH_LOW = 21; // A0
-const PITCH_HIGH = 108; // C8
-const PITCH_COUNT = PITCH_HIGH - PITCH_LOW + 1; // 88
-const ROW_HEIGHT_PX = 12;
+/** SpectroNote (velocity optional) -> RefinementNote (velocity required). */
+function toRefinementNotes(notes: SpectroNote[]): RefinementNote[] {
+  return notes.map((n) => ({
+    t_on: n.t_on,
+    t_off: n.t_off,
+    pitch: n.pitch,
+    velocity: typeof n.velocity === "number" ? n.velocity : 100,
+  }));
+}
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 function pitchLabel(midi: number): string {
-  const name = NOTE_NAMES[midi % 12]!;
+  const name = NOTE_NAMES[((midi % 12) + 12) % 12]!;
   const octave = Math.floor(midi / 12) - 1;
   return `${name}${octave}`;
-}
-
-function clamp01(v: number): number {
-  return Math.max(0, Math.min(1, v));
 }
 
 function formatTime(t: number): string {
   if (!Number.isFinite(t)) return "—";
   const mins = Math.floor(t / 60);
   const secs = (t - mins * 60).toFixed(2);
-  const secStr = secs.padStart(5, "0");
-  return `${mins}:${secStr}`;
+  return `${mins}:${secs.padStart(5, "0")}`;
+}
+
+function labelForHotSpot(k: string): string {
+  switch (k) {
+    case "octave_ghost": return "Octave ghosts";
+    case "off_chord": return "Off-chord";
+    case "density_outlier": return "Density outliers";
+    case "bass_gap": return "Bass gaps";
+    case "low_confidence": return "Low confidence";
+    case "clean": return "Clean";
+    case "manual": return "Manual flags";
+    default: return k;
+  }
 }
 
 export type RefineWorkspaceDeps = {
-  /** Host-side error/status reporter — surfaces import errors to user. */
   setStatus: (msg: string) => void;
-  /** Called when the user navigates back to the Make route. */
   onBack: () => void;
 };
 
 export type RefineWorkspaceHandle = {
-  /** Open the workspace for a specific AuralSong (called from Make route). */
   openForAuralSong: (containerPath: string) => Promise<void>;
-  /** Currently-loaded AuralSong path or null. */
   getCurrentContainerPath: () => string | null;
 };
 
 export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceHandle {
-  // DOM grabs — every required element is asserted up front so a missing
-  // template element fails loud at boot instead of silently at first click.
-  const root = document.getElementById("refineRoute") as HTMLElement | null;
-  const songTitleEl = document.getElementById("refineSongTitle") as HTMLElement | null;
-  const instLabelEl = document.getElementById("refineInstLabel") as HTMLElement | null;
-  const instSelectEl = document.getElementById("refineInstrumentSelect") as HTMLSelectElement | null;
-  const reloadBtn = document.getElementById("refineReloadBtn") as HTMLButtonElement | null;
-  const saveBtn = document.getElementById("refineSaveBtn") as HTMLButtonElement | null;
-  const backBtn = document.getElementById("refineBack") as HTMLElement | null;
-  const workSummaryEl = document.getElementById("refineWorkSummary") as HTMLElement | null;
-  const worklistEl = document.getElementById("refineWorklist") as HTMLElement | null;
-  const focusedRegionEl = document.getElementById("refineFocusedRegion") as HTMLElement | null;
-  const focusedTimeEl = document.getElementById("refineFocusedTime") as HTMLElement | null;
-  const focusedChordEl = document.getElementById("refineFocusedChord") as HTMLElement | null;
-  const pitchRulerEl = document.getElementById("refinePitchRuler") as HTMLElement | null;
-  const timelineSurfaceEl = document.getElementById("refineTimelineSurface") as HTMLElement | null;
-  const timelineCanvas = document.getElementById("refineTimelineCanvas") as HTMLCanvasElement | null;
-  const paletteEl = document.getElementById("refinePalette") as HTMLElement | null;
-  const regionInfoEl = document.getElementById("refineRegionInfo") as HTMLElement | null;
-  const acceptBtn = document.getElementById("refineAcceptBtn") as HTMLButtonElement | null;
-  const skipBtn = document.getElementById("refineSkipBtn") as HTMLButtonElement | null;
-  const emptyEl = document.getElementById("refineEmpty") as HTMLElement | null;
-  const gridEl = document.getElementById("refineGrid") as HTMLElement | null;
-  const emptyCmdEl = document.getElementById("refineEmptyCmd") as HTMLElement | null;
-  const auditionPlayBtn = document.getElementById("refineAuditionPlay") as HTMLButtonElement | null;
-  const auditionStopBtn = document.getElementById("refineAuditionStop") as HTMLButtonElement | null;
-  const auditionStatusEl = document.getElementById("refineAuditionStatus") as HTMLElement | null;
+  const $ = <T extends HTMLElement>(id: string): T | null =>
+    document.getElementById(id) as T | null;
+
+  const root = $<HTMLElement>("refineRoute");
+  const songTitleEl = $<HTMLElement>("refineSongTitle");
+  const instLabelEl = $<HTMLElement>("refineInstLabel");
+  const instSelectEl = $<HTMLSelectElement>("refineInstrumentSelect");
+  const reloadBtn = $<HTMLButtonElement>("refineReloadBtn");
+  const saveBtn = $<HTMLButtonElement>("refineSaveBtn");
+  const backBtn = $<HTMLElement>("refineBack");
+  const transportEl = $<HTMLElement>("refineTransport");
+  const playBtn = $<HTMLButtonElement>("refinePlayBtn");
+  const stopBtn = $<HTMLButtonElement>("refineStopBtn");
+  const timeReadoutEl = $<HTMLElement>("refineTimeReadout");
+  const scrubEl = $<HTMLInputElement>("refineScrub");
+  const sectionSelectEl = $<HTMLSelectElement>("refineSectionSelect");
+  const auditionToggle = $<HTMLInputElement>("refineAuditionToggle");
+  const stageEl = $<HTMLElement>("refineStage");
+  const inspectorEl = $<HTMLElement>("refineInspector");
+  const selInfoEl = $<HTMLElement>("refineSelInfo");
+  const candChipsEl = $<HTMLElement>("refineCandChips");
+  const emptyEl = $<HTMLElement>("refineEmpty");
+  const emptyCmdEl = $<HTMLElement>("refineEmptyCmd");
+
   if (
-    !root || !songTitleEl || !instLabelEl || !instSelectEl
-    || !reloadBtn || !saveBtn || !backBtn
-    || !workSummaryEl || !worklistEl
-    || !focusedRegionEl || !focusedTimeEl || !focusedChordEl
-    || !pitchRulerEl || !timelineSurfaceEl || !timelineCanvas
-    || !paletteEl || !regionInfoEl
-    || !acceptBtn || !skipBtn || !emptyEl || !gridEl || !emptyCmdEl
-    || !auditionPlayBtn || !auditionStopBtn || !auditionStatusEl
+    !root || !songTitleEl || !instLabelEl || !instSelectEl || !reloadBtn || !saveBtn
+    || !backBtn || !transportEl || !playBtn || !stopBtn || !timeReadoutEl || !scrubEl
+    || !sectionSelectEl || !auditionToggle || !stageEl || !inspectorEl || !selInfoEl
+    || !candChipsEl || !emptyEl || !emptyCmdEl
   ) {
     throw new Error("initRefineWorkspace: required DOM missing -- refine workspace template not in place");
   }
 
   const audition: RefineAuditionHandle = initRefineAudition();
 
-  // Set the row-height CSS variable for the pitch ruler to match the canvas.
-  root.style.setProperty("--rf-row-height", `${ROW_HEIGHT_PX}px`);
-
+  // ---- state ----
   let session: RefineSession | null = null;
+  let regionsSorted: RefineCandidatesRegion[] = [];
   let containerPath: string | null = null;
   let instrument: RefinementInstrument = "keys";
-  let focusedRegionId: string | null = null;
   let isDirty = false;
-  let ctx2d: CanvasRenderingContext2D | null = timelineCanvas.getContext("2d");
+  let selectedIndex: number | null = null;
+  let durationSec = 0;
+
+  // transport (wall-clock playhead; synth audio via refineAudition)
+  let isPlaying = false;
+  let playStartOffset = 0; // playhead position (sec) when play began
+  let playStartWall = 0; // performance.now() when play began
+  let playheadSec = 0;
+  let rafId: number | null = null;
+
+  const spectroTileUrls: string[] = [];
+  function revokeSpectroUrls(): void {
+    for (const u of spectroTileUrls) {
+      try { URL.revokeObjectURL(u); } catch { /* ignore */ }
+    }
+    spectroTileUrls.length = 0;
+  }
+
+  // ---- the editor (created once; load() swaps geometry + notes) ----
+  const editor = new SpectrogramEditor(stageEl, {
+    onNotesChanged: () => {
+      setDirty(true);
+      // Times/pitch of the selected note may have changed during a drag.
+      if (selectedIndex != null) renderInspector(selectedIndex);
+    },
+    onSelectionChanged: (index) => {
+      selectedIndex = index;
+      renderInspector(index);
+    },
+  });
 
   function setDirty(flag: boolean): void {
     isDirty = flag;
     saveBtn!.textContent = flag ? "Save *" : "Save";
   }
-
   function setStatus(msg: string): void {
     deps.setStatus(msg);
   }
 
-  function setEmpty(empty: boolean): void {
-    gridEl!.style.display = empty ? "none" : "grid";
-    emptyEl!.style.display = empty ? "flex" : "none";
-    if (empty && containerPath) {
-      emptyCmdEl!.textContent = `aural_ingest refine-candidates "${containerPath}" --instrument ${instrument}`;
+  // -------------------------------------------------------------------------
+  // Note <-> region helpers
+  // -------------------------------------------------------------------------
+
+  /** The region whose span contains time t (largest t_start <= t). */
+  function regionForTime(t: number): RefineCandidatesRegion | null {
+    let best: RefineCandidatesRegion | null = null;
+    for (const r of regionsSorted) {
+      if (r.t_start <= t) best = r;
+      else break;
     }
+    return best ?? regionsSorted[0] ?? null;
   }
 
-  // -------------------------------------------------------------------------
-  // Spectrogram overlay editor (interactive guided-edit surface). Mounts over
-  // the classic Canvas-2D timeline when a CQT spectrogram artifact exists for
-  // the current stem; edits become a per-region "manual" decision.
-  // -------------------------------------------------------------------------
-  let spectroEditor: SpectrogramEditor | null = null;
-  let spectroContainer: HTMLDivElement | null = null;
-  let spectroLoadedKey: string | null = null; // `${containerPath}|${instrument}`
-  const spectroTileUrls: string[] = [];
-
-  function revokeSpectroUrls(): void {
-    for (const u of spectroTileUrls) {
-      try {
-        URL.revokeObjectURL(u);
-      } catch {
-        /* ignore */
+  /** Assemble the whole song's transcription (deduped) as the editable set. */
+  function assembleFullNotes(s: RefineSession): SpectroNote[] {
+    const seen = new Set<string>();
+    const out: SpectroNote[] = [];
+    for (const region of s.candidates.regions) {
+      const active = activeNotesForRegion(s, region.id);
+      if (!active) continue;
+      for (const n of active.notes) {
+        const key = `${n.pitch}|${n.t_on.toFixed(3)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ t_on: n.t_on, t_off: n.t_off, pitch: n.pitch, velocity: n.velocity ?? 100 });
       }
     }
-    spectroTileUrls.length = 0;
+    out.sort((a, b) => a.t_on - b.t_on);
+    return out;
   }
 
-  function ensureSpectroEditor(): SpectrogramEditor {
-    if (spectroEditor) return spectroEditor;
-    spectroContainer = document.createElement("div");
-    spectroContainer.className = "rfSpectroEditor";
-    spectroContainer.style.cssText = "width:100%;height:520px;display:none;";
-    timelineSurfaceEl!.appendChild(spectroContainer);
-    spectroEditor = new SpectrogramEditor(spectroContainer, {
-      onNotesChanged: (notes) => {
-        if (!session || !focusedRegionId) return;
-        session.decisions.set(focusedRegionId, {
-          region_id: focusedRegionId,
-          candidate_id: "manual",
-          notes: notes.map((n) => ({
-            t_on: n.t_on,
-            t_off: n.t_off,
-            pitch: n.pitch,
-            velocity: typeof n.velocity === "number" ? n.velocity : 100,
-          })),
-          edited_at: new Date().toISOString(),
-        });
-        setDirty(true);
-        renderWorklist();
-      },
-    });
-    return spectroEditor;
-  }
+  // -------------------------------------------------------------------------
+  // Inspector (selected note + candidate "apply" chips)
+  // -------------------------------------------------------------------------
 
-  function setSpectroActive(active: boolean): void {
-    if (spectroContainer) spectroContainer.style.display = active ? "block" : "none";
-    timelineCanvas!.style.display = active ? "none" : "block";
-    pitchRulerEl!.style.display = active ? "none" : "block";
-  }
-
-  async function loadSpectrogramForInstrument(): Promise<void> {
-    if (!containerPath) {
-      setSpectroActive(false);
+  function renderInspector(index: number | null): void {
+    if (index == null || !session) {
+      selInfoEl!.textContent = "No note selected";
+      candChipsEl!.innerHTML = "";
       return;
     }
+    const note = editor.getNotes()[index];
+    if (!note) {
+      selInfoEl!.textContent = "No note selected";
+      candChipsEl!.innerHTML = "";
+      return;
+    }
+    const region = regionForTime(note.t_on);
+    selInfoEl!.innerHTML =
+      `<span class="rfSelPitch">${pitchLabel(note.pitch)}</span> · `
+      + `${formatTime(note.t_on)}–${formatTime(note.t_off)}`
+      + (region ? ` · ${escapeHtml(region.section_label || labelForHotSpot(region.hot_spot_type))}` : "");
+    renderCandChips(region);
+  }
+
+  function renderCandChips(region: RefineCandidatesRegion | null): void {
+    if (!session || !region) {
+      candChipsEl!.innerHTML = "";
+      return;
+    }
+    const cands = Object.entries(session.candidates.candidates);
+    const label = escapeHtml(region.section_label || labelForHotSpot(region.hot_spot_type));
+    const chips = cands.map(([cid, def], i) => {
+      const score = region.candidate_scores[cid] ?? 0;
+      const isAuto = region.auto_picked === cid;
+      return (
+        `<span class="rfCandChip${isAuto ? " isActive" : ""}" data-cid="${cid}" data-region="${region.id}">`
+        + `<span class="rfChipKey">${i + 1}</span>`
+        + `<span class="rfChipDot" style="background:${def.color}"></span>`
+        + `${escapeHtml(def.label)} <span style="color:#94a3b8;">${Math.round(score * 100)}%</span>`
+        + `</span>`
+      );
+    }).join("");
+    candChipsEl!.innerHTML = `<span style="color:#64748b;">Apply to ${label}:</span>${chips}`;
+    for (const el of Array.from(candChipsEl!.querySelectorAll<HTMLElement>(".rfCandChip"))) {
+      el.addEventListener("click", () => applyCandidate(el.dataset.region!, el.dataset.cid!));
+    }
+  }
+
+  /** Replace a region's slice of the note set with a candidate's transcription. */
+  function applyCandidate(regionId: string, cid: string): void {
+    if (!session) return;
+    const region = session.candidates.regions.find((r) => r.id === regionId);
+    if (!region) return;
+    const candNotes = region.candidate_notes[cid];
+    if (!candNotes) return;
+    const kept = editor.getNotes().filter((n) => regionForTime(n.t_on)?.id !== regionId);
+    for (const n of candNotes) {
+      if (regionForTime(n.t_on)?.id === regionId) {
+        kept.push({ t_on: n.t_on, t_off: n.t_off, pitch: n.pitch, velocity: n.velocity ?? 100 });
+      }
+    }
+    kept.sort((a, b) => a.t_on - b.t_on);
+    editor.setNotes(kept);
+    setDirty(true);
+    setStatus(`Applied “${session.candidates.candidates[cid]?.label ?? cid}” to ${region.section_label || labelForHotSpot(region.hot_spot_type)}`);
+    if (selectedIndex != null) renderInspector(selectedIndex);
+    if (isPlaying && auditionToggle!.checked) audition.updateNotes(toRefinementNotes(editor.getNotes()));
+  }
+
+  // -------------------------------------------------------------------------
+  // Section navigation
+  // -------------------------------------------------------------------------
+
+  function buildSections(): void {
+    sectionSelectEl!.innerHTML = `<option value="">Whole song</option>`;
+    const seen = new Set<string>();
+    for (const r of regionsSorted) {
+      const label = r.section_label;
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      const opt = document.createElement("option");
+      opt.value = String(r.t_start);
+      opt.textContent = `${label} (${formatTime(r.t_start)})`;
+      sectionSelectEl!.appendChild(opt);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Transport (wall-clock playhead + synth audition)
+  // -------------------------------------------------------------------------
+
+  function setPlayhead(t: number, follow: boolean): void {
+    playheadSec = Math.max(0, Math.min(durationSec, t));
+    editor.setTime(playheadSec);
+    if (follow) editor.scrollTimeIntoView(playheadSec);
+    scrubEl!.value = String(durationSec > 0 ? Math.round((playheadSec / durationSec) * 1000) : 0);
+    timeReadoutEl!.textContent = `${formatTime(playheadSec)} / ${formatTime(durationSec)}`;
+  }
+
+  function tick(): void {
+    if (!isPlaying) return;
+    const t = playStartOffset + (performance.now() - playStartWall) / 1000;
+    if (t >= durationSec) {
+      setPlayhead(durationSec, false);
+      pauseTransport();
+      return;
+    }
+    setPlayhead(t, true);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function playTransport(): void {
+    if (isPlaying || durationSec <= 0) return;
+    if (playheadSec >= durationSec) setPlayhead(0, true);
+    playStartOffset = playheadSec;
+    playStartWall = performance.now();
+    isPlaying = true;
+    playBtn!.textContent = "⏸";
+    if (auditionToggle!.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function pauseTransport(): void {
+    if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
+    audition.stop();
+    isPlaying = false;
+    playBtn!.textContent = "▶";
+  }
+
+  function stopTransport(): void {
+    pauseTransport();
+    setPlayhead(0, false);
+  }
+
+  function toggleTransport(): void {
+    if (isPlaying) pauseTransport();
+    else playTransport();
+  }
+
+  function seekTo(t: number): void {
+    const wasPlaying = isPlaying;
+    if (wasPlaying) pauseTransport();
+    setPlayhead(t, true);
+    if (wasPlaying) playTransport();
+  }
+
+  function setTransportEnabled(enabled: boolean): void {
+    playBtn!.disabled = !enabled;
+    stopBtn!.disabled = !enabled;
+    scrubEl!.disabled = !enabled;
+  }
+
+  // -------------------------------------------------------------------------
+  // Empty / loaded state
+  // -------------------------------------------------------------------------
+
+  function showEmpty(empty: boolean, reason?: "candidates" | "spectrogram" | "error", detail?: string): void {
+    emptyEl!.style.display = empty ? "flex" : "none";
+    stageEl!.style.display = empty ? "none" : "block";
+    transportEl!.style.display = empty ? "none" : "flex";
+    inspectorEl!.style.display = empty ? "none" : "flex";
+    if (!empty) return;
+    const h3 = emptyEl!.querySelector("h3");
+    if (reason === "spectrogram") {
+      if (h3) h3.textContent = "No spectrogram for this stem";
+      emptyCmdEl!.textContent = `aural_ingest spectrogram "${containerPath ?? "<song>"}" --instrument ${instrument}`;
+    } else if (reason === "error") {
+      if (h3) h3.textContent = "Failed to load";
+      emptyCmdEl!.textContent = detail ?? "";
+    } else {
+      if (h3) h3.textContent = "No candidates yet";
+      emptyCmdEl!.textContent = `aural_ingest refine-candidates "${containerPath ?? "<song>"}" --instrument ${instrument}`;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Spectrogram + notes load
+  // -------------------------------------------------------------------------
+
+  async function loadSpectrogramIntoEditor(): Promise<boolean> {
+    if (!containerPath || !session) return false;
     const role = instrument;
-    const key = `${containerPath}|${role}`;
-    if (key === spectroLoadedKey && spectroEditor) {
-      setSpectroActive(true);
-      syncSpectroNotes();
-      return;
-    }
-    // feedpak relocates the spectrogram artifacts under aural/ (legacy:
-    // features/); pick the subdir by container suffix.
+    // feedpak relocates spectrogram artifacts under aural/ (legacy: features/).
     const fd = containerPath.endsWith(".feedpak") ? "aural" : "features";
     try {
       const geom = (await invoke("read_auralsong_json", {
         containerPath,
         relPath: `${fd}/spectrogram/${role}/spectrogram.json`,
       })) as SpectrogramGeometry;
-      if (!geom || !Array.isArray(geom.tiles) || geom.tiles.length === 0) {
-        setSpectroActive(false);
-        return;
-      }
+      if (!geom || !Array.isArray(geom.tiles) || geom.tiles.length === 0) return false;
       revokeSpectroUrls();
       const urls: string[] = [];
       for (const tile of geom.tiles) {
@@ -227,448 +402,93 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
         urls.push(url);
         spectroTileUrls.push(url);
       }
-      await ensureSpectroEditor().load(geom, urls, []);
-      spectroLoadedKey = key;
-      setSpectroActive(true);
-      syncSpectroNotes();
+      await editor.load(geom, urls, assembleFullNotes(session));
+      durationSec = editor.getDurationSec();
+      return true;
     } catch {
-      // No artifact for this stem (or read failed) -> classic timeline.
-      setSpectroActive(false);
-      spectroLoadedKey = null;
-    }
-  }
-
-  function syncSpectroNotes(): void {
-    if (!spectroEditor || !session || !focusedRegionId) return;
-    const active = activeNotesForRegion(session, focusedRegionId);
-    spectroEditor.setNotes(
-      (active?.notes ?? []).map((n) => ({
-        t_on: n.t_on,
-        t_off: n.t_off,
-        pitch: n.pitch,
-        velocity: n.velocity,
-      })),
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // Worklist (left rail)
-  // -------------------------------------------------------------------------
-  function renderWorklist(): void {
-    if (!session) {
-      worklistEl!.innerHTML = "";
-      workSummaryEl!.innerHTML = "<strong>0</strong> / 0 regions reviewed";
-      return;
-    }
-    const regions = session.candidates.regions;
-    const reviewed = regions.filter((r) => session!.decisions.has(r.id)).length;
-    workSummaryEl!.innerHTML =
-      `<strong>${reviewed}</strong> / ${regions.length} regions reviewed`;
-
-    // Group by hot_spot_type so the worklist shows hot spots first.
-    const groups = new Map<string, RefineCandidatesRegion[]>();
-    for (const region of regions) {
-      const k = region.hot_spot_type;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k)!.push(region);
-    }
-    const groupOrder = [
-      "octave_ghost",
-      "off_chord",
-      "density_outlier",
-      "bass_gap",
-      "low_confidence",
-      "manual",
-      "clean",
-    ];
-
-    const out: string[] = [];
-    for (const groupKey of groupOrder) {
-      const list = groups.get(groupKey);
-      if (!list || list.length === 0) continue;
-      const label = labelForHotSpot(groupKey);
-      out.push(
-        `<div class="rfWorkSection"><div class="rfHead">${label}<span class="rfBadge">${list.length}</span></div>`,
-      );
-      for (const region of list) {
-        const isFocused = region.id === focusedRegionId;
-        const accepted = session.decisions.has(region.id);
-        const cls =
-          "rfRegionRow" + (isFocused ? " isFocused" : "") + (accepted ? " isAccepted" : "");
-        out.push(
-          `<div class="${cls}" data-region-id="${region.id}">`
-          + `<span class="rfRegionTime">${formatTime(region.t_start)}</span>`
-          + `<span class="rfRegionLabel">${escapeHtml(region.section_label || labelForHotSpot(region.hot_spot_type))}</span>`
-          + `<span class="rfRegionConf">${Math.round(region.confidence * 100)}%</span>`
-          + `</div>`,
-        );
-      }
-      out.push("</div>");
-    }
-    worklistEl!.innerHTML = out.join("");
-
-    // Wire clicks.
-    for (const row of Array.from(worklistEl!.querySelectorAll<HTMLElement>(".rfRegionRow"))) {
-      row.addEventListener("click", () => {
-        focusRegion(row.dataset.regionId ?? null);
-      });
-    }
-  }
-
-  function labelForHotSpot(k: string): string {
-    switch (k) {
-      case "octave_ghost": return "Octave ghosts";
-      case "off_chord": return "Off-chord";
-      case "density_outlier": return "Density outliers";
-      case "bass_gap": return "Bass gaps";
-      case "low_confidence": return "Low confidence";
-      case "clean": return "Clean";
-      case "manual": return "Manual flags";
-      default: return k;
+      return false;
     }
   }
 
   // -------------------------------------------------------------------------
-  // Timeline (center notes-over-keys, simplified piano-roll)
+  // Save (partition the edited set back into per-region manual decisions)
   // -------------------------------------------------------------------------
-  function renderPitchRuler(): void {
-    const out: string[] = [];
-    // Iterate high→low so C8 is at the TOP of the canvas (gameplay metaphor:
-    // higher pitches scroll past you from above as time moves down).
-    for (let p = PITCH_HIGH; p >= PITCH_LOW; p--) {
-      const cls = (p % 12 === 0) ? "rfPitchRow isC" : "rfPitchRow";
-      const label = (p % 12 === 0 || p === PITCH_HIGH || p === PITCH_LOW) ? pitchLabel(p) : "";
-      out.push(`<div class="${cls}">${label}</div>`);
-    }
-    pitchRulerEl!.innerHTML = out.join("");
-  }
-
-  function renderTimeline(): void {
-    if (!session || !focusedRegionId || !ctx2d) {
-      if (ctx2d) {
-        ctx2d.clearRect(0, 0, timelineCanvas!.width, timelineCanvas!.height);
-      }
-      return;
-    }
-    const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
-    if (!region) return;
-
-    const active = activeNotesForRegion(session, focusedRegionId);
-    if (!active) return;
-
-    // Compute a window around the focused region: 2 s of context before
-    // t_start, 2 s after t_end, so the user sees adjacent notes too.
-    const windowStart = Math.max(0, region.t_start - 2);
-    const windowEnd = region.t_end + 2;
-    const windowSec = windowEnd - windowStart;
-
-    // Size canvas to match surface; one row = ROW_HEIGHT_PX, columns based on
-    // available width.
-    const surfaceRect = timelineSurfaceEl!.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = Math.max(200, Math.floor(surfaceRect.width));
-    const cssH = PITCH_COUNT * ROW_HEIGHT_PX;
-    timelineCanvas!.style.height = `${cssH}px`;
-    timelineCanvas!.style.width = `${cssW}px`;
-    timelineCanvas!.width = Math.floor(cssW * dpr);
-    timelineCanvas!.height = Math.floor(cssH * dpr);
-    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx2d.clearRect(0, 0, cssW, cssH);
-
-    // Draw region highlight (t_start..t_end gets a subtle accent bg).
-    const tToX = (t: number) => ((t - windowStart) / windowSec) * cssW;
-    const pToY = (p: number) => (PITCH_HIGH - p) * ROW_HEIGHT_PX;
-
-    ctx2d.fillStyle = "rgba(62,230,168,0.06)";
-    ctx2d.fillRect(tToX(region.t_start), 0, tToX(region.t_end) - tToX(region.t_start), cssH);
-
-    // Region boundary lines.
-    ctx2d.strokeStyle = "rgba(62,230,168,0.35)";
-    ctx2d.lineWidth = 1;
-    for (const t of [region.t_start, region.t_end]) {
-      const x = tToX(t);
-      ctx2d.beginPath();
-      ctx2d.moveTo(x, 0);
-      ctx2d.lineTo(x, cssH);
-      ctx2d.stroke();
-    }
-
-    // For each candidate, draw its notes inside this region as faint ghosts
-    // EXCEPT the active candidate, which is drawn solid on top.
-    for (const [candidateId, candidate] of Object.entries(session.candidates.candidates)) {
-      const notes = region.candidate_notes[candidateId] ?? [];
-      const isActive = candidateId === active.candidate_id;
-      drawNotes(notes, candidate.color, isActive ? 1.0 : 0.18, tToX, pToY);
-    }
-  }
-
-  function drawNotes(
-    notes: RefinementNote[],
-    color: string,
-    opacity: number,
-    tToX: (t: number) => number,
-    pToY: (p: number) => number,
-  ): void {
-    if (!ctx2d) return;
-    ctx2d.globalAlpha = opacity;
-    ctx2d.fillStyle = color;
-    ctx2d.strokeStyle = color;
-    for (const note of notes) {
-      if (note.pitch < PITCH_LOW || note.pitch > PITCH_HIGH) continue;
-      const x = tToX(note.t_on);
-      const w = Math.max(2, tToX(note.t_off) - x);
-      const y = pToY(note.pitch);
-      ctx2d.fillRect(x, y, w, ROW_HEIGHT_PX - 1);
-    }
-    ctx2d.globalAlpha = 1.0;
-  }
-
-  // -------------------------------------------------------------------------
-  // Candidate palette (right pane)
-  // -------------------------------------------------------------------------
-  function renderPalette(): void {
-    if (!session || !focusedRegionId) {
-      paletteEl!.innerHTML = `<div style="color:#64748b; font-size:12px;">(no region selected)</div>`;
-      return;
-    }
-    const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
-    if (!region) return;
-
-    const active = activeNotesForRegion(session, focusedRegionId);
-    const activeId = active?.candidate_id;
-
-    const candidates = Object.entries(session.candidates.candidates);
-    const out: string[] = [];
-    candidates.forEach(([cid, def], idx) => {
-      const score = region.candidate_scores[cid] ?? 0;
-      const isAuto = region.auto_picked === cid;
-      const isActive = cid === activeId;
-      const cls = "rfSwatch" + (isActive ? " isActive" : "");
-      out.push(
-        `<div class="${cls}" data-candidate-id="${cid}">`
-        + `<span class="rfSwatchKey">${idx + 1}</span>`
-        + `<span class="rfSwatchDot" style="background:${def.color}"></span>`
-        + `<span class="rfSwatchLabel">${escapeHtml(def.label)}</span>`
-        + `<span class="rfSwatchScore">${Math.round(score * 100)}%</span>`
-        + (isAuto ? `<span class="rfSwatchAuto">AUTO</span>` : "")
-        + `</div>`,
-      );
-    });
-    paletteEl!.innerHTML = out.join("");
-
-    for (const swatch of Array.from(paletteEl!.querySelectorAll<HTMLElement>(".rfSwatch"))) {
-      swatch.addEventListener("click", () => {
-        const cid = swatch.dataset.candidateId;
-        if (cid) pickCandidate(cid);
-      });
-    }
-  }
-
-  function renderRegionInfo(): void {
-    if (!session || !focusedRegionId) {
-      regionInfoEl!.innerHTML = `<div class="rfMetaRow"><span>Type</span><strong>—</strong></div>`;
-      return;
-    }
-    const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
-    if (!region) return;
-    const autoLabel =
-      session.candidates.candidates[region.auto_picked]?.label ?? region.auto_picked;
-    const decisionLabel = session.decisions.get(region.id);
-    regionInfoEl!.innerHTML = [
-      `<div class="rfMetaRow"><span>Type</span><strong>${labelForHotSpot(region.hot_spot_type)}</strong></div>`,
-      `<div class="rfMetaRow"><span>Confidence</span><strong>${Math.round(region.confidence * 100)}%</strong></div>`,
-      `<div class="rfMetaRow"><span>Chord</span><strong>${escapeHtml(region.chord ?? "—")}</strong></div>`,
-      `<div class="rfMetaRow"><span>Auto-pick</span><strong>${escapeHtml(autoLabel)}</strong></div>`,
-      decisionLabel
-        ? `<div class="rfMetaRow"><span>Your pick</span><strong style="color:#3EE6A8;">${escapeHtml(session.candidates.candidates[decisionLabel.candidate_id]?.label ?? decisionLabel.candidate_id)}</strong></div>`
-        : "",
-    ].join("");
-  }
-
-  // -------------------------------------------------------------------------
-  // Actions
-  // -------------------------------------------------------------------------
-  function focusRegion(regionId: string | null): void {
-    focusedRegionId = regionId;
-    if (!regionId || !session) {
-      focusedRegionEl!.textContent = "(pick a region)";
-      focusedTimeEl!.textContent = "";
-      focusedChordEl!.textContent = "";
-    } else {
-      const region = session.candidates.regions.find((r) => r.id === regionId);
-      if (region) {
-        focusedRegionEl!.textContent =
-          region.section_label || labelForHotSpot(region.hot_spot_type);
-        focusedTimeEl!.textContent =
-          `${formatTime(region.t_start)} – ${formatTime(region.t_end)}`;
-        focusedChordEl!.textContent = region.chord ? `· ${region.chord}` : "";
-      }
-    }
-    renderWorklist();
-    renderTimeline();
-    syncSpectroNotes();
-    renderPalette();
-    renderRegionInfo();
-    syncAudition();
-  }
-
-  function pickCandidate(candidateId: string): void {
-    if (!session || !focusedRegionId) return;
-    const ok = pickCandidateForRegion(session, focusedRegionId, candidateId);
-    if (!ok) return;
-    setDirty(true);
-    renderPalette();
-    renderRegionInfo();
-    renderTimeline();
-    renderWorklist();
-    // If audition is running, swap to the newly-picked notes immediately
-    // so A/B comparisons feel instant rather than requiring stop+play.
-    if (audition.isPlaying()) {
-      const active = activeNotesForRegion(session, focusedRegionId);
-      if (active) audition.updateNotes(active.notes);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Audition
-  // -------------------------------------------------------------------------
-  function setAuditionStatus(status: "stopped" | "playing"): void {
-    auditionStatusEl!.classList.toggle("isPlaying", status === "playing");
-    if (status === "playing" && session && focusedRegionId) {
-      const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
-      if (region) {
-        auditionStatusEl!.textContent =
-          `Looping ${formatTime(region.t_start)} – ${formatTime(region.t_end)}`;
-        return;
-      }
-    }
-    auditionStatusEl!.textContent = "Stopped";
-  }
-
-  /**
-   * Refresh the audition button availability + status text based on the
-   * current focused region. Stops playback when no region is focused so
-   * the engine doesn't keep humming after a save/back/etc.
-   */
-  function syncAudition(): void {
-    const canPlay = Boolean(session && focusedRegionId);
-    auditionPlayBtn!.disabled = !canPlay;
-    auditionStopBtn!.disabled = !canPlay;
-    if (!canPlay && audition.isPlaying()) {
-      audition.stop();
-    }
-    setAuditionStatus(audition.isPlaying() ? "playing" : "stopped");
-  }
-
-  function startAudition(): void {
-    if (!session || !focusedRegionId) return;
-    const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
-    if (!region) return;
-    const active = activeNotesForRegion(session, focusedRegionId);
-    if (!active) return;
-    audition.playRegion(active.notes, region.t_start, region.t_end);
-    setAuditionStatus("playing");
-  }
-
-  function stopAudition(): void {
-    audition.stop();
-    setAuditionStatus("stopped");
-  }
-
-  function toggleAudition(): void {
-    if (audition.isPlaying()) stopAudition();
-    else startAudition();
-  }
-
-  function focusNextRegion(): void {
-    if (!session) return;
-    const regions = session.candidates.regions;
-    const idx = regions.findIndex((r) => r.id === focusedRegionId);
-    if (idx < 0 || idx >= regions.length - 1) {
-      // Loop to first unreviewed region instead of doing nothing.
-      const firstUnreviewed = regions.find((r) => !session!.decisions.has(r.id));
-      if (firstUnreviewed) focusRegion(firstUnreviewed.id);
-      return;
-    }
-    focusRegion(regions[idx + 1]!.id);
-  }
-
-  function acceptRegion(): void {
-    if (!session || !focusedRegionId) return;
-    // If no explicit pick yet, accept the auto-picked candidate.
-    if (!session.decisions.has(focusedRegionId)) {
-      const region = session.candidates.regions.find((r) => r.id === focusedRegionId);
-      if (region) pickCandidate(region.auto_picked);
-    }
-    focusNextRegion();
-  }
 
   async function save(): Promise<void> {
     if (!session) return;
+    if (regionsSorted.length === 0) {
+      setStatus("Nothing to save (no regions).");
+      return;
+    }
+    const notes = editor.getNotes();
+    const now = new Date().toISOString();
+    for (const region of session.candidates.regions) {
+      session.decisions.set(region.id, {
+        region_id: region.id,
+        candidate_id: "manual",
+        notes: [],
+        edited_at: now,
+      });
+    }
+    for (const n of notes) {
+      const region = regionForTime(n.t_on);
+      if (!region) continue;
+      session.decisions.get(region.id)?.notes.push({
+        t_on: n.t_on, t_off: n.t_off, pitch: n.pitch,
+        velocity: typeof n.velocity === "number" ? n.velocity : 100,
+      });
+    }
     try {
       await saveDecisions(session);
       setDirty(false);
-      const count = session.decisions.size;
-      setStatus(`Saved ${count} decision(s) for ${instrument}`);
+      setStatus(`Saved ${notes.length} notes for ${instrument}`);
     } catch (e) {
       setStatus(`Save failed: ${String(e)}`);
     }
   }
 
-  async function reload(): Promise<void> {
-    if (!containerPath) return;
-    await openForAuralSong(containerPath);
-  }
+  // -------------------------------------------------------------------------
+  // Public entry
+  // -------------------------------------------------------------------------
 
-  // -------------------------------------------------------------------------
-  // Public entry: openForAuralSong
-  // -------------------------------------------------------------------------
   async function openForAuralSong(path: string): Promise<void> {
     containerPath = path;
     songTitleEl!.textContent = path;
     setDirty(false);
-    setStatus(`Loading refine candidates for ${path}…`);
+    stopTransport();
+    setTransportEnabled(false);
+    setStatus(`Loading ${path}…`);
     try {
       const loaded = await loadSession(path, instrument);
       if (!loaded) {
         session = null;
-        focusedRegionId = null;
-        renderWorklist();
-        renderPalette();
-        renderRegionInfo();
-        setEmpty(true);
-        setStatus(
-          `No refine_candidates.${instrument}.json yet -- precompute first`,
-        );
+        regionsSorted = [];
+        showEmpty(true, "candidates");
+        setStatus(`No refine_candidates.${instrument}.json yet — precompute first`);
         return;
       }
       session = loaded;
-      setEmpty(false);
-      void loadSpectrogramForInstrument();
-      // Focus the first non-clean region by default so the user lands on
-      // something interesting. Fall back to the first region.
-      const firstHotSpot = loaded.candidates.regions.find(
-        (r) => r.hot_spot_type !== "clean" && !loaded.decisions.has(r.id),
-      );
-      const first = firstHotSpot ?? loaded.candidates.regions[0] ?? null;
-      focusedRegionId = first?.id ?? null;
-      renderPitchRuler();
-      renderWorklist();
-      renderPalette();
-      renderRegionInfo();
-      renderTimeline();
-      if (focusedRegionId) {
-        const region = loaded.candidates.regions.find((r) => r.id === focusedRegionId);
-        if (region) {
-          focusRegion(region.id);
-        }
+      regionsSorted = [...loaded.candidates.regions].sort((a, b) => a.t_start - b.t_start);
+
+      const ok = await loadSpectrogramIntoEditor();
+      if (!ok) {
+        showEmpty(true, "spectrogram");
+        setStatus(`No spectrogram for ${instrument} — build it first`);
+        return;
       }
-      setStatus(
-        `Loaded ${loaded.candidates.regions.length} regions for ${instrument} (${loaded.decisions.size} previously reviewed)`,
-      );
+      showEmpty(false);
+      buildSections();
+      selectedIndex = null;
+      renderInspector(null);
+      setTransportEnabled(durationSec > 0);
+      setPlayhead(0, false);
+      sectionSelectEl!.value = "";
+      const noteCount = editor.getNotes().length;
+      setStatus(`Loaded ${noteCount} notes across ${loaded.candidates.regions.length} regions for ${instrument}`);
     } catch (e) {
       session = null;
-      setEmpty(true);
+      regionsSorted = [];
+      showEmpty(true, "error", String(e));
       setStatus(`Failed to load refine session: ${String(e)}`);
     }
   }
@@ -676,62 +496,50 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
+
   instSelectEl.addEventListener("change", () => {
     instrument = (instSelectEl.value as RefinementInstrument) || "keys";
-    instLabelEl!.textContent =
-      instSelectEl.options[instSelectEl.selectedIndex]?.text ?? instrument;
-    if (containerPath) {
-      void openForAuralSong(containerPath);
-    }
+    instLabelEl!.textContent = instSelectEl.options[instSelectEl.selectedIndex]?.text ?? instrument;
+    if (containerPath) void openForAuralSong(containerPath);
   });
-
-  reloadBtn.addEventListener("click", () => void reload());
+  reloadBtn.addEventListener("click", () => { if (containerPath) void openForAuralSong(containerPath); });
   saveBtn.addEventListener("click", () => void save());
-  backBtn.addEventListener("click", () => {
-    audition.stop();
-    deps.onBack();
-  });
-  acceptBtn.addEventListener("click", () => acceptRegion());
-  skipBtn.addEventListener("click", () => focusNextRegion());
-  auditionPlayBtn.addEventListener("click", () => startAudition());
-  auditionStopBtn.addEventListener("click", () => stopAudition());
+  backBtn.addEventListener("click", () => { stopTransport(); deps.onBack(); });
 
-  // Keyboard shortcuts (only when refine route is active).
+  playBtn.addEventListener("click", () => toggleTransport());
+  stopBtn.addEventListener("click", () => stopTransport());
+  // Scrub: move the playhead visually while dragging; commit (and resync synth)
+  // on release so we don't restart the audition every input event.
+  scrubEl.addEventListener("input", () => {
+    const t = (Number(scrubEl.value) / 1000) * durationSec;
+    if (isPlaying) pauseTransport();
+    setPlayhead(t, true);
+  });
+  scrubEl.addEventListener("change", () => {
+    seekTo((Number(scrubEl.value) / 1000) * durationSec);
+  });
+  sectionSelectEl.addEventListener("change", () => {
+    const v = sectionSelectEl.value;
+    if (v === "") { editor.resetView(); return; }
+    const t = Number(v);
+    editor.setViewTimeWindow(t, Math.min(durationSec || t + 16, t + 16));
+  });
+  auditionToggle.addEventListener("change", () => {
+    if (!isPlaying) return;
+    if (auditionToggle.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+    else audition.stop();
+  });
+
+  // Space toggles transport when the refine route is active and we're not
+  // typing in a field. (Delete/Escape/zoom are handled by the editor stage.)
   window.addEventListener("keydown", (ev) => {
     if (!root.closest(".isActive")) return;
-    // Don't steal keys when the user is editing a field.
-    if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) {
-      return;
-    }
-    if (!session || !focusedRegionId) return;
+    if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
     if (ev.key === " " || ev.code === "Space") {
       ev.preventDefault();
-      toggleAudition();
-      return;
-    }
-    if (ev.key >= "1" && ev.key <= "4") {
-      const idx = Number(ev.key) - 1;
-      const cid = Object.keys(session.candidates.candidates)[idx];
-      if (cid) {
-        ev.preventDefault();
-        pickCandidate(cid);
-      }
-    } else if (ev.key === "Enter") {
-      ev.preventDefault();
-      acceptRegion();
-    } else if (ev.key === "ArrowRight" || ev.key === "s" || ev.key === "S") {
-      ev.preventDefault();
-      focusNextRegion();
-    } else if (ev.key === "ArrowLeft") {
-      ev.preventDefault();
-      if (!session) return;
-      const idx = session.candidates.regions.findIndex((r) => r.id === focusedRegionId);
-      if (idx > 0) focusRegion(session.candidates.regions[idx - 1]!.id);
+      toggleTransport();
     }
   });
-
-  // Resize redraws timeline (canvas resolution depends on surface width).
-  window.addEventListener("resize", () => renderTimeline());
 
   return {
     openForAuralSong,
@@ -739,7 +547,6 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   };
 }
 
-// HTML-escape for embedded user content.
 function escapeHtml(s: string): string {
   const el = document.createElement("span");
   el.textContent = s;
