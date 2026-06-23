@@ -48,7 +48,11 @@ main {
    ----------------- */
 
 .appShell {
-  min-height: 100vh;
+  /* Fixed-height shell so .appMain's flex height is *definite* — required for
+     the DAW editor routes' height:100% (and thus the WebGL stage) to resolve.
+     Tall routes scroll within .appMain (below), not the window. */
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -172,6 +176,8 @@ main {
 
 .appMain {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   width: 100%;
   max-width: 1180px;
   margin: 0 auto;
