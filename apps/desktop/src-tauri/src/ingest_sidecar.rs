@@ -723,7 +723,8 @@ pub fn run_ingest_spectrogram(
     }
 
     let app = app.ok_or_else(|| {
-        "Tauri AppHandle required for sidecar execution; ingest_spectrogram can't run headless".to_string()
+        "Tauri AppHandle required for sidecar execution; ingest_spectrogram can't run headless"
+            .to_string()
     })?;
     run_tauri_sidecar_capture(app, &args)
 }
