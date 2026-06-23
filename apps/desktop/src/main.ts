@@ -30,6 +30,21 @@ import { refineWorkspaceHtml } from "./refineWorkspaceHtml";
 import { initRefineWorkspace, type RefineWorkspaceHandle } from "./refineWorkspace";
 import { lyricTimingHtml } from "./lyricTimingHtml";
 import { initLyricTimingWorkspace, type LyricTimingHandle } from "./lyricTimingWorkspace";
+import {
+  MELODIC_ROLES,
+  MELODIC_ROLE_LABELS,
+  invalidateCleanupCache,
+  auralsongJsonExists,
+  getRoleReadiness,
+  melodicStemRoles,
+  detectMelodicStems,
+  parseSidecarStatusLine,
+  classifySpectroResult,
+  type RoleReadiness,
+  type RowReady,
+  type SidecarRunResult,
+  type SpectroOutcome,
+} from "./cleanupReadiness";
 
 function haveTauri(): boolean {
   // Tauri v2 does **not** necessarily expose `window.__TAURI__` unless
@@ -1327,156 +1342,16 @@ function renderDetails(details: AuralSongDetails) {
 // Cleanup & Edit — readiness + action panel
 // -----------------
 
-// Melodic stem roles we probe for (drums/vocals are never melodic targets).
-const MELODIC_ROLES = ["keys", "bass", "lead_guitar", "rhythm_guitar"] as const;
-type MelodicRole = (typeof MELODIC_ROLES)[number];
-
-const MELODIC_ROLE_LABELS: Record<string, string> = {
-  keys: "Keys",
-  bass: "Bass",
-  lead_guitar: "Lead guitar",
-  rhythm_guitar: "Rhythm guitar",
-  melodic: "Melodic",
-};
-
-type RoleReadiness = { spectrogram: boolean; candidates: boolean };
-
-// Cache keyed by `${containerPath}|${role}`. Invalidated after a build/compute
-// so the readout re-checks freshly written artifacts.
-const cleanupReadinessCache = new Map<string, RoleReadiness>();
-
-function cleanupCacheKey(pack: string, role: string): string {
-  return `${pack}|${role}`;
-}
-
-function invalidateCleanupCache(pack: string, role?: string): void {
-  if (role) {
-    cleanupReadinessCache.delete(cleanupCacheKey(pack, role));
-    return;
-  }
-  for (const key of Array.from(cleanupReadinessCache.keys())) {
-    if (key.startsWith(`${pack}|`)) cleanupReadinessCache.delete(key);
-  }
-}
-
-// True iff read_auralsong_json resolves for relPath (throws => artifact absent).
-async function auralsongJsonExists(pack: string, relPath: string): Promise<boolean> {
-  try {
-    await invoke("read_auralsong_json", { containerPath: pack, relPath });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function getRoleReadiness(
-  pack: string,
-  role: string,
-  opts?: { force?: boolean },
-): Promise<RoleReadiness> {
-  const key = cleanupCacheKey(pack, role);
-  if (!opts?.force) {
-    const cached = cleanupReadinessCache.get(key);
-    if (cached) return cached;
-  }
-  // feedpak relocates these artifacts under aural/ (legacy: features/).
-  const fd = featureDir(pack);
-  const [spectrogram, candidates] = await Promise.all([
-    auralsongJsonExists(pack, `${fd}/spectrogram/${role}/spectrogram.json`),
-    auralsongJsonExists(pack, `${fd}/refine_candidates.${role}.json`),
-  ]);
-  const readiness: RoleReadiness = { spectrogram, candidates };
-  cleanupReadinessCache.set(key, readiness);
-  return readiness;
-}
-
-// Cache of the melodic stem roles a pack actually contains (read from its
-// manifest). Static per pack, so we never re-read.
-const stemRolesCache = new Map<string, string[]>();
-
-// The melodic stem roles (keys/bass/lead_guitar/rhythm_guitar) a pack actually
-// has audio for, read from its manifest's `stems` list. Empty when it has none
-// (a mix-only demo, or an old import that was never stem-split). This is what
-// makes a guitar-only song build its guitar stems instead of a bogus "keys".
-async function melodicStemRoles(pack: string): Promise<string[]> {
-  const cached = stemRolesCache.get(pack);
-  if (cached) return cached;
-  let out: string[] = [];
-  try {
-    const details = await invoke<AuralSongDetails>("get_auralsong_details", {
-      containerPath: pack,
-    });
-    const raw = details.manifest_raw as { stems?: Array<{ id?: string }> } | null | undefined;
-    const ids = new Set(
-      (raw?.stems ?? [])
-        .map((s) => s?.id)
-        .filter((x): x is string => typeof x === "string"),
-    );
-    out = (MELODIC_ROLES as readonly string[]).filter((r) => ids.has(r));
-  } catch {
-    out = [];
-  }
-  stemRolesCache.set(pack, out);
-  return out;
-}
-
-// Determine a pack's melodic stems. Roles with a built spectrogram/candidate
-// artifact win; otherwise we offer the melodic stems the pack actually has
-// (per its manifest), falling back to "keys" only when it lists none — so the
-// build always targets real audio rather than a hardcoded role.
-async function detectMelodicStems(
-  pack: string,
-): Promise<{ roles: string[]; primary: string; readiness: Map<string, RoleReadiness> }> {
-  const readiness = new Map<string, RoleReadiness>();
-  const present: string[] = [];
-  await Promise.all(
-    MELODIC_ROLES.map(async (role: MelodicRole) => {
-      const r = await getRoleReadiness(pack, role);
-      readiness.set(role, r);
-      if (r.spectrogram || r.candidates) present.push(role);
-    }),
-  );
-  // Preserve the canonical role order.
-  const roles = MELODIC_ROLES.filter((r) => present.includes(r)) as string[];
-  if (roles.length === 0) {
-    // Nothing built yet: offer the melodic stems the pack actually has.
-    const stemRoles = await melodicStemRoles(pack);
-    const chosen = stemRoles.length ? stemRoles : ["keys"];
-    for (const role of chosen) {
-      roles.push(role);
-      if (!readiness.has(role)) {
-        readiness.set(role, await getRoleReadiness(pack, role));
-      }
-    }
-  }
-  const primary = roles.includes("keys") ? "keys" : roles[0]!;
-  return { roles, primary, readiness };
-}
+// Readiness + stem-detection logic (MELODIC_ROLES, getRoleReadiness,
+// melodicStemRoles, detectMelodicStems, classifySpectroResult, …) lives in
+// ./cleanupReadiness, extracted so it can be unit-tested without booting the
+// app. Imported at the top of this file.
 
 function statusIcon(ok: boolean): string {
   return ok
     ? `<i class="ti ti-circle-check cleanupOk" aria-hidden="true"></i>`
     : `<i class="ti ti-circle-dashed cleanupPending" aria-hidden="true"></i>`;
 }
-
-// Parse the trailing JSON status line from a sidecar run's stdout.
-function parseSidecarStatusLine(stdout: string): Record<string, unknown> | null {
-  try {
-    const lines = stdout.trim().split(/\r?\n/);
-    const parsed = JSON.parse(lines[lines.length - 1] ?? "{}");
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-type SidecarRunResult = {
-  ok: boolean;
-  exit_code: number;
-  stdout: string;
-  stderr: string;
-  payload?: unknown;
-};
 
 // Currently selected melodic stem for the cleanup action panel.
 let cleanupSelectedRole = "keys";
@@ -1656,8 +1531,6 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
 // Cleanup & Edit status table — per-row readiness + inline actions
 // -----------------
 
-type RowReady = { spec: boolean; cand: boolean; lyr: boolean };
-
 // Last-probed readiness per pack, so the table can re-sort without re-probing.
 const cleanupRowReady = new Map<string, RowReady>();
 
@@ -1729,21 +1602,9 @@ function markRowBuilding(path: string): void {
   if (spec) spec.innerHTML = `<span class="ctBuilding" aria-hidden="true">⋯</span>`;
 }
 
-// Classify a spectrogram build result: "ok" | "nostem" (no separated melodic
-// stem to build from — e.g. a mix-only demo) | "error" (a real failure). The
-// sidecar reports a stem-less pack as ok:false with an empty roles object and
-// no stderr, which we'd otherwise surface as a scary "failed".
-type SpectroOutcome = "ok" | "nostem" | "error";
-function classifySpectroResult(res: SidecarRunResult): SpectroOutcome {
-  if (res.ok) return "ok";
-  const parsed = parseSidecarStatusLine(res.stdout);
-  const roles = (parsed?.roles ?? {}) as Record<string, unknown>;
-  if (Object.keys(roles).length === 0 && !res.stderr.trim()) return "nostem";
-  return "error";
-}
-
 // Run the spectrogram build for one song (shared by the inline table action +
 // "Build all unbuilt"). Returns the outcome + a short status message.
+// classifySpectroResult (no-stem vs error) lives in ./cleanupReadiness.
 async function buildSpectrogramForSong(
   path: string,
 ): Promise<{ kind: SpectroOutcome; msg: string }> {
