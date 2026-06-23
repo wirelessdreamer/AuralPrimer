@@ -339,10 +339,7 @@ mod tests {
             "piano".to_string(),
             "vocals".to_string(),
         ];
-        assert_eq!(
-            detect_part_role_from_tokens(&lead_tokens, false),
-            "vocals",
-        );
+        assert_eq!(detect_part_role_from_tokens(&lead_tokens, false), "vocals",);
 
         // Both still collapse to the same gameplay role -- that's
         // intentional and tested here so a future split doesn't make
@@ -1171,9 +1168,10 @@ mod tests {
         // The function reports what it COPIED (which it always does); the
         // dedup invariant is the manifest stays at 2 entries, not 4.
         let _ = added_again;
-        let manifest_after: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(auralsong_root.join("manifest.json")).unwrap())
-                .unwrap();
+        let manifest_after: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(auralsong_root.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
         let refs_after = manifest_after
             .pointer("/assets/midi/reference_paths")
             .and_then(|v| v.as_array())

@@ -321,7 +321,10 @@ mod manifest_scan_tests {
         .expect("write manifest.json");
 
         let value = read_dir_manifest_raw(&auralsong_dir).expect("raw scan should succeed");
-        assert_eq!(value.get("title").unwrap().as_str(), Some("Heaven Whispered"));
+        assert_eq!(
+            value.get("title").unwrap().as_str(),
+            Some("Heaven Whispered")
+        );
     }
 
     #[test]
@@ -330,9 +333,11 @@ mod manifest_scan_tests {
         let auralsong_dir = tmp.path().join("broken.auralsong");
         fs::create_dir(&auralsong_dir).expect("mkdir");
         // No manifest.json written.
-        let err =
-            read_dir_manifest(&auralsong_dir).expect_err("missing manifest must be an error");
-        assert!(err.contains("manifest.json"), "error must name the file: {err}");
+        let err = read_dir_manifest(&auralsong_dir).expect_err("missing manifest must be an error");
+        assert!(
+            err.contains("manifest.json"),
+            "error must name the file: {err}"
+        );
     }
 
     #[test]

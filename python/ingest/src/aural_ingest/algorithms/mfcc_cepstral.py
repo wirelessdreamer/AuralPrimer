@@ -21,7 +21,6 @@ from aural_ingest.algorithms._common import (
     DrumCandidate,
     TranscriptionAlgorithm,
     adaptive_peak_pick,
-    band_pass_one_pole,
     candidates_to_events,
     classify_hat_or_cymbal,
     compute_band_envelopes,
@@ -260,8 +259,6 @@ def _label_cluster_centroids(
     # MFCC[0] is log-energy, MFCC[1] correlates with spectral tilt
     # But better to use timbral features for labeling
     centroid_values = [f.get("centroid", 5000.0) for f in cluster_features]
-    low_values = [f.get("low", 0.0) + f.get("sub", 0.0) for f in cluster_features]
-    high_values = [f.get("high", 0.0) + f.get("air", 0.0) for f in cluster_features]
 
     # Sort by centroid frequency
     indexed = sorted(range(k), key=lambda i: centroid_values[i])

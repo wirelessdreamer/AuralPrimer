@@ -25,7 +25,7 @@ pub mod wav_mix;
 // the game shell.
 use auralsong_core::manifest::{
     parse_manifest_json, read_dir_manifest, read_dir_manifest_raw, read_zip_manifest,
-    read_zip_manifest_raw, ManifestSummary, AuralSongScanEntry,
+    read_zip_manifest_raw, AuralSongScanEntry, ManifestSummary,
 };
 use auralsong_core::songs_watch;
 use auralsong_core::songs_watch::SongsWatchState;
@@ -421,7 +421,10 @@ fn unzip_auralsong_to_dir(zip_path: &Path, dst_dir: &Path) -> Result<(), String>
 }
 
 #[tauri::command]
-fn convert_auralsong_to_directory(app: AppHandle, container_path: String) -> Result<String, String> {
+fn convert_auralsong_to_directory(
+    app: AppHandle,
+    container_path: String,
+) -> Result<String, String> {
     let p = PathBuf::from(&container_path);
     if !container_path.ends_with(".auralsong") {
         return Err("path does not end with .auralsong".to_string());

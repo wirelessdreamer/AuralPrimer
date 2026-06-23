@@ -1017,9 +1017,7 @@ impl TimeStretcher {
 
         while self.out_ring.len() < out.len() {
             // Past the end with no loop: pad with silence rather than spin.
-            if loop_region.is_none()
-                && self.analysis_ideal > (total_frames + Self::GRAIN) as f64
-            {
+            if loop_region.is_none() && self.analysis_ideal > (total_frames + Self::GRAIN) as f64 {
                 while self.out_ring.len() < out.len() {
                     self.out_ring.push_back(0.0);
                 }
@@ -1550,7 +1548,10 @@ mod tests {
         ts.process(&data, total, 0.5, &mut out2, None);
         let expected = val as f32 / i16::MAX as f32;
         let mid = out2[2048];
-        assert!((mid - expected).abs() < 0.05, "steady sample {mid} vs {expected}");
+        assert!(
+            (mid - expected).abs() < 0.05,
+            "steady sample {mid} vs {expected}"
+        );
         assert!(out2.iter().all(|v| v.is_finite()));
     }
 
@@ -1566,7 +1567,10 @@ mod tests {
         let frames = 2000usize;
         let mut out = vec![0.0f32; frames * ch];
         let cursor = ts.process(&data, total, 0.5, &mut out, None);
-        assert!((cursor - frames as f64 * 0.5).abs() < 1.0, "cursor {cursor}");
+        assert!(
+            (cursor - frames as f64 * 0.5).abs() < 1.0,
+            "cursor {cursor}"
+        );
     }
 
     #[test]

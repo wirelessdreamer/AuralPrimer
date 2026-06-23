@@ -16,7 +16,6 @@ source) so testing the gate in isolation is the cleanest contract.
 from __future__ import annotations
 
 import math
-import os
 import struct
 import wave
 from pathlib import Path

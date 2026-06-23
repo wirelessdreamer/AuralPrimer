@@ -22,7 +22,6 @@ from aural_ingest.algorithms._common import (
     DrumCandidate,
     TranscriptionAlgorithm,
     adaptive_peak_pick,
-    band_pass_one_pole,
     candidates_to_events,
     classify_hat_or_cymbal,
     fallback_events_from_classes,

@@ -90,7 +90,10 @@ enum WatchSignal {
 pub fn ensure_watch(app: &AppHandle, songs_folder: &Path) -> Result<(), String> {
     use tauri::Manager;
     let state = app.state::<SongsWatchState>();
-    let mut slot = state.inner.lock().map_err(|e| format!("songs_watch lock: {e}"))?;
+    let mut slot = state
+        .inner
+        .lock()
+        .map_err(|e| format!("songs_watch lock: {e}"))?;
 
     if let Some(existing) = slot.as_ref() {
         if existing.watched_path == songs_folder {
@@ -125,8 +128,8 @@ fn spawn_watch(app: AppHandle, songs_folder: &Path) -> Result<ActiveWatch, Strin
     // classify the event and forward a single Bump signal. Discard noise
     // events (access-only / metadata-only / Any-other) so the debouncer
     // doesn't fire on plain reads.
-    let mut watcher = notify::recommended_watcher(
-        move |res: notify::Result<notify::Event>| match res {
+    let mut watcher =
+        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
             Ok(ev) => {
                 if is_interesting(&ev.kind) {
                     let _ = signal_tx_for_watcher.send(WatchSignal::Bump);
@@ -137,9 +140,8 @@ fn spawn_watch(app: AppHandle, songs_folder: &Path) -> Result<ActiveWatch, Strin
                 // the watcher loop.
                 eprintln!("songs_watch: notify error: {e}");
             }
-        },
-    )
-    .map_err(|e| format!("create watcher: {e}"))?;
+        })
+        .map_err(|e| format!("create watcher: {e}"))?;
 
     watcher
         .watch(songs_folder, RecursiveMode::Recursive)
@@ -164,8 +166,12 @@ fn spawn_watch(app: AppHandle, songs_folder: &Path) -> Result<ActiveWatch, Strin
 /// pure access events are ignored — they're noise.
 fn is_interesting(kind: &EventKind) -> bool {
     match kind {
-        EventKind::Create(CreateKind::Any | CreateKind::File | CreateKind::Folder | CreateKind::Other) => true,
-        EventKind::Remove(RemoveKind::Any | RemoveKind::File | RemoveKind::Folder | RemoveKind::Other) => true,
+        EventKind::Create(
+            CreateKind::Any | CreateKind::File | CreateKind::Folder | CreateKind::Other,
+        ) => true,
+        EventKind::Remove(
+            RemoveKind::Any | RemoveKind::File | RemoveKind::Folder | RemoveKind::Other,
+        ) => true,
         EventKind::Modify(ModifyKind::Name(_)) => true,
         EventKind::Modify(ModifyKind::Data(_)) => true,
         // Treat "Modify(Any)" as interesting on platforms (Windows) where
@@ -225,16 +231,14 @@ mod tests {
         sink: StdSender<()>,
     ) -> (RecommendedWatcher, std::sync::mpsc::Receiver<WatchSignal>) {
         let (signal_tx, signal_rx) = channel::<WatchSignal>();
-        let mut watcher = notify::recommended_watcher(
-            move |res: notify::Result<notify::Event>| {
-                if let Ok(ev) = res {
-                    if is_interesting(&ev.kind) {
-                        let _ = signal_tx.send(WatchSignal::Bump);
-                        let _ = sink.send(());
-                    }
+        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Ok(ev) = res {
+                if is_interesting(&ev.kind) {
+                    let _ = signal_tx.send(WatchSignal::Bump);
+                    let _ = sink.send(());
                 }
-            },
-        )
+            }
+        })
         .expect("create watcher");
         watcher
             .watch(path, RecursiveMode::Recursive)

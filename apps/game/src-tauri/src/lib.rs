@@ -25,7 +25,7 @@ pub mod wav_mix;
 // `songs_watch::ensure_watch(...)` call sites keep compiling unchanged.
 use auralsong_core::manifest::{
     parse_manifest_json, read_dir_manifest, read_dir_manifest_raw, read_zip_manifest,
-    read_zip_manifest_raw, ManifestSummary, AuralSongScanEntry,
+    read_zip_manifest_raw, AuralSongScanEntry, ManifestSummary,
 };
 use auralsong_core::songs_watch;
 
@@ -213,7 +213,9 @@ fn build_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
         .iter()
         .find(|window| window.label == "main")
         .cloned()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "missing main window config"))?;
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "missing main window config")
+        })?;
 
     let mut builder = WebviewWindowBuilder::from_config(app.handle(), &window_config)?;
     if let Some(webview_data_dir) = resolve_webview_data_dir(&window_config.label) {
@@ -408,7 +410,10 @@ fn unzip_auralsong_to_dir(zip_path: &Path, dst_dir: &Path) -> Result<(), String>
 }
 
 #[tauri::command]
-fn convert_auralsong_to_directory(app: AppHandle, container_path: String) -> Result<String, String> {
+fn convert_auralsong_to_directory(
+    app: AppHandle,
+    container_path: String,
+) -> Result<String, String> {
     let p = PathBuf::from(&container_path);
     if !container_path.ends_with(".auralsong") {
         return Err("path does not end with .auralsong".to_string());
@@ -1014,10 +1019,7 @@ fn ingest_import(
     // them after to preserve any user-supplied reference MIDI from the
     // source folder.
     let source_path = req.source_path.clone();
-    let out_auralsong_path = req
-        .out_auralsong_path
-        .clone()
-        .unwrap_or_default();
+    let out_auralsong_path = req.out_auralsong_path.clone().unwrap_or_default();
 
     let mut result = ingest_sidecar::run_ingest_import_with_progress(req, Some(&app))?;
 
@@ -1038,9 +1040,9 @@ fn ingest_import(
                 if !result.stderr.is_empty() {
                     result.stderr.push('\n');
                 }
-                result.stderr.push_str(&format!(
-                    "[reference-midi-preserve] {e}"
-                ));
+                result
+                    .stderr
+                    .push_str(&format!("[reference-midi-preserve] {e}"));
             }
         }
     }

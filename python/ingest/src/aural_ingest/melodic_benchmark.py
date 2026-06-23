@@ -6,14 +6,12 @@ and octave error rate.
 """
 from __future__ import annotations
 
-import json
-import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from aural_ingest.transcription import MelodicNote, INSTRUMENT_FREQ_RANGES
+from aural_ingest.transcription import MelodicNote
 
 # Re-use MIDI parsing from drum_benchmark
 from aural_ingest.drum_benchmark import (

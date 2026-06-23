@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 
-import pytest
 
 
 def _build_args(**overrides: object) -> argparse.Namespace:

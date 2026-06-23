@@ -7,17 +7,13 @@ charts, and markdown/HTML reports.
 from __future__ import annotations
 
 import json
-import math
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
 from aural_ingest.melodic_benchmark import (
-    MelodicBenchmarkEvent,
-    MelodicEvalResult,
     benchmark_melodic_algorithms,
-    evaluate_melodic,
     format_melodic_summary,
     parse_melodic_midi_reference,
     MELODIC_ALGORITHMS,
@@ -62,7 +58,7 @@ def _render_heatmap_svg(
     """Render a heatmap SVG with algorithms as rows and songs as columns."""
     n_rows = len(row_labels)
     n_cols = len(col_labels)
-    left_margin = max(180, max((len(l) for l in row_labels), default=10) * 8 + 20)
+    left_margin = max(180, max((len(lbl) for lbl in row_labels), default=10) * 8 + 20)
     top_margin = 70
     bottom_margin = 60
 
@@ -279,8 +275,8 @@ def _render_report_markdown(payload: Mapping[str, Any], summary: dict) -> str:
 
     lines.append("## Aggregate Summary")
     lines.append("")
-    lines.append(f"| Algorithm | Mean F1 | Pitch Acc | Octave Err | Timing MAE |")
-    lines.append(f"|---|---:|---:|---:|---:|")
+    lines.append("| Algorithm | Mean F1 | Pitch Acc | Octave Err | Timing MAE |")
+    lines.append("|---|---:|---:|---:|---:|")
     for s in summary.get("algorithm_summaries", []):
         mae = s.get("mean_timing_mae_ms")
         mae_str = f"{mae:.1f}ms" if mae is not None else "n/a"

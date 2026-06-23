@@ -10,21 +10,16 @@ false positives and boost likely missed hits:
 """
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 from aural_ingest.algorithms._common import (
-    DRUM_CLASS_TO_MIDI,
-    DrumCandidate,
     TranscriptionAlgorithm,
-    candidates_to_events,
     compute_band_envelopes,
     estimate_tempo_from_onset_env,
     fallback_events_from_classes,
     normalize_series,
     onset_novelty,
     preprocess_audio,
-    timbral_features,
 )
 from aural_ingest.algorithms.spectral_template_with_grid import (
     SpectralTemplateWithGridAlgorithm,

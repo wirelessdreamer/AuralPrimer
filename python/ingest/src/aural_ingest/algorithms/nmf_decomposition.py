@@ -221,7 +221,6 @@ def _label_components(
         if n_comp >= 4 and indexed[-2][1] > 3000:
             labels[indexed[-2][0]] = "crash"
         # Middle = snare
-        mid_idx = len(indexed) // 2
         for i, (comp_idx, cent) in enumerate(indexed):
             if not labels[comp_idx]:
                 if 200 < cent < 5000:

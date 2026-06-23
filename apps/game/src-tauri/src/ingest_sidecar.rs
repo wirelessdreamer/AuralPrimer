@@ -195,9 +195,11 @@ fn run_runtime_fallback_with_progress(
     reason: &str,
 ) -> Option<Result<IngestImportResult, String>> {
     let binary = runtime_fallback_sidecar_binary()?;
-    Some(run_explicit_binary_with_progress(&binary, args, app).map_err(|fallback_error| {
-        format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
-    }))
+    Some(
+        run_explicit_binary_with_progress(&binary, args, app).map_err(|fallback_error| {
+            format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
+        }),
+    )
 }
 
 fn run_runtime_fallback_capture(
@@ -205,9 +207,11 @@ fn run_runtime_fallback_capture(
     reason: &str,
 ) -> Option<Result<IngestRuntimeCheckResult, String>> {
     let binary = runtime_fallback_sidecar_binary()?;
-    Some(run_explicit_binary_capture(&binary, args).map_err(|fallback_error| {
-        format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
-    }))
+    Some(
+        run_explicit_binary_capture(&binary, args).map_err(|fallback_error| {
+            format!("{reason}; fallback binary {binary} also failed: {fallback_error}")
+        }),
+    )
 }
 
 pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, String> {
@@ -726,7 +730,10 @@ mod tests {
 
     #[test]
     fn resolve_max_runtime_parses_override_seconds() {
-        assert_eq!(resolve_max_runtime(Some("60")), Some(Duration::from_secs(60)));
+        assert_eq!(
+            resolve_max_runtime(Some("60")),
+            Some(Duration::from_secs(60))
+        );
         assert_eq!(
             resolve_max_runtime(Some("  120 ")),
             Some(Duration::from_secs(120))
@@ -748,7 +755,10 @@ mod tests {
     #[test]
     fn timeout_error_message_states_the_limit_and_override_knob() {
         let msg = timeout_error_message(Duration::from_secs(30 * 60));
-        assert!(msg.contains("30 min"), "must state the limit in minutes: {msg}");
+        assert!(
+            msg.contains("30 min"),
+            "must state the limit in minutes: {msg}"
+        );
         assert!(
             msg.contains("AURALPRIMER_INGEST_TIMEOUT_SEC"),
             "must point at the override env var: {msg}"

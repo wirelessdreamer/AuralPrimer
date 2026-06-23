@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from aural_ingest.algorithms._common import (
-    CLASS_REFRACTORY_SEC,
     DrumCandidate,
     TranscriptionAlgorithm,
     adaptive_peak_pick,

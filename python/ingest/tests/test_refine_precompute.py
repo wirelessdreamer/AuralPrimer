@@ -311,7 +311,7 @@ def test_precompute_writes_refine_candidates_json_to_features(tmp_path: Path):
     notes = [n(0.5, 60), n(1.5, 62), n(5.0, 64)]
     runner = _fake_runner_returning(notes, notes, notes, notes)
 
-    payload = precompute_refine_candidates(
+    precompute_refine_candidates(
         auralsong_root=sp,
         instrument="keys",
         runner=runner,

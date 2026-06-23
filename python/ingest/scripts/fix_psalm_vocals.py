@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
-import wave
 from pathlib import Path
 
 try:

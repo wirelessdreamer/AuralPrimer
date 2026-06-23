@@ -1232,9 +1232,10 @@ mod tests {
 
         let _ = preserve_source_midis_into_auralsong(&source_dir, &auralsong_root)
             .expect("preserve again");
-        let manifest_after: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(auralsong_root.join("manifest.json")).unwrap())
-                .unwrap();
+        let manifest_after: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(auralsong_root.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
         let refs_after = manifest_after
             .pointer("/assets/midi/reference_paths")
             .and_then(|v| v.as_array())
@@ -3877,8 +3878,7 @@ fn update_manifest_reference_midi_paths(
     if !manifest_path.is_file() {
         return Ok(());
     }
-    let raw = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("read manifest.json: {e}"))?;
+    let raw = fs::read_to_string(&manifest_path).map_err(|e| format!("read manifest.json: {e}"))?;
     let mut manifest: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
         Err(_) => return Ok(()),
@@ -3913,8 +3913,8 @@ fn update_manifest_reference_midi_paths(
             refs_arr.push(serde_json::json!(p));
         }
     }
-    let json = serde_json::to_string_pretty(&manifest)
-        .map_err(|e| format!("manifest json: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(&manifest).map_err(|e| format!("manifest json: {e}"))?;
     fs::write(&manifest_path, json).map_err(|e| format!("write manifest.json: {e}"))?;
     Ok(())
 }

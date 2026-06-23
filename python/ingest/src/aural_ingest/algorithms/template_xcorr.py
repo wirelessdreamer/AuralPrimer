@@ -17,15 +17,12 @@ from aural_ingest.algorithms._common import (
     band_pass_one_pole,
     candidates_to_events,
     classify_hat_or_cymbal,
-    clamp,
     compute_band_envelopes,
-    estimate_tempo_from_onset_env,
     fallback_events_from_classes,
     frame_to_time,
     normalize_series,
     onset_novelty,
     preprocess_audio,
-    snap_time_to_grid,
     timbral_features,
 )
 from aural_ingest.transcription import DrumEvent

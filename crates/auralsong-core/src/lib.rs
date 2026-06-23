@@ -16,6 +16,6 @@ pub mod songs_watch;
 
 pub use manifest::{
     parse_manifest_json, parse_manifest_raw, read_dir_manifest, read_dir_manifest_raw,
-    read_zip_manifest, read_zip_manifest_raw, ManifestSummary, AuralSongScanEntry,
+    read_zip_manifest, read_zip_manifest_raw, AuralSongScanEntry, ManifestSummary,
 };
 pub use songs_watch::{ensure_watch, SongsWatchState, SONGS_FOLDER_CHANGED_EVENT};

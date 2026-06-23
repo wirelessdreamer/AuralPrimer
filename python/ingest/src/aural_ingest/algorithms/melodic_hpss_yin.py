@@ -6,8 +6,6 @@ harmonic component, then runs YIN on the cleaner signal.
 from __future__ import annotations
 
 import math
-import struct
-import tempfile
 from pathlib import Path
 
 from aural_ingest.algorithms._common import read_wav_mono_normalized

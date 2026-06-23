@@ -36,8 +36,6 @@ their existing work.
 
 from __future__ import annotations
 
-import json
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -152,7 +150,6 @@ def main(
     # Add the temp track at the end of the user's session (track_list said 7
     # tracks, so the new one will be at index 7).
     track_create(at_index=-1, name="ATX-Synth-Piano-TEMP")
-    tracks_before_count_assert = None  # caller can verify
 
     # Find our index by re-listing. For robustness give it a stable name.
     # We rely on the MCP returning index in the create response. The MCP
