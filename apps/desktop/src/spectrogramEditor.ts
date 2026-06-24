@@ -70,6 +70,11 @@ export interface SpectrogramEditorOptions {
   onNoteAdded?: (note: SpectroNote, notes: SpectroNote[]) => void;
   /** Fired when the selection changes (index into notes, or null). */
   onSelectionChanged?: (index: number | null) => void;
+  /**
+   * Fired as the cursor moves over the surface with the pitch + time under it
+   * (null on leave) — drives a Sonic-Visualiser-style readout in the host.
+   */
+  onHover?: (info: { time: number; pitch: number } | null) => void;
   /** Initial colormap (default "inferno"). */
   colormap?: ColormapName;
   /** Whether to build the DOM control bar (default true). */
@@ -319,6 +324,7 @@ export class SpectrogramEditor {
     // Make the stage focusable so Delete works without a global handler.
     this.stage.tabIndex = 0;
     this.stage.addEventListener("keydown", this.onKeyDownBound);
+    this.stage.addEventListener("pointerleave", () => this.opts.onHover?.(null));
 
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(this.onResizeBound);
@@ -955,10 +961,18 @@ export class SpectrogramEditor {
   private updateCursor(e: PointerEvent): void {
     if (!this.geom) return;
     const rect = this.stage.getBoundingClientRect();
-    const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    const cssX = e.clientX - rect.left;
+    const cssY = e.clientY - rect.top;
+    const hit = this.hitTest(cssX, cssY);
     let cursor = "crosshair";
     if (hit) cursor = hit.edge ? "ew-resize" : "move";
     this.stage.style.cursor = cursor;
+    // Emit pitch + time under the cursor for the host's readout.
+    if (this.opts.onHover) {
+      const c = this.pxToContent(cssX, cssY);
+      const pitch = Math.round(this.geom.fmin_midi + Math.floor(c.row));
+      this.opts.onHover({ time: this.frameToTime(c.frame), pitch });
+    }
   }
 
   // -------------------------------------------------------------------------

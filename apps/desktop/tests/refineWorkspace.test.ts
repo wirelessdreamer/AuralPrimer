@@ -34,6 +34,7 @@ const spectroInstance = {
 let lastSpectroOpts: {
   onNotesChanged?: (notes: unknown[]) => void;
   onSelectionChanged?: (i: number | null) => void;
+  onHover?: (info: { time: number; pitch: number } | null) => void;
 } | null = null;
 vi.mock("../src/spectrogramEditor", () => ({
   SpectrogramEditor: vi.fn(function (this: unknown, _el: HTMLElement, opts: typeof lastSpectroOpts) {
@@ -302,6 +303,22 @@ describe("inspector + candidate apply", () => {
     expect(el("refineSelInfo").innerHTML).toContain("C4");
     expect(el("refineCandChips").querySelectorAll(".rfCandChip").length).toBe(2);
     expect(el("refineCandChips").innerHTML).toContain("Verse");
+  });
+
+  it("cursor hover shows the pitch + time when no note is selected", async () => {
+    await open();
+    lastSpectroOpts!.onHover!({ time: 7.45, pitch: 60 }); // C4
+    expect(el("refineSelInfo").innerHTML).toContain("C4");
+    expect(el("refineSelInfo").innerHTML).toContain("cursor");
+    lastSpectroOpts!.onHover!(null);
+    expect(el("refineSelInfo").textContent).toBe("No note selected");
+  });
+
+  it("a selected note takes precedence over the hover readout", async () => {
+    await open();
+    lastSpectroOpts!.onSelectionChanged!(0);
+    lastSpectroOpts!.onHover!({ time: 1, pitch: 72 });
+    expect(el("refineSelInfo").innerHTML).not.toContain("cursor");
   });
 
   it("clearing the selection resets the inspector", async () => {

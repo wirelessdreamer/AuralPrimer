@@ -159,6 +159,18 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       selectedIndex = index;
       renderInspector(index);
     },
+    // Sonic-Visualiser-style cursor readout: show the pitch + time under the
+    // cursor in the inspector whenever no note is actively selected.
+    onHover: (info) => {
+      if (selectedIndex != null) return;
+      if (!info) {
+        selInfoEl!.textContent = "No note selected";
+        return;
+      }
+      selInfoEl!.innerHTML =
+        `<span class="rfSelPitch">${pitchLabel(info.pitch)}</span> · ${formatTime(info.time)}`
+        + ` <span style="color:#64748b;">· cursor</span>`;
+    },
   });
 
   function setDirty(flag: boolean): void {
