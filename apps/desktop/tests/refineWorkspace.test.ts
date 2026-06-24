@@ -9,7 +9,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const invokeMock = vi.fn();
-vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invokeMock(...a) }));
+const convertFileSrcMock = vi.fn((p: string) => `asset://localhost/${encodeURIComponent(p)}`);
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...a: unknown[]) => invokeMock(...a),
+  convertFileSrc: (...a: unknown[]) => convertFileSrcMock(...(a as [string])),
+}));
 
 // Stateful SpectrogramEditor mock: load/setNotes update an internal note set
 // that getNotes returns, mirroring the real editor closely enough to exercise
@@ -128,6 +132,42 @@ function stageDom(): void {
 const el = (id: string) => document.getElementById(id)!;
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
+// Controllable HTMLAudioElement stand-in. The controller streams the stem via
+// an <audio> element; we capture the instance so a test can drive currentTime /
+// fire loadedmetadata (success) or error (fallback) deterministically — jsdom's
+// real Audio never decodes our fake asset:// URLs.
+class FakeAudio {
+  static instances: FakeAudio[] = [];
+  // How load() should resolve: "ok" fires loadedmetadata, "err" fires error,
+  // "hang" fires nothing (caller drives events manually).
+  static nextResult: "ok" | "err" | "hang" = "ok";
+  src = "";
+  preload = "";
+  currentTime = 0;
+  paused = true;
+  play = vi.fn(() => { this.paused = false; return Promise.resolve(); });
+  pause = vi.fn(() => { this.paused = true; });
+  load = vi.fn(() => {
+    const mode = FakeAudio.nextResult;
+    if (mode === "ok") queueMicrotask(() => this.emit("loadedmetadata"));
+    else if (mode === "err") queueMicrotask(() => this.emit("error"));
+  });
+  private listeners = new Map<string, Set<(ev?: unknown) => void>>();
+  constructor() { FakeAudio.instances.push(this); }
+  addEventListener(type: string, cb: (ev?: unknown) => void): void {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type)!.add(cb);
+  }
+  removeEventListener(type: string, cb: (ev?: unknown) => void): void {
+    this.listeners.get(type)?.delete(cb);
+  }
+  removeAttribute(_name: string): void { this.src = ""; }
+  emit(type: string): void {
+    for (const cb of [...(this.listeners.get(type) ?? [])]) cb();
+  }
+  static latest(): FakeAudio { return FakeAudio.instances[FakeAudio.instances.length - 1]!; }
+}
+
 function note(t_on: number, pitch: number, velocity = 90) {
   return { t_on, t_off: t_on + 0.5, pitch, velocity };
 }
@@ -183,6 +223,16 @@ function mockSpectrogramOk(relPaths?: string[]): void {
     if (relPaths && args?.relPath) relPaths.push(args.relPath);
     if (cmd === "read_auralsong_json") return Promise.resolve(geom);
     if (cmd === "read_auralsong_bytes") return Promise.resolve([1, 2, 3]);
+    if (cmd === "get_auralsong_details") {
+      return Promise.resolve({
+        manifest_raw: {
+          stems: [
+            { id: "keys", file: "audio/stems/keys.wav", default: true },
+            { id: "bass", file: "audio/stems/bass.wav" },
+          ],
+        },
+      });
+    }
     return Promise.reject(new Error("unexpected"));
   });
 }
@@ -206,6 +256,10 @@ beforeEach(() => {
   spectroInstance.getDurationSec.mockReturnValue(30);
   vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fake"), revokeObjectURL: vi.fn() });
   vi.stubGlobal("Blob", class { constructor(public parts: unknown[], public opts: unknown) {} });
+  FakeAudio.instances = [];
+  FakeAudio.nextResult = "ok";
+  convertFileSrcMock.mockClear();
+  vi.stubGlobal("Audio", FakeAudio);
   // rAF that does NOT auto-recurse, so transport tick runs once deterministically.
   vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
@@ -423,6 +477,73 @@ describe("transport", () => {
     scrub.value = "500"; // 50% of 30s = 15s
     scrub.dispatchEvent(new Event("change"));
     expect(spectroInstance.setTime).toHaveBeenCalledWith(15);
+  });
+});
+
+describe("stem audio playback", () => {
+  it("loads the current instrument's stem via convertFileSrc on open", async () => {
+    await open();
+    // get_auralsong_details -> stems[id===keys].file -> joined to container -> convertFileSrc.
+    expect(convertFileSrcMock).toHaveBeenCalledWith(
+      expect.stringContaining("audio/stems/keys.wav"),
+    );
+    const audio = FakeAudio.latest();
+    expect(audio.src).toContain("keys.wav");
+  });
+
+  it("play() seeks the audio element to the playhead + drives the playhead off currentTime", async () => {
+    await open();
+    const audio = FakeAudio.latest();
+    // Park the playhead at 15s via the scrub, then press play.
+    const scrub = el("refineScrub") as HTMLInputElement;
+    scrub.value = "500"; // 50% of 30s
+    scrub.dispatchEvent(new Event("change"));
+    expect(audio.currentTime).toBe(15);
+
+    el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+    expect(audio.play).toHaveBeenCalled();
+    expect(audio.currentTime).toBe(15); // seeked to the playhead on play
+
+    // The rAF tick reads audio.currentTime as the clock: advance the element and
+    // fire one tick (the test's rAF runs the callback once, non-recursively).
+    audio.currentTime = 20;
+    const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]>} }).mock.calls.at(-1)![0];
+    rafCb(0);
+    expect(spectroInstance.setTime).toHaveBeenLastCalledWith(20);
+  });
+
+  it("plays the synth alongside the stem when 'Hear notes' is checked", async () => {
+    await open();
+    el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+    const audio = FakeAudio.latest();
+    expect(audio.play).toHaveBeenCalled();
+    expect(auditionInstance.playRegion).toHaveBeenCalled();
+  });
+
+  it("falls back to wall-clock + surfaces status when the stem fails to load", async () => {
+    loadSessionMock.mockResolvedValue(makeSession());
+    mockSpectrogramOk();
+    FakeAudio.nextResult = "err";
+    const deps = makeDeps();
+    const h = initRefineWorkspace(deps);
+    await h.openForAuralSong("/songs/x.auralsong");
+    await flush();
+    expect(deps.setStatus).toHaveBeenCalledWith(expect.stringContaining("no stem audio"));
+    // Transport still works: play starts the synth without throwing.
+    el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+    expect(auditionInstance.playRegion).toHaveBeenCalled();
+    const audio = FakeAudio.latest();
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
+  it("stop resets the audio element to 0", async () => {
+    await open();
+    const audio = FakeAudio.latest();
+    el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+    audio.currentTime = 12;
+    el("refineStopBtn").dispatchEvent(new MouseEvent("click"));
+    expect(audio.pause).toHaveBeenCalled();
+    expect(audio.currentTime).toBe(0);
   });
 });
 

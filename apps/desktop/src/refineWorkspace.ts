@@ -14,9 +14,14 @@
  *    notes is replaced by the candidate's transcription.
  *  - The 12+ hot-spot regions are navigation only — a "Jump" dropdown scrolls
  *    the editor view to a section start.
- *  - Transport plays the SYNTHESISED notes (refineAudition) with a wall-clock
- *    playhead. Playing the original stem audio under the spectrogram is a
- *    follow-up (it needs streaming the multi-MB stem, not an IPC byte array).
+ *  - Transport plays the ISOLATED STEM audio for the current instrument,
+ *    streamed off disk via Tauri's asset protocol (convertFileSrc -> an
+ *    <audio> element), so the user hears the real recording while editing.
+ *    When a stem is loaded, audio.currentTime drives the playhead clock;
+ *    when none loads (zip container, missing file, decode error) the
+ *    transport falls back to the wall-clock playhead. The "Hear notes"
+ *    synth (refineAudition) plays ALONGSIDE the stem when checked, so the
+ *    user can A/B the transcription against the recording.
  *
  * On save, the edited note set is partitioned back into the candidate regions
  * as per-region "manual" decisions and written to refinement.<inst>.json —
@@ -33,7 +38,7 @@ import {
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
 import type { RefinementNote } from "./refineCandidatesIo";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import {
   SpectrogramEditor,
   type SpectrogramGeometry,
@@ -133,12 +138,29 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let selectedIndex: number | null = null;
   let durationSec = 0;
 
-  // transport (wall-clock playhead; synth audio via refineAudition)
+  // transport
+  //  - When a stem is loaded, `audio` plays the real recording and its
+  //    `currentTime` is the playhead clock (driven via rAF).
+  //  - When no stem loads, we fall back to the wall-clock playhead below.
+  //  - refineAudition (the "Hear notes" synth) plays alongside either path.
   let isPlaying = false;
-  let playStartOffset = 0; // playhead position (sec) when play began
-  let playStartWall = 0; // performance.now() when play began
+  let playStartOffset = 0; // playhead position (sec) when play began (wall-clock path)
+  let playStartWall = 0; // performance.now() when play began (wall-clock path)
   let playheadSec = 0;
   let rafId: number | null = null;
+
+  // Isolated-stem playback. The element lives outside the DOM template — it
+  // never needs to be visible, just to decode + play the asset:// stream.
+  const audio = new Audio();
+  audio.preload = "auto";
+  let stemLoaded = false; // true once a stem src has loaded (metadata) for the current instrument
+  audio.addEventListener("ended", () => stopTransport());
+  audio.addEventListener("error", () => {
+    // The stem failed to decode/stream: drop back to the wall-clock + synth
+    // path so the editor stays usable, and tell the user why there's no audio.
+    if (stemLoaded) setStatus(`Stem audio failed to load for ${instrument} — playing notes only`);
+    stemLoaded = false;
+  });
 
   const spectroTileUrls: string[] = [];
   function revokeSpectroUrls(): void {
@@ -314,7 +336,12 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   function tick(): void {
     if (!isPlaying) return;
-    const t = playStartOffset + (performance.now() - playStartWall) / 1000;
+    // Clock source: the stem's own playback position when a stem is loaded,
+    // otherwise the wall clock. Keeping the playhead on audio.currentTime
+    // keeps the spectrogram glued to what the user actually hears.
+    const t = stemLoaded
+      ? audio.currentTime
+      : playStartOffset + (performance.now() - playStartWall) / 1000;
     if (t >= durationSec) {
       setPlayhead(durationSec, false);
       pauseTransport();
@@ -331,12 +358,23 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     playStartWall = performance.now();
     isPlaying = true;
     playBtn!.textContent = "⏸";
+    if (stemLoaded) {
+      // Seek the stem to the playhead and start it; if play() rejects (autoplay
+      // policy, transient decode failure) fall back to the wall-clock path so
+      // the synth + playhead still run.
+      audio.currentTime = playheadSec;
+      audio.play().catch(() => {
+        stemLoaded = false;
+        setStatus(`Stem audio couldn't start for ${instrument} — playing notes only`);
+      });
+    }
     if (auditionToggle!.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
     rafId = requestAnimationFrame(tick);
   }
 
   function pauseTransport(): void {
     if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
+    try { audio.pause(); } catch { /* ignore */ }
     audition.stop();
     isPlaying = false;
     playBtn!.textContent = "▶";
@@ -344,6 +382,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   function stopTransport(): void {
     pauseTransport();
+    if (stemLoaded) { try { audio.currentTime = 0; } catch { /* ignore */ } }
     setPlayhead(0, false);
   }
 
@@ -356,6 +395,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     const wasPlaying = isPlaying;
     if (wasPlaying) pauseTransport();
     setPlayhead(t, true);
+    if (stemLoaded) { try { audio.currentTime = playheadSec; } catch { /* ignore */ } }
     if (wasPlaying) playTransport();
   }
 
@@ -420,6 +460,79 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     } catch {
       return false;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Stem audio (asset-protocol stream of the current instrument's stem)
+  // -------------------------------------------------------------------------
+
+  type ManifestStem = { id?: string; file?: string; default?: boolean | string };
+
+  /** Truthy "default" per the manifest schema (boolean or true/on/yes string). */
+  function isDefaultStem(s: ManifestStem): boolean {
+    const d = s.default;
+    if (typeof d === "boolean") return d;
+    if (typeof d === "string") return /^(true|on|yes)$/i.test(d.trim());
+    return false;
+  }
+
+  /** Join the container path with a POSIX-relative stem file (forward slashes). */
+  function joinContainer(container: string, relFile: string): string {
+    const sep = container.includes("\\") ? "\\" : "/";
+    const base = container.replace(/[\\/]+$/, "");
+    return `${base}${sep}${relFile.replace(/\//g, sep)}`;
+  }
+
+  /**
+   * Resolve the current instrument's stem to a convertFileSrc URL. Reads the
+   * manifest's `stems[]`, matches `id === role`, and falls back to the default
+   * stem (or the first) when the role has none. Returns null when the manifest
+   * has no usable stem (e.g. a zip container the asset protocol can't reach).
+   */
+  async function resolveStemUrl(): Promise<string | null> {
+    if (!containerPath) return null;
+    try {
+      const details = await invoke<{ manifest_raw?: { stems?: ManifestStem[] } | null }>(
+        "get_auralsong_details",
+        { containerPath },
+      );
+      const stems = details.manifest_raw?.stems ?? [];
+      if (stems.length === 0) return null;
+      const match =
+        stems.find((s) => s.id === instrument)
+        ?? stems.find((s) => isDefaultStem(s))
+        ?? stems[0];
+      if (!match?.file) return null;
+      return convertFileSrc(joinContainer(containerPath, match.file));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Point the <audio> element at the current instrument's stem. Resets the
+   * loaded flag; `stemLoaded` flips true on the first `loadedmetadata` and the
+   * transport then drives the playhead off `audio.currentTime`. A resolve miss
+   * or decode error leaves `stemLoaded` false -> wall-clock fallback.
+   */
+  async function loadStemAudio(): Promise<void> {
+    stemLoaded = false;
+    try { audio.pause(); } catch { /* ignore */ }
+    audio.removeAttribute("src");
+    const url = await resolveStemUrl();
+    if (!url) return;
+    await new Promise<void>((resolve) => {
+      const onMeta = (): void => { stemLoaded = true; cleanup(); resolve(); };
+      const onErr = (): void => { stemLoaded = false; cleanup(); resolve(); };
+      const cleanup = (): void => {
+        audio.removeEventListener("loadedmetadata", onMeta);
+        audio.removeEventListener("error", onErr);
+      };
+      audio.addEventListener("loadedmetadata", onMeta, { once: true });
+      audio.addEventListener("error", onErr, { once: true });
+      audio.src = url;
+      audio.load();
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -495,8 +608,13 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       setTransportEnabled(durationSec > 0);
       setPlayhead(0, false);
       sectionSelectEl!.value = "";
+      // Stream the isolated stem for this instrument (asset protocol). Best
+      // effort: a miss leaves stemLoaded false and the transport runs on the
+      // wall clock + synth.
+      await loadStemAudio();
       const noteCount = editor.getNotes().length;
-      setStatus(`Loaded ${noteCount} notes across ${loaded.candidates.regions.length} regions for ${instrument}`);
+      const audioNote = stemLoaded ? "" : " (no stem audio — notes only)";
+      setStatus(`Loaded ${noteCount} notes across ${loaded.candidates.regions.length} regions for ${instrument}${audioNote}`);
     } catch (e) {
       session = null;
       regionsSorted = [];

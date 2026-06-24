@@ -20,7 +20,10 @@ tauri-build = { version = "2", features = [] }
 # also brings the songs-folder filesystem watcher to the desktop shell, which
 # previously lacked it.
 auralsong-core = { path = "../../../crates/auralsong-core" }
-tauri = { version = "2", features = [] }
+# `protocol-asset` is required by `app.security.assetProtocol` in
+# tauri.conf.json — it streams isolated stem WAVs to the refine-workspace
+# <audio> element via asset:// without shipping bytes over IPC.
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
