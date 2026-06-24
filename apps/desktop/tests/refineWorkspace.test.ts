@@ -34,6 +34,10 @@ const spectroInstance = {
   resetView: vi.fn(),
   resize: vi.fn(),
   dispose: vi.fn(),
+  canUndo: vi.fn(() => false),
+  canRedo: vi.fn(() => false),
+  undo: vi.fn(),
+  redo: vi.fn(),
 };
 let lastSpectroOpts: {
   onNotesChanged?: (notes: unknown[]) => void;
@@ -89,6 +93,8 @@ const REQUIRED_IDS: ReadonlyArray<readonly [string, string]> = [
   ["refineInspector", "div"],
   ["refineSelInfo", "div"],
   ["refineCandChips", "div"],
+  ["refineUndoBtn", "button"],
+  ["refineRedoBtn", "button"],
 ];
 
 function stageDom(): void {
@@ -399,6 +405,18 @@ describe("inspector + candidate apply", () => {
     await open();
     lastSpectroOpts!.onNotesChanged!(editorNotes);
     expect(el("refineSaveBtn").textContent).toBe("Save *");
+  });
+
+  it("undo/redo buttons reflect availability + drive the editor", async () => {
+    spectroInstance.canUndo.mockReturnValue(true);
+    spectroInstance.canRedo.mockReturnValue(false);
+    await open();
+    expect((el("refineUndoBtn") as HTMLButtonElement).disabled).toBe(false);
+    expect((el("refineRedoBtn") as HTMLButtonElement).disabled).toBe(true);
+    el("refineUndoBtn").dispatchEvent(new MouseEvent("click"));
+    expect(spectroInstance.undo).toHaveBeenCalled();
+    el("refineRedoBtn").dispatchEvent(new MouseEvent("click"));
+    expect(spectroInstance.redo).toHaveBeenCalled();
   });
 });
 

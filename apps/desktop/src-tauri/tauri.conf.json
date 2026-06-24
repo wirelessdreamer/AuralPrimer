@@ -29,7 +29,7 @@
         "enable": true,
         "scope": ["**"]
       },
-      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost blob: data:; media-src 'self' asset: https://asset.localhost blob:; connect-src 'self' asset: https://asset.localhost ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost http://asset.localhost blob: data:; media-src 'self' asset: https://asset.localhost http://asset.localhost blob:; connect-src 'self' asset: https://asset.localhost http://asset.localhost ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   }
 }

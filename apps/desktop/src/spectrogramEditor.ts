@@ -259,6 +259,12 @@ export class SpectrogramEditor {
   private userFloorDb = -50;
   private playheadSec: number | null = null;
 
+  // Undo/redo history of note-set snapshots (note edits only — view/zoom is
+  // not undoable). Capped so a long session can't grow unbounded.
+  private undoStack: SpectroNote[][] = [];
+  private redoStack: SpectroNote[][] = [];
+  private static readonly MAX_HISTORY = 200;
+
   // Interaction state
   private drag: DragMode = "none";
   private dragNoteIndex = -1;
@@ -358,6 +364,9 @@ export class SpectrogramEditor {
     this.geom = geometry;
     this.notes = notes.map((n) => ({ ...n }));
     this.selected = null;
+    // A fresh song starts with an empty history.
+    this.undoStack = [];
+    this.redoStack = [];
 
     const images = await Promise.all(
       tileImages.map((t) => this.toImageSource(t)),
@@ -375,13 +384,58 @@ export class SpectrogramEditor {
     this.requestRender();
   }
 
-  /** Replace the note set (host-driven, e.g. external edit). Re-renders. */
+  /** Replace the note set (host-driven, e.g. applying a candidate). Undoable. */
   setNotes(notes: SpectroNote[]): void {
+    this.pushUndo();
     this.notes = notes.map((n) => ({ ...n }));
     if (this.selected != null && this.selected >= this.notes.length) {
       this.setSelection(null);
     }
     this.requestRender();
+  }
+
+  /** Push the current note set onto the undo stack (call BEFORE a mutation). */
+  private pushUndo(): void {
+    this.undoStack.push(this.notes.map((n) => ({ ...n })));
+    if (this.undoStack.length > SpectrogramEditor.MAX_HISTORY) this.undoStack.shift();
+    this.redoStack = [];
+  }
+
+  // Pre-drag snapshot, committed on the FIRST move of a drag so a click that
+  // only selects (no movement) doesn't create an empty undo entry.
+  private dragUndo: SpectroNote[] | null = null;
+  private commitDragUndo(): void {
+    if (!this.dragUndo) return;
+    this.undoStack.push(this.dragUndo);
+    if (this.undoStack.length > SpectrogramEditor.MAX_HISTORY) this.undoStack.shift();
+    this.redoStack = [];
+    this.dragUndo = null;
+  }
+
+  /** Whether undo / redo are currently available (for host button state). */
+  canUndo(): boolean { return this.undoStack.length > 0; }
+  canRedo(): boolean { return this.redoStack.length > 0; }
+
+  /** Restore the previous note set. No-op when the history is empty. */
+  undo(): void {
+    const prev = this.undoStack.pop();
+    if (!prev) return;
+    this.redoStack.push(this.notes.map((n) => ({ ...n })));
+    this.notes = prev;
+    this.setSelection(null);
+    this.requestRender();
+    this.emitChanged();
+  }
+
+  /** Re-apply an undone change. No-op when there's nothing to redo. */
+  redo(): void {
+    const next = this.redoStack.pop();
+    if (!next) return;
+    this.undoStack.push(this.notes.map((n) => ({ ...n })));
+    this.notes = next;
+    this.setSelection(null);
+    this.requestRender();
+    this.emitChanged();
   }
 
   /** Snapshot of the current notes (defensive copy). */
@@ -863,6 +917,8 @@ export class SpectrogramEditor {
       this.setSelection(hit.index);
       this.dragNoteIndex = hit.index;
       this.dragOrig = { ...this.notes[hit.index]! };
+      // Snapshot the pre-drag state; committed to undo on the first move.
+      this.dragUndo = this.notes.map((n) => ({ ...n }));
       const c = this.pxToContent(cssX, cssY);
       this.dragStartContent = { x: c.frame, y: c.row };
       this.drag = hit.edge === "l" ? "resize-l" : hit.edge === "r" ? "resize-r" : "move";
@@ -905,6 +961,8 @@ export class SpectrogramEditor {
     if (!orig || this.dragNoteIndex < 0) return;
     const c = this.pxToContent(cssX, cssY);
     const note = this.notes[this.dragNoteIndex]!;
+    // First actual movement of this drag -> bank the pre-drag state for undo.
+    this.commitDragUndo();
 
     if (this.drag === "move") {
       const dFrame = c.frame - this.dragStartContent.x;
@@ -944,12 +1002,25 @@ export class SpectrogramEditor {
     this.dragNoteIndex = -1;
     this.dragOrig = null;
     this.panStartView = null;
+    this.dragUndo = null; // discard the snapshot if the drag never moved
     if (wasEdit) this.emitChanged();
   }
 
   private onKeyDown(e: KeyboardEvent): void {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) this.redo();
+      else this.undo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+      e.preventDefault();
+      this.redo();
+      return;
+    }
     if ((e.key === "Delete" || e.key === "Backspace") && this.selected != null) {
       e.preventDefault();
+      this.pushUndo();
       this.notes.splice(this.selected, 1);
       this.setSelection(null);
       this.emitChanged();
@@ -1028,6 +1099,7 @@ export class SpectrogramEditor {
     const tOn = Math.max(0, tCenter - dur / 2);
     const tOff = tOn + dur;
     const note: SpectroNote = { t_on: tOn, t_off: tOff, pitch, velocity: 100 };
+    this.pushUndo();
     this.notes.push(note);
     this.setSelection(this.notes.length - 1);
     this.opts.onNoteAdded?.(note, this.getNotes());

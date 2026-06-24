@@ -117,12 +117,14 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const candChipsEl = $<HTMLElement>("refineCandChips");
   const emptyEl = $<HTMLElement>("refineEmpty");
   const emptyCmdEl = $<HTMLElement>("refineEmptyCmd");
+  const undoBtn = $<HTMLButtonElement>("refineUndoBtn");
+  const redoBtn = $<HTMLButtonElement>("refineRedoBtn");
 
   if (
     !root || !songTitleEl || !instLabelEl || !instSelectEl || !reloadBtn || !saveBtn
     || !backBtn || !transportEl || !playBtn || !stopBtn || !timeReadoutEl || !scrubEl
     || !sectionSelectEl || !auditionToggle || !stageEl || !inspectorEl || !selInfoEl
-    || !candChipsEl || !emptyEl || !emptyCmdEl
+    || !candChipsEl || !emptyEl || !emptyCmdEl || !undoBtn || !redoBtn
   ) {
     throw new Error("initRefineWorkspace: required DOM missing -- refine workspace template not in place");
   }
@@ -174,6 +176,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const editor = new SpectrogramEditor(stageEl, {
     onNotesChanged: () => {
       setDirty(true);
+      updateUndoButtons();
       // Times/pitch of the selected note may have changed during a drag.
       if (selectedIndex != null) renderInspector(selectedIndex);
     },
@@ -201,6 +204,10 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   }
   function setStatus(msg: string): void {
     deps.setStatus(msg);
+  }
+  function updateUndoButtons(): void {
+    undoBtn!.disabled = !editor.canUndo();
+    redoBtn!.disabled = !editor.canRedo();
   }
 
   // -------------------------------------------------------------------------
@@ -602,6 +609,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
         return;
       }
       showEmpty(false);
+      updateUndoButtons();
       buildSections();
       selectedIndex = null;
       renderInspector(null);
@@ -638,6 +646,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   playBtn.addEventListener("click", () => toggleTransport());
   stopBtn.addEventListener("click", () => stopTransport());
+  undoBtn.addEventListener("click", () => { editor.undo(); updateUndoButtons(); });
+  redoBtn.addEventListener("click", () => { editor.redo(); updateUndoButtons(); });
   // Scrub: move the playhead visually while dragging; commit (and resync synth)
   // on release so we don't restart the audition every input event.
   scrubEl.addEventListener("input", () => {
