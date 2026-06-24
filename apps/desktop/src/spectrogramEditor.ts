@@ -335,6 +335,13 @@ export class SpectrogramEditor {
     this.stage.tabIndex = 0;
     this.stage.addEventListener("keydown", this.onKeyDownBound);
     this.stage.addEventListener("pointerleave", () => this.opts.onHover?.(null));
+    // Middle/right-drag pans (handled in onPointerDown). Suppress the browser
+    // behaviours that otherwise hijack those buttons: middle-click autoscroll
+    // (mousedown button 1) and the right-click context menu.
+    this.stage.addEventListener("mousedown", (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+    this.stage.addEventListener("contextmenu", (e) => e.preventDefault());
 
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(this.onResizeBound);
@@ -904,6 +911,7 @@ export class SpectrogramEditor {
 
     // Middle button or right button => pan.
     if (e.button === 1 || e.button === 2) {
+      e.preventDefault();
       this.drag = "pan";
       this.dragStartContent = { x: cssX, y: cssY };
       this.panStartView = { ...this.view };
