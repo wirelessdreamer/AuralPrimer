@@ -264,6 +264,8 @@ export class SpectrogramEditor {
   private undoStack: SpectroNote[][] = [];
   private redoStack: SpectroNote[][] = [];
   private static readonly MAX_HISTORY = 200;
+  // Set once we've installed the app-wide middle-click autoscroll suppressor.
+  private static autoscrollSuppressed = false;
 
   // Interaction state
   private drag: DragMode = "none";
@@ -335,13 +337,25 @@ export class SpectrogramEditor {
     this.stage.tabIndex = 0;
     this.stage.addEventListener("keydown", this.onKeyDownBound);
     this.stage.addEventListener("pointerleave", () => this.opts.onHover?.(null));
-    // Middle/right-drag pans (handled in onPointerDown). Suppress the browser
-    // behaviours that otherwise hijack those buttons: middle-click autoscroll
-    // (mousedown button 1) and the right-click context menu.
-    this.stage.addEventListener("mousedown", (e) => {
-      if (e.button === 1) e.preventDefault();
-    });
+    // Middle/right-drag pans (handled in onPointerDown). Right-click's context
+    // menu is suppressed on the stage; middle-click autoscroll has to be killed
+    // at the document level WITH capture, because the scrollable ancestor
+    // (.appMain, overflow:auto) starts autoscroll before a stage-level handler
+    // runs. Scoped to spectro stages so other middle-clicks are unaffected.
     this.stage.addEventListener("contextmenu", (e) => e.preventDefault());
+    if (!SpectrogramEditor.autoscrollSuppressed) {
+      document.addEventListener(
+        "mousedown",
+        (e) => {
+          const me = e as MouseEvent;
+          if (me.button === 1 && (me.target as HTMLElement | null)?.closest?.(".spectro-stage")) {
+            e.preventDefault();
+          }
+        },
+        { capture: true },
+      );
+      SpectrogramEditor.autoscrollSuppressed = true;
+    }
 
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(this.onResizeBound);
