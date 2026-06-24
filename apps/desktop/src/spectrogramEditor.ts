@@ -251,8 +251,12 @@ export class SpectrogramEditor {
   private view: View = { originX: 0, originY: 0, spanX: 1, spanY: 1 };
   private colormap: ColormapName;
   private gain = 1.0;
-  private contrast = 1.0;
-  private userFloorDb = -80;
+  // Defaults tuned for a clean, Sonic-Visualiser-like view: clip the reverb/
+  // noise floor (~-50 dB below peak) to black and lift contrast a touch, so
+  // notes read as distinct lines instead of a dense wash. Users can drag the
+  // Floor dB / Contrast sliders from here.
+  private contrast = 1.3;
+  private userFloorDb = -50;
   private playheadSec: number | null = null;
 
   // Interaction state
