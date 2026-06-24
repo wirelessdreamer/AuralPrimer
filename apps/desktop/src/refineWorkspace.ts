@@ -111,6 +111,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const scrubEl = $<HTMLInputElement>("refineScrub");
   const sectionSelectEl = $<HTMLSelectElement>("refineSectionSelect");
   const auditionToggle = $<HTMLInputElement>("refineAuditionToggle");
+  const speedSelectEl = $<HTMLSelectElement>("refineSpeedSelect");
+  const soloSelectEl = $<HTMLSelectElement>("refineSoloSelect");
   const stageEl = $<HTMLElement>("refineStage");
   const inspectorEl = $<HTMLElement>("refineInspector");
   const selInfoEl = $<HTMLElement>("refineSelInfo");
@@ -125,6 +127,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     || !backBtn || !transportEl || !playBtn || !stopBtn || !timeReadoutEl || !scrubEl
     || !sectionSelectEl || !auditionToggle || !stageEl || !inspectorEl || !selInfoEl
     || !candChipsEl || !emptyEl || !emptyCmdEl || !undoBtn || !redoBtn
+    || !speedSelectEl || !soloSelectEl
   ) {
     throw new Error("initRefineWorkspace: required DOM missing -- refine workspace template not in place");
   }
@@ -150,6 +153,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let playStartWall = 0; // performance.now() when play began (wall-clock path)
   let playheadSec = 0;
   let rafId: number | null = null;
+  let playbackRate = 1; // transport speed multiplier
+  let soloMode = true; // true = play the current instrument's isolated stem; false = full mix
 
   // Isolated-stem playback. The element lives outside the DOM template — it
   // never needs to be visible, just to decode + play the asset:// stream.
@@ -348,7 +353,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     // keeps the spectrogram glued to what the user actually hears.
     const t = stemLoaded
       ? audio.currentTime
-      : playStartOffset + (performance.now() - playStartWall) / 1000;
+      : playStartOffset + ((performance.now() - playStartWall) / 1000) * playbackRate;
     if (t >= durationSec) {
       setPlayhead(durationSec, false);
       pauseTransport();
@@ -370,6 +375,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       // policy, transient decode failure) fall back to the wall-clock path so
       // the synth + playhead still run.
       audio.currentTime = playheadSec;
+      audio.playbackRate = playbackRate;
       audio.play().catch(() => {
         stemLoaded = false;
         setStatus(`Stem audio couldn't start for ${instrument} — playing notes only`);
@@ -496,7 +502,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
    * stem (or the first) when the role has none. Returns null when the manifest
    * has no usable stem (e.g. a zip container the asset protocol can't reach).
    */
-  async function resolveStemUrl(): Promise<string | null> {
+  async function resolveStemUrl(solo: boolean): Promise<string | null> {
     if (!containerPath) return null;
     try {
       const details = await invoke<{ manifest_raw?: { stems?: ManifestStem[] } | null }>(
@@ -504,6 +510,14 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
         { containerPath },
       );
       const stems = details.manifest_raw?.stems ?? [];
+      if (!solo) {
+        // "All (mix)": prefer an explicit mix/full stem, else the conventional
+        // audio/mix.wav. If neither exists the audio element errors and
+        // loadStemAudio falls back to the instrument stem.
+        const mix = stems.find((s) => /^(mix|mixture|mixdown|full|all)$/i.test(s.id ?? ""));
+        if (mix?.file) return convertFileSrc(joinContainer(containerPath, mix.file));
+        return convertFileSrc(joinContainer(containerPath, "audio/mix.wav"));
+      }
       if (stems.length === 0) return null;
       const match =
         stems.find((s) => s.id === instrument)
@@ -523,23 +537,39 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
    * or decode error leaves `stemLoaded` false -> wall-clock fallback.
    */
   async function loadStemAudio(): Promise<void> {
-    stemLoaded = false;
-    try { audio.pause(); } catch { /* ignore */ }
-    audio.removeAttribute("src");
-    const url = await resolveStemUrl();
-    if (!url) return;
-    await new Promise<void>((resolve) => {
-      const onMeta = (): void => { stemLoaded = true; cleanup(); resolve(); };
-      const onErr = (): void => { stemLoaded = false; cleanup(); resolve(); };
-      const cleanup = (): void => {
-        audio.removeEventListener("loadedmetadata", onMeta);
-        audio.removeEventListener("error", onErr);
-      };
-      audio.addEventListener("loadedmetadata", onMeta, { once: true });
-      audio.addEventListener("error", onErr, { once: true });
-      audio.src = url;
-      audio.load();
-    });
+    const tryLoad = async (url: string | null): Promise<boolean> => {
+      stemLoaded = false;
+      try { audio.pause(); } catch { /* ignore */ }
+      audio.removeAttribute("src");
+      if (!url) return false;
+      return new Promise<boolean>((resolve) => {
+        const onMeta = (): void => { stemLoaded = true; cleanup(); resolve(true); };
+        const onErr = (): void => { stemLoaded = false; cleanup(); resolve(false); };
+        const cleanup = (): void => {
+          audio.removeEventListener("loadedmetadata", onMeta);
+          audio.removeEventListener("error", onErr);
+        };
+        audio.addEventListener("loadedmetadata", onMeta, { once: true });
+        audio.addEventListener("error", onErr, { once: true });
+        audio.src = url;
+        audio.load();
+      });
+    };
+    const ok = await tryLoad(await resolveStemUrl(soloMode));
+    if (!ok && !soloMode) {
+      // "All (mix)" had no usable mix — fall back to the instrument's stem.
+      const ok2 = await tryLoad(await resolveStemUrl(true));
+      if (ok2) setStatus(`No mix for this song — playing the ${instrument} stem`);
+    }
+  }
+
+  /** Reload the audio after a Solo/All switch, resuming playback if it was on. */
+  async function switchAudioSource(): Promise<void> {
+    const wasPlaying = isPlaying;
+    if (wasPlaying) pauseTransport();
+    await loadStemAudio();
+    setTransportEnabled(durationSec > 0);
+    if (wasPlaying) playTransport();
   }
 
   // -------------------------------------------------------------------------
@@ -648,6 +678,18 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   stopBtn.addEventListener("click", () => stopTransport());
   undoBtn.addEventListener("click", () => { editor.undo(); updateUndoButtons(); });
   redoBtn.addEventListener("click", () => { editor.redo(); updateUndoButtons(); });
+  speedSelectEl.addEventListener("change", () => {
+    const r = Number(speedSelectEl.value);
+    if (!Number.isFinite(r) || r <= 0) return;
+    // Re-anchor the wall clock so the playhead doesn't jump on a rate change.
+    if (isPlaying) { playStartOffset = playheadSec; playStartWall = performance.now(); }
+    playbackRate = r;
+    if (stemLoaded) audio.playbackRate = r;
+  });
+  soloSelectEl.addEventListener("change", () => {
+    soloMode = soloSelectEl.value !== "all";
+    void switchAudioSource();
+  });
   // Scrub: move the playhead visually while dragging; commit (and resync synth)
   // on release so we don't restart the audition every input event.
   scrubEl.addEventListener("input", () => {

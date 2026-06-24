@@ -132,6 +132,23 @@ export function refineWorkspaceHtml(): string {
           <span>Jump</span>
           <select id="refineSectionSelect"><option value="">—</option></select>
         </label>
+        <label class="rfPill" title="Solo the current instrument's stem, or play the full mix">
+          <span>Audio</span>
+          <select id="refineSoloSelect">
+            <option value="solo" selected>Solo instrument</option>
+            <option value="all">All (mix)</option>
+          </select>
+        </label>
+        <label class="rfPill" title="Playback speed">
+          <span>Speed</span>
+          <select id="refineSpeedSelect">
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
+        </label>
         <label class="rfAuditionToggle" title="Also synthesize the notes while playing">
           <input type="checkbox" id="refineAuditionToggle" checked /> Hear notes
         </label>

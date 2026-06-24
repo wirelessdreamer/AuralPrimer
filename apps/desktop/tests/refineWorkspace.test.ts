@@ -95,6 +95,8 @@ const REQUIRED_IDS: ReadonlyArray<readonly [string, string]> = [
   ["refineCandChips", "div"],
   ["refineUndoBtn", "button"],
   ["refineRedoBtn", "button"],
+  ["refineSpeedSelect", "select"],
+  ["refineSoloSelect", "select"],
 ];
 
 function stageDom(): void {
@@ -133,6 +135,16 @@ function stageDom(): void {
   scrub.type = "range"; scrub.min = "0"; scrub.max = "1000"; scrub.value = "0";
   const toggle = document.getElementById("refineAuditionToggle") as HTMLInputElement;
   toggle.type = "checkbox"; toggle.checked = true;
+  const speed = document.getElementById("refineSpeedSelect") as HTMLSelectElement;
+  for (const v of ["0.5", "1", "2"]) {
+    const o = document.createElement("option"); o.value = v; o.textContent = `${v}x`; speed.appendChild(o);
+  }
+  speed.value = "1";
+  const solo = document.getElementById("refineSoloSelect") as HTMLSelectElement;
+  for (const v of ["solo", "all"]) {
+    const o = document.createElement("option"); o.value = v; o.textContent = v; solo.appendChild(o);
+  }
+  solo.value = "solo";
 }
 
 const el = (id: string) => document.getElementById(id)!;
@@ -487,6 +499,25 @@ describe("transport", () => {
     el("refineRoute").parentElement!.classList.remove("isActive");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
     expect(auditionInstance.playRegion).not.toHaveBeenCalled();
+  });
+
+  it("speed change does not throw", async () => {
+    await open();
+    const speed = el("refineSpeedSelect") as HTMLSelectElement;
+    speed.value = "2";
+    expect(() => speed.dispatchEvent(new Event("change"))).not.toThrow();
+  });
+
+  it("Solo/All switch reloads the audio source", async () => {
+    await open();
+    const detailsCalls = () =>
+      invokeMock.mock.calls.filter((c) => c[0] === "get_auralsong_details").length;
+    const before = detailsCalls();
+    const solo = el("refineSoloSelect") as HTMLSelectElement;
+    solo.value = "all";
+    solo.dispatchEvent(new Event("change"));
+    await flush();
+    expect(detailsCalls()).toBeGreaterThan(before);
   });
 
   it("scrubbing seeks the playhead", async () => {
