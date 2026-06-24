@@ -101,9 +101,9 @@ void main() {
   vec2 content = u_tileOriginContent + a_unit * u_tileSizeContent;
   vec2 ndc = (content - u_viewOrigin) / u_viewSpan; // 0..1
   gl_Position = vec4(ndc * 2.0 - 1.0, 0.0, 1.0);
-  // Texture: x along time. PNG row 0 is the lowest pitch (top of image data is
-  // row n-1). a_unit.y == 0 at content-bottom == lowest pitch == png row 0.
-  // PNGs are uploaded with UNPACK_FLIP_Y so sampling v=0 hits png row 0.
+  // Texture: x along time. The CQT PNG stores the lowest pitch in its TOP row;
+  // uploaded UNFLIPPED, that top row sits at v=0, so a_unit.y==0 (content
+  // bottom, bin 0) samples the lowest pitch -> matches the note overlay.
   v_tex = a_unit;
 }
 `;
@@ -620,8 +620,12 @@ export class SpectrogramEditor {
     if (!gl) return;
     for (const t of this.tileTextures) gl.deleteTexture(t);
     this.tileTextures = [];
-    // Flip Y so v=0 samples png row 0 (lowest pitch) -> bottom of the view.
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    // The CQT PNG stores the LOWEST pitch in its top row. An unflipped upload
+    // maps the image's top row to texture v=0, and the shader maps v=0 to the
+    // content bottom (bin 0) — so lowest pitch lands at the bottom of the view,
+    // matching the note overlay (row 0 = lowest, at the bottom). FLIP_Y=true
+    // mirrored the spectrogram vertically against the notes (the placement bug).
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     for (const img of images) {
       const tex = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, tex);
