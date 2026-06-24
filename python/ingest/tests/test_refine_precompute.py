@@ -3,8 +3,9 @@ Tests for the Refine Candidates precompute stage.
 
 Pure helpers (region windowing, scoring, hot-spot classification,
 payload assembly) are exercised directly. The orchestration function
-that wires PTI is exercised through an injectable runner stub so the
-tests don't need piano_transcription_inference / librosa / a GPU.
+that dispatches to the algorithm modules is exercised through an
+injectable runner stub so the tests don't need the real models /
+checkpoints / optional deps.
 
 The end-to-end JSON shape is then validated against the schema in
 ``packages/auralsong/schemas/refine_candidates.schema.json`` to catch
@@ -19,11 +20,12 @@ from pathlib import Path
 import pytest
 
 from aural_ingest.refine_precompute import (
+    CANDIDATE_ALGOS,
     CANDIDATE_DISPLAY,
     CANDIDATE_IDS,
-    CandidateNotes,
     REGION_DURATION_SEC,
     SCHEMA_VERSION,
+    build_candidates_block,
     build_payload,
     build_regions,
     classify_hot_spot,
@@ -115,10 +117,10 @@ def test_jaccard_overlap_partial_overlap():
 
 def test_union_of_candidates_dedups_within_tolerance():
     candidates = {
-        "stem_only": [n(1.0, 60), n(2.0, 62)],
-        "consensus_tight": [n(1.0, 60)],  # dup of first
-        "consensus_default": [n(3.0, 64)],
-        "denoise_consensus": [n(1.04, 60)],  # also dup of first, within tol
+        "basic_pitch": [n(1.0, 60), n(2.0, 62)],
+        "basic_pitch_dense": [n(1.0, 60)],  # dup of first
+        "ensemble": [n(3.0, 64)],
+        "pti": [n(1.04, 60)],  # also dup of first, within tol
     }
     u = union_of_candidates(candidates)
     pitches = sorted(x.pitch for x in u)
@@ -136,14 +138,24 @@ def test_score_candidate_matches_jaccard_against_consensus():
 
 def test_classify_hot_spot_clean_when_three_or_more_high():
     # 3 of 4 score >= 0.9 -> "clean".
-    scores = {"stem_only": 0.95, "consensus_tight": 0.91, "consensus_default": 0.9, "denoise_consensus": 0.3}
+    scores = {
+        "basic_pitch": 0.95,
+        "basic_pitch_dense": 0.91,
+        "ensemble": 0.9,
+        "pti": 0.3,
+    }
     hot, conf = classify_hot_spot(scores)
     assert hot == "clean"
     assert 0.0 <= conf <= 1.0
 
 
 def test_classify_hot_spot_low_confidence_when_disagreeing():
-    scores = {"stem_only": 0.4, "consensus_tight": 0.3, "consensus_default": 0.2, "denoise_consensus": 0.5}
+    scores = {
+        "basic_pitch": 0.4,
+        "basic_pitch_dense": 0.3,
+        "ensemble": 0.2,
+        "pti": 0.5,
+    }
     hot, conf = classify_hot_spot(scores)
     assert hot == "low_confidence"
 
@@ -155,19 +167,19 @@ def test_classify_hot_spot_empty_scores_is_low_confidence_zero():
 
 
 def test_pick_auto_candidate_breaks_ties_toward_display_order():
-    # All tied at 0.5 -- stem_only should win because it's first in CANDIDATE_DISPLAY.
+    # All tied at 0.5 -- the earliest in CANDIDATE_DISPLAY wins.
     scores = {cid: 0.5 for cid in CANDIDATE_IDS}
-    assert pick_auto_candidate(scores) == "stem_only"
+    assert pick_auto_candidate(scores) == CANDIDATE_IDS[0]
 
 
 def test_pick_auto_candidate_prefers_higher_score():
     scores = {
-        "stem_only": 0.3,
-        "consensus_tight": 0.4,
-        "consensus_default": 0.9,
-        "denoise_consensus": 0.5,
+        "basic_pitch": 0.3,
+        "basic_pitch_dense": 0.4,
+        "ensemble": 0.9,
+        "pti": 0.5,
     }
-    assert pick_auto_candidate(scores) == "consensus_default"
+    assert pick_auto_candidate(scores) == "ensemble"
 
 
 def test_pick_auto_candidate_empty_falls_back_to_first_id():
@@ -193,23 +205,18 @@ def test_build_regions_empty_returns_empty_for_zero_duration():
 
 
 def test_build_regions_routes_notes_into_correct_window():
-    # Stem-only has 2 notes in r0 + 1 in r1; consensus_default mirrors stem_only.
+    # basic_pitch has 2 notes in r0 + 1 in r1; the others mirror it.
     stem = [n(0.5, 60), n(1.5, 62), n(5.0, 64)]
-    candidate_notes = {
-        "stem_only": stem,
-        "consensus_tight": list(stem),
-        "consensus_default": list(stem),
-        "denoise_consensus": list(stem),
-    }
+    candidate_notes = {cid: list(stem) for cid in CANDIDATE_IDS}
     regions = build_regions(candidate_notes, song_duration_sec=8.0)
     r0 = regions[0]
     r1 = regions[1]
-    assert len(r0["candidate_notes"]["stem_only"]) == 2
-    assert len(r1["candidate_notes"]["stem_only"]) == 1
+    assert len(r0["candidate_notes"]["basic_pitch"]) == 2
+    assert len(r1["candidate_notes"]["basic_pitch"]) == 1
 
 
 def test_build_regions_marks_perfect_agreement_as_clean():
-    # All 4 candidates emit identical notes -> 1.0 score everywhere -> "clean".
+    # All candidates emit identical notes -> 1.0 score everywhere -> "clean".
     notes = [n(0.5, 60), n(1.5, 62)]
     candidate_notes = {cid: list(notes) for cid in CANDIDATE_IDS}
     regions = build_regions(candidate_notes, song_duration_sec=4.0)
@@ -220,27 +227,27 @@ def test_build_regions_marks_perfect_agreement_as_clean():
 def test_build_regions_disagreement_marks_low_confidence():
     # Each candidate emits totally different notes -> low scores -> low_confidence.
     candidate_notes = {
-        "stem_only": [n(0.5, 60)],
-        "consensus_tight": [n(1.0, 70)],
-        "consensus_default": [n(1.5, 80)],
-        "denoise_consensus": [n(2.0, 90)],
+        "basic_pitch": [n(0.5, 60)],
+        "basic_pitch_dense": [n(1.0, 70)],
+        "ensemble": [n(1.5, 80)],
+        "pti": [n(2.0, 90)],
     }
     regions = build_regions(candidate_notes, song_duration_sec=4.0)
     assert regions[0]["hot_spot_type"] == "low_confidence"
 
 
 def test_build_payload_round_trips_through_schema_validator(tmp_path: Path):
-    """Emit a payload, validate it against the JSON Schema.
+    """Emit a payload, validate its structural invariants.
 
-    Catches drift between the Python emitter and the TS / JSON schema --
+    Catches drift between the Python emitter and the JSON schema --
     a missing field, a wrong type, a candidate id used in a region but
     not declared at the top level, etc.
     """
     candidate_notes = {
-        "stem_only": [n(0.5, 60), n(1.5, 62)],
-        "consensus_tight": [n(0.5, 60)],
-        "consensus_default": [n(0.5, 60), n(1.5, 62)],
-        "denoise_consensus": [n(0.5, 60), n(1.5, 62), n(2.5, 64)],
+        "basic_pitch": [n(0.5, 60), n(1.5, 62)],
+        "basic_pitch_dense": [n(0.5, 60)],
+        "ensemble": [n(0.5, 60), n(1.5, 62)],
+        "pti": [n(0.5, 60), n(1.5, 62), n(2.5, 64)],
     }
     payload = build_payload(
         instrument="keys",
@@ -253,7 +260,8 @@ def test_build_payload_round_trips_through_schema_validator(tmp_path: Path):
     assert payload["version"] == SCHEMA_VERSION
     assert payload["instrument"] == "keys"
     assert payload["song_duration_sec"] == 8.0
-    assert set(payload["candidates"].keys()) == set(CANDIDATE_IDS)
+    # Declared candidates == exactly the dynamic set in candidate_notes.
+    assert set(payload["candidates"].keys()) == set(candidate_notes.keys())
     assert all("label" in c and "color" in c for c in payload["candidates"].values())
     # Every region's auto_picked must reference a declared candidate.
     for region in payload["regions"]:
@@ -280,36 +288,43 @@ def test_build_payload_rejects_unknown_instrument():
         )
 
 
+def test_build_candidates_block_reflects_dynamic_subset():
+    # Only declare the two algorithms passed in, in display order.
+    block = build_candidates_block(["ensemble", "basic_pitch"])
+    assert list(block.keys()) == ["basic_pitch", "ensemble"]  # display order
+    assert block["basic_pitch"]["params"]["algo"] == CANDIDATE_ALGOS["basic_pitch"]
+    assert block["ensemble"]["params"]["algo"] == CANDIDATE_ALGOS["ensemble"]
+
+
 # ------------------------- orchestration test ------------------------------
 
 
-def _fake_runner_returning(stem_only, tight, default, denoised):
-    """Build a runner stub for precompute_refine_candidates."""
+def _fake_runner_returning(candidate_notes: dict[str, list[MelodicNote]]):
+    """Build a runner stub returning a fixed {candidate_id: notes} map."""
 
-    def runner(stem_path: Path, mix_path: Path | None, instrument: str) -> CandidateNotes:
+    def runner(stem_path: Path, mix_path: Path | None, instrument: str):
         # Smoke-check the paths get passed through unchanged.
         assert stem_path.is_file()
-        return CandidateNotes(
-            stem_only=stem_only,
-            consensus_tight=tight,
-            consensus_default=default,
-            denoise_consensus=denoised,
-        )
+        return {cid: list(notes) for cid, notes in candidate_notes.items()}
 
     return runner
 
 
-def test_precompute_writes_refine_candidates_json_to_features(tmp_path: Path):
-    # Build a minimal AuralSong layout: audio/stems/keys.wav (empty file).
+def _make_song(tmp_path: Path) -> Path:
     sp = tmp_path / "auralsong"
     (sp / "audio" / "stems").mkdir(parents=True)
     (sp / "audio" / "stems" / "keys.wav").write_bytes(b"")
     (sp / "audio" / "mix.wav").write_bytes(b"")
+    return sp
 
-    # Inject deterministic notes; the orchestrator runs the runner instead
-    # of importing piano_pti.
+
+def test_precompute_writes_refine_candidates_json_to_features(tmp_path: Path):
+    sp = _make_song(tmp_path)
+
     notes = [n(0.5, 60), n(1.5, 62), n(5.0, 64)]
-    runner = _fake_runner_returning(notes, notes, notes, notes)
+    runner = _fake_runner_returning(
+        {cid: notes for cid in ("basic_pitch", "basic_pitch_dense", "ensemble", "pti")}
+    )
 
     precompute_refine_candidates(
         auralsong_root=sp,
@@ -323,16 +338,92 @@ def test_precompute_writes_refine_candidates_json_to_features(tmp_path: Path):
     on_disk = json.loads(out_path.read_text(encoding="utf-8"))
     assert on_disk["version"] == SCHEMA_VERSION
     assert on_disk["instrument"] == "keys"
-    assert set(on_disk["candidates"].keys()) == set(CANDIDATE_IDS)
+    assert set(on_disk["candidates"].keys()) == {
+        "basic_pitch",
+        "basic_pitch_dense",
+        "ensemble",
+        "pti",
+    }
     assert len(on_disk["regions"]) > 0
     # song_duration_sec should be at least the largest t_off (~5.5s).
     assert on_disk["song_duration_sec"] >= 5.5
 
 
+def test_precompute_dynamic_set_only_two_algorithms(tmp_path: Path):
+    # Runner returns only 2 algorithms -> only those appear in the payload.
+    sp = _make_song(tmp_path)
+    runner = _fake_runner_returning(
+        {
+            "basic_pitch": [n(0.5, 60)],
+            "d3rm": [n(0.5, 60), n(1.0, 62)],
+        }
+    )
+    payload = precompute_refine_candidates(
+        auralsong_root=sp, instrument="keys", runner=runner
+    )
+    assert set(payload["candidates"].keys()) == {"basic_pitch", "d3rm"}
+    for region in payload["regions"]:
+        assert set(region["candidate_notes"].keys()) <= {"basic_pitch", "d3rm"}
+        assert region["auto_picked"] in {"basic_pitch", "d3rm"}
+
+
+def test_precompute_omits_failing_algorithm(tmp_path: Path):
+    # A runner that mimics run_algorithm_candidates omitting a raising algo:
+    # d3rm + pti simply don't appear in the returned map.
+    sp = _make_song(tmp_path)
+    runner = _fake_runner_returning(
+        {
+            "basic_pitch": [n(0.5, 60)],
+            "basic_pitch_dense": [n(0.5, 60), n(1.0, 62)],
+            "ensemble": [n(0.5, 60), n(1.0, 62), n(2.0, 64)],
+            # d3rm and pti omitted (would have raised on missing models).
+        }
+    )
+    payload = precompute_refine_candidates(
+        auralsong_root=sp, instrument="keys", runner=runner
+    )
+    assert "d3rm" not in payload["candidates"]
+    assert "pti" not in payload["candidates"]
+    assert set(payload["candidates"].keys()) == {
+        "basic_pitch",
+        "basic_pitch_dense",
+        "ensemble",
+    }
+
+
+def test_precompute_auto_pick_with_variable_set(tmp_path: Path):
+    # Three algorithms; ensemble is densest and covers the union best, so it
+    # should be auto-picked over the sparser ones.
+    sp = _make_song(tmp_path)
+    union = [n(0.5, 60), n(1.0, 62), n(1.5, 64)]
+    runner = _fake_runner_returning(
+        {
+            "basic_pitch": [n(0.5, 60)],  # 1/3 of the union
+            "basic_pitch_dense": [n(0.5, 60), n(1.0, 62)],  # 2/3
+            "ensemble": list(union),  # full union -> highest score
+        }
+    )
+    payload = precompute_refine_candidates(
+        auralsong_root=sp, instrument="keys", runner=runner
+    )
+    first_region = payload["regions"][0]
+    assert first_region["auto_picked"] == "ensemble"
+
+
+def test_precompute_raises_when_no_candidates_produced(tmp_path: Path):
+    # If every algorithm is skipped, there's nothing to write.
+    sp = _make_song(tmp_path)
+    runner = _fake_runner_returning({})
+    with pytest.raises(RuntimeError):
+        precompute_refine_candidates(
+            auralsong_root=sp, instrument="keys", runner=runner
+        )
+
+
 def test_precompute_raises_when_no_stem_found(tmp_path: Path):
     sp = tmp_path / "no_stem"
     sp.mkdir()
-    runner = _fake_runner_returning([], [], [], [])
+    runner = _fake_runner_returning({"basic_pitch": []})
     with pytest.raises(FileNotFoundError):
         precompute_refine_candidates(
             auralsong_root=sp, instrument="keys", runner=runner
@@ -352,14 +443,17 @@ def test_precompute_rejects_unknown_instrument(tmp_path: Path):
 # --------------------------- candidate identity ----------------------------
 
 
-def test_candidate_display_has_four_entries_with_unique_ids_and_colors():
+def test_candidate_display_entries_have_unique_ids_colors_and_algos():
     ids = [cid for cid, _, _, _ in CANDIDATE_DISPLAY]
     colors = [color for _, _, color, _ in CANDIDATE_DISPLAY]
-    assert len(ids) == 4
-    assert len(set(ids)) == 4, "candidate ids must be unique"
-    assert len(set(colors)) == 4, "candidate swatch colors must be unique"
+    algos = [algo for _, _, _, algo in CANDIDATE_DISPLAY]
+    assert len(ids) == 5
+    assert len(set(ids)) == len(ids), "candidate ids must be unique"
+    assert len(set(colors)) == len(colors), "candidate swatch colors must be unique"
+    assert len(set(algos)) == len(algos), "candidate algorithms must be distinct"
     for color in colors:
         assert color.startswith("#") and len(color) == 7
+    assert CANDIDATE_ALGOS == {cid: algo for cid, _, _, algo in CANDIDATE_DISPLAY}
 
 
 def test_region_duration_is_positive():

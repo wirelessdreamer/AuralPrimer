@@ -2,17 +2,27 @@
 Refine Candidates precompute stage.
 
 Produces editor-time per-region candidate transcriptions for the Studio
-Refine workspace. For each instrument we run the same source stem through
-four distinct variants of the transcription pipeline; the workspace
-shows the user a candidate palette per "hot spot" region of the song
-and lets them pick which variant produces the best output for that
-region.
+Refine workspace. For each instrument we run the source stem through
+several genuinely-different transcription ALGORITHMS; the workspace shows
+the user a candidate palette per "hot spot" region of the song and lets
+them pick which algorithm produces the best output for that region.
 
-The 4 candidates we compute (chord-snapped deferred to v2):
-    - ``stem_only``         — PTI on the stem only, no mix gate
-    - ``consensus_tight``   — PTI on stem + mix, 50 ms / 1 semitone tolerances
-    - ``consensus_default`` — current production default (100 ms / 2 semi)
-    - ``denoise_consensus`` — piano_denoise the stem first, then default consensus
+Each candidate is a distinct algorithm module under
+``aural_ingest.algorithms`` invoked through the standard dispatch
+(``transcribe(stem_path, instrument=...) -> list[MelodicNote]``). The
+keys palette is:
+
+    - ``basic_pitch``       — ``piano_basic_pitch_playable`` (sparse)
+    - ``basic_pitch_dense`` — ``piano_basic_pitch_clean`` (denser)
+    - ``ensemble``          — ``piano_ensemble`` (basic-pitch + LH/RH split)
+    - ``d3rm``              — ``piano_d3rm`` (diffusion; needs a checkpoint)
+    - ``pti``               — ``piano_pti`` (needs piano_transcription_inference)
+
+The candidate set is DYNAMIC: an algorithm that raises (missing
+checkpoint / optional dependency — ``d3rm`` and ``pti`` today) is
+*omitted* from the candidate set rather than included as an empty
+candidate. The set therefore contains only the algorithms that actually
+produced a transcription (1..5 candidates).
 
 Regions: fixed 4-second windows for v1. v2 can switch to beat-aligned
 windows once we have a stable beat grid available here.
@@ -22,10 +32,10 @@ disagreement. v2 will add ``octave_ghost`` / ``off_chord`` /
 ``density_outlier`` detection.
 
 Scoring: each candidate's score within a region is the Jaccard agreement
-of its (onset, pitch) pairs against the union of all four candidates'
-notes in that region. The ``auto_picked`` candidate per region is the
-highest score, with ties broken by candidate display order so stem_only
-beats consensus_tight beats consensus_default beats denoise_consensus.
+of its (onset, pitch) pairs against the union of all candidates' notes in
+that region. The ``auto_picked`` candidate per region is the
+highest-scoring one (densest/best agreement); ties break toward earlier
+display order.
 
 Output: ``features/refine_candidates.<instrument>.json`` matching
 ``packages/auralsong/schemas/refine_candidates.schema.json``.
@@ -36,79 +46,55 @@ the Studio Refine workspace.
 Per-instrument palette extension plan (v2)
 ------------------------------------------
 
-The four-candidate palette above is keys-specific: all four runners call
-``piano_pti`` because that's the production keys pipeline. For drums,
-bass, and guitar the equivalent palette would need a per-instrument
-dispatch — different transcription families produce candidates that are
-actually distinct, not just denoise/consensus variants of the same
-algorithm.
-
-The 2026-06-14 ground-truth benchmark
-(``docs/research-ground-truth-benchmarks-2026-06-14.md``) surfaced three
-new variants that should land in those v2 palettes when added:
-
-- **drums**: ``librosa_superflux_dense`` (F1 0.102 → 0.153 on E-GMD,
-  +50%); should sit alongside ``combined_filter`` and one of the
-  multiband decoders. Demucs-stem head-to-head still needed before
-  flipping the production drum-stem default.
-- **bass**: ``melodic_pyin_bass_strict`` (F1 0.238 → 0.270 against
-  ``melodic_pyin`` on GuitarSet low strings, +13%, MAE 20ms → 13ms);
-  should sit alongside ``melodic_yin_octave_hps_fix`` and
-  ``melodic_adaptive`` in the bass palette. Currently appears in the
-  ``auto`` fallback chain as a late-stage option and in the
-  ``research_ab`` profile.
-- **guitar**: ``melodic_combined_guitar`` (recall +7%, precision -17%
-  vs ``melodic_combined`` on GuitarSet mic) — a precision/recall trade,
-  not an F1 win, so it ships as a workspace candidate rather than
-  changing the default. Currently appears in the default ``auto``
-  chain and in the ``research_ab`` profile for both guitar roles.
-
-The keys palette stays as-is until MAESTRO is added to the corpus.
+The palette above is keys-specific. For drums, bass, and guitar the
+equivalent palette would dispatch to different transcription families;
+the 2026-06-14 ground-truth benchmark
+(``docs/research-ground-truth-benchmarks-2026-06-14.md``) surfaced
+``librosa_superflux_dense`` (drums), ``melodic_pyin_bass_strict``
+(bass), and ``melodic_combined_guitar`` (guitar) as candidates to add to
+those palettes when wired up.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
+import logging
 import math
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from .transcription import MelodicNote
 
 
+logger = logging.getLogger(__name__)
+
 SCHEMA_VERSION = "0.1.0"
 REGION_DURATION_SEC = 4.0
 
-# Visual identity for each candidate — matches the 5-swatch palette in
-# the Refine prototype mockup (docs/refine-prototype/screen-mockup.html).
-# Tuple order is the display order; ties in auto-pick scoring break
-# toward earlier entries.
-CANDIDATE_DISPLAY: list[tuple[str, str, str, dict[str, object]]] = [
-    ("stem_only", "Stem only", "#7c8db5", {}),
-    (
-        "consensus_tight",
-        "Consensus tight",
-        "#3aa2dc",
-        {"onset_tolerance_sec": 0.05, "pitch_tolerance_semitones": 1},
-    ),
-    (
-        "consensus_default",
-        "Consensus default",
-        "#21c089",
-        {"onset_tolerance_sec": 0.10, "pitch_tolerance_semitones": 2},
-    ),
-    (
-        "denoise_consensus",
-        "Denoise + consensus",
-        "#d27a3c",
-        {"denoise": True, "onset_tolerance_sec": 0.10, "pitch_tolerance_semitones": 2},
-    ),
+# Candidate palette: each entry is a genuinely-different transcription
+# ALGORITHM (not a post-processing variant of one model). Tuple order is
+# (candidate_id, label, color, algo_module). Display order is the tuple
+# order; ties in auto-pick scoring break toward earlier entries. The
+# ``algo`` is the ``aural_ingest.algorithms.<algo>`` module whose
+# ``transcribe(stem_path, instrument=...)`` produces the candidate.
+#
+# The set is dynamic at runtime: algorithms that raise (missing
+# checkpoint / optional dep) are omitted (see ``run_algorithm_candidates``).
+CANDIDATE_DISPLAY: list[tuple[str, str, str, str]] = [
+    ("basic_pitch", "Basic Pitch", "#7c8db5", "piano_basic_pitch_playable"),
+    ("basic_pitch_dense", "Basic Pitch (dense)", "#3aa2dc", "piano_basic_pitch_clean"),
+    ("ensemble", "Ensemble", "#21c089", "piano_ensemble"),
+    ("d3rm", "D3RM", "#d27a3c", "piano_d3rm"),
+    ("pti", "Piano PTI", "#a06bd4", "piano_pti"),
 ]
 
 CANDIDATE_IDS: list[str] = [cid for cid, _, _, _ in CANDIDATE_DISPLAY]
+
+# candidate_id -> algorithm module name, in display order.
+CANDIDATE_ALGOS: dict[str, str] = {cid: algo for cid, _, _, algo in CANDIDATE_DISPLAY}
 
 VALID_INSTRUMENTS: frozenset[str] = frozenset(
     {"keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "melodic"}
@@ -252,8 +238,8 @@ def pick_auto_candidate(scores: Mapping[str, float]) -> str:
         return CANDIDATE_IDS[0]
     return max(
         scores.items(),
-        # Negative index means lower-index candidates (stem_only first)
-        # win when their score equals a later candidate's.
+        # Negative index means lower-index candidates (earlier in
+        # CANDIDATE_DISPLAY) win when their score equals a later candidate's.
         key=lambda kv: (kv[1], -CANDIDATE_IDS.index(kv[0])),
     )[0]
 
@@ -306,11 +292,21 @@ def build_regions(
     return regions
 
 
-def build_candidates_block() -> dict[str, dict[str, object]]:
-    """The ``$.candidates`` object — same shape for every instrument."""
+def build_candidates_block(
+    candidate_ids: Sequence[str] | None = None,
+) -> dict[str, dict[str, object]]:
+    """The ``$.candidates`` object for the given (dynamic) candidate set.
+
+    ``candidate_ids`` selects which of ``CANDIDATE_DISPLAY`` to declare; it
+    defaults to the full palette. Order follows ``CANDIDATE_DISPLAY``
+    regardless of the order of ``candidate_ids``. The ``algo`` module name
+    is recorded under ``params`` for provenance / re-precompute.
+    """
+    wanted = set(candidate_ids) if candidate_ids is not None else None
     return {
-        cid: {"label": label, "color": color, "params": dict(params)}
-        for cid, label, color, params in CANDIDATE_DISPLAY
+        cid: {"label": label, "color": color, "params": {"algo": algo}}
+        for cid, label, color, algo in CANDIDATE_DISPLAY
+        if wanted is None or cid in wanted
     }
 
 
@@ -325,7 +321,10 @@ def build_payload(
     """Assemble the full schema-compliant payload.
 
     Pure: takes the candidate notes + song duration, emits the JSON-ready
-    dict matching ``refine_candidates.schema.json``. Used by the
+    dict matching ``refine_candidates.schema.json``. The declared
+    ``candidates`` block reflects exactly the keys present in
+    ``candidate_notes`` (the dynamic, omit-on-failure set), so every
+    region's candidate ids reference a declared candidate. Used by the
     orchestration function below and by tests that mock the transcribe
     layer.
     """
@@ -337,33 +336,15 @@ def build_payload(
         "computed_at": computed_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "pipeline_signature": signature or pipeline_signature(),
         "song_duration_sec": float(song_duration_sec),
-        "candidates": build_candidates_block(),
+        "candidates": build_candidates_block(list(candidate_notes.keys())),
         "regions": build_regions(candidate_notes, song_duration_sec),
     }
 
 
 # ---------------------------------------------------------------------------
-# Orchestration -- wires the four candidate runners to the real PTI pipeline.
+# Orchestration -- dispatches each candidate to its distinct algorithm module.
 # Imports the heavy deps lazily so tests of the pure helpers don't need them.
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class CandidateNotes:
-    """Per-candidate result of a transcribe run."""
-
-    stem_only: list[MelodicNote]
-    consensus_tight: list[MelodicNote]
-    consensus_default: list[MelodicNote]
-    denoise_consensus: list[MelodicNote]
-
-    def as_dict(self) -> dict[str, list[MelodicNote]]:
-        return {
-            "stem_only": list(self.stem_only),
-            "consensus_tight": list(self.consensus_tight),
-            "consensus_default": list(self.consensus_default),
-            "denoise_consensus": list(self.denoise_consensus),
-        }
 
 
 def _find_stem(auralsong_root: Path, instrument: str) -> Path | None:
@@ -384,54 +365,44 @@ def _find_mix(auralsong_root: Path) -> Path | None:
     return None
 
 
-def run_four_candidates(
+def run_algorithm_candidates(
     stem_path: Path, mix_path: Path | None, instrument: str
-) -> CandidateNotes:
-    """Run the four PTI variants and return their notes.
+) -> dict[str, list[MelodicNote]]:
+    """Dispatch each candidate to its distinct algorithm and collect notes.
 
-    Wraps the heavy imports so the pure helpers above stay loadable in
-    environments without piano_transcription_inference installed
-    (i.e. every test that doesn't actually need PTI).
+    Each candidate_id in ``CANDIDATE_DISPLAY`` maps to an algorithm module
+    under ``aural_ingest.algorithms``; we import it lazily and call its
+    ``transcribe(stem_path, instrument=...)``. ``piano_ensemble`` also
+    accepts ``onset_tolerance_sec``, which we leave at its default.
+
+    An algorithm that raises (missing checkpoint / optional dependency —
+    ``d3rm`` and ``pti`` today) is OMITTED from the returned map rather
+    than included as an empty candidate; a one-line warning is logged per
+    skipped algorithm. The result is therefore the DYNAMIC candidate set:
+    only the algorithms that actually produced a transcription appear, in
+    ``CANDIDATE_DISPLAY`` order.
+
+    ``mix_path`` is accepted for algorithms that may want it in future, but
+    the per-algorithm ``transcribe(stem_path, instrument=...)`` is the
+    primary call.
     """
-    # Lazy imports -- PTI + librosa are both heavy and optional in CI.
-    from .algorithms.piano_denoise import maybe_denoised_stem
-    from .algorithms.piano_pti import transcribe, transcribe_consensus
-
-    stem_only = list(transcribe(stem_path, instrument=instrument))
-    consensus_tight = list(
-        transcribe_consensus(
-            stem_path,
-            instrument=instrument,
-            mix_path=mix_path,
-            onset_tolerance_sec=0.05,
-            pitch_tolerance_semitones=1,
-        )
-    )
-    consensus_default = list(
-        transcribe_consensus(
-            stem_path,
-            instrument=instrument,
-            mix_path=mix_path,
-            onset_tolerance_sec=0.10,
-            pitch_tolerance_semitones=2,
-        )
-    )
-    with maybe_denoised_stem(stem_path) as denoised_path:
-        denoise_consensus = list(
-            transcribe_consensus(
-                denoised_path,
-                instrument=instrument,
-                mix_path=mix_path,
-                onset_tolerance_sec=0.10,
-                pitch_tolerance_semitones=2,
+    out: dict[str, list[MelodicNote]] = {}
+    for cid, _, _, algo in CANDIDATE_DISPLAY:
+        try:
+            module = importlib.import_module(f"aural_ingest.algorithms.{algo}")
+            notes = list(module.transcribe(stem_path, instrument=instrument))
+        except Exception as exc:  # pragma: no cover - depends on optional deps
+            logger.warning(
+                "refine candidate %r (algo %s) skipped: %s", cid, algo, exc
             )
-        )
-    return CandidateNotes(
-        stem_only=stem_only,
-        consensus_tight=consensus_tight,
-        consensus_default=consensus_default,
-        denoise_consensus=denoise_consensus,
-    )
+            continue
+        out[cid] = notes
+    return out
+
+
+CandidateRunner = Callable[
+    [Path, "Path | None", str], Mapping[str, list[MelodicNote]]
+]
 
 
 def precompute_refine_candidates(
@@ -440,14 +411,16 @@ def precompute_refine_candidates(
     instrument: str,
     stem_path: Path | None = None,
     mix_path: Path | None = None,
-    runner=None,
+    runner: CandidateRunner | None = None,
 ) -> dict[str, object]:
-    """End-to-end: locate stem/mix, run 4 candidates, build payload, write JSON.
+    """End-to-end: locate stem/mix, run the algorithms, write the JSON payload.
 
     ``runner`` is an injectable hook so tests can substitute the
-    transcribe layer without needing PTI installed. It should match
-    ``run_four_candidates``'s signature: ``(stem_path, mix_path,
-    instrument) -> CandidateNotes``.
+    transcribe layer without needing the real models. It matches
+    ``run_algorithm_candidates``'s signature: ``(stem_path, mix_path,
+    instrument) -> {candidate_id: list[MelodicNote]}``. Whatever candidate
+    ids the runner returns become the dynamic candidate set for the
+    payload (1..5 of ``CANDIDATE_IDS``).
     """
     if instrument not in VALID_INSTRUMENTS:
         raise ValueError(f"unknown instrument: {instrument!r}")
@@ -461,9 +434,14 @@ def precompute_refine_candidates(
 
     resolved_mix = mix_path if mix_path is not None else _find_mix(auralsong_root)
 
-    runner = runner or run_four_candidates
-    candidates = runner(resolved_stem, resolved_mix, instrument)
-    candidate_notes = candidates.as_dict() if isinstance(candidates, CandidateNotes) else dict(candidates)
+    runner = runner or run_algorithm_candidates
+    candidate_notes = dict(runner(resolved_stem, resolved_mix, instrument))
+
+    if not candidate_notes:
+        raise RuntimeError(
+            f"no transcription candidates produced for instrument={instrument!r}; "
+            "all algorithms were skipped (missing checkpoints / optional deps)"
+        )
 
     song_duration_sec = max(
         (n.t_off for notes in candidate_notes.values() for n in notes),
