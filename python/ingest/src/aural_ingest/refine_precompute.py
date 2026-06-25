@@ -74,6 +74,17 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = "0.1.0"
 REGION_DURATION_SEC = 4.0
 
+
+def pack_feature_dirname(pack_root: Path) -> str:
+    """In-pack features directory: ``aural`` for a ``.feedpak`` pack, else
+    ``features`` (legacy ``.auralsong``). Mirrors the frontend's featureDir()
+    (apps/desktop/src/cleanupReadiness.ts) so in-place spectrogram / candidate
+    builds land where the app reads them — the Studio readiness probe and the
+    Refine workspace resolve feedpak artifacts under ``aural/``.
+    """
+    return "aural" if str(pack_root).endswith(".feedpak") else "features"
+
+
 # Candidate palette: each entry is a genuinely-different transcription
 # ALGORITHM (not a post-processing variant of one model). Tuple order is
 # (candidate_id, label, color, algo_module). Display order is the tuple
@@ -454,9 +465,9 @@ def precompute_refine_candidates(
         song_duration_sec=song_duration_sec,
     )
 
-    features_dir = auralsong_root / "features"
-    features_dir.mkdir(parents=True, exist_ok=True)
-    out_path = features_dir / f"refine_candidates.{instrument}.json"
+    out_root = auralsong_root / pack_feature_dirname(auralsong_root)
+    out_root.mkdir(parents=True, exist_ok=True)
+    out_path = out_root / f"refine_candidates.{instrument}.json"
     out_path.write_text(
         json.dumps(payload, indent=2, sort_keys=False), encoding="utf-8"
     )

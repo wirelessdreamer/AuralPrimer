@@ -3756,7 +3756,10 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
     Prints a JSON status line per CLI convention so callers (Studio,
     benchmark harnesses) can parse the result without re-grepping stdout.
     """
-    from aural_ingest.refine_precompute import precompute_refine_candidates
+    from aural_ingest.refine_precompute import (
+        pack_feature_dirname,
+        precompute_refine_candidates,
+    )
 
     auralsong = Path(args.auralsong_dir)
     if not auralsong.is_dir():
@@ -3768,6 +3771,7 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
         )
         return 1
 
+    feat_dir = pack_feature_dirname(auralsong)
     instruments: list[str] = list(args.instrument or ["keys"])
     results: dict[str, dict[str, object]] = {}
     for inst in instruments:
@@ -3782,7 +3786,7 @@ def cmd_refine_candidates(args: argparse.Namespace) -> int:
                 "song_duration_sec": payload["song_duration_sec"],
                 "pipeline_signature": payload["pipeline_signature"],
                 "out_path": str(
-                    auralsong / "features" / f"refine_candidates.{inst}.json"
+                    auralsong / feat_dir / f"refine_candidates.{inst}.json"
                 ),
             }
         except Exception as exc:
@@ -3804,6 +3808,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
     Prints a JSON status line per CLI convention so callers can parse the result.
     """
     from aural_ingest.spectrogram import write_spectrogram_artifact
+    from aural_ingest.refine_precompute import pack_feature_dirname
 
     auralsong = Path(args.auralsong_dir)
     if not auralsong.is_dir():
@@ -3815,6 +3820,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         )
         return 1
 
+    feat_dir = pack_feature_dirname(auralsong)
     stems_dir = auralsong / "audio" / "stems"
     excluded = {"drums", "vocals"}
     present: dict[str, Path] = {}
@@ -3837,7 +3843,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         try:
             geom = write_spectrogram_artifact(
                 stem_path,
-                auralsong / "features" / "spectrogram" / role,
+                auralsong / feat_dir / "spectrogram" / role,
                 role=role,
             )
             results[role] = {

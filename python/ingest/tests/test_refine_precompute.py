@@ -318,6 +318,35 @@ def _make_song(tmp_path: Path) -> Path:
     return sp
 
 
+def _make_feedpak_song(tmp_path: Path) -> Path:
+    sp = tmp_path / "song.feedpak"
+    (sp / "audio" / "stems").mkdir(parents=True)
+    (sp / "audio" / "stems" / "keys.wav").write_bytes(b"")
+    (sp / "audio" / "mix.wav").write_bytes(b"")
+    return sp
+
+
+def test_pack_feature_dirname_routes_feedpak_to_aural(tmp_path: Path):
+    from aural_ingest.refine_precompute import pack_feature_dirname
+
+    assert pack_feature_dirname(tmp_path / "song.feedpak") == "aural"
+    assert pack_feature_dirname(tmp_path / "song.auralsong") == "features"
+    assert pack_feature_dirname(tmp_path / "song") == "features"
+
+
+def test_precompute_writes_candidates_under_aural_for_feedpak(tmp_path: Path):
+    # A .feedpak pack must get candidates under aural/ (where the Studio
+    # readiness probe + Refine workspace look) — not the legacy features/.
+    sp = _make_feedpak_song(tmp_path)
+    notes = [n(0.5, 60), n(1.5, 62), n(5.0, 64)]
+    runner = _fake_runner_returning({cid: notes for cid in ("basic_pitch", "ensemble")})
+
+    precompute_refine_candidates(auralsong_root=sp, instrument="keys", runner=runner)
+
+    assert (sp / "aural" / "refine_candidates.keys.json").is_file()
+    assert not (sp / "features" / "refine_candidates.keys.json").exists()
+
+
 def test_precompute_writes_refine_candidates_json_to_features(tmp_path: Path):
     sp = _make_song(tmp_path)
 
