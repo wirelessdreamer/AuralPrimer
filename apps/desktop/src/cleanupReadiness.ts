@@ -154,7 +154,12 @@ export async function detectMelodicStems(
       }
     }
   }
-  const primary = roles.includes("keys") ? "keys" : roles[0]!;
+  // Prefer a role that actually has candidates (real content) over one that
+  // only has a spectrogram — a guitar song whose "keys" stem is just bleed
+  // gates to zero notes, so it shouldn't become the primary / default editor.
+  const withCandidates = roles.filter((r) => readiness.get(r)?.candidates);
+  const pool = withCandidates.length ? withCandidates : roles;
+  const primary = pool.includes("keys") ? "keys" : pool[0]!;
   return { roles, primary, readiness };
 }
 

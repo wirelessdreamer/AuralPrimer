@@ -38,6 +38,7 @@ import {
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
 import { getAvOffsetSec } from "./avOffset";
+import { detectMelodicStems } from "./cleanupReadiness";
 import type { RefinementNote } from "./refineCandidatesIo";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -90,8 +91,19 @@ export type RefineWorkspaceDeps = {
 };
 
 export type RefineWorkspaceHandle = {
-  openForAuralSong: (containerPath: string) => Promise<void>;
+  openForAuralSong: (containerPath: string, opts?: { instrument?: string }) => Promise<void>;
   getCurrentContainerPath: () => string | null;
+};
+
+// Editable melodic roles, in the order we prefer them as the default pick.
+// (Drums are charted via the drum tab, not melodic candidates, so they are
+// deliberately absent here and never offered in the Refine instrument picker.)
+const MELODIC_PICK_ORDER = ["keys", "bass", "lead_guitar", "rhythm_guitar"];
+const INSTRUMENT_LABELS: Record<string, string> = {
+  keys: "Keys",
+  bass: "Bass",
+  lead_guitar: "Lead Guitar",
+  rhythm_guitar: "Rhythm Guitar",
 };
 
 export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceHandle {
@@ -618,12 +630,51 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // Public entry
   // -------------------------------------------------------------------------
 
-  async function openForAuralSong(path: string): Promise<void> {
+  /** Reflect the active `instrument` in the dropdown + label. */
+  function syncInstrumentControl(): void {
+    instSelectEl!.value = instrument;
+    instLabelEl!.textContent = instSelectEl!.options[instSelectEl!.selectedIndex]?.text ?? instrument;
+  }
+
+  /** Rebuild the instrument dropdown to exactly the given roles. */
+  function populateInstrumentOptions(roles: string[]): void {
+    instSelectEl!.innerHTML = roles
+      .map((r) => `<option value="${r}">${INSTRUMENT_LABELS[r] ?? r}</option>`)
+      .join("");
+  }
+
+  async function openForAuralSong(path: string, opts?: { instrument?: string }): Promise<void> {
     containerPath = path;
-    songTitleEl!.textContent = path;
+    songTitleEl!.textContent = songDisplayName(path);
+    songTitleEl!.title = path; // full path on hover
     setDirty(false);
     stopTransport();
     setTransportEnabled(false);
+
+    // The dropdown should offer only this song's editable instruments — the
+    // melodic roles that actually have candidates. That keeps absent / non-
+    // melodic instruments (Drums lives in the drum tab, not candidates) out of
+    // the picker, and defaults to a role that will actually load.
+    let available: string[] = [];
+    let primary = "keys";
+    try {
+      const det = await detectMelodicStems(path);
+      primary = det.primary;
+      available = MELODIC_PICK_ORDER.filter((r) => det.readiness.get(r)?.candidates);
+    } catch {
+      // Detection failed — leave the static option set + current instrument.
+    }
+    if (available.length) populateInstrumentOptions(available);
+
+    if (opts?.instrument && (!available.length || available.includes(opts.instrument))) {
+      instrument = opts.instrument as RefinementInstrument;
+    } else if (available.includes(primary)) {
+      instrument = primary as RefinementInstrument;
+    } else if (available.length) {
+      instrument = available[0] as RefinementInstrument;
+    }
+    syncInstrumentControl();
+
     setStatus(`Loading ${path}…`);
     try {
       const loaded = await loadSession(path, instrument);
@@ -671,11 +722,13 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // -------------------------------------------------------------------------
 
   instSelectEl.addEventListener("change", () => {
-    instrument = (instSelectEl.value as RefinementInstrument) || "keys";
-    instLabelEl!.textContent = instSelectEl.options[instSelectEl.selectedIndex]?.text ?? instrument;
-    if (containerPath) void openForAuralSong(containerPath);
+    // Explicit user choice — load that instrument, don't auto-redetect.
+    if (containerPath) void openForAuralSong(containerPath, { instrument: instSelectEl.value || "keys" });
   });
-  reloadBtn.addEventListener("click", () => { if (containerPath) void openForAuralSong(containerPath); });
+  reloadBtn.addEventListener("click", () => {
+    // Reload keeps whatever instrument is currently selected.
+    if (containerPath) void openForAuralSong(containerPath, { instrument });
+  });
   saveBtn.addEventListener("click", () => void save());
   backBtn.addEventListener("click", () => { stopTransport(); deps.onBack(); });
 
@@ -738,4 +791,18 @@ function escapeHtml(s: string): string {
   const el = document.createElement("span");
   el.textContent = s;
   return el.innerHTML;
+}
+
+/**
+ * A readable song name for the top bar from a pack path: drop the directory
+ * and the `.feedpak`/`.auralsong` extension, strip the `ingest_` prefix, and
+ * turn underscores into spaces. The full path is kept as a hover title.
+ */
+function songDisplayName(path: string): string {
+  const base = path.split(/[\\/]/).pop() ?? path;
+  return base
+    .replace(/\.(feedpak|auralsong)$/i, "")
+    .replace(/^ingest_/, "")
+    .replace(/_/g, " ")
+    .trim() || base;
 }

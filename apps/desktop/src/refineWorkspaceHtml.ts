@@ -22,14 +22,22 @@ export function refineWorkspaceHtml(): string {
         padding: 9px 16px; background: #0a0e16; border-bottom: 1px solid #1f2a44;
         flex-shrink: 0;
       }
-      .refineRoute .rfBack { color: #64748b; cursor: pointer; }
-      .refineRoute .rfBack:hover { color: #94a3b8; }
-      .refineRoute .rfTitle { color: #e2e8f0; font-weight: 600; }
-      .refineRoute .rfInst { color: #3EE6A8; }
-      .refineRoute .rfSpacer { flex: 1; }
+      .refineRoute .rfBack {
+        color: #64748b; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+        padding: 5px 10px; border-radius: 6px; border: 1px solid #1f2a44; background: #131b29;
+      }
+      .refineRoute .rfBack:hover { color: #cbd5e1; background: #19223a; }
+      /* Title must be able to shrink + ellipsis so a long song name never pushes
+         the right-hand controls (Reload / Save) off the edge of the bar. */
+      .refineRoute .rfTitle {
+        color: #e2e8f0; font-weight: 600;
+        flex: 0 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .refineRoute .rfInst { color: #3EE6A8; flex-shrink: 0; white-space: nowrap; }
+      .refineRoute .rfSpacer { flex: 1 1 0; min-width: 8px; }
       .refineRoute .rfPill {
         display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px;
-        background: #0f1620; border: 1px solid #1f2a44; font-size: 12px; color: #e2e8f0;
+        background: #0f1620; border: 1px solid #1f2a44; font-size: 12px; color: #e2e8f0; flex-shrink: 0;
       }
       .refineRoute .rfPill > span { color: #94a3b8; }
       .refineRoute .rfPill select {
@@ -37,7 +45,7 @@ export function refineWorkspaceHtml(): string {
       }
       .refineRoute .rfBtn {
         padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
-        border: 1px solid #1f2a44; background: #131b29; color: #e2e8f0;
+        border: 1px solid #1f2a44; background: #131b29; color: #e2e8f0; flex-shrink: 0; white-space: nowrap;
       }
       .refineRoute .rfBtn:hover { background: #19223a; }
       .refineRoute .rfBtn:disabled { opacity: 0.4; cursor: default; }
@@ -104,7 +112,7 @@ export function refineWorkspaceHtml(): string {
 
     <div class="refineRoute" id="refineRoute">
       <header class="rfTopbar">
-        <span class="rfBack" id="refineBack">‹ Make</span>
+        <span class="rfBack" id="refineBack" title="Back to song selection">‹ Songs</span>
         <span class="rfTitle" id="refineSongTitle">(no song)</span>
         <span class="rfInst">— <span id="refineInstLabel">Keys</span></span>
         <div class="rfSpacer"></div>
