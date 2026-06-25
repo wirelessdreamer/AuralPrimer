@@ -1283,12 +1283,15 @@ def test_import_unknown_drum_filter_falls_back_to_default_engine_and_records_war
     assert cmd_import(args) == 0
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     tr = manifest["pipeline"]["transcription"]
-    assert tr["drum_filter"] == "combined_filter"
+    # Unknown filters fall back to the global default engine, which moved off
+    # the recall-collapsing `combined_filter` to
+    # `beat_conditioned_multiband_decoder`.
+    assert tr["drum_filter"] == "beat_conditioned_multiband_decoder"
     assert tr["drum_filter_requested"] == "legacy_unknown_filter"
-    assert tr["drum_filter_used"] == "combined_filter"
+    assert tr["drum_filter_used"] == "beat_conditioned_multiband_decoder"
     assert tr["warnings"]
     assert manifest["recognition"]["drums"]["requested_engine"] == "legacy_unknown_filter"
-    assert manifest["recognition"]["drums"]["used_engine"] == "combined_filter"
+    assert manifest["recognition"]["drums"]["used_engine"] == "beat_conditioned_multiband_decoder"
 
 
 def test_import_auto_drum_filter_uses_transcription_profile_chain(

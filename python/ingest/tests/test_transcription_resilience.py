@@ -40,22 +40,26 @@ def _drum_note_set(notes_mid: bytes) -> set[int]:
     return notes
 
 
-def test_default_drum_engine_recovery_prefers_combined_filter() -> None:
+def test_default_drum_engine_recovery_prefers_beat_conditioned_decoder() -> None:
+    # The global default moved off `combined_filter` (worst-recall heuristic
+    # engine on E-GMD, F1 ~0.05; it collapses hi-hats into crash on real
+    # grooves) to `beat_conditioned_multiband_decoder`, which the
+    # `gameplay_default` profile already prefers as its first engine.
     from aural_ingest.transcription import DEFAULT_DRUM_ENGINE, resolve_drum_filter
 
-    assert DEFAULT_DRUM_ENGINE == "combined_filter"
-    assert resolve_drum_filter(None) == ("combined_filter", [])
-    assert resolve_drum_filter(" auto ") == ("combined_filter", [])
+    assert DEFAULT_DRUM_ENGINE == "beat_conditioned_multiband_decoder"
+    assert resolve_drum_filter(None) == ("beat_conditioned_multiband_decoder", [])
+    assert resolve_drum_filter(" auto ") == ("beat_conditioned_multiband_decoder", [])
 
 
-def test_unknown_drum_filter_warns_and_recovers_to_combined_filter() -> None:
+def test_unknown_drum_filter_warns_and_recovers_to_default_engine() -> None:
     from aural_ingest.transcription import resolve_drum_filter
 
     normalized, warnings = resolve_drum_filter("legacy_unknown")
-    assert normalized == "combined_filter"
+    assert normalized == "beat_conditioned_multiband_decoder"
     assert warnings
     assert "legacy_unknown" in warnings[0]
-    assert "combined_filter" in warnings[0]
+    assert "beat_conditioned_multiband_decoder" in warnings[0]
 
 
 def test_default_import_dir_path_restores_expanded_drum_note_diversity(

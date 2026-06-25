@@ -17,6 +17,12 @@ from aural_ingest.device import select_device
 from aural_ingest.transcription import INSTRUMENT_FREQ_RANGES, MelodicNote
 
 
+# torchcrepe's CREPE model covers C1..B7; the lowest representable pitch is
+# C1 = 32.70319566 Hz. Passing a lower fmin yields degenerate (all-zero)
+# periodicity rather than an error.
+_TORCHCREPE_MIN_FMIN = 32.70319566
+
+
 def _midi_from_freq(freq: float) -> int:
     return max(0, min(127, int(round(69.0 + 12.0 * math.log2(freq / 440.0)))))
 
@@ -128,6 +134,11 @@ def transcribe(
     freq_lo, freq_hi = INSTRUMENT_FREQ_RANGES.get(
         instrument, INSTRUMENT_FREQ_RANGES["melodic"]
     )
+    # torchcrepe's pitch model resolves down to ~C1 (32.70 Hz). An fmin below
+    # that doesn't error — it silently returns all-zero periodicity, so every
+    # frame fails the confidence gate and the result is 0 notes. The bass range
+    # starts at 30 Hz (below a 5-string low B), so clamp up to the model floor.
+    freq_lo = max(float(freq_lo), _TORCHCREPE_MIN_FMIN)
     hop_length = max(1, int(round(float(hop_sec) * float(sr))))
     device = select_device("AURAL_TORCHCREPE_DEVICE")
     model = os.environ.get("AURAL_TORCHCREPE_MODEL", "tiny").strip() or "tiny"

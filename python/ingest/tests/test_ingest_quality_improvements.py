@@ -361,9 +361,10 @@ def test_quality_10_unknown_drum_filter_falls_back_with_warning() -> None:
     from aural_ingest.transcription import resolve_drum_filter, drum_fallback_chain
 
     normalized, warnings = resolve_drum_filter("not_a_real_filter_id")
-    assert normalized == "combined_filter"
+    # Default engine moved off the recall-collapsing `combined_filter`.
+    assert normalized == "beat_conditioned_multiband_decoder"
     assert any("not_a_real_filter_id" in w for w in warnings)
 
     chain = drum_fallback_chain("not_a_real_filter_id")
     assert "combined_filter" in chain
-    assert chain[0] in ("combined_filter", "not_a_real_filter_id")
+    assert chain[0] in ("beat_conditioned_multiband_decoder", "not_a_real_filter_id")

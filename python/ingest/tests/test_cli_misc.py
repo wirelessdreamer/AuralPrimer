@@ -813,7 +813,9 @@ def test_cmd_import_handles_unknown_drum_filter_and_rejects_other_invalid_transc
     tr_opts, tr_err = cli._resolve_transcription_options(args)
     assert tr_err is None
     assert tr_opts is not None
-    assert tr_opts["drum_filter"] == "combined_filter"
+    # Default engine moved off `combined_filter` (worst E-GMD recall) to
+    # `beat_conditioned_multiband_decoder`.
+    assert tr_opts["drum_filter"] == "beat_conditioned_multiband_decoder"
     assert tr_opts["warnings"]
 
     args.drum_filter = "combined_filter"

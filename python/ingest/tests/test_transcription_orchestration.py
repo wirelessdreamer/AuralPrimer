@@ -48,7 +48,10 @@ def test_unknown_drum_filter_does_not_default_to_adaptive() -> None:
     from aural_ingest.transcription import resolve_drum_filter
 
     normalized, warnings = resolve_drum_filter("legacy_unknown")
-    assert normalized == "combined_filter"
+    # Unknown filters fall back to the global default, not silently to
+    # `adaptive_beat_grid`. The default moved off `combined_filter` (worst
+    # E-GMD recall) to `beat_conditioned_multiband_decoder`.
+    assert normalized == "beat_conditioned_multiband_decoder"
     assert warnings
     assert "legacy_unknown" in warnings[0]
 
@@ -265,8 +268,8 @@ def test_transcribe_melodic_requested_piano_basic_pitch_can_fallback_to_heuristi
 def test_resolve_drum_filter_accepts_none_and_auto() -> None:
     from aural_ingest.transcription import resolve_drum_filter
 
-    assert resolve_drum_filter(None) == ("combined_filter", [])
-    assert resolve_drum_filter(" auto ") == ("combined_filter", [])
+    assert resolve_drum_filter(None) == ("beat_conditioned_multiband_decoder", [])
+    assert resolve_drum_filter(" auto ") == ("beat_conditioned_multiband_decoder", [])
 
 
 def test_validate_melodic_method_accepts_none_and_blank() -> None:
@@ -312,7 +315,11 @@ def test_melodic_fallback_chain_for_pyin_and_unknown() -> None:
 def test_melodic_fallback_chain_auto_prefers_bass_and_keys_specialists() -> None:
     from aural_ingest.transcription import melodic_fallback_chain
 
-    assert melodic_fallback_chain("auto", instrument="bass")[:4] == [
+    # torchcrepe leads the bass chain (neural monophonic pitch tracker:
+    # matches YIN+HPS octave-cleanliness, ~9x faster), with the YIN chain
+    # retained as the score-gated fallback.
+    assert melodic_fallback_chain("auto", instrument="bass")[:5] == [
+        "torchcrepe",
         "melodic_yin_octave_hps_fix",
         "melodic_adaptive",
         "melodic_yin_bass80",
@@ -324,6 +331,32 @@ def test_melodic_fallback_chain_auto_prefers_bass_and_keys_specialists() -> None
         "piano_basic_pitch",
         "piano_basic_pitch_clean",
         "piano_polyphonic_clean",
+    ]
+
+    # Lead guitar is monophonic: torchcrepe leads (octave-clean, ~6-8x faster),
+    # with the polyphonic DSP chain retained as the score-gated fallback.
+    assert melodic_fallback_chain("auto", instrument="lead_guitar") == [
+        "torchcrepe",
+        "melodic_adaptive",
+        "melodic_octave_fix",
+        "melodic_combined",
+        "basic_pitch",
+        "pyin",
+    ]
+
+    # Rhythm guitar is polyphonic (chords): the polyphonic HPSS+onset engine
+    # stays first. torchcrepe (monophonic) must NOT lead here — it would collapse
+    # the chord voices despite scoring well on the cleanliness heuristic.
+    rhythm_chain = melodic_fallback_chain("auto", instrument="rhythm_guitar")
+    assert rhythm_chain[0] == "melodic_hpss_combined"
+    assert "torchcrepe" not in rhythm_chain
+    assert rhythm_chain == [
+        "melodic_hpss_combined",
+        "melodic_adaptive",
+        "melodic_octave_fix",
+        "melodic_combined",
+        "basic_pitch",
+        "pyin",
     ]
 
 

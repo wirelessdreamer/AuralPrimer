@@ -97,6 +97,12 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
         ],
         "melodic_methods_by_instrument": {
             "bass": [
+                # torchcrepe (neural monophonic pitch tracker) is the primary:
+                # on real bass stems it matches the YIN+HPS octave-cleanliness
+                # (~0.3% octave-jump vs basic-pitch's 45%) with a tighter, lower
+                # register and runs ~9x faster. The YIN chain stays as fallback
+                # for the score-gated path if torchcrepe scores below threshold.
+                "torchcrepe",
                 "melodic_yin_octave_hps_fix",
                 "melodic_adaptive",
                 "melodic_yin_bass80",
@@ -114,12 +120,18 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "melodic_hpss_combined",
             ],
             "lead_guitar": [
+                # Lead guitar is monophonic: torchcrepe leads (octave-clean,
+                # ~6-8x faster), DSP chain stays as the score-gated fallback.
+                "torchcrepe",
                 "melodic_adaptive",
                 "melodic_octave_fix",
                 "melodic_combined",
                 "basic_pitch",
             ],
             "rhythm_guitar": [
+                # Rhythm guitar is polyphonic (chords): keep the polyphonic
+                # HPSS+onset engine first; a monophonic tracker would drop the
+                # chord voices despite scoring well on the cleanliness heuristic.
                 "melodic_hpss_combined",
                 "melodic_adaptive",
                 "melodic_octave_fix",
@@ -227,7 +239,18 @@ INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
     "melodic": (45.0, 1700.0),       # legacy default
 }
 
-DEFAULT_DRUM_ENGINE = "combined_filter"
+# `combined_filter` was the historical default, but it is the worst-recall
+# heuristic engine on the E-GMD test set (per-drum-class F1 ~0.05 vs ~0.14
+# for `adaptive_beat_grid` / `dsp_bandpass_improved`). Its single max-merged
+# peak track plus the crash/ride cymbal-boost route nearly all hi-hat energy
+# to crash — on a real funk/groove drum stem it emitted hi_hat=1 / crash=47
+# where the groove is hat-on-every-eighth, collapsing recall. The
+# `gameplay_default` profile already lists `beat_conditioned_multiband_decoder`
+# first (dedicated hat peak track + kick/snare+hat overlay co-emission, so it
+# recovers the hat pattern), so this aligns the global default — used by the
+# explicit-engine path and the resilience fallback — with the engine
+# production's profile path already prefers.
+DEFAULT_DRUM_ENGINE = "beat_conditioned_multiband_decoder"
 DEFAULT_DRUM_FILTER = DEFAULT_DRUM_ENGINE
 DEFAULT_MELODIC_METHOD = "auto"
 DEFAULT_TRANSCRIPTION_PROFILE = "gameplay_default"
@@ -1930,6 +1953,11 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
     if normalized == "auto":
         if instrument == "bass":
             chain = [
+                # torchcrepe (neural monophonic pitch tracker) leads: on real
+                # bass it matches YIN+HPS octave-cleanliness (~0.3% octave-jump
+                # vs basic-pitch's 45%) with a tighter, lower register and runs
+                # ~9x faster. YIN stays next as the score-gated fallback.
+                "torchcrepe",
                 "melodic_yin_octave_hps_fix",
                 "melodic_adaptive",
                 "melodic_yin_bass80",
@@ -1948,6 +1976,35 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
                 "piano_polyphonic_clean",
                 "melodic_octave_fix",
                 "melodic_hpss_combined",
+                "melodic_combined",
+                "basic_pitch",
+                "pyin",
+            ]
+        elif instrument == "lead_guitar":
+            chain = [
+                # Lead guitar is predominantly monophonic (single-note lines),
+                # so torchcrepe (neural monophonic pitch tracker) leads here as
+                # it does for bass: on real lead stems it is octave-clean
+                # (~1.6-4% exactly-octave jumps vs basic-pitch's ~15-23%) and
+                # runs ~6-8x faster than the YIN/HPSS DSP engines. The polyphonic
+                # DSP chain stays as the score-gated fallback.
+                "torchcrepe",
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_combined",
+                "basic_pitch",
+                "pyin",
+            ]
+        elif instrument == "rhythm_guitar":
+            chain = [
+                # Rhythm guitar is polyphonic (chords), so a monophonic tracker
+                # like torchcrepe is the wrong default — it scores well on the
+                # octave-cleanliness heuristic but collapses chords to a single
+                # voice (~3.5x fewer notes). Keep the polyphonic HPSS+onset
+                # engine first; torchcrepe sits late as a last resort only.
+                "melodic_hpss_combined",
+                "melodic_adaptive",
+                "melodic_octave_fix",
                 "melodic_combined",
                 "basic_pitch",
                 "pyin",
