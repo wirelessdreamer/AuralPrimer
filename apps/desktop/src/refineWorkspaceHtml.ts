@@ -160,6 +160,9 @@ export function refineWorkspaceHtml(): string {
         <label class="rfAuditionToggle" title="Also synthesize the notes while playing">
           <input type="checkbox" id="refineAuditionToggle" checked /> Hear notes
         </label>
+        <label class="rfAuditionToggle" title="Play a note when you place or edit it">
+          <input type="checkbox" id="refineEditAuditionToggle" checked /> Audition edits
+        </label>
         <button class="rfTransBtn" id="refineUndoBtn" title="Undo (Ctrl+Z)" disabled>↶</button>
         <button class="rfTransBtn" id="refineRedoBtn" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
       </div>

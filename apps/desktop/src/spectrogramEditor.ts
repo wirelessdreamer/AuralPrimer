@@ -68,6 +68,12 @@ export interface SpectrogramEditorOptions {
   onNotesChanged?: (notes: SpectroNote[]) => void;
   /** Fired when the user adds a note by clicking empty space. */
   onNoteAdded?: (note: SpectroNote, notes: SpectroNote[]) => void;
+  /**
+   * Fired when a note is placed or finished being edited (add, or the end of a
+   * move/resize drag) — lets the host audition the note's pitch so the user
+   * hears what they're putting down. NOT fired during pan/hover.
+   */
+  onNoteAuditioned?: (note: SpectroNote) => void;
   /** Fired when the selection changes (index into notes, or null). */
   onSelectionChanged?: (index: number | null) => void;
   /**
@@ -1019,6 +1025,8 @@ export class SpectrogramEditor {
   private onPointerUp(e: PointerEvent): void {
     if (this.drag === "none") return;
     const wasEdit = this.drag === "move" || this.drag === "resize-l" || this.drag === "resize-r";
+    const editedIdx = this.dragNoteIndex;
+    const moved = this.dragUndo === null && wasEdit; // commitDragUndo cleared it on the first real move
     try {
       this.stage.releasePointerCapture(e.pointerId);
     } catch {
@@ -1029,7 +1037,13 @@ export class SpectrogramEditor {
     this.dragOrig = null;
     this.panStartView = null;
     this.dragUndo = null; // discard the snapshot if the drag never moved
-    if (wasEdit) this.emitChanged();
+    if (wasEdit) {
+      this.emitChanged();
+      // Audition the edited note (only when it actually moved/resized, not a
+      // bare click that selected it).
+      const edited = moved && editedIdx >= 0 ? this.notes[editedIdx] : undefined;
+      if (edited) this.opts.onNoteAuditioned?.(edited);
+    }
   }
 
   private onKeyDown(e: KeyboardEvent): void {
@@ -1129,6 +1143,7 @@ export class SpectrogramEditor {
     this.notes.push(note);
     this.setSelection(this.notes.length - 1);
     this.opts.onNoteAdded?.(note, this.getNotes());
+    this.opts.onNoteAuditioned?.(note);
     this.emitChanged();
     this.requestRender();
   }

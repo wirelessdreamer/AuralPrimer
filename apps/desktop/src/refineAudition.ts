@@ -78,6 +78,11 @@ export type RefineAuditionHandle = {
    * the new notes.
    */
   updateNotes: (notes: RefinementNote[]) => void;
+  /**
+   * Play a single note immediately — used to audition a note as the user
+   * places or edits it in the spectrogram editor. Independent of the loop.
+   */
+  playNote: (pitch: number, velocity?: number, durationSec?: number) => void;
   /** Is the engine currently playing? */
   isPlaying: () => boolean;
 };
@@ -237,10 +242,24 @@ export function initRefineAudition(): RefineAuditionHandle {
     playing.notes = [...notes];
   }
 
+  function playNote(pitch: number, velocity = 100, durationSec = 0.32): void {
+    if (!ensureContext() || !ctx) return;
+    // Always called from a click / pointer gesture, so resume is allowed.
+    if (ctx.state === "suspended") {
+      void ctx.resume();
+    }
+    const dur = Math.max(0.1, Math.min(1.5, durationSec));
+    scheduleNoteVoice(
+      { t_on: 0, t_off: dur, pitch, velocity, instrument: "melodic" } as RefinementNote,
+      ctx.currentTime + 0.01,
+    );
+  }
+
   return {
     playRegion,
     stop,
     updateNotes,
+    playNote,
     isPlaying: () => playing !== null,
   };
 }

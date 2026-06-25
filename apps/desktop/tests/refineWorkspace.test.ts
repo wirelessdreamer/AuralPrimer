@@ -89,6 +89,7 @@ const REQUIRED_IDS: ReadonlyArray<readonly [string, string]> = [
   ["refineScrub", "input"],
   ["refineSectionSelect", "select"],
   ["refineAuditionToggle", "input"],
+  ["refineEditAuditionToggle", "input"],
   ["refineStage", "div"],
   ["refineInspector", "div"],
   ["refineSelInfo", "div"],

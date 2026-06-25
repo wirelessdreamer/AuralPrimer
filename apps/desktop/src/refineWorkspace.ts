@@ -124,6 +124,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const scrubEl = $<HTMLInputElement>("refineScrub");
   const sectionSelectEl = $<HTMLSelectElement>("refineSectionSelect");
   const auditionToggle = $<HTMLInputElement>("refineAuditionToggle");
+  const editAuditionToggle = $<HTMLInputElement>("refineEditAuditionToggle");
   const speedSelectEl = $<HTMLSelectElement>("refineSpeedSelect");
   const soloSelectEl = $<HTMLSelectElement>("refineSoloSelect");
   const stageEl = $<HTMLElement>("refineStage");
@@ -138,7 +139,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   if (
     !root || !songTitleEl || !instLabelEl || !instSelectEl || !reloadBtn || !saveBtn
     || !backBtn || !transportEl || !playBtn || !stopBtn || !timeReadoutEl || !scrubEl
-    || !sectionSelectEl || !auditionToggle || !stageEl || !inspectorEl || !selInfoEl
+    || !sectionSelectEl || !auditionToggle || !editAuditionToggle || !stageEl || !inspectorEl || !selInfoEl
     || !candChipsEl || !emptyEl || !emptyCmdEl || !undoBtn || !redoBtn
     || !speedSelectEl || !soloSelectEl
   ) {
@@ -201,6 +202,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     onSelectionChanged: (index) => {
       selectedIndex = index;
       renderInspector(index);
+    },
+    // Audition a note as it's placed or edited, so the user hears the pitch
+    // they're putting down (gated by the "Audition edits" toggle).
+    onNoteAuditioned: (note) => {
+      if (editAuditionToggle!.checked) audition.playNote(note.pitch, note.velocity);
     },
     // Sonic-Visualiser-style cursor readout: show the pitch + time under the
     // cursor in the inspector whenever no note is actively selected.
