@@ -3,6 +3,7 @@ from __future__ import annotations
 import array
 from dataclasses import dataclass
 import math
+import os
 from pathlib import Path
 import statistics
 import struct
@@ -225,6 +226,61 @@ def read_wav_mono_normalized(stem_path: Path) -> tuple[list[float], int]:
             return normalize_peak(samples), sr
     except Exception:
         return [], 0
+
+
+def gate_notes_by_local_energy(
+    notes: list[MelodicNote],
+    stem_path: Path,
+    *,
+    threshold_rms: float = 0.004,
+    window_sec: float = 0.12,
+) -> list[MelodicNote]:
+    """Drop notes whose onset lands in a near-silent window of the stem.
+
+    Transcribers emit phantom notes from bleed/noise in sections where the
+    instrument isn't actually playing (e.g. a keys stem that's silent except
+    for an intro). This removes those WITHOUT discarding sparse-but-real
+    content: a note survives only if the local RMS in a window around its
+    onset clears ``threshold_rms``. So a stem that's silent except for a few
+    bursts keeps the bursts and loses the phantom notes in the dead air.
+
+    Tunable via ``AURAL_MELODIC_SILENCE_RMS`` (set to 0 to disable).
+    """
+    if not notes:
+        return list(notes)
+    raw = os.environ.get("AURAL_MELODIC_SILENCE_RMS", "").strip()
+    if raw:
+        try:
+            threshold_rms = float(raw)
+        except ValueError:
+            pass
+    if threshold_rms <= 0.0:
+        return list(notes)
+    try:
+        samples, sr = read_wav_mono_normalized(stem_path)
+    except Exception:
+        return list(notes)
+    if not samples or sr <= 0:
+        return list(notes)
+
+    import numpy as np
+
+    a = np.asarray(samples, dtype=np.float64)
+    # Prefix sum of energy -> O(1) windowed RMS per note.
+    csum = np.concatenate(([0.0], np.cumsum(a * a)))
+    n = len(a)
+    half = max(1, int(window_sec * sr * 0.5))
+    kept: list[MelodicNote] = []
+    for note in notes:
+        i = int(max(0.0, note.t_on) * sr)
+        lo = max(0, i - half)
+        hi = min(n, i + half)
+        if hi <= lo:
+            continue
+        rms = math.sqrt(float(csum[hi] - csum[lo]) / (hi - lo))
+        if rms >= threshold_rms:
+            kept.append(note)
+    return kept
 
 
 def build_pattern_events(

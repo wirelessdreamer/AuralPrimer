@@ -318,3 +318,52 @@ def test_all_drum_algorithms_exercise_detector_paths(tmp_path: Path) -> None:
         assert events
         assert all(0 <= e.note <= 127 for e in events)
         assert all(e2.time >= e1.time for e1, e2 in zip(events, events[1:]))
+
+
+def _write_sparse_wav(path: Path, *, sr: int = 16_000) -> None:
+    """Silent 0-2s, a loud 220Hz tone 2-3s, silent 3-4s — a stem that only
+    'plays' in the middle, like an instrument present in just one section."""
+    samples: list[int] = []
+    for _ in range(sr * 2):
+        samples.append(0)
+    for i in range(sr * 1):
+        samples.append(int(0.4 * 32767 * math.sin(2.0 * math.pi * 220.0 * i / sr)))
+    for _ in range(sr * 1):
+        samples.append(0)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(struct.pack("<%dh" % len(samples), *samples))
+
+
+def test_gate_notes_by_local_energy_keeps_only_notes_over_real_audio(tmp_path):
+    from aural_ingest.algorithms._common import gate_notes_by_local_energy
+    from aural_ingest.transcription import MelodicNote
+
+    wav = tmp_path / "sparse.wav"
+    _write_sparse_wav(wav)
+
+    def n(t_on: float, pitch: int) -> MelodicNote:
+        return MelodicNote(t_on=t_on, t_off=t_on + 0.2, pitch=pitch, velocity=80, instrument="keys")
+
+    notes = [n(0.5, 60), n(2.5, 62), n(3.5, 64)]  # silent, loud, silent
+    kept = gate_notes_by_local_energy(notes, wav)
+    assert [m.pitch for m in kept] == [62]  # only the note over the real tone survives
+
+
+def test_gate_notes_by_local_energy_disabled_via_env(tmp_path, monkeypatch):
+    from aural_ingest.algorithms._common import gate_notes_by_local_energy
+    from aural_ingest.transcription import MelodicNote
+
+    wav = tmp_path / "sparse2.wav"
+    _write_sparse_wav(wav)
+    monkeypatch.setenv("AURAL_MELODIC_SILENCE_RMS", "0")
+    notes = [MelodicNote(t_on=0.5, t_off=0.7, pitch=60, velocity=80, instrument="keys")]
+    assert len(gate_notes_by_local_energy(notes, wav)) == 1  # gate off -> nothing dropped
+
+
+def test_gate_notes_by_local_energy_empty_is_noop(tmp_path):
+    from aural_ingest.algorithms._common import gate_notes_by_local_energy
+
+    assert gate_notes_by_local_energy([], tmp_path / "missing.wav") == []

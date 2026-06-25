@@ -66,6 +66,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
+from .algorithms._common import gate_notes_by_local_energy
 from .transcription import MelodicNote
 
 
@@ -407,7 +408,9 @@ def run_algorithm_candidates(
                 "refine candidate %r (algo %s) skipped: %s", cid, algo, exc
             )
             continue
-        out[cid] = notes
+        # Drop phantom notes transcribed from bleed/noise in sections where the
+        # instrument isn't playing (keeps sparse-but-real content like an intro).
+        out[cid] = gate_notes_by_local_energy(notes, stem_path)
     return out
 
 
@@ -452,6 +455,15 @@ def precompute_refine_candidates(
         raise RuntimeError(
             f"no transcription candidates produced for instrument={instrument!r}; "
             "all algorithms were skipped (missing checkpoints / optional deps)"
+        )
+
+    # Every algorithm gated down to zero notes -> the stem has no audible
+    # content for this instrument (e.g. a keys stem that's only bleed). Don't
+    # write an empty candidates file the app would offer as a dead editor.
+    if not any(candidate_notes.values()):
+        raise RuntimeError(
+            f"no audible content for instrument={instrument!r} after the silence "
+            "gate; skipping candidates for this stem"
         )
 
     song_duration_sec = max(
