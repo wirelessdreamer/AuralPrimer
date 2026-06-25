@@ -288,10 +288,16 @@ export function appShellHtml(): string {
             </div>
 
             <h3>A/V Sync</h3>
-            <p class="meta">Align the falling notes with what you hear. Calibrate once per output device — especially for Bluetooth headphones, which add 150–250&nbsp;ms of delay. Fine-tune anytime with Ctrl+[ / Ctrl+].</p>
+            <p class="meta">Align the falling notes with what you hear. Calibrate measures two delays — <strong>audio</strong> (output latency, 150–250&nbsp;ms on Bluetooth) and <strong>video</strong> (display lag). Shared with AuralStudio: calibrate once, both apps use it. Fine-tune audio with Ctrl+[ / Ctrl+].</p>
             <div class="row">
-              <label class="meta">Current offset</label>
+              <label class="meta">Audio</label>
+              <span id="avSyncAudioValue" class="meta">0 ms</span>
+              <label class="meta">Video</label>
+              <span id="avSyncVideoValue" class="meta">0 ms</span>
+              <label class="meta">Effective</label>
               <span id="avSyncValue" class="meta">0 ms</span>
+            </div>
+            <div class="row">
               <button id="avSyncCalibrate">Calibrate…</button>
               <button id="avSyncReset">Reset</button>
             </div>

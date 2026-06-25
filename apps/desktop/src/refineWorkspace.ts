@@ -37,6 +37,7 @@ import {
   type RefinementInstrument,
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
+import { getAvOffsetSec } from "./avOffset";
 import type { RefinementNote } from "./refineCandidatesIo";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -351,15 +352,19 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     // Clock source: the stem's own playback position when a stem is loaded,
     // otherwise the wall clock. Keeping the playhead on audio.currentTime
     // keeps the spectrogram glued to what the user actually hears.
-    const t = stemLoaded
+    const raw = stemLoaded
       ? audio.currentTime
       : playStartOffset + ((performance.now() - playStartWall) / 1000) * playbackRate;
-    if (t >= durationSec) {
+    if (raw >= durationSec) {
       setPlayhead(durationSec, false);
       pauseTransport();
       return;
     }
-    setPlayhead(t, true);
+    // A/V sync offset: the user hears the output `avOffset` after the clock, so
+    // draw the cursor at the position that's actually audible right now (same
+    // calibration the game applies to its falling notes). End-of-song uses the
+    // raw clock above so a positive offset doesn't cut playback short.
+    setPlayhead(raw - getAvOffsetSec(), true);
     rafId = requestAnimationFrame(tick);
   }
 

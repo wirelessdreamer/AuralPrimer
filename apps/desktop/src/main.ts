@@ -30,6 +30,14 @@ import { refineWorkspaceHtml } from "./refineWorkspaceHtml";
 import { initRefineWorkspace, type RefineWorkspaceHandle } from "./refineWorkspace";
 import { lyricTimingHtml } from "./lyricTimingHtml";
 import { initLyricTimingWorkspace, type LyricTimingHandle } from "./lyricTimingWorkspace";
+import { initAvCalibration } from "@auralprimer/av-sync";
+import {
+  getAudioOffsetMs,
+  getVideoOffsetMs,
+  getEffectiveOffsetMs,
+  loadAvCalibration,
+  setAvCalibration,
+} from "./avOffset";
 import {
   MELODIC_ROLES,
   MELODIC_ROLE_LABELS,
@@ -377,7 +385,7 @@ root.innerHTML = `
               <h2>Cleanup &amp; Edit</h2>
               <div class="row" style="margin:0;gap:8px;align-items:center">
                 <span id="cleanupBuildAllStatus" class="meta cleanupBuildAllStatus"></span>
-                <button id="cleanupBuildAll" title="Build the spectrogram for every listed song that doesn't have one yet">Build all unbuilt</button>
+                <button id="cleanupBuildAll" title="For every listed song missing either, build the spectrogram then run candidate precompute so it's ready to open">Prep all unbuilt</button>
                 <button id="refresh">Refresh</button>
               </div>
             </div>
@@ -570,6 +578,28 @@ root.innerHTML = `
 
             <h4>Installed</h4>
             <pre id="modelsStatus">(not loaded)</pre>
+          </section>
+
+          <section class="panel">
+            <div class="panelHeader">
+              <h2>Audio</h2>
+              <div class="meta">Output sync calibration</div>
+            </div>
+
+            <h3>A/V Sync</h3>
+            <p class="meta">Align the playhead with what you hear during Cleanup &amp; Edit. Calibrate measures two delays — <strong>audio</strong> (output latency, 150–250&nbsp;ms on Bluetooth) and <strong>video</strong> (display lag). Shared with AuralPrimer: calibrate once, both apps use it. Fine-tune audio with Ctrl+[ / Ctrl+].</p>
+            <div class="row">
+              <label class="meta">Audio</label>
+              <span id="avSyncAudioValue" class="meta">0 ms</span>
+              <label class="meta">Video</label>
+              <span id="avSyncVideoValue" class="meta">0 ms</span>
+              <label class="meta">Effective</label>
+              <span id="avSyncValue" class="meta">0 ms</span>
+            </div>
+            <div class="row">
+              <button id="avSyncCalibrate">Calibrate…</button>
+              <button id="avSyncReset">Reset</button>
+            </div>
           </section>
 
           <section class="panel">
@@ -782,6 +812,65 @@ document.getElementById("homePlay")?.addEventListener("click", () => setRoute("p
 document.getElementById("homeMake")?.addEventListener("click", () => setRoute("make"));
 document.getElementById("homeConfig")?.addEventListener("click", () => setRoute("config"));
 
+// --- Audio/visual sync calibration -------------------------------------
+// Same calibrator as the game (the shared @auralprimer/av-sync package): a
+// Rock Band-style two-pass tap calibrator measures audio latency (output
+// delay, incl. Bluetooth) and video latency (display lag). Both are persisted
+// to the shared settings.json so calibrating in either app applies to both.
+// The Cleanup & Edit playhead reads the effective offset (audio - video) so
+// the cursor sits on what the user actually hears. Nudge audio with Ctrl+[ /
+// Ctrl+], reset with Ctrl+0.
+const AV_OFFSET_STEP_MS = 5;
+
+function renderStudioAvReadout(): void {
+  const fmt = (ms: number) => `${ms > 0 ? "+" : ""}${ms} ms`;
+  const a = document.getElementById("avSyncAudioValue");
+  const v = document.getElementById("avSyncVideoValue");
+  const eff = document.getElementById("avSyncValue");
+  if (a) a.textContent = fmt(getAudioOffsetMs());
+  if (v) v.textContent = fmt(getVideoOffsetMs());
+  if (eff) eff.textContent = fmt(getEffectiveOffsetMs());
+}
+
+async function applyStudioAvCalibration(audioMs: number, videoMs: number): Promise<void> {
+  await setAvCalibration(audioMs, videoMs);
+  renderStudioAvReadout();
+}
+
+const avCalibration = initAvCalibration({
+  onApply: ({ audioMs, videoMs }) => void applyStudioAvCalibration(audioMs, videoMs),
+  getInitial: () => ({ audioMs: getAudioOffsetMs(), videoMs: getVideoOffsetMs() }),
+  log: (message, details) => console.log(`[studio] ${message}`, details ?? ""),
+});
+document.getElementById("avSyncCalibrate")?.addEventListener("click", () => avCalibration.open());
+document.getElementById("avSyncReset")?.addEventListener("click", () => void applyStudioAvCalibration(0, 0));
+
+// Load the shared persisted offsets and reflect them in the Configure readout.
+void loadAvCalibration().then(renderStudioAvReadout);
+
+window.addEventListener("keydown", (ev) => {
+  if (!ev.ctrlKey || ev.metaKey || ev.repeat) return;
+  const target = ev.target;
+  if (target instanceof HTMLElement) {
+    const tag = target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+  }
+  // Ctrl+[ / ] / 0 nudge the AUDIO offset (the dominant one); video lag is
+  // measured, not tweaked by ear.
+  const curAudio = getAudioOffsetMs();
+  const curVideo = getVideoOffsetMs();
+  if (ev.key === "[") {
+    ev.preventDefault();
+    void applyStudioAvCalibration(curAudio - AV_OFFSET_STEP_MS, curVideo);
+  } else if (ev.key === "]") {
+    ev.preventDefault();
+    void applyStudioAvCalibration(curAudio + AV_OFFSET_STEP_MS, curVideo);
+  } else if (ev.key === "0") {
+    ev.preventDefault();
+    void applyStudioAvCalibration(0, 0);
+  }
+});
+
 const hudKeyModeEl = document.getElementById("hudKeyMode") as HTMLDivElement;
 
 const vizCanvas = document.getElementById("viz") as HTMLCanvasElement;
@@ -912,9 +1001,12 @@ const clearOverrideBtn = document.getElementById("clearOverride") as HTMLButtonE
 const auralsongEditorStatusEl = document.getElementById("auralsongEditorStatus") as HTMLPreElement;
 const cleanupActionEl = document.getElementById("cleanupAction") as HTMLDivElement;
 
-// "Build all unbuilt" -- batch-build the spectrogram for every listed song
-// whose melodic stems lack one. Sequential (CPU-heavy); spectrogram only --
-// candidate precompute is the slower, dependency-gated step kept per-song.
+// "Prep all unbuilt" -- full prep: for every listed song that's missing
+// either artifact, build the spectrogram AND run candidate precompute so it
+// reaches the "Open" state in one click. Sequential (CPU-heavy); candidate
+// precompute runs several transcription algorithms per melodic instrument, so
+// this is the slow path. Each step only runs for the roles that actually lack
+// it, and candidates are skipped for a stem-less pack.
 const cleanupBuildAllBtn = document.getElementById("cleanupBuildAll") as HTMLButtonElement | null;
 const cleanupBuildAllStatusEl = document.getElementById("cleanupBuildAllStatus") as HTMLSpanElement | null;
 
@@ -933,55 +1025,78 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
   };
   const rows = Array.from(listEl.querySelectorAll<HTMLTableRowElement>("tr.cleanupSongRow:not(.isInvalid)"));
   setStatus("Checking…");
-  const todo: { path: string; title: string; roles: string[] }[] = [];
+  // Per song, collect the roles missing a spectrogram and the roles missing
+  // candidates, so each step only runs where it's actually needed.
+  const todo: { path: string; title: string; specRoles: string[]; candRoles: string[] }[] = [];
   for (const row of rows) {
     const path = row.getAttribute("data-path");
     if (!path) continue;
     const { roles } = await detectMelodicStems(path);
-    let needs = false;
+    const specRoles: string[] = [];
+    const candRoles: string[] = [];
     for (const role of roles) {
       const rr = await getRoleReadiness(path, role, { force: true });
-      if (!rr.spectrogram) {
-        needs = true;
-        break;
-      }
+      if (!rr.spectrogram) specRoles.push(role);
+      if (!rr.candidates) candRoles.push(role);
     }
-    if (needs) {
+    if (specRoles.length || candRoles.length) {
       const title = row.querySelector(".cleanupSongTitle")?.textContent ?? path;
-      todo.push({ path, title, roles });
+      todo.push({ path, title, specRoles, candRoles });
     }
   }
   if (todo.length === 0) {
-    setStatus("All spectrograms already built.");
+    setStatus("All songs fully prepped (spectrogram + candidates).");
     return;
   }
   cleanupBuildAllBtn.disabled = true;
-  let built = 0;
+  let specBuilt = 0;
+  let candBuilt = 0;
   let noStem = 0;
   let failed = 0;
   const tally = (): string => {
     const parts: string[] = [];
-    if (built) parts.push(`${built} built`);
+    if (specBuilt) parts.push(`${specBuilt} spec`);
+    if (candBuilt) parts.push(`${candBuilt} cand`);
     if (noStem) parts.push(`${noStem} skipped`);
     if (failed) parts.push(`${failed} failed`);
     return parts.length ? ` · ${parts.join(", ")}` : "";
   };
   for (let i = 0; i < todo.length; i++) {
     const t = todo[i]!;
-    setStatus(`Building ${i + 1}/${todo.length}: ${t.title}…${tally()}`);
     markRowBuilding(t.path);
-    let outcome: SpectroOutcome = "error";
-    try {
-      const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
-        req: { container_path: t.path, instruments: t.roles },
-      });
-      outcome = classifySpectroResult(res);
-    } catch {
-      outcome = "error";
+    let stemless = false;
+    // 1) Spectrogram (only the roles that lack one).
+    if (t.specRoles.length) {
+      setStatus(`Building ${i + 1}/${todo.length}: ${t.title} — spectrogram…${tally()}`);
+      let outcome: SpectroOutcome = "error";
+      try {
+        const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
+          req: { container_path: t.path, instruments: t.specRoles },
+        });
+        outcome = classifySpectroResult(res);
+      } catch {
+        outcome = "error";
+      }
+      if (outcome === "ok") specBuilt += 1;
+      else if (outcome === "nostem") {
+        noStem += 1;
+        stemless = true;
+      } else failed += 1;
     }
-    if (outcome === "ok") built += 1;
-    else if (outcome === "nostem") noStem += 1;
-    else failed += 1;
+    // 2) Candidate precompute (only the roles that lack candidates). Skipped
+    //    for a stem-less pack, where there's nothing to transcribe.
+    if (t.candRoles.length && !stemless) {
+      setStatus(`Building ${i + 1}/${todo.length}: ${t.title} — candidates…${tally()}`);
+      try {
+        const res = await safeInvoke<{ ok: boolean }>("ingest_refine_candidates", {
+          req: { container_path: t.path, instruments: t.candRoles },
+        });
+        if (res.ok) candBuilt += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
     invalidateCleanupCache(t.path);
     await refreshRowReadyChip(t.path);
     listEl
@@ -989,7 +1104,10 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       ?.classList.remove("isBuilding");
   }
   cleanupBuildAllBtn.disabled = false;
-  const parts = [`Built ${built} song${built === 1 ? "" : "s"}`];
+  const parts = [
+    `Built ${specBuilt} spectrogram${specBuilt === 1 ? "" : "s"}`,
+    `${candBuilt} candidate set${candBuilt === 1 ? "" : "s"}`,
+  ];
   if (noStem) parts.push(`${noStem} with no melodic stem`);
   if (failed) parts.push(`${failed} failed`);
   setStatus(`${parts.join(", ")}.`);

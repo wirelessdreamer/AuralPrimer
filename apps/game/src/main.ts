@@ -2,7 +2,15 @@ import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
 import { TransportController } from "./transportController";
-import { initAvCalibration } from "./avCalibration";
+import { initAvCalibration } from "@auralprimer/av-sync";
+import {
+  getAudioOffsetMs,
+  getVideoOffsetMs,
+  getEffectiveOffsetMs,
+  getEffectiveOffsetSec,
+  loadAvCalibration,
+  setAvCalibration,
+} from "./avOffset";
 import type { TransportTimebase } from "./audioBackend";
 import { HtmlAudioTimebase } from "./htmlAudioTimebase";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
@@ -1284,57 +1292,60 @@ window.addEventListener("keydown", (ev) => {
 
 // --- Audio/visual sync calibration -------------------------------------
 // Aligns the falling notes with the audible beat. The backend's auto output-
-// latency estimate handles the bulk; this manual offset covers the residual,
-// which is most visible at high Note spacing (a fixed time error becomes more
-// pixels as notes fall faster). Nudge with Ctrl+[ (earlier) / Ctrl+] (later),
-// reset with Ctrl+0. Persisted across sessions. Default 0 = no change.
-const AV_OFFSET_STORAGE_KEY = "auralprimer.avOffsetMs";
+// latency estimate handles the bulk; the manual calibration covers the
+// residual, which is most visible at high Note spacing (a fixed time error
+// becomes more pixels as notes fall faster). Two latencies are measured: audio
+// (output delay, incl. Bluetooth) and video (display lag); the transport
+// applies the effective offset = audio - video. Both persist to the shared
+// settings.json so calibrating here ALSO applies to AuralStudio. Nudge audio
+// with Ctrl+[ (earlier) / Ctrl+] (later), reset with Ctrl+0.
 const AV_OFFSET_STEP_MS = 5;
 
-function persistAvOffsetMs(ms: number): void {
-  try {
-    window.localStorage.setItem(AV_OFFSET_STORAGE_KEY, String(ms));
-  } catch {
-    // localStorage may be unavailable in some embedded webviews.
-  }
+function applyEffectiveOffsetToTransport(): void {
+  transportController.setAudioVisualOffsetSec(getEffectiveOffsetSec());
 }
 
-function applyAvOffsetMs(ms: number): void {
-  const clamped = Math.max(-500, Math.min(500, Math.round(ms)));
-  transportController.setAudioVisualOffsetSec(clamped / 1000);
-  persistAvOffsetMs(clamped);
-  const sign = clamped > 0 ? "+" : "";
-  const avValueEl = document.getElementById("avSyncValue");
-  if (avValueEl) avValueEl.textContent = `${sign}${clamped} ms`;
+function renderAvReadout(): void {
+  const fmt = (ms: number) => `${ms > 0 ? "+" : ""}${ms} ms`;
+  const a = document.getElementById("avSyncAudioValue");
+  const v = document.getElementById("avSyncVideoValue");
+  const eff = document.getElementById("avSyncValue");
+  if (a) a.textContent = fmt(getAudioOffsetMs());
+  if (v) v.textContent = fmt(getVideoOffsetMs());
+  if (eff) eff.textContent = fmt(getEffectiveOffsetMs());
+}
+
+async function applyAvCalibration(audioMs: number, videoMs: number): Promise<void> {
+  await setAvCalibration(audioMs, videoMs);
+  applyEffectiveOffsetToTransport();
+  renderAvReadout();
+  const eff = getEffectiveOffsetMs();
+  const sign = eff > 0 ? "+" : "";
   setAudioStatus(
-    `A/V sync offset: ${sign}${clamped} ms (notes ${clamped >= 0 ? "later" : "earlier"} vs audio)`,
+    `A/V sync: audio ${getAudioOffsetMs()} ms, video ${getVideoOffsetMs()} ms → notes ${eff >= 0 ? "later" : "earlier"} ${sign}${eff} ms`,
   );
-  consoleBridge.log("gamestate", "a/v sync offset changed", { offsetMs: clamped });
+  consoleBridge.log("gamestate", "a/v sync calibration changed", {
+    audioMs: getAudioOffsetMs(),
+    videoMs: getVideoOffsetMs(),
+    effectiveMs: eff,
+  });
 }
 
-// Rock Band-style latency calibrator (tap-to-the-beat). Measures true
-// end-to-end audio latency — including Bluetooth — and applies it as the
-// A/V offset.
+// Rock Band-style two-pass calibrator (shared @auralprimer/av-sync): measures
+// audio latency (tap to beeps) and video latency (tap to flashes).
 const avCalibration = initAvCalibration({
-  onApply: (offsetMs) => applyAvOffsetMs(offsetMs),
-  getInitialOffsetMs: () => Math.round(transportController.getAudioVisualOffsetSec() * 1000),
+  onApply: ({ audioMs, videoMs }) => void applyAvCalibration(audioMs, videoMs),
+  getInitial: () => ({ audioMs: getAudioOffsetMs(), videoMs: getVideoOffsetMs() }),
   log: (message, details) => consoleBridge.log("gamestate", message, details),
 });
 document.getElementById("avSyncCalibrate")?.addEventListener("click", () => avCalibration.open());
-document.getElementById("avSyncReset")?.addEventListener("click", () => applyAvOffsetMs(0));
+document.getElementById("avSyncReset")?.addEventListener("click", () => void applyAvCalibration(0, 0));
 
-(function initAvOffset() {
-  let stored = 0;
-  try {
-    const raw = window.localStorage.getItem(AV_OFFSET_STORAGE_KEY);
-    const v = raw == null ? 0 : Number(raw);
-    if (Number.isFinite(v)) stored = v;
-  } catch {
-    stored = 0;
-  }
-  // Apply the persisted offset to the transport AND the on-screen readout.
-  applyAvOffsetMs(stored);
-})();
+// Load the shared persisted offsets, then apply to the transport + readout.
+void loadAvCalibration().then(() => {
+  applyEffectiveOffsetToTransport();
+  renderAvReadout();
+});
 
 window.addEventListener("keydown", (ev) => {
   if (!ev.ctrlKey || ev.metaKey || ev.repeat) return;
@@ -1343,16 +1354,19 @@ window.addEventListener("keydown", (ev) => {
     const tag = target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
   }
-  const curMs = Math.round(transportController.getAudioVisualOffsetSec() * 1000);
+  // Ctrl+[ / ] / 0 nudge the AUDIO offset (the dominant one); video lag is
+  // measured, not tweaked by ear.
+  const curAudio = getAudioOffsetMs();
+  const curVideo = getVideoOffsetMs();
   if (ev.key === "[") {
     ev.preventDefault();
-    applyAvOffsetMs(curMs - AV_OFFSET_STEP_MS);
+    void applyAvCalibration(curAudio - AV_OFFSET_STEP_MS, curVideo);
   } else if (ev.key === "]") {
     ev.preventDefault();
-    applyAvOffsetMs(curMs + AV_OFFSET_STEP_MS);
+    void applyAvCalibration(curAudio + AV_OFFSET_STEP_MS, curVideo);
   } else if (ev.key === "0") {
     ev.preventDefault();
-    applyAvOffsetMs(0);
+    void applyAvCalibration(0, 0);
   }
 });
 

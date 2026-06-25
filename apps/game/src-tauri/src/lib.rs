@@ -69,6 +69,13 @@ struct Settings {
 
     #[serde(default)]
     native_audio_output_device: Option<native_audio::NativeAudioDeviceSelection>,
+
+    // --- A/V sync calibration (shared with AuralStudio via the portable's
+    //     common settings.json: calibrate once, both apps honor it) ---
+    #[serde(default)]
+    av_audio_offset_ms: Option<f64>,
+    #[serde(default)]
+    av_video_offset_ms: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -663,6 +670,38 @@ fn clear_songs_folder_override(app: AppHandle) -> Result<(), String> {
     save_settings(&paths, &settings)?;
     remount_songs_watch_best_effort(&app);
     Ok(())
+}
+
+/// A/V sync offsets in milliseconds. Shared across AuralPrimer + AuralStudio:
+/// in the portable both exes resolve the same `data/config/settings.json`, so
+/// calibrating in either app applies to both.
+#[derive(Debug, Serialize)]
+struct AvCalibration {
+    audio_offset_ms: f64,
+    video_offset_ms: f64,
+}
+
+#[tauri::command]
+fn get_av_calibration(app: AppHandle) -> Result<AvCalibration, String> {
+    let paths = get_paths(&app)?;
+    let settings = load_settings(&paths);
+    Ok(AvCalibration {
+        audio_offset_ms: settings.av_audio_offset_ms.unwrap_or(0.0),
+        video_offset_ms: settings.av_video_offset_ms.unwrap_or(0.0),
+    })
+}
+
+#[tauri::command]
+fn set_av_calibration(
+    app: AppHandle,
+    audio_offset_ms: f64,
+    video_offset_ms: f64,
+) -> Result<(), String> {
+    let paths = get_paths(&app)?;
+    let mut settings = load_settings(&paths);
+    settings.av_audio_offset_ms = Some(audio_offset_ms);
+    settings.av_video_offset_ms = Some(video_offset_ms);
+    save_settings(&paths, &settings)
 }
 
 /// Resolve the current songs folder and (re)mount the watcher on it. Logged
@@ -2030,6 +2069,8 @@ pub fn run() {
             get_songs_folder,
             set_songs_folder_override,
             clear_songs_folder_override,
+            get_av_calibration,
+            set_av_calibration,
             start_songs_folder_watch,
             // native audio
             native_audio_list_output_hosts,

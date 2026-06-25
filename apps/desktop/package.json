@@ -15,6 +15,7 @@
     "tauri:build:asio": "npm run tauri:sidecar && node ../../scripts/run-tauri.mjs build --features asio"
   },
   "dependencies": {
+    "@auralprimer/av-sync": "*",
     "@auralprimer/viz-beats": "*",
     "@auralprimer/viz-drum-highway": "*",
     "@auralprimer/viz-fretboard": "*",

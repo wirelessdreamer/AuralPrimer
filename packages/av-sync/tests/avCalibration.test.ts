@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * Execution tests for the A/V sync calibrator (Rock Band-style tap-to-beat
- * latency measurement). jsdom lacks the Web Audio API and a real audio clock,
- * so we stub AudioContext (with a controllable currentTime), performance.now,
- * and the timer functions, then drive the metronome scheduler + tap loop by
- * hand to exercise scheduling, tap matching, the median estimate, apply,
- * close, and the keyboard handlers.
+ * Execution tests for the shared two-pass A/V calibrator. jsdom lacks the Web
+ * Audio API and a real audio clock, so we stub AudioContext (controllable
+ * currentTime), performance.now, and timers, then drive the metronome
+ * scheduler + tap loop by hand to exercise scheduling, tap matching, the
+ * median estimate, the audio->video phase advance, apply, skip, close, and the
+ * keyboard handlers.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { initAvCalibration, type AvCalibrationDeps } from "../src/avCalibration";
@@ -32,10 +32,12 @@ class FakeGain {
 class FakeAudioContext {
   state = "running";
   destination = {};
+  createOscillatorCalls = 0;
   get currentTime() {
     return audioNow;
   }
   createOscillator() {
+    this.createOscillatorCalls += 1;
     return new FakeOscillator();
   }
   createGain() {
@@ -54,7 +56,7 @@ function makeDeps(over: Partial<AvCalibrationDeps> = {}): {
   const log = vi.fn();
   const deps: AvCalibrationDeps = {
     onApply,
-    getInitialOffsetMs: () => 0,
+    getInitial: () => ({ audioMs: 0, videoMs: 0 }),
     log,
     ...over,
   };
@@ -63,11 +65,13 @@ function makeDeps(over: Partial<AvCalibrationDeps> = {}): {
 
 const overlay = () => document.querySelector<HTMLElement>(".avCalOverlay");
 const startBtn = () => document.getElementById("avCalStart") as HTMLButtonElement;
-const applyBtn = () => document.getElementById("avCalApply") as HTMLButtonElement;
+const nextBtn = () => document.getElementById("avCalNext") as HTMLButtonElement;
+const skipBtn = () => document.getElementById("avCalSkip") as HTMLButtonElement;
 const closeBtn = () => document.getElementById("avCalClose") as HTMLButtonElement;
 const pulseEl = () => document.getElementById("avCalPulse") as HTMLElement;
 const countEl = () => document.getElementById("avCalCount") as HTMLElement;
 const estimateEl = () => document.getElementById("avCalEstimate") as HTMLElement;
+const stepEl = () => document.getElementById("avCalStep") as HTMLElement;
 
 const flush = async () => {
   await Promise.resolve();
@@ -75,16 +79,27 @@ const flush = async () => {
   await Promise.resolve();
 };
 
-describe("avCalibration", () => {
+const tapAt = (perf: number) => {
+  // The calibrator reads performance.now() at keydown (not ev.timeStamp), so
+  // drive the mocked clock to the tap time before dispatching.
+  perfNow = perf;
+  const ev = new KeyboardEvent("keydown", { code: "Space" });
+  Object.defineProperty(ev, "timeStamp", { value: perf });
+  window.dispatchEvent(ev);
+};
+
+/** Run `count` taps each `delta` ms after consecutive clicks at perf 1200,1800,… */
+const tapPhase = (count: number, delta: number) => {
+  for (let i = 0; i < count; i += 1) tapAt(1200 + i * 600 + delta);
+};
+
+describe("avCalibration (two-pass)", () => {
   beforeEach(() => {
     audioNow = 0;
     perfNow = 1000;
     document.body.innerHTML = "";
     document.head.innerHTML = "";
     vi.stubGlobal("AudioContext", FakeAudioContext as unknown as typeof AudioContext);
-    // Make timers controllable: run synchronously via fake timers. Install the
-    // performance.now spy AFTER useFakeTimers — fake timers also replace
-    // performance.now, so the spy must win to keep our manual clock.
     vi.useFakeTimers();
     vi.spyOn(performance, "now").mockImplementation(() => perfNow);
   });
@@ -95,169 +110,159 @@ describe("avCalibration", () => {
     vi.restoreAllMocks();
   });
 
-  it("open() builds the overlay and shows it", () => {
+  it("open() builds the overlay starting on the audio phase", () => {
     const { deps } = makeDeps();
     const handle = initAvCalibration(deps);
     handle.open();
     expect(overlay()).not.toBeNull();
     expect(overlay()!.style.display).toBe("flex");
+    expect(stepEl().textContent).toContain("Audio");
     expect(countEl().textContent).toBe("Taps: 0");
-    expect(estimateEl().textContent).toBe("Estimated latency: —");
+    expect(estimateEl().textContent).toBe("Estimated audio latency: —");
     // Reopen reuses the same overlay (build() early-returns).
     handle.open();
     expect(document.querySelectorAll(".avCalOverlay")).toHaveLength(1);
-    // Style keyframe injected once.
     expect(document.getElementById("avCalStyle")).not.toBeNull();
   });
 
-  it("starting the metronome schedules clicks and flips Start -> Restart", async () => {
+  it("registers audio taps via SPACE and computes the median estimate", async () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    expect(startBtn().textContent).toBe("Restart");
-    // schedulerTick scheduled at least one click within the lookahead horizon.
-    // Advance the audio clock + run the interval timer to schedule more.
-    audioNow = 1.0;
-    vi.advanceTimersByTime(50); // fires the 25ms scheduler interval
-    await flush();
-    // A pulse timer fires -> pulse class toggled.
-    vi.advanceTimersByTime(500);
-    expect(pulseEl().classList.contains("pulse")).toBe(true);
-  });
-
-  it("registers taps via SPACE and computes the median latency estimate", async () => {
-    const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
-    startBtn().dispatchEvent(new MouseEvent("click"));
-    await flush();
-
-    // After start: ctxAnchor = currentTime (0), perfAnchor = perfNow (1000),
-    // nextClickAudioTime = 0.2. The initial schedulerTick scheduled clicks up
-    // to horizon = 0 + 0.12. nextClickAudioTime(0.2) > 0.12 so NO click yet.
-    // Advance audio clock so the scheduler enqueues clicks, then run interval.
     audioNow = 8.0;
     vi.advanceTimersByTime(30);
     await flush();
 
-    // Clicks were scheduled at audio times 0.2, 0.8, 1.4, ... mapped to perf:
-    //   playPerf = perfAnchor + (audioTime - ctxAnchor)*1000 = 1000 + audioTime*1000
-    // So click at 0.2 -> perf 1200. Tap shortly after each click.
-    // Drive several taps via keydown with controlled timeStamps (perf-relative).
-    const tapAt = (perf: number) => {
-      const ev = new KeyboardEvent("keydown", { code: "Space" });
-      Object.defineProperty(ev, "timeStamp", { value: perf });
-      window.dispatchEvent(ev);
-    };
-    // click perfs: 1200, 1800, 2400, ... ; tap 30ms after each.
-    for (let i = 0; i < 10; i += 1) {
-      const clickPerf = 1200 + i * 600;
-      tapAt(clickPerf + 30);
-    }
+    tapPhase(10, 30);
     expect(countEl().textContent).toBe("Taps: 10");
-    expect(estimateEl().textContent).toBe("Estimated latency: 30 ms");
-    // >= MIN_TAPS_TO_APPLY (8) -> Apply enabled.
-    expect(applyBtn().disabled).toBe(false);
+    expect(estimateEl().textContent).toBe("Estimated audio latency: 30 ms");
+    expect(nextBtn().disabled).toBe(false);
+    expect(nextBtn().textContent).toContain("Next");
   });
 
-  it("rejects mistaps (no matching click, or out-of-range delta)", async () => {
+  it("rejects mistaps (no matching click within a period)", async () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     audioNow = 8.0;
     vi.advanceTimersByTime(30);
     await flush();
 
-    const tapAt = (perf: number) => {
-      const ev = new KeyboardEvent("keydown", { code: "Space" });
-      Object.defineProperty(ev, "timeStamp", { value: perf });
-      window.dispatchEvent(ev);
-    };
-    // Tap before the first click ever played (perf < 1200): no match.
-    tapAt(500);
+    tapAt(500); // before the first click ever played
     expect(countEl().textContent).toBe("Taps: 0");
-    // Tap absurdly late relative to its click (> 600ms after, but < a full
-    // period so it matches the click then gets range-rejected). Use a delta of
-    // 590ms after click 1200 = 1790, still < next click 1800 -> matches click
-    // 1200 with dt 590 -> rejected (>600? no, 590<600 ok). Use 1799 -> dt 599.
-    // To force >600 rejection we need a gap; instead test the <0 path via a tap
-    // that matches but with negative best is impossible. So just assert the
-    // "no match within a period" break path: tap way past last click.
-    tapAt(99999);
+    tapAt(99999); // far past the last click
     expect(countEl().textContent).toBe("Taps: 0");
   });
 
-  it("apply button calls onApply with the median and closes the overlay", async () => {
-    const { deps, onApply, log } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+  it("advances audio -> video, and the video pass is silent", async () => {
+    const { deps } = makeDeps();
+    initAvCalibration(deps).open();
+
+    // Audio pass.
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     audioNow = 8.0;
     vi.advanceTimersByTime(30);
     await flush();
+    tapPhase(8, 30);
+    nextBtn().dispatchEvent(new MouseEvent("click")); // advance to video
+    expect(stepEl().textContent).toContain("Video");
+    expect(nextBtn().textContent).toContain("Apply");
+    expect(nextBtn().disabled).toBe(true);
+    expect(countEl().textContent).toBe("Taps: 0");
+    expect(estimateEl().textContent).toBe("Estimated video latency: —");
 
-    const tapAt = (perf: number) => {
-      const ev = new KeyboardEvent("keydown", { code: "Space" });
-      Object.defineProperty(ev, "timeStamp", { value: perf });
-      window.dispatchEvent(ev);
-    };
-    for (let i = 0; i < 8; i += 1) tapAt(1200 + i * 600 + 42);
-    expect(applyBtn().disabled).toBe(false);
-
-    applyBtn().dispatchEvent(new MouseEvent("click"));
+    // Video pass: start a fresh metronome and confirm NO oscillator is created.
+    audioNow = 0;
+    perfNow = 1000;
+    startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    expect(onApply).toHaveBeenCalledWith(42);
-    expect(log).toHaveBeenCalledWith(
-      "av-calibration: applied",
-      expect.objectContaining({ offsetMs: 42, taps: 8 }),
-    );
+    audioNow = 8.0;
+    vi.advanceTimersByTime(30);
+    await flush();
+    tapPhase(8, 45);
+    expect(estimateEl().textContent).toBe("Estimated video latency: 45 ms");
+  });
+
+  it("apply (after both phases) reports both medians and closes", async () => {
+    const { deps, onApply, log } = makeDeps();
+    initAvCalibration(deps).open();
+
+    // Audio pass -> median 42.
+    startBtn().dispatchEvent(new MouseEvent("click"));
+    await flush();
+    audioNow = 8.0;
+    vi.advanceTimersByTime(30);
+    await flush();
+    tapPhase(8, 42);
+    nextBtn().dispatchEvent(new MouseEvent("click"));
+
+    // Video pass -> median 16.
+    audioNow = 0;
+    perfNow = 1000;
+    startBtn().dispatchEvent(new MouseEvent("click"));
+    await flush();
+    audioNow = 8.0;
+    vi.advanceTimersByTime(30);
+    await flush();
+    tapPhase(8, 16);
+    expect(nextBtn().disabled).toBe(false);
+    nextBtn().dispatchEvent(new MouseEvent("click")); // Apply
+
+    expect(onApply).toHaveBeenCalledWith({ audioMs: 42, videoMs: 16 });
+    expect(log).toHaveBeenCalledWith("av-calibration: applied", expect.objectContaining({ audioMs: 42, videoMs: 16 }));
     expect(overlay()!.style.display).toBe("none");
   });
 
-  it("clicking the pulse circle also registers a tap while running", async () => {
+  it("skipping the audio pass keeps its initial value, then applies", async () => {
+    const { deps, onApply } = makeDeps({ getInitial: () => ({ audioMs: 123, videoMs: 0 }) });
+    initAvCalibration(deps).open();
+
+    // Skip audio -> video phase, audio keeps 123.
+    skipBtn().dispatchEvent(new MouseEvent("click"));
+    expect(stepEl().textContent).toContain("Video");
+
+    // Skip video too -> applies with the seeded values unchanged.
+    skipBtn().dispatchEvent(new MouseEvent("click"));
+    expect(onApply).toHaveBeenCalledWith({ audioMs: 123, videoMs: 0 });
+    expect(overlay()!.style.display).toBe("none");
+  });
+
+  it("clicking the pulse circle registers a tap while running", async () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     audioNow = 8.0;
     vi.advanceTimersByTime(30);
     await flush();
-    // perfNow positioned just after the first click perf (1200).
     perfNow = 1230;
     pulseEl().dispatchEvent(new MouseEvent("click"));
     expect(countEl().textContent).toBe("Taps: 1");
-    expect(estimateEl().textContent).toBe("Estimated latency: 30 ms");
+    expect(estimateEl().textContent).toBe("Estimated audio latency: 30 ms");
   });
 
   it("pulse click is ignored when not running", () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     pulseEl().dispatchEvent(new MouseEvent("click"));
     expect(countEl().textContent).toBe("Taps: 0");
   });
 
   it("Escape closes the overlay and stops the metronome", async () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    const ev = new KeyboardEvent("keydown", { key: "Escape" });
-    window.dispatchEvent(ev);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(overlay()!.style.display).toBe("none");
   });
 
   it("Cancel button closes the overlay", async () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     closeBtn().dispatchEvent(new MouseEvent("click"));
@@ -267,24 +272,18 @@ describe("avCalibration", () => {
 
   it("keydown handler is inert when overlay is hidden", () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
-    // Hide overlay manually, then a Space keydown should be a no-op (guard).
+    initAvCalibration(deps).open();
     overlay()!.style.display = "none";
-    const ev = new KeyboardEvent("keydown", { code: "Space" });
-    Object.defineProperty(ev, "timeStamp", { value: 1234 });
-    window.dispatchEvent(ev);
+    tapAt(1234);
     expect(countEl().textContent).toBe("Taps: 0");
   });
 
   it("starting twice is a no-op (already running guard)", async () => {
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(startBtn().textContent).toBe("Restart");
-    // Second start while running returns early; text stays "Restart".
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(startBtn().textContent).toBe("Restart");
@@ -294,8 +293,7 @@ describe("avCalibration", () => {
     vi.stubGlobal("AudioContext", undefined);
     vi.stubGlobal("webkitAudioContext", FakeAudioContext as unknown as typeof AudioContext);
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(startBtn().textContent).toBe("Restart");
@@ -309,15 +307,11 @@ describe("avCalibration", () => {
       }) as unknown as typeof AudioContext,
     );
     const { deps, log } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(estimateEl().textContent).toBe("Audio unavailable on this device");
-    expect(log).toHaveBeenCalledWith(
-      "av-calibration: failed to create AudioContext",
-      expect.anything(),
-    );
+    expect(log).toHaveBeenCalledWith("av-calibration: failed to create AudioContext", expect.anything());
   });
 
   it("resumes a suspended AudioContext on start", async () => {
@@ -328,8 +322,7 @@ describe("avCalibration", () => {
     }
     vi.stubGlobal("AudioContext", Suspended as unknown as typeof AudioContext);
     const { deps } = makeDeps();
-    const handle = initAvCalibration(deps);
-    handle.open();
+    initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(resume).toHaveBeenCalled();
