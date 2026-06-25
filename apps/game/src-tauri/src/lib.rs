@@ -1013,6 +1013,68 @@ fn native_audio_load_wav_bytes(
     with_native_engine(&state, |e| e.load_wav_bytes(&wav_bytes))
 }
 
+/// Non-overlapping base demucs stems used for full-mix playback. The derived
+/// guitar splits (guitar_split_source / lead_guitar / rhythm_guitar) are
+/// re-derivations of `guitar` and would double-count it, so they're excluded.
+const MIXER_BASE_STEMS: &[&str] = &["bass", "drums", "vocals", "guitar", "keys", "other"];
+
+/// Load a feedpak's base stems for per-track playback (replaces single-default-
+/// stem playback). Returns the loaded track roles, in mix order, for the mixer
+/// UI. The caller should fall back to native_audio_load_auralsong_audio when
+/// this errors (e.g. a single-stem pack).
+#[tauri::command]
+fn native_audio_load_stems(
+    state: tauri::State<NativeAudioState>,
+    container_path: String,
+) -> Result<Vec<String>, String> {
+    let container = PathBuf::from(&container_path);
+    if !container_path.ends_with(".feedpak") {
+        return Err("native_audio_load_stems requires a .feedpak path".to_string());
+    }
+    let manifest = read_feedpak_manifest(&container)?;
+    let mut roles: Vec<String> = Vec::new();
+    let mut stems: Vec<(u32, u16, Vec<i16>)> = Vec::new();
+    let mut fmt: Option<(u32, u16)> = None;
+    for stem in &manifest.stems {
+        if !MIXER_BASE_STEMS.contains(&stem.id.as_str()) {
+            continue;
+        }
+        let mime = audio_mime_for_path(&stem.file);
+        let bytes = if container.is_dir() {
+            read_dir_audio(&container, &stem.file)?
+        } else {
+            read_zip_audio(&container, &stem.file)?
+        };
+        let decoded = audio_decode::decode_to_pcm16(&bytes, mime)?;
+        if decoded.channels == 0 || decoded.sample_rate_hz == 0 {
+            continue;
+        }
+        if fmt.is_none() {
+            fmt = Some((decoded.sample_rate_hz, decoded.channels));
+        }
+        roles.push(stem.id.clone());
+        stems.push((decoded.sample_rate_hz, decoded.channels, decoded.data));
+    }
+    let Some((sr, channels)) = fmt else {
+        return Err("feedpak has no base stems to mix".to_string());
+    };
+    let target = preferred_native_audio_sample_rate_hz(&state, sr)?;
+    ensure_native_audio_engine_format(&state, target, channels)?;
+    with_native_engine(&state, move |e| e.load_stems(stems))?;
+    Ok(roles)
+}
+
+/// Set a track's linear gain (0 = silent, 1 = unity). The UI folds mute/solo
+/// into this single per-track gain.
+#[tauri::command]
+fn native_audio_set_track_gain(
+    state: tauri::State<NativeAudioState>,
+    index: usize,
+    gain: f32,
+) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_track_gain(index, gain))
+}
+
 #[tauri::command]
 fn native_audio_load_audio_bytes(
     state: tauri::State<NativeAudioState>,
@@ -2085,6 +2147,8 @@ pub fn run() {
             native_audio_load_wav_bytes,
             native_audio_load_audio_bytes,
             native_audio_load_auralsong_audio,
+            native_audio_load_stems,
+            native_audio_set_track_gain,
             native_audio_play,
             native_audio_pause,
             native_audio_stop,

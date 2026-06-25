@@ -67,6 +67,9 @@ pub struct NativeAudioDeviceInfo {
 #[derive(Debug)]
 enum EngineCommand {
     LoadPcm16 { wav: WavPcm16 },
+    /// Swap the active buffer (a re-mixed stem sum) WITHOUT resetting the play
+    /// position — used when a per-track gain changes during playback.
+    ReplacePcm16 { wav: WavPcm16 },
     Play,
     Pause,
     Stop,
@@ -387,8 +390,45 @@ pub struct NativeAudioHandle {
     snapshot: Arc<EngineSnapshot>,
     output_buffer_frames: Arc<AtomicU32>,
 
+    // Per-track stem mix, owned off the audio thread. Gains are applied by
+    // re-summing the stems here (control thread) and swapping the result into
+    // the player; the real-time callback never sees the stems or the gains.
+    stem_mix: Mutex<StemMix>,
+
     shutdown: Arc<AtomicBool>,
     thread: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+/// Stems (resampled to the engine sample rate, same channel count + length) and
+/// their current linear gains, kept on the control thread for re-mixing.
+#[derive(Default)]
+struct StemMix {
+    stems: Vec<WavPcm16>,
+    gains: Vec<f32>,
+}
+
+/// Sum `stems[k] * gains[k]` into one interleaved i16 buffer (saturating).
+/// Runs on the control thread, never in the audio callback.
+fn mix_stems(stems: &[WavPcm16], gains: &[f32], sample_rate_hz: u32, channels: u16) -> WavPcm16 {
+    let len = stems.iter().map(|s| s.data.len()).max().unwrap_or(0);
+    let mut acc = vec![0.0f32; len];
+    for (stem, &gain) in stems.iter().zip(gains.iter()) {
+        if gain == 0.0 {
+            continue;
+        }
+        for (i, &sample) in stem.data.iter().enumerate() {
+            acc[i] += sample as f32 * gain;
+        }
+    }
+    let data = acc
+        .iter()
+        .map(|&v| v.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16)
+        .collect();
+    WavPcm16 {
+        sample_rate: sample_rate_hz,
+        channels,
+        data,
+    }
 }
 
 impl NativeAudioHandle {
@@ -481,9 +521,68 @@ impl NativeAudioHandle {
             commands: Mutex::new(producer),
             snapshot,
             output_buffer_frames,
+            stem_mix: Mutex::new(StemMix::default()),
             shutdown,
             thread: Mutex::new(Some(th)),
         })
+    }
+
+    /// Load a song as a set of stems (one per track). Each is resampled to the
+    /// engine rate, padded to a common length, and summed at unity gain into
+    /// the active buffer. The stems + gains are retained so `set_track_gain`
+    /// can re-mix without re-decoding. `stems` is `(sample_rate, channels, data)`.
+    pub fn load_stems(&self, stems: Vec<(u32, u16, Vec<i16>)>) -> Result<(), String> {
+        if stems.is_empty() {
+            return Err("load_stems: no stems provided".to_string());
+        }
+        let mut resampled: Vec<WavPcm16> = Vec::with_capacity(stems.len());
+        for (sr, ch, data) in stems {
+            if ch != self.channels {
+                return Err(format!(
+                    "stem channels {} != engine channels {}",
+                    ch, self.channels
+                ));
+            }
+            let data = resample_pcm16_linear_interleaved(&data, ch, sr, self.sample_rate_hz)?;
+            resampled.push(WavPcm16 {
+                sample_rate: self.sample_rate_hz,
+                channels: ch,
+                data,
+            });
+        }
+        // Pad all stems to the longest so the per-sample sum is well-defined.
+        let max_len = resampled.iter().map(|s| s.data.len()).max().unwrap_or(0);
+        for s in &mut resampled {
+            s.data.resize(max_len, 0);
+        }
+        let gains = vec![1.0f32; resampled.len()];
+        let mix = mix_stems(&resampled, &gains, self.sample_rate_hz, self.channels);
+        {
+            let mut sm = self.stem_mix.lock().unwrap();
+            sm.stems = resampled;
+            sm.gains = gains;
+        }
+        // Fresh load -> reset position.
+        self.enqueue(EngineCommand::LoadPcm16 { wav: mix })
+    }
+
+    /// Set a track's linear gain (0 = silent) and re-mix. No-op if no stems are
+    /// loaded or the index is out of range. Keeps the current play position.
+    pub fn set_track_gain(&self, index: usize, gain: f32) -> Result<(), String> {
+        let mix = {
+            let mut sm = self.stem_mix.lock().unwrap();
+            if index >= sm.gains.len() {
+                return Err(format!("track index {index} out of range"));
+            }
+            sm.gains[index] = gain.clamp(0.0, 4.0);
+            mix_stems(&sm.stems, &sm.gains, self.sample_rate_hz, self.channels)
+        };
+        self.enqueue(EngineCommand::ReplacePcm16 { wav: mix })
+    }
+
+    /// Number of loaded stems (0 when playing a single mix).
+    pub fn stem_count(&self) -> usize {
+        self.stem_mix.lock().unwrap().stems.len()
     }
 
     fn enqueue(&self, cmd: EngineCommand) -> Result<(), String> {
@@ -810,6 +909,14 @@ fn apply_engine_command(
             runtime.wav = Some(wav);
             runtime.source_frame_cursor = 0.0;
             runtime.transport.seek_frames(0);
+        }
+        EngineCommand::ReplacePcm16 { wav } => {
+            // Channel mismatch -> keep the current buffer rather than dropping audio.
+            if wav.channels as usize == engine_channels {
+                // Keep source_frame_cursor / transport position: same song, same
+                // length, only the per-track gain mix changed.
+                runtime.wav = Some(wav);
+            }
         }
         EngineCommand::Play => {
             runtime.is_playing = true;
