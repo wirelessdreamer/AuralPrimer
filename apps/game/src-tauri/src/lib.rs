@@ -1018,6 +1018,56 @@ fn native_audio_load_wav_bytes(
 /// re-derivations of `guitar` and would double-count it, so they're excluded.
 const MIXER_BASE_STEMS: &[&str] = &["bass", "drums", "vocals", "guitar", "keys", "other"];
 
+/// Load + decode a feedpak's base stems, push them into the engine (mixed at
+/// unity gain), and return (roles in mix order, duration_sec). Shared by the
+/// multi-stem loader and the default audio loader so feedpak playback is the
+/// full mix, not a single stem. Errors when the pack has no base stems (the
+/// caller should then fall back to the single default stem).
+fn feedpak_load_base_stems(
+    container: &std::path::Path,
+    state: &tauri::State<NativeAudioState>,
+) -> Result<(Vec<String>, f64), String> {
+    let manifest = read_feedpak_manifest(container)?;
+    let mut roles: Vec<String> = Vec::new();
+    let mut stems: Vec<(u32, u16, Vec<i16>)> = Vec::new();
+    let mut fmt: Option<(u32, u16)> = None;
+    let mut max_frames: usize = 0;
+    for stem in &manifest.stems {
+        if !MIXER_BASE_STEMS.contains(&stem.id.as_str()) {
+            continue;
+        }
+        let mime = audio_mime_for_path(&stem.file);
+        let bytes = if container.is_dir() {
+            read_dir_audio(container, &stem.file)?
+        } else {
+            read_zip_audio(container, &stem.file)?
+        };
+        let decoded = audio_decode::decode_to_pcm16(&bytes, mime)?;
+        if decoded.channels == 0 || decoded.sample_rate_hz == 0 {
+            continue;
+        }
+        if fmt.is_none() {
+            fmt = Some((decoded.sample_rate_hz, decoded.channels));
+        }
+        let frames = decoded.data.len() / (decoded.channels as usize).max(1);
+        max_frames = max_frames.max(frames);
+        roles.push(stem.id.clone());
+        stems.push((decoded.sample_rate_hz, decoded.channels, decoded.data));
+    }
+    let Some((sr, channels)) = fmt else {
+        return Err("feedpak has no base stems to mix".to_string());
+    };
+    let duration_sec = if sr > 0 {
+        max_frames as f64 / sr as f64
+    } else {
+        0.0
+    };
+    let target = preferred_native_audio_sample_rate_hz(state, sr)?;
+    ensure_native_audio_engine_format(state, target, channels)?;
+    with_native_engine(state, move |e| e.load_stems(stems))?;
+    Ok((roles, duration_sec))
+}
+
 /// Load a feedpak's base stems for per-track playback (replaces single-default-
 /// stem playback). Returns the loaded track roles, in mix order, for the mixer
 /// UI. The caller should fall back to native_audio_load_auralsong_audio when
@@ -1031,36 +1081,7 @@ fn native_audio_load_stems(
     if !container_path.ends_with(".feedpak") {
         return Err("native_audio_load_stems requires a .feedpak path".to_string());
     }
-    let manifest = read_feedpak_manifest(&container)?;
-    let mut roles: Vec<String> = Vec::new();
-    let mut stems: Vec<(u32, u16, Vec<i16>)> = Vec::new();
-    let mut fmt: Option<(u32, u16)> = None;
-    for stem in &manifest.stems {
-        if !MIXER_BASE_STEMS.contains(&stem.id.as_str()) {
-            continue;
-        }
-        let mime = audio_mime_for_path(&stem.file);
-        let bytes = if container.is_dir() {
-            read_dir_audio(&container, &stem.file)?
-        } else {
-            read_zip_audio(&container, &stem.file)?
-        };
-        let decoded = audio_decode::decode_to_pcm16(&bytes, mime)?;
-        if decoded.channels == 0 || decoded.sample_rate_hz == 0 {
-            continue;
-        }
-        if fmt.is_none() {
-            fmt = Some((decoded.sample_rate_hz, decoded.channels));
-        }
-        roles.push(stem.id.clone());
-        stems.push((decoded.sample_rate_hz, decoded.channels, decoded.data));
-    }
-    let Some((sr, channels)) = fmt else {
-        return Err("feedpak has no base stems to mix".to_string());
-    };
-    let target = preferred_native_audio_sample_rate_hz(&state, sr)?;
-    ensure_native_audio_engine_format(&state, target, channels)?;
-    with_native_engine(&state, move |e| e.load_stems(stems))?;
+    let (roles, _duration) = feedpak_load_base_stems(&container, &state)?;
     Ok(roles)
 }
 
@@ -1452,7 +1473,20 @@ fn native_audio_load_auralsong_audio(
 
     // Resolve audio bytes + mime: feedpak default stem (active) or legacy mix.
     let (bytes, mime): (Vec<u8>, &'static str) = if container_path.ends_with(".feedpak") {
-        feedpak_read_default_stem(&p)?
+        // Prefer the full multi-stem mix (all base stems summed at unity gain)
+        // so the whole song plays, not a single default stem (which made only
+        // bass audible). The stems are retained in the engine for the per-track
+        // mixer. Fall back to the single default stem for packs with no base
+        // stems (mix-only / legacy feedpaks).
+        match feedpak_load_base_stems(&p, &state) {
+            Ok((_roles, duration_sec)) => {
+                return Ok(LoadedAuralSongAudioInfo {
+                    mime: "audio/wav".to_string(),
+                    duration_sec,
+                });
+            }
+            Err(_) => feedpak_read_default_stem(&p)?,
+        }
     } else if container_path.ends_with(".auralsong") {
         // Legacy .auralsong: prefer OGG if present, otherwise MP3, otherwise WAV.
         let (rel, mime) = if p.is_dir() {

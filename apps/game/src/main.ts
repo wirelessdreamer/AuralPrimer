@@ -580,7 +580,11 @@ const playersPanel: PlayersPanelHandle = initPlayersPanel({
     capsPanel.applyAvailability(selectedAuralSongDetails, selectedDrumChartSelection, selectedAuralSongCharts);
   },
   syncPreferredPluginSelection: () => pluginsPanel.syncPreferred(),
-  syncMelodicTrackSelectionFromPlayers,
+  // Run the full selector update (not just track selection) on player
+  // add/remove/instrument-change so the melodic surface shows/hides as the
+  // band gains or loses a melodic player. updateInstrumentSelector() calls
+  // syncMelodicTrackSelectionFromPlayers() internally, so selection still syncs.
+  syncMelodicTrackSelectionFromPlayers: () => updateInstrumentSelector(),
   restartVisualizerForPluginSelection: () => restartVisualizerForPluginSelection(),
   rebuildSecondaryStagesIfRunning: () => {
     if (viz) {

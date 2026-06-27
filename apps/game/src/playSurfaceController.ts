@@ -183,7 +183,13 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     buttons.forEach((b) => b.remove());
 
     const tracks = deps.getSelectedMelodicTracks();
-    if (tracks.length === 0) {
+    // Only surface the melodic piano-roll/sheet when a player is actually on a
+    // melodic instrument. A drums-only (or vocals-only) band has no melodic
+    // part to play, so showing the song's keys/bass/guitar here is just noise.
+    const hasMelodicPlayer = deps.playersPanel
+      .getPlayers()
+      .some((p) => p.instrument !== "drums" && p.instrument !== "vocals");
+    if (tracks.length === 0 || !hasMelodicPlayer) {
       instrumentSelectorEl!.style.display = "none";
       tabContainerEl!.style.display = "none";
       syncSurfaceMode();
