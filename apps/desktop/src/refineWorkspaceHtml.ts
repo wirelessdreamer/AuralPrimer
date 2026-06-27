@@ -80,14 +80,21 @@ export function refineWorkspaceHtml(): string {
       .refineRoute .rfStage .spectro-editor { height: 100%; }
 
       /* BOTTOM INSPECTOR -------------------------------------------------- */
+      /* Fixed height (not min-height) + non-wrapping chips so selecting a note
+         never grows the bar and reflows/resizes the spectrogram stage above. */
       .refineRoute .rfInspector {
         display: flex; align-items: center; gap: 16px;
         padding: 8px 16px; background: #0a0e16; border-top: 1px solid #1f2a44;
-        flex-shrink: 0; font-size: 12px; color: #94a3b8; min-height: 44px;
+        flex-shrink: 0; font-size: 12px; color: #94a3b8;
+        height: 48px; box-sizing: border-box;
       }
-      .refineRoute .rfSelInfo { color: #e2e8f0; min-width: 180px; }
+      .refineRoute .rfSelInfo { color: #e2e8f0; min-width: 180px; flex-shrink: 0; }
       .refineRoute .rfSelInfo .rfSelPitch { color: #3EE6A8; font-weight: 600; }
-      .refineRoute .rfCandChips { display: flex; align-items: center; gap: 6px; flex: 1; flex-wrap: wrap; }
+      .refineRoute .rfCandChips {
+        display: flex; align-items: center; gap: 6px; flex: 1 1 0; min-width: 0;
+        flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+      }
+      .refineRoute .rfCandChip { flex-shrink: 0; }
       .refineRoute .rfCandChip {
         display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 6px;
         background: #131b29; border: 1px solid #1f2a44; color: #e2e8f0; cursor: pointer; font-size: 12px;
@@ -121,10 +128,7 @@ export function refineWorkspaceHtml(): string {
           <select id="refineInstrumentSelect">
             <option value="keys">Keys</option>
             <option value="bass">Bass</option>
-            <option value="lead_guitar">Lead Guitar</option>
-            <option value="rhythm_guitar">Rhythm Guitar</option>
-            <option value="drums">Drums</option>
-            <option value="melodic">Melodic</option>
+            <option value="guitar">Guitar</option>
           </select>
         </label>
         <button class="rfBtn" id="refineReloadBtn">Reload</button>

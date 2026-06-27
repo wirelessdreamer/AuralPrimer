@@ -104,8 +104,9 @@ describe("getRoleReadiness", () => {
 
 describe("melodicStemRoles", () => {
   it("returns only the melodic roles present in the manifest stems", async () => {
-    mockBackend({ stems: ["lead_guitar", "rhythm_guitar", "guitar_split_source", "drums", "vocals"] });
-    expect(await melodicStemRoles("/x.feedpak")).toEqual(["lead_guitar", "rhythm_guitar"]);
+    mockBackend({ stems: ["guitar", "lead_guitar", "rhythm_guitar", "guitar_split_source", "drums", "vocals"] });
+    // Collapsed to a single guitar; the legacy lead/rhythm splits aren't melodic roles anymore.
+    expect(await melodicStemRoles("/x.feedpak")).toEqual(["guitar"]);
   });
   it("is empty for a mix-only pack", async () => {
     mockBackend({ stems: ["mix"] });
@@ -114,12 +115,12 @@ describe("melodicStemRoles", () => {
 });
 
 describe("detectMelodicStems", () => {
-  it("REGRESSION: builds the guitar stems a pack actually has, not a hardcoded 'keys'", async () => {
-    // No built artifacts yet; the manifest lists only guitar stems.
-    mockBackend({ exists: () => false, stems: ["lead_guitar", "rhythm_guitar"] });
+  it("REGRESSION: builds the guitar stem a pack actually has, not a hardcoded 'keys'", async () => {
+    // No built artifacts yet; the manifest lists a guitar stem (+ legacy splits).
+    mockBackend({ exists: () => false, stems: ["guitar", "lead_guitar", "rhythm_guitar"] });
     const { roles, primary } = await detectMelodicStems("/beat_it.feedpak");
-    expect(roles).toEqual(["lead_guitar", "rhythm_guitar"]);
-    expect(primary).toBe("lead_guitar"); // no keys present -> first real stem
+    expect(roles).toEqual(["guitar"]);
+    expect(primary).toBe("guitar"); // no keys present -> first real stem
   });
 
   it("falls back to 'keys' only when the pack lists no melodic stem", async () => {

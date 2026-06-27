@@ -12,12 +12,16 @@
 import { invoke } from "@tauri-apps/api/core";
 
 // Melodic stem roles we probe for (drums/vocals are never melodic targets).
-export const MELODIC_ROLES = ["keys", "bass", "lead_guitar", "rhythm_guitar"] as const;
+// One guitar (the lead/rhythm split was a frequency-tilt, not real separation,
+// so the two were ~95% identical). Lead/rhythm labels are kept for any legacy
+// packs not yet migrated.
+export const MELODIC_ROLES = ["keys", "bass", "guitar"] as const;
 export type MelodicRole = (typeof MELODIC_ROLES)[number];
 
 export const MELODIC_ROLE_LABELS: Record<string, string> = {
   keys: "Keys",
   bass: "Bass",
+  guitar: "Guitar",
   lead_guitar: "Lead guitar",
   rhythm_guitar: "Rhythm guitar",
   melodic: "Melodic",

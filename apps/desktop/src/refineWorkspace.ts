@@ -98,10 +98,11 @@ export type RefineWorkspaceHandle = {
 // Editable melodic roles, in the order we prefer them as the default pick.
 // (Drums are charted via the drum tab, not melodic candidates, so they are
 // deliberately absent here and never offered in the Refine instrument picker.)
-const MELODIC_PICK_ORDER = ["keys", "bass", "lead_guitar", "rhythm_guitar"];
+const MELODIC_PICK_ORDER = ["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar"];
 const INSTRUMENT_LABELS: Record<string, string> = {
   keys: "Keys",
   bass: "Bass",
+  guitar: "Guitar",
   lead_guitar: "Lead Guitar",
   rhythm_guitar: "Rhythm Guitar",
 };
