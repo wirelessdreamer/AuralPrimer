@@ -4095,7 +4095,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_refine_candidates.add_argument(
         "--instrument",
         action="append",
-        choices=sorted(["keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "melodic"]),
+        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "melodic"]),
         help="Instrument to precompute. May be repeated. Defaults to 'keys' if omitted.",
     )
     s_refine_candidates.set_defaults(func=cmd_refine_candidates)
@@ -4111,7 +4111,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_spectrogram.add_argument(
         "--instrument",
         action="append",
-        choices=sorted(["keys", "bass", "lead_guitar", "rhythm_guitar", "melodic"]),
+        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "melodic"]),
         help="Melodic stem to build. May be repeated. Defaults to all melodic stems present.",
     )
     s_spectrogram.set_defaults(func=cmd_build_spectrogram)
@@ -4127,7 +4127,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_bench_overlay.add_argument(
         "--instrument",
         default="keys",
-        choices=sorted(["keys", "bass", "lead_guitar", "rhythm_guitar", "melodic"]),
+        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "melodic"]),
         help="Instrument stem to benchmark. Defaults to 'keys'.",
     )
     s_bench_overlay.add_argument(

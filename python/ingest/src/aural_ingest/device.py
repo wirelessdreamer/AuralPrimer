@@ -2,9 +2,11 @@
 
 Single source of truth for picking ``"cuda"`` vs ``"cpu"`` across the
 transcription adapters. Honors an explicit env override when given,
-otherwise defaults to CUDA when a GPU is available (the project standard
--- matches the demucs separation path; learned models on the RTX 5090 are
-~5-10x faster than CPU), falling back to CPU.
+otherwise auto-detects: CUDA when a GPU is available on this machine,
+else CPU. This must stay machine-agnostic -- the project runs on several
+boxes (some GPU, some CPU-only), so device choice is detected at runtime,
+never hardcoded. Learned models (MT3 drums, demucs) run ~5-10x faster on
+GPU.
 """
 from __future__ import annotations
 

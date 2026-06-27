@@ -109,7 +109,7 @@ CANDIDATE_IDS: list[str] = [cid for cid, _, _, _ in CANDIDATE_DISPLAY]
 CANDIDATE_ALGOS: dict[str, str] = {cid: algo for cid, _, _, algo in CANDIDATE_DISPLAY}
 
 VALID_INSTRUMENTS: frozenset[str] = frozenset(
-    {"keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "melodic"}
+    {"keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "melodic"}
 )
 
 

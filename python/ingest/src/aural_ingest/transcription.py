@@ -89,6 +89,13 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
     "gameplay_default": {
         "description": "Prefer in-game recognizability, stable density, and fail-safe local defaults.",
         "drum_engines": [
+            # Neural ADT (MT3) leads when its checkpoint is installed: it
+            # catches the dense hi-hats / ghost notes the DSP engines miss
+            # (their E-GMD recall collapse, F1 ~0.13). transcribe_drums_with_profile
+            # falls through to the DSP chain when the checkpoint or runtime
+            # is absent, so checkpoint-less machines still import. Device is
+            # auto-detected (GPU if present, else CPU) -- never hardcoded.
+            "mr_mt3_drums",
             "beat_conditioned_multiband_decoder",
             "spectral_flux_multiband",
             "adaptive_beat_grid",
@@ -233,8 +240,9 @@ INSTRUMENT_ROLES: tuple[str, ...] = (
 # (min_freq_hz, max_freq_hz) — tuned to practical pitch range of each instrument.
 INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
     "bass": (30.0, 400.0),           # ~B0 (31 Hz) to ~G4 (392 Hz)
-    "rhythm_guitar": (75.0, 1400.0), # ~D2 (73 Hz) to ~F6 (1397 Hz)
-    "lead_guitar": (75.0, 1400.0),   # same range, different stem
+    "guitar": (75.0, 1400.0),        # ~D2 (73 Hz) to ~F6 (1397 Hz) — one guitar
+    "rhythm_guitar": (75.0, 1400.0), # legacy split (kept for old packs)
+    "lead_guitar": (75.0, 1400.0),   # legacy split (kept for old packs)
     "keys": (27.0, 4200.0),          # ~A0 (27.5 Hz) to ~C8 (4186 Hz)
     "melodic": (45.0, 1700.0),       # legacy default
 }
@@ -2002,6 +2010,18 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
                 # octave-cleanliness heuristic but collapses chords to a single
                 # voice (~3.5x fewer notes). Keep the polyphonic HPSS+onset
                 # engine first; torchcrepe sits late as a last resort only.
+                "melodic_hpss_combined",
+                "melodic_adaptive",
+                "melodic_octave_fix",
+                "melodic_combined",
+                "basic_pitch",
+                "pyin",
+            ]
+        elif instrument == "guitar":
+            chain = [
+                # One guitar stem (chords + lead together) is polyphonic, so use
+                # the same HPSS+onset-first chain as rhythm guitar; the
+                # monophonic torchcrepe would collapse chords.
                 "melodic_hpss_combined",
                 "melodic_adaptive",
                 "melodic_octave_fix",
@@ -4797,7 +4817,7 @@ def _apply_keys_playability_cleanup(notes: list[MelodicNote]) -> list[MelodicNot
 def apply_role_playability_cleanup(notes: list[MelodicNote], instrument: str) -> list[MelodicNote]:
     if instrument == "keys":
         return _apply_keys_playability_cleanup(notes)
-    if instrument not in {"bass", "lead_guitar", "rhythm_guitar"} or len(notes) <= 1:
+    if instrument not in {"bass", "guitar", "lead_guitar", "rhythm_guitar"} or len(notes) <= 1:
         return notes
 
     if instrument == "bass":
