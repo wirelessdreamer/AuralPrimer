@@ -114,3 +114,13 @@ benchmarks/rust/bench-rust-summary.json
 
 # Python packaging outputs from sidecar builds.
 python/ingest/dist*/
+
+# Local large-binary caches: downloaded model checkpoints (e.g. mr_mt3 mt3.pth)
+# and CUDA torch wheels. Not for VCS — fetched on demand per machine.
+python/ingest/.mt3_checkpoints/
+python/ingest/.wheelhouse/
+
+# Stray audio/PDF dropped at the repo root by ad-hoc runs (root-anchored so
+# intentionally committed fixtures under subdirs are untouched).
+/*.wav
+/*.pdf
