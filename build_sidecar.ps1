@@ -89,7 +89,26 @@ function Get-PythonCommand([string]$RepoRootAbs) {
 function Invoke-Checked([string[]]$CommandPrefix, [string[]]$Arguments, [string]$Label, [string]$Workdir) {
   Push-Location $Workdir
   try {
-    & $CommandPrefix[0] @($CommandPrefix | Select-Object -Skip 1) @Arguments
+    # Locally relax $ErrorActionPreference for the native call. With the
+    # script-level "Stop" inherited from create_portable.ps1, PowerShell 5.1
+    # wraps every stderr line that a native command writes into a
+    # NativeCommandError ErrorRecord and halts the script -- even when the
+    # process itself returned exit code 0 and the "error" was just an
+    # informational message (the recurring failure mode: PyInstaller writes
+    # "4415 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6" to stderr and
+    # the whole build aborts there).
+    #
+    # The right failure signal for a native command is $LASTEXITCODE, which
+    # we check explicitly below. Letting native stderr flow through without
+    # ErrorRecord wrapping preserves the user-visible PyInstaller output AND
+    # gates the build on the real success/failure code.
+    $prevErrAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      & $CommandPrefix[0] @($CommandPrefix | Select-Object -Skip 1) @Arguments
+    } finally {
+      $ErrorActionPreference = $prevErrAction
+    }
     if ($LASTEXITCODE -ne 0) {
       throw "$Label failed with exit code $LASTEXITCODE"
     }
