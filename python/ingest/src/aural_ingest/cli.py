@@ -2951,30 +2951,57 @@ def cmd_runtime_check(args: argparse.Namespace) -> int:
 def _convert_auralsong_to_feedpak(working_dir: Path) -> Path:
     """Convert a finished ``.auralsong`` working dir in place to a ``.feedpak``.
 
-    Writes ``<name>.feedpak`` next to ``working_dir`` via the feedpak writer,
-    removes the ``.auralsong`` working dir, and renames the feedpak onto the
-    exact path the caller requested (``working_dir``) so the durable artifact at
-    ``--out`` becomes the ``.feedpak``. Returns the final feedpak path.
+    Writes ``<name>.feedpak`` next to ``working_dir`` via the feedpak writer
+    and removes the ``.auralsong`` working dir. The final output path uses
+    the ``.feedpak`` extension regardless of what extension the caller passed
+    as ``--out``.
+
+    If the caller passed a non-``.feedpak`` extension (typically ``.auralsong``
+    from external scripts written before the 2026-06-22 ingest overhaul), we
+    rewrite the final filename to use ``.feedpak`` and log a NOTICE on stderr
+    so the caller can discover the new path. Both Studio's Cleanup readiness
+    check and the game's discovery loop route by file extension to pick the
+    right reader (manifest.yaml for ``.feedpak`` vs manifest.json for
+    ``.auralsong``); silently writing feedpak content under ``.auralsong``
+    makes the pack read as "Invalid (missing title)" downstream.
     """
     parent = working_dir.parent
     summary = write_feedpak(working_dir, parent)
     feedpak_dir = Path(summary["feedpak_dir"])
 
-    # Free the requested path, then move the feedpak onto it. If the writer
-    # already emitted to exactly ``working_dir`` (same name sans extension),
-    # stage via a temp name so we don't delete what we just wrote.
-    if feedpak_dir.resolve() == working_dir.resolve():
-        staged = parent / (working_dir.name + ".feedpak.tmp")
-        if staged.exists():
-            shutil.rmtree(staged)
-        feedpak_dir.rename(staged)
-        feedpak_dir = staged
+    # Pick the final on-disk name: keep the user's base name but pin the
+    # extension to .feedpak (the format we actually emitted). If the user
+    # already passed .feedpak this is a no-op.
+    base_stem = working_dir.name
+    if base_stem.endswith(".auralsong"):
+        base_stem = base_stem[: -len(".auralsong")]
+    elif base_stem.endswith(".feedpak"):
+        base_stem = base_stem[: -len(".feedpak")]
+    desired = parent / f"{base_stem}.feedpak"
 
-    shutil.rmtree(working_dir, ignore_errors=True)
+    if not working_dir.name.endswith(".feedpak"):
+        log(
+            f"notice: --out {working_dir.name!r} writes feedpak content; "
+            f"final artifact will be {desired.name!r}"
+        )
+
+    # Stage the feedpak under a temp name so we can free the desired path
+    # safely (the writer may have already emitted to desired, or it may
+    # have used a different name).
+    staged = parent / (desired.name + ".feedpak.tmp")
+    if staged.exists():
+        shutil.rmtree(staged)
+    feedpak_dir.rename(staged)
+
+    # Remove the .auralsong working dir AND any prior file at the desired
+    # path so the final rename lands cleanly.
     if working_dir.exists():
         shutil.rmtree(working_dir)
-    feedpak_dir.rename(working_dir)
-    return working_dir
+    if desired.exists() and desired != working_dir:
+        shutil.rmtree(desired)
+
+    staged.rename(desired)
+    return desired
 
 
 def cmd_import(args: argparse.Namespace) -> int:
