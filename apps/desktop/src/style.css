@@ -203,6 +203,18 @@ main {
   min-height: 0;
 }
 
+/* When a DAW editor route is active, widen the main column out of the 1180px
+   centered cap and drop its side padding so the spectrogram canvas fills the
+   entire viewport. The other routes (home / play / make / config) stay
+   constrained for readability; only the editors get the full canvas. Uses
+   :has() so the cascade naturally undoes itself when the user switches routes
+   without any JS having to toggle a body class. */
+body:has(.route.isActive[data-route="refine"]) .appMain,
+body:has(.route.isActive[data-route="lyrics"]) .appMain {
+  max-width: none;
+  padding: 0;
+}
+
 body.studioImportOnly .topNav {
   display: none;
 }
