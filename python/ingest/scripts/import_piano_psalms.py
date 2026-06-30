@@ -121,17 +121,27 @@ def derive_title_and_variant(psalm_dir: Path) -> tuple[str, str | None]:
 
 
 def derive_pack_dirname(title: str, variant: str | None) -> str:
-    """Returns the SongPack directory name (with the trailing
-    ``.auralsong`` extension that the game's discovery loop requires --
-    see apps/game/src-tauri/src/lib.rs around line 1106). Packs without
-    that suffix are silently filtered out of the song library scan, so
-    they never appear in the in-game Play Songs panel.
+    """Returns the SongPack directory name.
+
+    Since the 2026-06-22 pipeline overhaul, ``aural_ingest import-dir``
+    emits the new feedpak layout (manifest.yaml + arrangements/
+    notation_<role>.json + aural/ subdir + drum_tab.json + song_timeline.json)
+    rather than the legacy .auralsong layout (manifest.json + features/
+    notes.mid + features/{beats,sections,tempo_map}.json). The Studio
+    Cleanup readiness check and the game loader both key on the
+    container's file extension to pick the right reader, so a feedpak
+    payload sitting under .auralsong reads as "Invalid (missing title)"
+    in Studio. The .feedpak extension routes through the new reader and
+    everything resolves.
+
+    Both Studio and game accept .feedpak (apps/game/src-tauri/src/lib.rs
+    around line 1338 + apps/desktop/src/cleanupReadiness.ts:45).
     """
     s = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
     s = s.lower() or "song"
     if variant:
         s = f"{s}_{variant}"
-    return f"{s}.auralsong"
+    return f"{s}.feedpak"
 
 
 def run_import(
