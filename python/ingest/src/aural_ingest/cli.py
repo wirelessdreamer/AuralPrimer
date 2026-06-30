@@ -18,6 +18,7 @@ import warnings
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any
 
 from aural_ingest.drum_benchmark import (
@@ -1019,6 +1020,7 @@ def _run_stem_separation(
     config: dict[str, Any],
     provider_name: str,
     provider_path: str | None,
+    protected_roles: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     if provider_name == "none":
         return {"ok": False, "status": "skipped", "reason": "stem separation disabled by config", "provider": "none"}
@@ -1030,12 +1032,24 @@ def _run_stem_separation(
         if provider_fn is None:
             raise RuntimeError(f"unknown stem separation provider '{provider_name}'")
 
+    # Some custom providers loaded via --stem-separation-provider-path may
+    # not accept the protected_roles kwarg. Inspect the provider's signature
+    # and only forward when it's an accepted parameter so we don't break
+    # third-party providers.
+    import inspect as _inspect
+    provider_sig = _inspect.signature(provider_fn)
+    provider_kwargs: dict[str, Any] = {
+        "mix_sha256": mix_sha256,
+        "shifts": shifts,
+        "config": config,
+    }
+    if "protected_roles" in provider_sig.parameters:
+        provider_kwargs["protected_roles"] = protected_roles
+
     result = provider_fn(
         mix_wav,
         stems_dir,
-        mix_sha256=mix_sha256,
-        shifts=shifts,
-        config=config,
+        **provider_kwargs,
     )
     if isinstance(result, dict):
         result.setdefault("provider", provider_name)
@@ -1272,11 +1286,36 @@ def _synthesize_mix_wav_from_input_stems(dst_wav: Path, config: dict[str, Any]) 
     return _wav_duration_sec(dst_wav)
 
 
-def _copy_cached_stems(cache_dir: Path, stems_dir: Path, stem_files: dict[str, str]) -> dict[str, str]:
+def _copy_cached_stems(
+    cache_dir: Path,
+    stems_dir: Path,
+    stem_files: dict[str, str],
+    *,
+    protected_roles: Iterable[str] | None = None,
+) -> dict[str, str]:
+    """Copy Demucs-cached stems into the pack's audio/stems/ directory.
+
+    ``protected_roles`` lists roles that the user already supplied as input
+    stems (typically the high-quality Suno-exported (Keyboard).wav landing
+    at audio/stems/keys.wav before separation ran). For those roles we
+    KEEP the existing on-disk file and report THAT path in the returned
+    dict, rather than overwriting with whatever Demucs separated from the
+    synthesized mix. Without this guard, Demucs's piano head can mis-
+    classify the gospel-piano material the user explicitly provided as
+    a clean stem -- routing parts of it into ``other``/``guitar`` and
+    leaving the canonical ``keys.wav`` partially empty.
+    """
+    protected_set = {str(r).strip().lower() for r in (protected_roles or [])}
     out: dict[str, str] = {}
     for stem_name, filename in stem_files.items():
         src = cache_dir / filename
         dst = stems_dir / filename
+        if stem_name.strip().lower() in protected_set and dst.is_file():
+            # User-supplied input stem already on disk -- keep it. Skip the
+            # cache->pack copy for this role and report the existing file
+            # path so the caller's manifest stays consistent.
+            out[stem_name] = f"audio/stems/{filename}"
+            continue
         if not src.is_file():
             continue
         shutil.copyfile(src, dst)
@@ -1291,6 +1330,7 @@ def _separate_stems_with_demucs(
     mix_sha256: str,
     shifts: int,
     config: dict[str, Any],
+    protected_roles: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     if bool(config.get("disable_stem_separation", False)) or str(
         config.get("stem_separation_provider", "")
@@ -1329,7 +1369,10 @@ def _separate_stems_with_demucs(
             if isinstance(cache_meta, dict):
                 stem_files = cache_meta.get("stem_files", {})
                 if isinstance(stem_files, dict) and all((sep_cache_dir / name).is_file() for name in stem_files.values()):
-                    stem_paths = _copy_cached_stems(sep_cache_dir, stems_dir, stem_files)
+                    stem_paths = _copy_cached_stems(
+                        sep_cache_dir, stems_dir, stem_files,
+                        protected_roles=protected_roles,
+                    )
                     return {
                         "ok": True,
                         "status": "cached",
@@ -1393,7 +1436,10 @@ def _separate_stems_with_demucs(
         }
         cache_meta_path.write_text(json.dumps(cache_meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-        stem_paths = _copy_cached_stems(sep_cache_dir, stems_dir, stem_files)
+        stem_paths = _copy_cached_stems(
+            sep_cache_dir, stems_dir, stem_files,
+            protected_roles=protected_roles,
+        )
         return {
             "ok": True,
             "status": "fresh",
@@ -3180,6 +3226,11 @@ def cmd_import(args: argparse.Namespace) -> int:
                 if tr_opts.get("stem_separation_provider_path")
                 else None
             ),
+            # Don't let Demucs overwrite stems the user already supplied --
+            # the user's Suno-exported (Keyboard).wav is cleaner than what
+            # htdemucs_6s would route to its piano head from the synthesized
+            # mix, so any role in copied_input_stems is left as-is on disk.
+            protected_roles=copied_input_stems.keys(),
         )
     except Exception as exc:
         separation_summary = {
@@ -3211,6 +3262,10 @@ def cmd_import(args: argparse.Namespace) -> int:
             "shifts": int(separation_summary.get("shifts", 1) or 1),
             "device": separation_summary.get("device"),
             "stems": sorted(stem_paths.keys()) if isinstance(stem_paths, dict) else [],
+            # Roles whose on-disk audio came from user-supplied input stems
+            # rather than from this separation pass -- demucs was prevented
+            # from overwriting them to preserve the user's clean source.
+            "protected_stems": sorted(copied_input_stems.keys()),
         }
         _write_json(out / "manifest.json", manifest)
         emit(
