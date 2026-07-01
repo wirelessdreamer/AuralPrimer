@@ -70,6 +70,7 @@ KNOWN_MELODIC_METHODS: tuple[str, ...] = (
     "melodic_combined",
     "melodic_combined_guitar",
     "guitar_basic_pitch_playable",
+    "guitar_auto",
     "melodic_octave_fix",
     "melodic_yin_octave_hps_fix",
     "melodic_adaptive",
@@ -1414,6 +1415,7 @@ def build_default_melodic_algorithm_registry(
 ) -> dict[str, MelodicTranscriber]:
     # Import lazily to keep module import lightweight and avoid unnecessary startup costs.
     from aural_ingest.algorithms import (
+        guitar_auto,
         guitar_basic_pitch_playable,
         melodic_adaptive,
         melodic_basic_pitch,
@@ -1600,6 +1602,9 @@ def build_default_melodic_algorithm_registry(
     def _guitar_basic_pitch_playable(stem_path: Path) -> list[MelodicNote]:
         return guitar_basic_pitch_playable.transcribe(stem_path, instrument=_inst)
 
+    def _guitar_auto(stem_path: Path) -> list[MelodicNote]:
+        return guitar_auto.transcribe(stem_path, instrument=_inst)
+
     def _pyin_bass_strict(stem_path: Path) -> list[MelodicNote]:
         return melodic_pyin_bass_strict.transcribe(stem_path, instrument=_inst)
 
@@ -1785,6 +1790,7 @@ def build_default_melodic_algorithm_registry(
         "melodic_combined": _combined,
         "melodic_combined_guitar": _combined_guitar,
         "guitar_basic_pitch_playable": _guitar_basic_pitch_playable,
+        "guitar_auto": _guitar_auto,
         "melodic_octave_fix": _octave_fix,
         "melodic_yin_octave_hps_fix": _yin_octave_hps_fix,
         "melodic_adaptive": _adaptive,
