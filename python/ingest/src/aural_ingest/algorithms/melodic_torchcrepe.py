@@ -22,6 +22,29 @@ from aural_ingest.transcription import INSTRUMENT_FREQ_RANGES, MelodicNote
 # periodicity rather than an error.
 _TORCHCREPE_MIN_FMIN = 32.70319566
 
+# Instrument-specific upper-freq clamps applied INSIDE the torchcrepe adapter
+# only. torchcrepe latches strongly onto strong upper harmonics -- on quiet /
+# per-string debleeded low-string audio, the CREPE model is happy to report
+# the second harmonic (2*f0) as the pitch, i.e. an exact octave-up jump. That
+# is invisible to the octave-forgiving F1 metric but doubles the strict-F1
+# false-positive count on the GuitarSet low-string corpus.
+#
+# We can't tighten INSTRUMENT_FREQ_RANGES["bass"] globally because YIN / pyIN
+# / basic_pitch / melodic_combined are all tuned to the wider range and their
+# strict F1s are actually helped by having room above E3 for a genuine
+# fretted high-A-string note. So we clamp inside this adapter only.
+#
+# Empirically (benchmarks/bass/gt_runs/bass_hexdebleed_20_fmax_sweep.log):
+#   fmax=400 Hz (production default) strict-F1 = 0.197, fp = 828
+#   fmax=200 Hz                       strict-F1 = 0.233, fp = 114  (-86%)
+# 200 Hz sits just above G3 (196 Hz), covering a real bass fretboard's
+# usable range while suppressing 2*f0 harmonic mirrors for any note below
+# G2 (98 Hz). Real bass fundamentals above G3 are rare in the corpora we
+# care about; the strict-F1 win dominates the recall loss.
+_TORCHCREPE_INSTRUMENT_FMAX: dict[str, float] = {
+    "bass": 200.0,
+}
+
 
 def _midi_from_freq(freq: float) -> int:
     return max(0, min(127, int(round(69.0 + 12.0 * math.log2(freq / 440.0)))))
@@ -139,6 +162,12 @@ def transcribe(
     # frame fails the confidence gate and the result is 0 notes. The bass range
     # starts at 30 Hz (below a 5-string low B), so clamp up to the model floor.
     freq_lo = max(float(freq_lo), _TORCHCREPE_MIN_FMIN)
+    # Per-instrument fmax clamp inside the adapter (see comment on
+    # _TORCHCREPE_INSTRUMENT_FMAX). Suppresses second-harmonic octave doubling
+    # on the low-string bass path without regressing other bass algorithms.
+    instrument_fmax = _TORCHCREPE_INSTRUMENT_FMAX.get(instrument)
+    if instrument_fmax is not None:
+        freq_hi = min(float(freq_hi), float(instrument_fmax))
     hop_length = max(1, int(round(float(hop_sec) * float(sr))))
     device = select_device("AURAL_TORCHCREPE_DEVICE")
     model = os.environ.get("AURAL_TORCHCREPE_MODEL", "tiny").strip() or "tiny"

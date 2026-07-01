@@ -64,7 +64,12 @@ def test_transcription_profiles_are_valid_and_role_specific() -> None:
     ]
     assert "piano_transkun_clean" in melodic_methods_for_profile("fidelity_midi", "keys")
     assert "torchcrepe" in melodic_methods_for_profile("research_ab", "bass")
-    assert "torchcrepe" not in melodic_methods_for_profile("gameplay_default", "bass")
+    # torchcrepe was promoted to primary in the gameplay bass chain in
+    # commit bb61b71 ("torchcrepe for bass + lead guitar, fix drum default"):
+    # ~9x faster than YIN and, once the second-harmonic fmax clamp is
+    # applied inside the adapter, strict-F1 wins the head-to-head on
+    # GuitarSet low-strings (see benchmarks/bass/gt_runs/).
+    assert melodic_methods_for_profile("gameplay_default", "bass")[0] == "torchcrepe"
     assert drum_engines_for_profile("gameplay_default")[0] == "beat_conditioned_multiband_decoder"
 
 
