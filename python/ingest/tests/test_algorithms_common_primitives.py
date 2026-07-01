@@ -367,3 +367,42 @@ def test_gate_notes_by_local_energy_empty_is_noop(tmp_path):
     from aural_ingest.algorithms._common import gate_notes_by_local_energy
 
     assert gate_notes_by_local_energy([], tmp_path / "missing.wav") == []
+
+
+def _write_24bit_wav(path: Path, *, sr: int = 48_000, channels: int = 1) -> None:
+    """Write a 1s 24-bit LE signed PCM sine at 440 Hz. Used to pin the 24-bit reader path."""
+    n = sr
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(3)
+        w.setframerate(sr)
+        for i in range(n):
+            v = int(math.sin(2.0 * math.pi * 440.0 * i / sr) * 0x7FFFFF * 0.5)
+            if v < 0:
+                v += 0x1000000
+            frame = bytes([v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF])
+            w.writeframesraw(frame * channels)
+
+
+def test_read_wav_mono_normalized_supports_24bit_mono(tmp_path):
+    from aural_ingest.algorithms._common import read_wav_mono_normalized
+
+    wav = tmp_path / "sine_24bit_mono.wav"
+    _write_24bit_wav(wav, sr=48_000, channels=1)
+
+    samples, sr = read_wav_mono_normalized(wav)
+    assert sr == 48_000
+    assert samples, "24-bit mono WAV must decode to non-empty samples (was returning [] before fix)"
+    assert max(abs(v) for v in samples) > 0.1, "expected an audible signal, not near-silence"
+
+
+def test_read_wav_mono_normalized_supports_24bit_stereo(tmp_path):
+    from aural_ingest.algorithms._common import read_wav_mono_normalized
+
+    wav = tmp_path / "sine_24bit_stereo.wav"
+    _write_24bit_wav(wav, sr=44_100, channels=2)
+
+    samples, sr = read_wav_mono_normalized(wav)
+    assert sr == 44_100
+    assert samples, "24-bit stereo WAV must decode after mono downmix"
+    assert max(abs(v) for v in samples) > 0.1
