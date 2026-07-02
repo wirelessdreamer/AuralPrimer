@@ -16,6 +16,51 @@ manually verified 2026-07-02 directly against primary artifacts (repo pages,
 dataset pages, arXiv full texts). Numbers marked "fetch-extracted" came from
 single-agent full-text reads and carry lower confidence.
 
+## Empirical validation (2026-07-02) — the research is now confirmed with our own numbers
+
+The literature-derived thesis of this document ("DSP is structurally capped;
+a neural model trained on E-GMD is the permissive path") has since been
+validated on our own ground-truth benchmark. Full artifacts:
+[`benchmarks/drums/phase1_baseline_report.md`](../benchmarks/drums/phase1_baseline_report.md)
+and [`benchmarks/drums/magenta_egmd_anchor.md`](../benchmarks/drums/magenta_egmd_anchor.md).
+All numbers below were re-verified by recomputing from the raw per-case
+`tp/fp/fn`, on a **stratified 30-case E-GMD test sample** (18 styles / 5
+drummers / 19 BPMs), scored class-aware at 50 ms tolerance.
+
+| | DSP (best of 6 engines) | Magenta E-GMD (neural) |
+|---|:--:|:--:|
+| Exact-class F1 | **0.284** (adaptive_beat_grid ≈ beat_conditioned) | **0.535** (+0.251, ≈1.88×) |
+| — precision / recall | 0.37–0.39 / 0.22–0.23 | 0.581 / 0.496 |
+| Onset-only F1 | 0.505 | 0.776 |
+| **toms** F1 | **0.000** (all engines) | **0.836** |
+| **cymbals** F1 | 0.000 (default) … 0.216 (spectral_flux) | **0.546** |
+
+Three conclusions, now empirical rather than literature-inferred:
+
+1. **DSP is structurally capped ~0.28** because it cannot classify toms
+   (0.000 across every heuristic engine) and the default is blind to cymbals.
+   No amount of heuristic tuning fixes a class the front-end can't represent.
+2. **A model trained on E-GMD roughly doubles exact-class F1** and *decisively
+   recovers toms + cymbals* — winning on both precision and recall, not trading
+   one for the other. This generalises across genres, not just the funk slice
+   the first anchor used (that biased slice under-reported the gap as +0.12).
+3. **The verified floor for our in-house CRNN is F1 ≈ 0.535 exact / 0.776
+   onset.** The Magenta checkpoint's weights are license-unstated (research
+   only); E-GMD is CC BY 4.0, so a model we train ourselves on it is shippable.
+   That training run is the active next step (harness at
+   `python/ingest/src/aural_ingest/training/drum_crnn/`).
+
+Caveat carried forward: the neural model's hi-hat still over-triggers
+(precision 0.425, 782 FP on the stratified 30) — the same failure family as
+the DSP stack, milder. A tatum/pattern-LM decode (Finding 7) remains the
+indicated fix for that residual, on top of the neural base.
+
+Independent aside surfaced during verification: **no single DSP engine wins
+every class** (kick→adaptive, snare→librosa, hi-hat→default, toms→dsp_bandpass,
+cymbals→spectral_flux), so a per-class DSP *ensemble* would beat any single
+engine's 0.284 with zero training — a cheap interim, but it still cannot reach
+the neural model's tom/cymbal recovery.
+
 ## Where we are
 
 - Real-world drum F1 ~0.15–0.4 with the DSP classifier stack; the failure
@@ -171,24 +216,29 @@ supplement + consensus, not learned decoding).
 
 ## Recommended drum path (replaces the ADTOF plan)
 
-1. **Baseline now (queue #3):** get the Magenta E-GMD checkpoint running as
-   a research-only engine; benchmark vs `combined_filter` and
-   `spectral_flux_multiband` on the E-GMD test split + Psalms guard set.
-   Per-class P/R/F at standard onset tolerance. This tells us the ceiling a
-   trained-on-E-GMD model gets *before* we invest in training.
+1. ✅ **DONE — Baseline + neural anchor (queue #3).** Stratified E-GMD
+   baseline locked (6 engines, per-class + onset-only) and the Magenta E-GMD
+   checkpoint benchmarked as a research-only engine on the same 30 cases.
+   Result: DSP ≈ 0.284 (0.000 toms), neural 0.535 (toms 0.836). See the
+   Empirical validation section above and `benchmarks/drums/`.
 2. **Render farm v1 (queue #5):** Ableton corpus with the three realism
    levers — E-GMD grooves through many kits, mixed with accompaniment stems,
    velocity preserved. Target a few hundred hours; MIDI-exact labels by
-   construction.
-3. **Train in-house (queue #6):** permissive-stack CRNN (or the ADT_STR-style
-   seq2seq recipe reimplemented) on E-GMD (CC BY 4.0, attributed) + the
-   rendered corpus. Own code, own weights → modelpack under
-   `assets/models/…` per the existing no-bundled-weights policy.
+   construction. *(Optional augmentation on top of E-GMD, not a prerequisite.)*
+3. 🔄 **IN PROGRESS — Train in-house (queue #6):** permissive-stack CRNN on
+   E-GMD (CC BY 4.0, attributed). Harness landed at
+   `python/ingest/src/aural_ingest/training/drum_crnn/` (compact CRNN, ONNX
+   export). First real training run underway on a diversity-strided E-GMD
+   subset; the trained model is decoded to events and scored on the stratified
+   30 against the **0.535 floor** before any production wiring. Own code, own
+   weights → modelpack under `assets/models/…`.
 4. **Decode + calibrate:** tatum-grid decoding post-filter; per-class
-   thresholds calibrated on the guard set (attack the hi-hat P=0.19 directly).
-5. **Update `research-decision-gates.md`** after step 1's numbers land:
-   path 2's "CRNN trained on ADTOF or YourMT3+" becomes "CRNN trained on
-   E-GMD + in-house rendered corpus" (ADTOF NC-blocked, YourMT3+ GPL).
+   thresholds calibrated on the guard set (attack the residual hi-hat
+   over-triggering directly — it survives into the neural model too).
+5. ✅ **DONE — `research-decision-gates.md` corrected** (2026-07-02): the
+   "ADT training-source correction" section replaces path 2's "CRNN trained
+   on ADTOF or YourMT3+" with in-house E-GMD training (ADTOF NC-blocked,
+   YourMT3+ GPL-blocked), with the verified 0.535 floor recorded.
 
 Non-goals for now: 5→7-class expansion via stem separation (Finding 6 — v2,
 license-watch), diffusion ADT (no permissive implementation surfaced this
