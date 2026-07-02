@@ -120,6 +120,14 @@ python/ingest/dist*/
 python/ingest/.mt3_checkpoints/
 python/ingest/.wheelhouse/
 
+# In-house drum-CRNN training output: checkpoints, ONNX exports, run logs.
+# The harness (aural_ingest.training.drum_crnn) writes these to output_dir;
+# keep them OUT of VCS even if someone points output_dir inside the repo.
+python/ingest/**/drum_crnn_run*/
+python/ingest/**/drum_crnn_smoke*/
+python/ingest/src/aural_ingest/training/**/*.pt
+python/ingest/src/aural_ingest/training/**/*.onnx
+
 # Stray audio/PDF dropped at the repo root by ad-hoc runs (root-anchored so
 # intentionally committed fixtures under subdirs are untouched).
 /*.wav
