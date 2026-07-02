@@ -1,0 +1,4274 @@
+{
+  "dataset": "egmd",
+  "family": "drums",
+  "extra": {
+    "split": "test",
+    "variant": null,
+    "limit": null,
+    "tolerance_ms": 50.0,
+    "pitch_tolerance_semitones": 0
+  },
+  "case_count": 30,
+  "summary": {
+    "overall": {
+      "cases": 30,
+      "cases_ok": 30,
+      "cases_err": 0,
+      "tp": 811,
+      "fp": 2158,
+      "fn": 3093,
+      "precision": 0.273156,
+      "recall": 0.207736,
+      "f1": 0.235996,
+      "onset_mae_sec": 0.017107,
+      "mean_runtime_sec": 4.8077,
+      "per_class": {
+        "kick": {
+          "tp": 334,
+          "fp": 448,
+          "fn": 417,
+          "support": 751,
+          "precision": 0.42711,
+          "recall": 0.44474,
+          "f1": 0.435747
+        },
+        "snare": {
+          "tp": 413,
+          "fp": 960,
+          "fn": 670,
+          "support": 1083,
+          "precision": 0.300801,
+          "recall": 0.381348,
+          "f1": 0.336319
+        },
+        "hi_hat": {
+          "tp": 56,
+          "fp": 126,
+          "fn": 795,
+          "support": 851,
+          "precision": 0.307692,
+          "recall": 0.065805,
+          "f1": 0.108422
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 16,
+          "fn": 190,
+          "support": 190,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "cymbals": {
+          "tp": 106,
+          "fp": 510,
+          "fn": 261,
+          "support": 367,
+          "precision": 0.172078,
+          "recall": 0.288828,
+          "f1": 0.215666
+        }
+      }
+    },
+    "per_algorithm": {
+      "spectral_flux_multiband": {
+        "cases": 30,
+        "cases_ok": 30,
+        "cases_err": 0,
+        "tp": 811,
+        "fp": 2158,
+        "fn": 3093,
+        "precision": 0.273156,
+        "recall": 0.207736,
+        "f1": 0.235996,
+        "onset_mae_sec": 0.017107,
+        "mean_runtime_sec": 4.8077,
+        "per_class": {
+          "kick": {
+            "tp": 334,
+            "fp": 448,
+            "fn": 417,
+            "support": 751,
+            "precision": 0.42711,
+            "recall": 0.44474,
+            "f1": 0.435747
+          },
+          "snare": {
+            "tp": 413,
+            "fp": 960,
+            "fn": 670,
+            "support": 1083,
+            "precision": 0.300801,
+            "recall": 0.381348,
+            "f1": 0.336319
+          },
+          "hi_hat": {
+            "tp": 56,
+            "fp": 126,
+            "fn": 795,
+            "support": 851,
+            "precision": 0.307692,
+            "recall": 0.065805,
+            "f1": 0.108422
+          },
+          "toms": {
+            "tp": 0,
+            "fp": 16,
+            "fn": 190,
+            "support": 190,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "cymbals": {
+            "tp": 106,
+            "fp": 510,
+            "fn": 261,
+            "support": 367,
+            "precision": 0.172078,
+            "recall": 0.288828,
+            "f1": 0.215666
+          }
+        },
+        "buckets": {
+          "split": {
+            "test": {
+              "cases": 30,
+              "cases_ok": 30,
+              "cases_err": 0,
+              "tp": 811,
+              "fp": 2158,
+              "fn": 3093,
+              "precision": 0.273156,
+              "recall": 0.207736,
+              "f1": 0.235996,
+              "onset_mae_sec": 0.017107,
+              "mean_runtime_sec": 4.8077,
+              "per_class": {
+                "kick": {
+                  "tp": 334,
+                  "fp": 448,
+                  "fn": 417,
+                  "support": 751,
+                  "precision": 0.42711,
+                  "recall": 0.44474,
+                  "f1": 0.435747
+                },
+                "snare": {
+                  "tp": 413,
+                  "fp": 960,
+                  "fn": 670,
+                  "support": 1083,
+                  "precision": 0.300801,
+                  "recall": 0.381348,
+                  "f1": 0.336319
+                },
+                "hi_hat": {
+                  "tp": 56,
+                  "fp": 126,
+                  "fn": 795,
+                  "support": 851,
+                  "precision": 0.307692,
+                  "recall": 0.065805,
+                  "f1": 0.108422
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 16,
+                  "fn": 190,
+                  "support": 190,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 106,
+                  "fp": 510,
+                  "fn": 261,
+                  "support": 367,
+                  "precision": 0.172078,
+                  "recall": 0.288828,
+                  "f1": 0.215666
+                }
+              }
+            }
+          },
+          "style": {
+            "afrocuban/bembe": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 12,
+              "fn": 10,
+              "precision": 0.142857,
+              "recall": 0.166667,
+              "f1": 0.153846,
+              "onset_mae_sec": 0.016508,
+              "mean_runtime_sec": 0.4261,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 7,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 2,
+                  "fp": 2,
+                  "fn": 1,
+                  "support": 3,
+                  "precision": 0.5,
+                  "recall": 0.666667,
+                  "f1": 0.571429
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "afrocuban/rhumba": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 6,
+              "fp": 5,
+              "fn": 5,
+              "precision": 0.545455,
+              "recall": 0.545455,
+              "f1": 0.545455,
+              "onset_mae_sec": 0.010704,
+              "mean_runtime_sec": 0.3386,
+              "per_class": {
+                "kick": {
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 1,
+                  "precision": 0.5,
+                  "recall": 1.0,
+                  "f1": 0.666667
+                },
+                "snare": {
+                  "tp": 5,
+                  "fp": 2,
+                  "fn": 3,
+                  "support": 8,
+                  "precision": 0.714286,
+                  "recall": 0.625,
+                  "f1": 0.666667
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2,
+                  "support": 2,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "country": {
+              "cases": 2,
+              "cases_ok": 2,
+              "cases_err": 0,
+              "tp": 10,
+              "fp": 11,
+              "fn": 15,
+              "precision": 0.47619,
+              "recall": 0.4,
+              "f1": 0.434783,
+              "onset_mae_sec": 0.010532,
+              "mean_runtime_sec": 0.5523,
+              "per_class": {
+                "kick": {
+                  "tp": 2,
+                  "fp": 4,
+                  "fn": 1,
+                  "support": 3,
+                  "precision": 0.333333,
+                  "recall": 0.666667,
+                  "f1": 0.444444
+                },
+                "snare": {
+                  "tp": 8,
+                  "fp": 3,
+                  "fn": 8,
+                  "support": 16,
+                  "precision": 0.727273,
+                  "recall": 0.5,
+                  "f1": 0.592593
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2,
+                  "support": 2,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "funk": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 0,
+              "fp": 23,
+              "fn": 17,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": 0.4807,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 10,
+                  "fn": 3,
+                  "support": 3,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 0,
+                  "fp": 7,
+                  "fn": 10,
+                  "support": 10,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "funk/fast": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 15,
+              "fn": 15,
+              "precision": 0.117647,
+              "recall": 0.117647,
+              "f1": 0.117647,
+              "onset_mae_sec": 0.025669,
+              "mean_runtime_sec": 0.4022,
+              "per_class": {
+                "kick": {
+                  "tp": 1,
+                  "fp": 7,
+                  "fn": 2,
+                  "support": 3,
+                  "precision": 0.125,
+                  "recall": 0.333333,
+                  "f1": 0.181818
+                },
+                "snare": {
+                  "tp": 1,
+                  "fp": 6,
+                  "fn": 3,
+                  "support": 4,
+                  "precision": 0.142857,
+                  "recall": 0.25,
+                  "f1": 0.181818
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 9,
+                  "support": 9,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "funk/groove1": {
+              "cases": 3,
+              "cases_ok": 3,
+              "cases_err": 0,
+              "tp": 89,
+              "fp": 458,
+              "fn": 837,
+              "precision": 0.162706,
+              "recall": 0.096112,
+              "f1": 0.120842,
+              "onset_mae_sec": 0.026678,
+              "mean_runtime_sec": 8.3211,
+              "per_class": {
+                "kick": {
+                  "tp": 8,
+                  "fp": 75,
+                  "fn": 173,
+                  "support": 181,
+                  "precision": 0.096386,
+                  "recall": 0.044199,
+                  "f1": 0.060606
+                },
+                "snare": {
+                  "tp": 76,
+                  "fp": 221,
+                  "fn": 221,
+                  "support": 297,
+                  "precision": 0.255892,
+                  "recall": 0.255892,
+                  "f1": 0.255892
+                },
+                "hi_hat": {
+                  "tp": 4,
+                  "fp": 39,
+                  "fn": 162,
+                  "support": 166,
+                  "precision": 0.093023,
+                  "recall": 0.024096,
+                  "f1": 0.038278
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 50,
+                  "fp": 71,
+                  "fn": 207,
+                  "support": 257,
+                  "precision": 0.413223,
+                  "recall": 0.194553,
+                  "f1": 0.26455
+                }
+              }
+            },
+            "funk/groove2": {
+              "cases": 2,
+              "cases_ok": 2,
+              "cases_err": 0,
+              "tp": 200,
+              "fp": 257,
+              "fn": 457,
+              "precision": 0.437637,
+              "recall": 0.304414,
+              "f1": 0.359066,
+              "onset_mae_sec": 0.009176,
+              "mean_runtime_sec": 11.7446,
+              "per_class": {
+                "kick": {
+                  "tp": 99,
+                  "fp": 49,
+                  "fn": 53,
+                  "support": 152,
+                  "precision": 0.668919,
+                  "recall": 0.651316,
+                  "f1": 0.66
+                },
+                "snare": {
+                  "tp": 85,
+                  "fp": 107,
+                  "fn": 142,
+                  "support": 227,
+                  "precision": 0.442708,
+                  "recall": 0.374449,
+                  "f1": 0.405728
+                },
+                "hi_hat": {
+                  "tp": 16,
+                  "fp": 14,
+                  "fn": 82,
+                  "support": 98,
+                  "precision": 0.533333,
+                  "recall": 0.163265,
+                  "f1": 0.25
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 87,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "hiphop": {
+              "cases": 2,
+              "cases_ok": 2,
+              "cases_err": 0,
+              "tp": 122,
+              "fp": 381,
+              "fn": 476,
+              "precision": 0.242545,
+              "recall": 0.204013,
+              "f1": 0.221617,
+              "onset_mae_sec": 0.011969,
+              "mean_runtime_sec": 11.7852,
+              "per_class": {
+                "kick": {
+                  "tp": 69,
+                  "fp": 70,
+                  "fn": 54,
+                  "support": 123,
+                  "precision": 0.496403,
+                  "recall": 0.560976,
+                  "f1": 0.526718
+                },
+                "snare": {
+                  "tp": 37,
+                  "fp": 165,
+                  "fn": 60,
+                  "support": 97,
+                  "precision": 0.183168,
+                  "recall": 0.381443,
+                  "f1": 0.247492
+                },
+                "hi_hat": {
+                  "tp": 12,
+                  "fp": 6,
+                  "fn": 152,
+                  "support": 164,
+                  "precision": 0.666667,
+                  "recall": 0.073171,
+                  "f1": 0.131868
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 5,
+                  "fn": 15,
+                  "support": 15,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 4,
+                  "fp": 135,
+                  "fn": 4,
+                  "support": 8,
+                  "precision": 0.028777,
+                  "recall": 0.5,
+                  "f1": 0.054422
+                }
+              }
+            },
+            "jazz": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 6,
+              "fp": 14,
+              "fn": 20,
+              "precision": 0.3,
+              "recall": 0.230769,
+              "f1": 0.26087,
+              "onset_mae_sec": 0.029769,
+              "mean_runtime_sec": 0.4777,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 10,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 6,
+                  "fp": 3,
+                  "fn": 5,
+                  "support": 11,
+                  "precision": 0.666667,
+                  "recall": 0.545455,
+                  "f1": 0.6
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 11,
+                  "support": 11,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "jazz/fusion": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 51,
+              "fp": 170,
+              "fn": 217,
+              "precision": 0.230769,
+              "recall": 0.190299,
+              "f1": 0.208589,
+              "onset_mae_sec": 0.012758,
+              "mean_runtime_sec": 12.3617,
+              "per_class": {
+                "kick": {
+                  "tp": 25,
+                  "fp": 22,
+                  "fn": 7,
+                  "support": 32,
+                  "precision": 0.531915,
+                  "recall": 0.78125,
+                  "f1": 0.632911
+                },
+                "snare": {
+                  "tp": 22,
+                  "fp": 92,
+                  "fn": 12,
+                  "support": 34,
+                  "precision": 0.192982,
+                  "recall": 0.647059,
+                  "f1": 0.297297
+                },
+                "hi_hat": {
+                  "tp": 2,
+                  "fp": 13,
+                  "fn": 120,
+                  "support": 122,
+                  "precision": 0.133333,
+                  "recall": 0.016393,
+                  "f1": 0.029197
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 22,
+                  "support": 22,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 3,
+                  "fp": 42,
+                  "fn": 5,
+                  "support": 8,
+                  "precision": 0.066667,
+                  "recall": 0.375,
+                  "f1": 0.113208
+                }
+              }
+            },
+            "latin/brazilian-baiao": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 4,
+              "fp": 15,
+              "fn": 18,
+              "precision": 0.210526,
+              "recall": 0.181818,
+              "f1": 0.195122,
+              "onset_mae_sec": 0.013982,
+              "mean_runtime_sec": 0.5089,
+              "per_class": {
+                "kick": {
+                  "tp": 3,
+                  "fp": 6,
+                  "fn": 3,
+                  "support": 6,
+                  "precision": 0.333333,
+                  "recall": 0.5,
+                  "f1": 0.4
+                },
+                "snare": {
+                  "tp": 1,
+                  "fp": 5,
+                  "fn": 5,
+                  "support": 6,
+                  "precision": 0.166667,
+                  "recall": 0.166667,
+                  "f1": 0.166667
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 6,
+                  "support": 6,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "neworleans/funk": {
+              "cases": 2,
+              "cases_ok": 2,
+              "cases_err": 0,
+              "tp": 9,
+              "fp": 53,
+              "fn": 57,
+              "precision": 0.145161,
+              "recall": 0.136364,
+              "f1": 0.140625,
+              "onset_mae_sec": 0.008074,
+              "mean_runtime_sec": 1.0293,
+              "per_class": {
+                "kick": {
+                  "tp": 2,
+                  "fp": 30,
+                  "fn": 1,
+                  "support": 3,
+                  "precision": 0.0625,
+                  "recall": 0.666667,
+                  "f1": 0.114286
+                },
+                "snare": {
+                  "tp": 7,
+                  "fp": 6,
+                  "fn": 12,
+                  "support": 19,
+                  "precision": 0.538462,
+                  "recall": 0.368421,
+                  "f1": 0.4375
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 13,
+                  "fn": 3,
+                  "support": 3,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 40,
+                  "support": 40,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "punk": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 4,
+              "fp": 6,
+              "fn": 16,
+              "precision": 0.4,
+              "recall": 0.2,
+              "f1": 0.266667,
+              "onset_mae_sec": 0.017023,
+              "mean_runtime_sec": 0.3481,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 4,
+                  "fp": 2,
+                  "fn": 6,
+                  "support": 10,
+                  "precision": 0.666667,
+                  "recall": 0.4,
+                  "f1": 0.5
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "reggae": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 15,
+              "fn": 8,
+              "precision": 0.117647,
+              "recall": 0.2,
+              "f1": 0.148148,
+              "onset_mae_sec": 0.016831,
+              "mean_runtime_sec": 0.6681,
+              "per_class": {
+                "kick": {
+                  "tp": 1,
+                  "fp": 5,
+                  "fn": 0,
+                  "support": 1,
+                  "precision": 0.166667,
+                  "recall": 1.0,
+                  "f1": 0.285714
+                },
+                "snare": {
+                  "tp": 0,
+                  "fp": 5,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "hi_hat": {
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 3,
+                  "support": 4,
+                  "precision": 0.5,
+                  "recall": 0.25,
+                  "f1": 0.333333
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "rock": {
+              "cases": 5,
+              "cases_ok": 5,
+              "cases_err": 0,
+              "tp": 83,
+              "fp": 339,
+              "fn": 292,
+              "precision": 0.196682,
+              "recall": 0.221333,
+              "f1": 0.208281,
+              "onset_mae_sec": 0.014455,
+              "mean_runtime_sec": 3.7619,
+              "per_class": {
+                "kick": {
+                  "tp": 22,
+                  "fp": 74,
+                  "fn": 46,
+                  "support": 68,
+                  "precision": 0.229167,
+                  "recall": 0.323529,
+                  "f1": 0.268293
+                },
+                "snare": {
+                  "tp": 60,
+                  "fp": 144,
+                  "fn": 23,
+                  "support": 83,
+                  "precision": 0.294118,
+                  "recall": 0.722892,
+                  "f1": 0.418118
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 20,
+                  "fn": 20,
+                  "support": 20,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 34,
+                  "support": 34,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 49,
+                  "fp": 50,
+                  "fn": 43,
+                  "support": 92,
+                  "precision": 0.494949,
+                  "recall": 0.532609,
+                  "f1": 0.513089
+                }
+              }
+            },
+            "rock/halftime": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 0,
+              "fp": 25,
+              "fn": 30,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": 0.871,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 12,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 0,
+                  "fp": 6,
+                  "fn": 2,
+                  "support": 2,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 22,
+                  "support": 22,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 6,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "soul": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 1,
+              "fp": 18,
+              "fn": 18,
+              "precision": 0.052632,
+              "recall": 0.052632,
+              "f1": 0.052632,
+              "onset_mae_sec": 0.018027,
+              "mean_runtime_sec": 0.6926,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 7,
+                  "fn": 3,
+                  "support": 3,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 1,
+                  "fp": 5,
+                  "fn": 7,
+                  "support": 8,
+                  "precision": 0.166667,
+                  "recall": 0.125,
+                  "f1": 0.142857
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 5,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 6,
+                  "support": 6,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "soul/groove10": {
+              "cases": 3,
+              "cases_ok": 3,
+              "cases_err": 0,
+              "tp": 220,
+              "fp": 341,
+              "fn": 585,
+              "precision": 0.392157,
+              "recall": 0.273292,
+              "f1": 0.322108,
+              "onset_mae_sec": 0.027755,
+              "mean_runtime_sec": 10.8865,
+              "per_class": {
+                "kick": {
+                  "tp": 101,
+                  "fp": 57,
+                  "fn": 65,
+                  "support": 166,
+                  "precision": 0.639241,
+                  "recall": 0.608434,
+                  "f1": 0.623457
+                },
+                "snare": {
+                  "tp": 98,
+                  "fp": 179,
+                  "fn": 150,
+                  "support": 248,
+                  "precision": 0.353791,
+                  "recall": 0.395161,
+                  "f1": 0.373333
+                },
+                "hi_hat": {
+                  "tp": 21,
+                  "fp": 4,
+                  "fn": 232,
+                  "support": 253,
+                  "precision": 0.84,
+                  "recall": 0.083004,
+                  "f1": 0.151079
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 97,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            }
+          },
+          "kit_name": {
+            "60s Rock": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 15,
+              "fp": 18,
+              "fn": 21,
+              "precision": 0.454545,
+              "recall": 0.416667,
+              "f1": 0.434783,
+              "onset_mae_sec": 0.015601,
+              "mean_runtime_sec": 1.3092,
+              "per_class": {
+                "kick": {
+                  "tp": 3,
+                  "fp": 15,
+                  "fn": 0,
+                  "support": 3,
+                  "precision": 0.166667,
+                  "recall": 1.0,
+                  "f1": 0.285714
+                },
+                "snare": {
+                  "tp": 11,
+                  "fp": 2,
+                  "fn": 2,
+                  "support": 13,
+                  "precision": 0.846154,
+                  "recall": 0.846154,
+                  "f1": 0.846154
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 8,
+                  "support": 8,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 10,
+                  "support": 10,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 1,
+                  "fp": 0,
+                  "fn": 0,
+                  "support": 1,
+                  "precision": 1.0,
+                  "recall": 1.0,
+                  "f1": 1.0
+                }
+              }
+            },
+            "808 Simple": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 4,
+              "fp": 6,
+              "fn": 16,
+              "precision": 0.4,
+              "recall": 0.2,
+              "f1": 0.266667,
+              "onset_mae_sec": 0.017023,
+              "mean_runtime_sec": 0.3481,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 4,
+                  "fp": 2,
+                  "fn": 6,
+                  "support": 10,
+                  "precision": 0.666667,
+                  "recall": 0.4,
+                  "f1": 0.5
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "909 Simple": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 8,
+              "fp": 1,
+              "fn": 8,
+              "precision": 0.888889,
+              "recall": 0.5,
+              "f1": 0.64,
+              "onset_mae_sec": 0.009032,
+              "mean_runtime_sec": 0.4047,
+              "per_class": {
+                "kick": {
+                  "tp": 2,
+                  "fp": 0,
+                  "fn": 1,
+                  "support": 3,
+                  "precision": 1.0,
+                  "recall": 0.666667,
+                  "f1": 0.8
+                },
+                "snare": {
+                  "tp": 6,
+                  "fp": 0,
+                  "fn": 7,
+                  "support": 13,
+                  "precision": 1.0,
+                  "recall": 0.461538,
+                  "f1": 0.631579
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Acoustic Kit": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 15,
+              "fn": 15,
+              "precision": 0.117647,
+              "recall": 0.117647,
+              "f1": 0.117647,
+              "onset_mae_sec": 0.025669,
+              "mean_runtime_sec": 0.4022,
+              "per_class": {
+                "kick": {
+                  "tp": 1,
+                  "fp": 7,
+                  "fn": 2,
+                  "support": 3,
+                  "precision": 0.125,
+                  "recall": 0.333333,
+                  "f1": 0.181818
+                },
+                "snare": {
+                  "tp": 1,
+                  "fp": 6,
+                  "fn": 3,
+                  "support": 4,
+                  "precision": 0.142857,
+                  "recall": 0.25,
+                  "f1": 0.181818
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 9,
+                  "support": 9,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Alternative (METAL)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 4,
+              "fp": 15,
+              "fn": 18,
+              "precision": 0.210526,
+              "recall": 0.181818,
+              "f1": 0.195122,
+              "onset_mae_sec": 0.013982,
+              "mean_runtime_sec": 0.5089,
+              "per_class": {
+                "kick": {
+                  "tp": 3,
+                  "fp": 6,
+                  "fn": 3,
+                  "support": 6,
+                  "precision": 0.333333,
+                  "recall": 0.5,
+                  "f1": 0.4
+                },
+                "snare": {
+                  "tp": 1,
+                  "fp": 5,
+                  "fn": 5,
+                  "support": 6,
+                  "precision": 0.166667,
+                  "recall": 0.166667,
+                  "f1": 0.166667
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 6,
+                  "support": 6,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Alternative (Rock)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 6,
+              "fp": 41,
+              "fn": 45,
+              "precision": 0.12766,
+              "recall": 0.117647,
+              "f1": 0.122449,
+              "onset_mae_sec": 0.010212,
+              "mean_runtime_sec": 1.3929,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 22,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 6,
+                  "fp": 5,
+                  "fn": 11,
+                  "support": 17,
+                  "precision": 0.545455,
+                  "recall": 0.352941,
+                  "f1": 0.428571
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 12,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 33,
+                  "support": 33,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Arena Stage": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 26,
+              "fp": 201,
+              "fn": 135,
+              "precision": 0.114537,
+              "recall": 0.161491,
+              "f1": 0.134021,
+              "onset_mae_sec": 0.013808,
+              "mean_runtime_sec": 8.1165,
+              "per_class": {
+                "kick": {
+                  "tp": 4,
+                  "fp": 19,
+                  "fn": 30,
+                  "support": 34,
+                  "precision": 0.173913,
+                  "recall": 0.117647,
+                  "f1": 0.140351
+                },
+                "snare": {
+                  "tp": 22,
+                  "fp": 83,
+                  "fn": 13,
+                  "support": 35,
+                  "precision": 0.209524,
+                  "recall": 0.628571,
+                  "f1": 0.314286
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 17,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 48,
+                  "fp": 32,
+                  "fn": 43,
+                  "support": 91,
+                  "precision": 0.6,
+                  "recall": 0.527473,
+                  "f1": 0.561404
+                }
+              }
+            },
+            "Big Room (Layered)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 0,
+              "fp": 10,
+              "fn": 8,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": 0.707,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 0,
+                  "fp": 5,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 3,
+                  "support": 3,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2,
+                  "support": 2,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Bigga Bop (Jazz)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 12,
+              "fn": 10,
+              "precision": 0.142857,
+              "recall": 0.166667,
+              "f1": 0.153846,
+              "onset_mae_sec": 0.016508,
+              "mean_runtime_sec": 0.4261,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 7,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 2,
+                  "fp": 2,
+                  "fn": 1,
+                  "support": 3,
+                  "precision": 0.5,
+                  "recall": 0.666667,
+                  "f1": 0.571429
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Cassette (Lo-Fi Compress)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 123,
+              "fp": 145,
+              "fn": 200,
+              "precision": 0.458955,
+              "recall": 0.380805,
+              "f1": 0.416244,
+              "onset_mae_sec": 0.011944,
+              "mean_runtime_sec": 12.3506,
+              "per_class": {
+                "kick": {
+                  "tp": 68,
+                  "fp": 32,
+                  "fn": 13,
+                  "support": 81,
+                  "precision": 0.68,
+                  "recall": 0.839506,
+                  "f1": 0.751381
+                },
+                "snare": {
+                  "tp": 39,
+                  "fp": 47,
+                  "fn": 64,
+                  "support": 103,
+                  "precision": 0.453488,
+                  "recall": 0.378641,
+                  "f1": 0.412698
+                },
+                "hi_hat": {
+                  "tp": 16,
+                  "fp": 10,
+                  "fn": 52,
+                  "support": 68,
+                  "precision": 0.615385,
+                  "recall": 0.235294,
+                  "f1": 0.340426
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 56,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Classic Rock": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 89,
+              "fp": 212,
+              "fn": 292,
+              "precision": 0.295681,
+              "recall": 0.233596,
+              "f1": 0.260997,
+              "onset_mae_sec": 0.010084,
+              "mean_runtime_sec": 16.2272,
+              "per_class": {
+                "kick": {
+                  "tp": 46,
+                  "fp": 40,
+                  "fn": 37,
+                  "support": 83,
+                  "precision": 0.534884,
+                  "recall": 0.554217,
+                  "f1": 0.544379
+                },
+                "snare": {
+                  "tp": 31,
+                  "fp": 101,
+                  "fn": 34,
+                  "support": 65,
+                  "precision": 0.234848,
+                  "recall": 0.476923,
+                  "f1": 0.314721
+                },
+                "hi_hat": {
+                  "tp": 11,
+                  "fp": 5,
+                  "fn": 93,
+                  "support": 104,
+                  "precision": 0.6875,
+                  "recall": 0.105769,
+                  "f1": 0.183333
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 14,
+                  "support": 14,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 1,
+                  "fp": 62,
+                  "fn": 4,
+                  "support": 5,
+                  "precision": 0.015873,
+                  "recall": 0.2,
+                  "f1": 0.029412
+                }
+              }
+            },
+            "ClassicMetal (80s-90s)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 51,
+              "fp": 170,
+              "fn": 217,
+              "precision": 0.230769,
+              "recall": 0.190299,
+              "f1": 0.208589,
+              "onset_mae_sec": 0.012758,
+              "mean_runtime_sec": 12.3617,
+              "per_class": {
+                "kick": {
+                  "tp": 25,
+                  "fp": 22,
+                  "fn": 7,
+                  "support": 32,
+                  "precision": 0.531915,
+                  "recall": 0.78125,
+                  "f1": 0.632911
+                },
+                "snare": {
+                  "tp": 22,
+                  "fp": 92,
+                  "fn": 12,
+                  "support": 34,
+                  "precision": 0.192982,
+                  "recall": 0.647059,
+                  "f1": 0.297297
+                },
+                "hi_hat": {
+                  "tp": 2,
+                  "fp": 13,
+                  "fn": 120,
+                  "support": 122,
+                  "precision": 0.133333,
+                  "recall": 0.016393,
+                  "f1": 0.029197
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 22,
+                  "support": 22,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 3,
+                  "fp": 42,
+                  "fn": 5,
+                  "support": 8,
+                  "precision": 0.066667,
+                  "recall": 0.375,
+                  "f1": 0.113208
+                }
+              }
+            },
+            "Compact Lite (w/ Tambourine HH)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 19,
+              "fp": 79,
+              "fn": 94,
+              "precision": 0.193878,
+              "recall": 0.168142,
+              "f1": 0.180095,
+              "onset_mae_sec": 0.012501,
+              "mean_runtime_sec": 6.263,
+              "per_class": {
+                "kick": {
+                  "tp": 4,
+                  "fp": 11,
+                  "fn": 15,
+                  "support": 19,
+                  "precision": 0.266667,
+                  "recall": 0.210526,
+                  "f1": 0.235294
+                },
+                "snare": {
+                  "tp": 15,
+                  "fp": 52,
+                  "fn": 5,
+                  "support": 20,
+                  "precision": 0.223881,
+                  "recall": 0.75,
+                  "f1": 0.344828
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 14,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Custom1": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 1,
+              "fp": 18,
+              "fn": 18,
+              "precision": 0.052632,
+              "recall": 0.052632,
+              "f1": 0.052632,
+              "onset_mae_sec": 0.018027,
+              "mean_runtime_sec": 0.6926,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 7,
+                  "fn": 3,
+                  "support": 3,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 1,
+                  "fp": 5,
+                  "fn": 7,
+                  "support": 8,
+                  "precision": 0.166667,
+                  "recall": 0.125,
+                  "f1": 0.142857
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 5,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 6,
+                  "support": 6,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Custom2": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 0,
+              "fp": 23,
+              "fn": 17,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": 0.4807,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 10,
+                  "fn": 3,
+                  "support": 3,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 0,
+                  "fp": 7,
+                  "fn": 10,
+                  "support": 10,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Custom3": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 33,
+              "fp": 169,
+              "fn": 184,
+              "precision": 0.163366,
+              "recall": 0.152074,
+              "f1": 0.157518,
+              "onset_mae_sec": 0.013855,
+              "mean_runtime_sec": 7.3431,
+              "per_class": {
+                "kick": {
+                  "tp": 23,
+                  "fp": 30,
+                  "fn": 17,
+                  "support": 40,
+                  "precision": 0.433962,
+                  "recall": 0.575,
+                  "f1": 0.494624
+                },
+                "snare": {
+                  "tp": 6,
+                  "fp": 64,
+                  "fn": 26,
+                  "support": 32,
+                  "precision": 0.085714,
+                  "recall": 0.1875,
+                  "f1": 0.117647
+                },
+                "hi_hat": {
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 59,
+                  "support": 60,
+                  "precision": 0.5,
+                  "recall": 0.016667,
+                  "f1": 0.032258
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 3,
+                  "fp": 73,
+                  "fn": 0,
+                  "support": 3,
+                  "precision": 0.039474,
+                  "recall": 1.0,
+                  "f1": 0.075949
+                }
+              }
+            },
+            "Dark Hybrid": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 6,
+              "fp": 14,
+              "fn": 20,
+              "precision": 0.3,
+              "recall": 0.230769,
+              "f1": 0.26087,
+              "onset_mae_sec": 0.029769,
+              "mean_runtime_sec": 0.4777,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 10,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 6,
+                  "fp": 3,
+                  "fn": 5,
+                  "support": 11,
+                  "precision": 0.666667,
+                  "recall": 0.545455,
+                  "f1": 0.6
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 11,
+                  "support": 11,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Deep Daft": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 3,
+              "fp": 12,
+              "fn": 12,
+              "precision": 0.2,
+              "recall": 0.2,
+              "f1": 0.2,
+              "onset_mae_sec": 0.005936,
+              "mean_runtime_sec": 0.6657,
+              "per_class": {
+                "kick": {
+                  "tp": 2,
+                  "fp": 8,
+                  "fn": 1,
+                  "support": 3,
+                  "precision": 0.2,
+                  "recall": 0.666667,
+                  "f1": 0.307692
+                },
+                "snare": {
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 1,
+                  "support": 2,
+                  "precision": 0.5,
+                  "recall": 0.5,
+                  "f1": 0.5
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 3,
+                  "support": 3,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 7,
+                  "support": 7,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Dry & Heavy (Folk Rock)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 15,
+              "fn": 8,
+              "precision": 0.117647,
+              "recall": 0.2,
+              "f1": 0.148148,
+              "onset_mae_sec": 0.016831,
+              "mean_runtime_sec": 0.6681,
+              "per_class": {
+                "kick": {
+                  "tp": 1,
+                  "fp": 5,
+                  "fn": 0,
+                  "support": 1,
+                  "precision": 0.166667,
+                  "recall": 1.0,
+                  "f1": 0.285714
+                },
+                "snare": {
+                  "tp": 0,
+                  "fp": 5,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "hi_hat": {
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 3,
+                  "support": 4,
+                  "precision": 0.5,
+                  "recall": 0.25,
+                  "f1": 0.333333
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Ele-Drum": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 0,
+              "fp": 25,
+              "fn": 30,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "onset_mae_sec": null,
+              "mean_runtime_sec": 0.871,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 12,
+                  "fn": 1,
+                  "support": 1,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 0,
+                  "fp": 6,
+                  "fn": 2,
+                  "support": 2,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 22,
+                  "support": 22,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 6,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Fat Rock (Power Toms)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 23,
+              "fp": 31,
+              "fn": 34,
+              "precision": 0.425926,
+              "recall": 0.403509,
+              "f1": 0.414414,
+              "onset_mae_sec": 0.01591,
+              "mean_runtime_sec": 2.4137,
+              "per_class": {
+                "kick": {
+                  "tp": 11,
+                  "fp": 25,
+                  "fn": 1,
+                  "support": 12,
+                  "precision": 0.305556,
+                  "recall": 0.916667,
+                  "f1": 0.458333
+                },
+                "snare": {
+                  "tp": 12,
+                  "fp": 2,
+                  "fn": 3,
+                  "support": 15,
+                  "precision": 0.857143,
+                  "recall": 0.8,
+                  "f1": 0.827586
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 9,
+                  "support": 9,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 21,
+                  "support": 21,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Funk Rock": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 89,
+              "fp": 105,
+              "fn": 158,
+              "precision": 0.458763,
+              "recall": 0.360324,
+              "f1": 0.403628,
+              "onset_mae_sec": 0.022328,
+              "mean_runtime_sec": 11.3505,
+              "per_class": {
+                "kick": {
+                  "tp": 40,
+                  "fp": 19,
+                  "fn": 7,
+                  "support": 47,
+                  "precision": 0.677966,
+                  "recall": 0.851064,
+                  "f1": 0.754717
+                },
+                "snare": {
+                  "tp": 30,
+                  "fp": 58,
+                  "fn": 36,
+                  "support": 66,
+                  "precision": 0.340909,
+                  "recall": 0.454545,
+                  "f1": 0.38961
+                },
+                "hi_hat": {
+                  "tp": 19,
+                  "fp": 4,
+                  "fn": 86,
+                  "support": 105,
+                  "precision": 0.826087,
+                  "recall": 0.180952,
+                  "f1": 0.296875
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 5,
+                  "support": 5,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 21,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Heavy Metal": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 52,
+              "fp": 124,
+              "fn": 232,
+              "precision": 0.295455,
+              "recall": 0.183099,
+              "f1": 0.226087,
+              "onset_mae_sec": 0.041696,
+              "mean_runtime_sec": 11.7128,
+              "per_class": {
+                "kick": {
+                  "tp": 21,
+                  "fp": 36,
+                  "fn": 35,
+                  "support": 56,
+                  "precision": 0.368421,
+                  "recall": 0.375,
+                  "f1": 0.371681
+                },
+                "snare": {
+                  "tp": 31,
+                  "fp": 51,
+                  "fn": 68,
+                  "support": 99,
+                  "precision": 0.378049,
+                  "recall": 0.313131,
+                  "f1": 0.342541
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 20,
+                  "support": 20,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 36,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Jazz": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 79,
+              "fp": 112,
+              "fn": 195,
+              "precision": 0.413613,
+              "recall": 0.288321,
+              "f1": 0.339785,
+              "onset_mae_sec": 0.019241,
+              "mean_runtime_sec": 9.5961,
+              "per_class": {
+                "kick": {
+                  "tp": 40,
+                  "fp": 2,
+                  "fn": 23,
+                  "support": 63,
+                  "precision": 0.952381,
+                  "recall": 0.634921,
+                  "f1": 0.761905
+                },
+                "snare": {
+                  "tp": 37,
+                  "fp": 70,
+                  "fn": 46,
+                  "support": 83,
+                  "precision": 0.345794,
+                  "recall": 0.445783,
+                  "f1": 0.389474
+                },
+                "hi_hat": {
+                  "tp": 2,
+                  "fp": 0,
+                  "fn": 126,
+                  "support": 128,
+                  "precision": 1.0,
+                  "recall": 0.015625,
+                  "f1": 0.030769
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 40,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Jazz Funk": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 6,
+              "fp": 5,
+              "fn": 5,
+              "precision": 0.545455,
+              "recall": 0.545455,
+              "f1": 0.545455,
+              "onset_mae_sec": 0.010704,
+              "mean_runtime_sec": 0.3386,
+              "per_class": {
+                "kick": {
+                  "tp": 1,
+                  "fp": 1,
+                  "fn": 0,
+                  "support": 1,
+                  "precision": 0.5,
+                  "recall": 1.0,
+                  "f1": 0.666667
+                },
+                "snare": {
+                  "tp": 5,
+                  "fp": 2,
+                  "fn": 3,
+                  "support": 8,
+                  "precision": 0.714286,
+                  "recall": 0.625,
+                  "f1": 0.666667
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 2,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2,
+                  "support": 2,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "JingleStacks (2nd Hi-Hat)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 10,
+              "fn": 7,
+              "precision": 0.166667,
+              "recall": 0.222222,
+              "f1": 0.190476,
+              "onset_mae_sec": 0.012033,
+              "mean_runtime_sec": 0.6999,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 2,
+                  "fp": 3,
+                  "fn": 1,
+                  "support": 3,
+                  "precision": 0.4,
+                  "recall": 0.666667,
+                  "f1": 0.5
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 2,
+                  "support": 2,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 0,
+                  "fn": 4,
+                  "support": 4,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Live Fusion": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 34,
+              "fp": 162,
+              "fn": 338,
+              "precision": 0.173469,
+              "recall": 0.091398,
+              "f1": 0.119718,
+              "onset_mae_sec": 0.028325,
+              "mean_runtime_sec": 8.7923,
+              "per_class": {
+                "kick": {
+                  "tp": 6,
+                  "fp": 36,
+                  "fn": 63,
+                  "support": 69,
+                  "precision": 0.142857,
+                  "recall": 0.086957,
+                  "f1": 0.108108
+                },
+                "snare": {
+                  "tp": 27,
+                  "fp": 62,
+                  "fn": 84,
+                  "support": 111,
+                  "precision": 0.303371,
+                  "recall": 0.243243,
+                  "f1": 0.27
+                },
+                "hi_hat": {
+                  "tp": 1,
+                  "fp": 5,
+                  "fn": 63,
+                  "support": 64,
+                  "precision": 0.166667,
+                  "recall": 0.015625,
+                  "f1": 0.028571
+                },
+                "toms": {
+                  "tp": 0,
+                  "fp": 3,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 29,
+                  "fp": 27,
+                  "fn": 99,
+                  "support": 128,
+                  "precision": 0.517857,
+                  "recall": 0.226562,
+                  "f1": 0.315217
+                }
+              }
+            },
+            "Live Rock": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 77,
+              "fp": 112,
+              "fn": 257,
+              "precision": 0.407407,
+              "recall": 0.230539,
+              "f1": 0.294455,
+              "onset_mae_sec": 0.006407,
+              "mean_runtime_sec": 11.1385,
+              "per_class": {
+                "kick": {
+                  "tp": 31,
+                  "fp": 17,
+                  "fn": 40,
+                  "support": 71,
+                  "precision": 0.645833,
+                  "recall": 0.43662,
+                  "f1": 0.521008
+                },
+                "snare": {
+                  "tp": 46,
+                  "fp": 60,
+                  "fn": 78,
+                  "support": 124,
+                  "precision": 0.433962,
+                  "recall": 0.370968,
+                  "f1": 0.4
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 4,
+                  "fn": 30,
+                  "support": 30,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 31,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            },
+            "Modern Funk": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 22,
+              "fp": 192,
+              "fn": 235,
+              "precision": 0.102804,
+              "recall": 0.085603,
+              "f1": 0.093418,
+              "onset_mae_sec": 0.024456,
+              "mean_runtime_sec": 9.1292,
+              "per_class": {
+                "kick": {
+                  "tp": 2,
+                  "fp": 20,
+                  "fn": 54,
+                  "support": 56,
+                  "precision": 0.090909,
+                  "recall": 0.035714,
+                  "f1": 0.051282
+                },
+                "snare": {
+                  "tp": 19,
+                  "fp": 96,
+                  "fn": 53,
+                  "support": 72,
+                  "precision": 0.165217,
+                  "recall": 0.263889,
+                  "f1": 0.203209
+                },
+                "hi_hat": {
+                  "tp": 0,
+                  "fp": 32,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "cymbals": {
+                  "tp": 21,
+                  "fp": 24,
+                  "fn": 108,
+                  "support": 129,
+                  "precision": 0.466667,
+                  "recall": 0.162791,
+                  "f1": 0.241379
+                }
+              }
+            },
+            "More Cowbell (Pop-Rock)": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 33,
+              "fp": 104,
+              "fn": 264,
+              "precision": 0.240876,
+              "recall": 0.111111,
+              "f1": 0.152074,
+              "onset_mae_sec": 0.027254,
+              "mean_runtime_sec": 7.0419,
+              "per_class": {
+                "kick": {
+                  "tp": 0,
+                  "fp": 19,
+                  "fn": 56,
+                  "support": 56,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                },
+                "snare": {
+                  "tp": 30,
+                  "fp": 63,
+                  "fn": 84,
+                  "support": 114,
+                  "precision": 0.322581,
+                  "recall": 0.263158,
+                  "f1": 0.289855
+                },
+                "hi_hat": {
+                  "tp": 3,
+                  "fp": 2,
+                  "fn": 99,
+                  "support": 102,
+                  "precision": 0.6,
+                  "recall": 0.029412,
+                  "f1": 0.056075
+                },
+                "cymbals": {
+                  "tp": 0,
+                  "fp": 20,
+                  "fn": 0,
+                  "support": 0,
+                  "precision": 0.0,
+                  "recall": 0.0,
+                  "f1": 0.0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "egmd:drummer1/eval_session/10::10_soul-groove10_102_beat_4-4_43",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 11.3505,
+      "tp": 89,
+      "fp": 105,
+      "fn": 158,
+      "precision": 0.458763,
+      "recall": 0.360324,
+      "f1": 0.403628,
+      "onset_mae_sec": 0.022328,
+      "metadata": {
+        "split": "test",
+        "style": "soul/groove10",
+        "kit_name": "Funk Rock",
+        "bpm": "102",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 40,
+          "fp": 19,
+          "fn": 7
+        },
+        "snare": {
+          "tp": 30,
+          "fp": 58,
+          "fn": 36
+        },
+        "hi_hat": {
+          "tp": 19,
+          "fp": 4,
+          "fn": 86
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 3,
+          "fn": 5
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 21,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/2::2_funk-groove2_105_beat_4-4_41",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 12.3506,
+      "tp": 123,
+      "fp": 145,
+      "fn": 200,
+      "precision": 0.458955,
+      "recall": 0.380805,
+      "f1": 0.416244,
+      "onset_mae_sec": 0.011944,
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove2",
+        "kit_name": "Cassette (Lo-Fi Compress)",
+        "bpm": "105",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 68,
+          "fp": 32,
+          "fn": 13
+        },
+        "snare": {
+          "tp": 39,
+          "fp": 47,
+          "fn": 64
+        },
+        "hi_hat": {
+          "tp": 16,
+          "fp": 10,
+          "fn": 52
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 56,
+          "fn": 1
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/141::141_funk-fast_125_fill_4-4_1",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.4022,
+      "tp": 2,
+      "fp": 15,
+      "fn": 15,
+      "precision": 0.117647,
+      "recall": 0.117647,
+      "f1": 0.117647,
+      "onset_mae_sec": 0.025669,
+      "metadata": {
+        "split": "test",
+        "style": "funk/fast",
+        "kit_name": "Acoustic Kit",
+        "bpm": "125",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 1,
+          "fp": 7,
+          "fn": 2
+        },
+        "snare": {
+          "tp": 1,
+          "fp": 6,
+          "fn": 3
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 1
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 9
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/153::153_latin-brazilian-baiao_95_fill_4-4_34",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.5089,
+      "tp": 4,
+      "fp": 15,
+      "fn": 18,
+      "precision": 0.210526,
+      "recall": 0.181818,
+      "f1": 0.195122,
+      "onset_mae_sec": 0.013982,
+      "metadata": {
+        "split": "test",
+        "style": "latin/brazilian-baiao",
+        "kit_name": "Alternative (METAL)",
+        "bpm": "95",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 3,
+          "fp": 6,
+          "fn": 3
+        },
+        "snare": {
+          "tp": 1,
+          "fp": 5,
+          "fn": 5
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 4
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 6
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/189::189_reggae_78_fill_4-4_22",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.6681,
+      "tp": 2,
+      "fp": 15,
+      "fn": 8,
+      "precision": 0.117647,
+      "recall": 0.2,
+      "f1": 0.148148,
+      "onset_mae_sec": 0.016831,
+      "metadata": {
+        "split": "test",
+        "style": "reggae",
+        "kit_name": "Dry & Heavy (Folk Rock)",
+        "bpm": "78",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 1,
+          "fp": 5,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 0,
+          "fp": 5,
+          "fn": 0
+        },
+        "hi_hat": {
+          "tp": 1,
+          "fp": 1,
+          "fn": 3
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/207::207_rock-halftime_140_fill_4-4_55",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.871,
+      "tp": 0,
+      "fp": 25,
+      "fn": 30,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "test",
+        "style": "rock/halftime",
+        "kit_name": "Ele-Drum",
+        "bpm": "140",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 12,
+          "fn": 1
+        },
+        "snare": {
+          "tp": 0,
+          "fp": 6,
+          "fn": 2
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 5
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 22
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 6,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/54::54_jazz_125_fill_4-4_17",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.4777,
+      "tp": 6,
+      "fp": 14,
+      "fn": 20,
+      "precision": 0.3,
+      "recall": 0.230769,
+      "f1": 0.26087,
+      "onset_mae_sec": 0.029769,
+      "metadata": {
+        "split": "test",
+        "style": "jazz",
+        "kit_name": "Dark Hybrid",
+        "bpm": "125",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 10,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 6,
+          "fp": 3,
+          "fn": 5
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 11
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/93::93_neworleans-funk_84_fill_4-4_8",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.6657,
+      "tp": 3,
+      "fp": 12,
+      "fn": 12,
+      "precision": 0.2,
+      "recall": 0.2,
+      "f1": 0.2,
+      "onset_mae_sec": 0.005936,
+      "metadata": {
+        "split": "test",
+        "style": "neworleans/funk",
+        "kit_name": "Deep Daft",
+        "bpm": "84",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 2,
+          "fp": 8,
+          "fn": 1
+        },
+        "snare": {
+          "tp": 1,
+          "fp": 1,
+          "fn": 1
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 3
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 7
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/116::116_afrocuban-bembe_122_fill_4-4_42",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.4261,
+      "tp": 2,
+      "fp": 12,
+      "fn": 10,
+      "precision": 0.142857,
+      "recall": 0.166667,
+      "f1": 0.153846,
+      "onset_mae_sec": 0.016508,
+      "metadata": {
+        "split": "test",
+        "style": "afrocuban/bembe",
+        "kit_name": "Bigga Bop (Jazz)",
+        "bpm": "122",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 7,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 2,
+          "fp": 2,
+          "fn": 1
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 4
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 5
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/16::16_country_114_fill_4-4_52",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.4047,
+      "tp": 8,
+      "fp": 1,
+      "fn": 8,
+      "precision": 0.888889,
+      "recall": 0.5,
+      "f1": 0.64,
+      "onset_mae_sec": 0.009032,
+      "metadata": {
+        "split": "test",
+        "style": "country",
+        "kit_name": "909 Simple",
+        "bpm": "114",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 1
+        },
+        "snare": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 7
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/167::167_afrocuban-rhumba_110_fill_4-4_13",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.3386,
+      "tp": 6,
+      "fp": 5,
+      "fn": 5,
+      "precision": 0.545455,
+      "recall": 0.545455,
+      "f1": 0.545455,
+      "onset_mae_sec": 0.010704,
+      "metadata": {
+        "split": "test",
+        "style": "afrocuban/rhumba",
+        "kit_name": "Jazz Funk",
+        "bpm": "110",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 1,
+          "fp": 1,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 5,
+          "fp": 2,
+          "fn": 3
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 2
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/47::47_punk_128_fill_4-4_51",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.3481,
+      "tp": 4,
+      "fp": 6,
+      "fn": 16,
+      "precision": 0.4,
+      "recall": 0.2,
+      "f1": 0.266667,
+      "onset_mae_sec": 0.017023,
+      "metadata": {
+        "split": "test",
+        "style": "punk",
+        "kit_name": "808 Simple",
+        "bpm": "128",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 5
+        },
+        "snare": {
+          "tp": 4,
+          "fp": 2,
+          "fn": 6
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 5
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer3/session1/11::11_rock_120_beat_4-4_25",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 8.1165,
+      "tp": 26,
+      "fp": 201,
+      "fn": 135,
+      "precision": 0.114537,
+      "recall": 0.161491,
+      "f1": 0.134021,
+      "onset_mae_sec": 0.013808,
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Arena Stage",
+        "bpm": "120",
+        "time_signature": "4-4",
+        "drummer": "drummer3"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 4,
+          "fp": 19,
+          "fn": 30
+        },
+        "snare": {
+          "tp": 22,
+          "fp": 83,
+          "fn": 13
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 17,
+          "fn": 0
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 1
+        },
+        "cymbals": {
+          "tp": 48,
+          "fp": 32,
+          "fn": 43
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer3/session2/10::10_rock_100_beat_4-4_6",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 6.263,
+      "tp": 19,
+      "fp": 79,
+      "fn": 94,
+      "precision": 0.193878,
+      "recall": 0.168142,
+      "f1": 0.180095,
+      "onset_mae_sec": 0.012501,
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Compact Lite (w/ Tambourine HH)",
+        "bpm": "100",
+        "time_signature": "4-4",
+        "drummer": "drummer3"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 4,
+          "fp": 11,
+          "fn": 15
+        },
+        "snare": {
+          "tp": 15,
+          "fp": 52,
+          "fn": 5
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 14,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer5/eval_session/1::1_funk-groove1_138_beat_4-4_37",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 8.7923,
+      "tp": 34,
+      "fp": 162,
+      "fn": 338,
+      "precision": 0.173469,
+      "recall": 0.091398,
+      "f1": 0.119718,
+      "onset_mae_sec": 0.028325,
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Live Fusion",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer5"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 6,
+          "fp": 36,
+          "fn": 63
+        },
+        "snare": {
+          "tp": 27,
+          "fp": 62,
+          "fn": 84
+        },
+        "hi_hat": {
+          "tp": 1,
+          "fp": 5,
+          "fn": 63
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 3,
+          "fn": 0
+        },
+        "cymbals": {
+          "tp": 29,
+          "fp": 27,
+          "fn": 99
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer5/eval_session/10::10_soul-groove10_102_beat_4-4_24",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 11.7128,
+      "tp": 52,
+      "fp": 124,
+      "fn": 232,
+      "precision": 0.295455,
+      "recall": 0.183099,
+      "f1": 0.226087,
+      "onset_mae_sec": 0.041696,
+      "metadata": {
+        "split": "test",
+        "style": "soul/groove10",
+        "kit_name": "Heavy Metal",
+        "bpm": "102",
+        "time_signature": "4-4",
+        "drummer": "drummer5"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 21,
+          "fp": 36,
+          "fn": 35
+        },
+        "snare": {
+          "tp": 31,
+          "fp": 51,
+          "fn": 68
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 20
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 36,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer5/eval_session/2::2_funk-groove2_105_beat_4-4_32",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 11.1385,
+      "tp": 77,
+      "fp": 112,
+      "fn": 257,
+      "precision": 0.407407,
+      "recall": 0.230539,
+      "f1": 0.294455,
+      "onset_mae_sec": 0.006407,
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove2",
+        "kit_name": "Live Rock",
+        "bpm": "105",
+        "time_signature": "4-4",
+        "drummer": "drummer5"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 31,
+          "fp": 17,
+          "fn": 40
+        },
+        "snare": {
+          "tp": 46,
+          "fp": 60,
+          "fn": 78
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 30
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 31,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/eval_session/1::1_funk-groove1_138_beat_4-4_16",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 9.1292,
+      "tp": 22,
+      "fp": 192,
+      "fn": 235,
+      "precision": 0.102804,
+      "recall": 0.085603,
+      "f1": 0.093418,
+      "onset_mae_sec": 0.024456,
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Modern Funk",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 2,
+          "fp": 20,
+          "fn": 54
+        },
+        "snare": {
+          "tp": 19,
+          "fp": 96,
+          "fn": 53
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 32,
+          "fn": 0
+        },
+        "cymbals": {
+          "tp": 21,
+          "fp": 24,
+          "fn": 108
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session1/16::16_hiphop_100_beat_4-4_12",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 16.2272,
+      "tp": 89,
+      "fp": 212,
+      "fn": 292,
+      "precision": 0.295681,
+      "recall": 0.233596,
+      "f1": 0.260997,
+      "onset_mae_sec": 0.010084,
+      "metadata": {
+        "split": "test",
+        "style": "hiphop",
+        "kit_name": "Classic Rock",
+        "bpm": "100",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 46,
+          "fp": 40,
+          "fn": 37
+        },
+        "snare": {
+          "tp": 31,
+          "fp": 101,
+          "fn": 34
+        },
+        "hi_hat": {
+          "tp": 11,
+          "fp": 5,
+          "fn": 93
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 14
+        },
+        "cymbals": {
+          "tp": 1,
+          "fp": 62,
+          "fn": 4
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/112::112_jazz-fusion_96_beat_4-4_14",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 12.3617,
+      "tp": 51,
+      "fp": 170,
+      "fn": 217,
+      "precision": 0.230769,
+      "recall": 0.190299,
+      "f1": 0.208589,
+      "onset_mae_sec": 0.012758,
+      "metadata": {
+        "split": "test",
+        "style": "jazz/fusion",
+        "kit_name": "ClassicMetal (80s-90s)",
+        "bpm": "96",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 25,
+          "fp": 22,
+          "fn": 7
+        },
+        "snare": {
+          "tp": 22,
+          "fp": 92,
+          "fn": 12
+        },
+        "hi_hat": {
+          "tp": 2,
+          "fp": 13,
+          "fn": 120
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 22
+        },
+        "cymbals": {
+          "tp": 3,
+          "fp": 42,
+          "fn": 5
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/18::18_rock_118_fill_4-4_15",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 1.3092,
+      "tp": 15,
+      "fp": 18,
+      "fn": 21,
+      "precision": 0.454545,
+      "recall": 0.416667,
+      "f1": 0.434783,
+      "onset_mae_sec": 0.015601,
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "60s Rock",
+        "bpm": "118",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 3,
+          "fp": 15,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 11,
+          "fp": 2,
+          "fn": 2
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 8
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 10
+        },
+        "cymbals": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/2::2_rock_120_beat_4-4_2",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 2.4137,
+      "tp": 23,
+      "fp": 31,
+      "fn": 34,
+      "precision": 0.425926,
+      "recall": 0.403509,
+      "f1": 0.414414,
+      "onset_mae_sec": 0.01591,
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Fat Rock (Power Toms)",
+        "bpm": "120",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 11,
+          "fp": 25,
+          "fn": 1
+        },
+        "snare": {
+          "tp": 12,
+          "fp": 2,
+          "fn": 3
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 9
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 21
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 3,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/35::35_rock_75_fill_4-4_18",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.707,
+      "tp": 0,
+      "fp": 10,
+      "fn": 8,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Big Room (Layered)",
+        "bpm": "75",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 0,
+          "fp": 5,
+          "fn": 0
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 3
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 2
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/83::83_country_78_fill_4-4_10",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.6999,
+      "tp": 2,
+      "fp": 10,
+      "fn": 7,
+      "precision": 0.166667,
+      "recall": 0.222222,
+      "f1": 0.190476,
+      "onset_mae_sec": 0.012033,
+      "metadata": {
+        "split": "test",
+        "style": "country",
+        "kit_name": "JingleStacks (2nd Hi-Hat)",
+        "bpm": "78",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 2,
+          "fp": 3,
+          "fn": 1
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 2
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 3,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/93::93_hiphop_75_beat_4-4_58",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 7.3431,
+      "tp": 33,
+      "fp": 169,
+      "fn": 184,
+      "precision": 0.163366,
+      "recall": 0.152074,
+      "f1": 0.157518,
+      "onset_mae_sec": 0.013855,
+      "metadata": {
+        "split": "test",
+        "style": "hiphop",
+        "kit_name": "Custom3",
+        "bpm": "75",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 23,
+          "fp": 30,
+          "fn": 17
+        },
+        "snare": {
+          "tp": 6,
+          "fp": 64,
+          "fn": 26
+        },
+        "hi_hat": {
+          "tp": 1,
+          "fp": 1,
+          "fn": 59
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 1
+        },
+        "cymbals": {
+          "tp": 3,
+          "fp": 73,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session3/138::138_soul_105_fill_4-4_56",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.6926,
+      "tp": 1,
+      "fp": 18,
+      "fn": 18,
+      "precision": 0.052632,
+      "recall": 0.052632,
+      "f1": 0.052632,
+      "onset_mae_sec": 0.018027,
+      "metadata": {
+        "split": "test",
+        "style": "soul",
+        "kit_name": "Custom1",
+        "bpm": "105",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 7,
+          "fn": 3
+        },
+        "snare": {
+          "tp": 1,
+          "fp": 5,
+          "fn": 7
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 5,
+          "fn": 1
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 6
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 1
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session3/53::53_funk_112_fill_4-4_57",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 0.4807,
+      "tp": 0,
+      "fp": 23,
+      "fn": 17,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "split": "test",
+        "style": "funk",
+        "kit_name": "Custom2",
+        "bpm": "112",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 10,
+          "fn": 3
+        },
+        "snare": {
+          "tp": 0,
+          "fp": 7,
+          "fn": 10
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 3,
+          "fn": 4
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 3,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session3/73::73_neworleans-funk_93_fill_4-4_44",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 1.3929,
+      "tp": 6,
+      "fp": 41,
+      "fn": 45,
+      "precision": 0.12766,
+      "recall": 0.117647,
+      "f1": 0.122449,
+      "onset_mae_sec": 0.010212,
+      "metadata": {
+        "split": "test",
+        "style": "neworleans/funk",
+        "kit_name": "Alternative (Rock)",
+        "bpm": "93",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 22,
+          "fn": 0
+        },
+        "snare": {
+          "tp": 6,
+          "fp": 5,
+          "fn": 11
+        },
+        "hi_hat": {
+          "tp": 0,
+          "fp": 12,
+          "fn": 0
+        },
+        "toms": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 33
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer8/eval_session/1::1_funk-groove1_138_beat_4-4_31",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 7.0419,
+      "tp": 33,
+      "fp": 104,
+      "fn": 264,
+      "precision": 0.240876,
+      "recall": 0.111111,
+      "f1": 0.152074,
+      "onset_mae_sec": 0.027254,
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "More Cowbell (Pop-Rock)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer8"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 0,
+          "fp": 19,
+          "fn": 56
+        },
+        "snare": {
+          "tp": 30,
+          "fp": 63,
+          "fn": 84
+        },
+        "hi_hat": {
+          "tp": 3,
+          "fp": 2,
+          "fn": 99
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 20,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "case_id": "egmd:drummer8/eval_session/10::10_soul-groove10_102_beat_4-4_3",
+      "algorithm_id": "spectral_flux_multiband",
+      "runtime_sec": 9.5961,
+      "tp": 79,
+      "fp": 112,
+      "fn": 195,
+      "precision": 0.413613,
+      "recall": 0.288321,
+      "f1": 0.339785,
+      "onset_mae_sec": 0.019241,
+      "metadata": {
+        "split": "test",
+        "style": "soul/groove10",
+        "kit_name": "Jazz",
+        "bpm": "102",
+        "time_signature": "4-4",
+        "drummer": "drummer8"
+      },
+      "per_class": {
+        "kick": {
+          "tp": 40,
+          "fp": 2,
+          "fn": 23
+        },
+        "snare": {
+          "tp": 37,
+          "fp": 70,
+          "fn": 46
+        },
+        "hi_hat": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 126
+        },
+        "cymbals": {
+          "tp": 0,
+          "fp": 40,
+          "fn": 0
+        }
+      }
+    }
+  ]
+}
