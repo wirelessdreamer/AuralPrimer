@@ -489,6 +489,7 @@ root.innerHTML = `
                   <option value="librosa_superflux">librosa_superflux</option>
                   <option value="mr_mt3_drums">mr_mt3_drums (local modelpack required)</option>
                   <option value="yourmt3_drums">yourmt3_drums (local modelpack required)</option>
+                  <option value="drum_crnn">Drum CRNN (neural, 5-class)</option>
                 </select>
                 <label class="meta">Melodic</label>
                 <select id="ingestMelodicMethod">

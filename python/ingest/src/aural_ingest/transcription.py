@@ -34,6 +34,7 @@ KNOWN_HEURISTIC_DRUM_FILTERS: tuple[str, ...] = (
     "multi_resolution_template",
     "hybrid_kick_grid",
     "adaptive_beat_grid_multilabel",
+    "drum_crnn",
 )
 
 KNOWN_MT3_DRUM_ENGINES: tuple[str, ...] = (
@@ -291,6 +292,24 @@ MT3_DRUM_ENGINE_MODEL_INFO: dict[str, dict[str, Any]] = {
         "size_mb": 536.0,
         "speed_x_realtime": 15.0,
         "description": "YourMT3 drum transcription research candidate",
+    },
+}
+
+# In-house neural drum engine. NOT an MT3 engine (kept out of
+# KNOWN_MT3_DRUM_ENGINES): a compact 5-class CRNN exported to ONNX, run
+# in-process via onnxruntime. Opt-in only -- selectable via --drum-filter
+# drum_crnn; not wired into any profile default.
+DRUM_CRNN_ENGINE_MODEL_INFO: dict[str, dict[str, Any]] = {
+    "drum_crnn": {
+        "engine": "drum_crnn",
+        "backend": "crnn",
+        "model_id": "drum_crnn",
+        "modelpack_id": "drum_crnn",
+        "onnx_path": Path("files") / "drum_crnn.onnx",
+        "format": "onnx",
+        "num_classes": 5,
+        "size_mb": 1.2,
+        "description": "In-house drum CRNN (5-class: kick/snare/hi_hat/toms/cymbals), ONNX",
     },
 }
 
@@ -862,6 +881,8 @@ def drum_engine_metadata(engine_id: str) -> dict[str, Any]:
     normalized = str(engine_id).strip().lower()
     if normalized in MT3_DRUM_ENGINE_MODEL_INFO:
         return _json_safe_value(MT3_DRUM_ENGINE_MODEL_INFO[normalized])
+    if normalized in DRUM_CRNN_ENGINE_MODEL_INFO:
+        return _json_safe_value(DRUM_CRNN_ENGINE_MODEL_INFO[normalized])
     return {
         "engine": normalized,
         "backend": "heuristic",
@@ -1197,6 +1218,7 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         aural_onset,
         beat_conditioned_multiband_decoder,
         combined_filter,
+        drum_crnn,
         dsp_bandpass,
         dsp_bandpass_improved,
         dsp_spectral_flux,
@@ -1239,6 +1261,9 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
         "nmf_decomposition": nmf_decomposition.transcribe,
         "mfcc_cepstral": mfcc_cepstral.transcribe,
         "hpss_percussive": hpss_percussive.transcribe,
+        # In-house neural engine (opt-in). Raises RuntimeError at inference if
+        # its ONNX/onnxruntime is absent, so the DSP fallback chain takes over.
+        "drum_crnn": drum_crnn.transcribe,
     }
 
     def _wrap_mt3(engine_id: str) -> DrumTranscriber:
