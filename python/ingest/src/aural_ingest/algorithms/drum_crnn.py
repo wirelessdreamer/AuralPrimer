@@ -23,10 +23,11 @@ Model resolution order:
   2. an installed ``assets/models/drum_crnn/<version>/`` modelpack, discovered
      with the same search-root logic the MT3 resolver uses.
 
-Decode threshold defaults to **0.15** (the F1-optimal point from the standalone
-stratified-30 eval; at 0.5 the precision-heavy model under-triggers and F1 drops
-from ~0.53 to ~0.41). Override with ``AURAL_DRUM_CRNN_THRESHOLD``. ``min_gap``
-defaults to 0.02 s.
+Decode threshold defaults to **0.20** (the F1-optimal point for the full-corpus
+run-2 weights on the stratified-30 eval: F1 0.546 vs 0.537 at 0.15; at 0.5 the
+precision-heavy model under-triggers and F1 drops to ~0.41). Override with
+``AURAL_DRUM_CRNN_THRESHOLD``. ``min_gap`` defaults to 0.02 s. A proper per-class
+threshold calibration on a guard set is deferred to the promotion-gate phase.
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ from aural_ingest.transcription import DrumEvent
 _ENV_ONNX = "AURAL_DRUM_CRNN_ONNX"          # explicit path to the .onnx
 _ENV_THRESHOLD = "AURAL_DRUM_CRNN_THRESHOLD"  # decode threshold override
 
-DEFAULT_THRESHOLD = 0.15  # F1-optimal for this checkpoint; NOT 0.5 (under-triggers)
+DEFAULT_THRESHOLD = 0.20  # F1-optimal for run-2 full-corpus weights; NOT 0.5 (under-triggers)
 DEFAULT_MIN_GAP_SEC = 0.02
 MODELPACK_ID = "drum_crnn"
 
