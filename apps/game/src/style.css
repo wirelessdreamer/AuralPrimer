@@ -1296,3 +1296,72 @@ li {
   width: 100%;
   height: 100%;
 }
+
+/* Per-stem mixer (Band Setup rail) ------------------------------------- */
+.stemMixer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.stemMixer .mixerTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8b93a7;
+  margin-bottom: 2px;
+}
+.stemMixer .mixerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stemMixer .mixerRow.isDimmed {
+  opacity: 0.45;
+}
+.stemMixer .mixerLabel {
+  flex: 0 0 56px;
+  font-size: 12px;
+  color: #d7dbe6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stemMixer .mixerFader {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--accent2);
+  cursor: pointer;
+}
+.stemMixer .mixerBtn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #aeb4c2;
+  cursor: pointer;
+}
+.stemMixer .mixerBtn:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.stemMixer .mixerMute.isOn {
+  border-color: #ff5c7a;
+  background: rgba(255, 92, 122, 0.18);
+  color: #ff9bb0;
+}
+.stemMixer .mixerSolo.isOn {
+  border-color: var(--accent3);
+  background: rgba(163, 255, 18, 0.16);
+  color: var(--accent3);
+}

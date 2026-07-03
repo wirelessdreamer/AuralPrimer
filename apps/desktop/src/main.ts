@@ -1411,9 +1411,9 @@ function renderDetails(details: AuralSongDetails) {
 
     <h4>Audio</h4>
     <ul>
-      <li>mix.mp3: ${escapeHtml(yesNo(details.has_mix_mp3))}</li>
-      <li>mix.ogg: ${escapeHtml(yesNo(details.has_mix_ogg))}</li>
-      <li>mix.wav: ${escapeHtml(yesNo(Boolean(details.has_mix_wav)))}</li>
+      <li>stem.mp3: ${escapeHtml(yesNo(details.has_mix_mp3))}</li>
+      <li>stem.ogg: ${escapeHtml(yesNo(details.has_mix_ogg))}</li>
+      <li>stem.wav: ${escapeHtml(yesNo(Boolean(details.has_mix_wav)))}</li>
     </ul>
 
     <h4>Charts</h4>
@@ -1903,9 +1903,9 @@ function renderCaps(details: AuralSongDetails | null, drumSelection: DrumChartSe
     .join("\n");
 
   const audioPills = [
-    pill("mix.wav", caps.audio.wav),
-    pill("mix.mp3", caps.audio.mp3),
-    pill("mix.ogg", caps.audio.ogg),
+    pill("stem.wav", caps.audio.wav),
+    pill("stem.mp3", caps.audio.mp3),
+    pill("stem.ogg", caps.audio.ogg),
   ].join("\n");
 
   capsEl.innerHTML = `

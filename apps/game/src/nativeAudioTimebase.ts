@@ -41,6 +41,8 @@ type NativeAudioState = {
 type LoadedAuralSongAudioInfo = {
   mime: string;
   duration_sec: number;
+  /** Stem roles loaded into the engine (mix order), for the per-track mixer. */
+  roles?: string[];
 };
 
 const LONG_DURATION_SENTINEL_SEC = 24 * 60 * 60;
@@ -62,6 +64,7 @@ export class NativeAudioTimebase implements TransportTimebase {
   private playbackRate = 1;
 
   private loadedDurationSec: number | null = null;
+  private loadedStemRoles: string[] = [];
   private initialized = false;
 
   private lastLoadedAuralSongPath: string | null = null;
@@ -86,6 +89,7 @@ export class NativeAudioTimebase implements TransportTimebase {
       containerPath
     });
     this.initialized = true;
+    this.loadedStemRoles = Array.isArray(info.roles) ? info.roles : [];
     const durationSec = Number(info.duration_sec ?? 0);
     this.loadedDurationSec = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : LONG_DURATION_SENTINEL_SEC;
     return info;
@@ -289,6 +293,12 @@ export class NativeAudioTimebase implements TransportTimebase {
     await this.applyRuntimeSettings();
 
     return { mime: info.mime, durationSec: this.loadedDurationSec ?? LONG_DURATION_SENTINEL_SEC };
+  }
+
+  /** Stem roles loaded for the most recent song (mix order), or [] for a
+   * single-stem/legacy load. Drives the per-track mixer UI. */
+  getLoadedStemRoles(): string[] {
+    return this.loadedStemRoles;
   }
 
   async play(): Promise<void> {

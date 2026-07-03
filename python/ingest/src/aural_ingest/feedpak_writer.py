@@ -492,19 +492,16 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
         _copy_tree(src, feedpak_dir / dst_rel)
         stem_entries.append({"id": role, "file": dst_rel, "default": i == 0})
 
-    # Carry the full mix as audio/mix.wav so the song is playable as a whole —
-    # the game can sum stems, but the Studio Refine workspace's "All (mix)"
-    # transport plays this single file, and a stem-less import needs it too.
+    # Stems-only: feedpaks do NOT bundle a combined audio/mix.wav. Players mix
+    # the individual stems themselves (the game sums them in its native engine;
+    # the Studio mixes them in Web Audio). The decoded full mix stays a
+    # working-dir intermediate (demucs input), never shipped in the pack.
+    #
+    # Sole exception — feedpak requires >=1 stem: if the .auralsong carried no
+    # usable separated stem (separation skipped), carry the full mix as a single
+    # "mix" stem so every import still yields a schema-valid, stem-based feedpak.
     mix_rel = audio.get("mix_path") if isinstance(audio, dict) else None
     have_mix = isinstance(mix_rel, str) and bool(mix_rel) and (auralsong_dir / mix_rel).exists()
-    if have_mix:
-        mix_src = auralsong_dir / mix_rel  # type: ignore[arg-type]
-        ext = mix_src.suffix or ".wav"
-        _copy_tree(mix_src, feedpak_dir / f"audio/mix{ext}")
-
-    # feedpak requires >=1 stem. If the .auralsong carried no usable stem
-    # (e.g. stem separation was skipped), fall back to the full mix as a single
-    # "mix" stem so every import still yields a schema-valid feedpak.
     if not stem_entries and have_mix:
         mix_src = auralsong_dir / mix_rel  # type: ignore[arg-type]
         ext = mix_src.suffix or ".wav"

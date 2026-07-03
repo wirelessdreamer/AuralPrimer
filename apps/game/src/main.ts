@@ -61,6 +61,7 @@ import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
 import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
+import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
 function haveTauri(): boolean {
@@ -597,6 +598,10 @@ const playersPanel: PlayersPanelHandle = initPlayersPanel({
 });
 _playersPanelRef = playersPanel;
 
+// Per-stem mixer (fader + mute/solo). Populated with the loaded stem roles
+// after each song's audio loads; hidden for single-stem/legacy packs.
+const stemMixer = initStemMixerPanel(document.getElementById("stemMixer") as HTMLElement);
+
 // Caps panel — depends on playersPanel (for instrument writeback) and a
 // live getter for selectedMelodicTracks (mutated by readDrumChartSelection).
 const capsPanel: CapsPanelHandle = initCapsPanel({
@@ -896,6 +901,9 @@ async function loadAudioFromSelectedAuralSong(containerPath?: string) {
       lastLoadedAuralSongPath = targetAuralSongPath;
       setAudioStatus(`loaded: ${loadResult.mime} (${loadResult.byteLength} bytes)`);
     }
+
+    // Populate the per-stem mixer with the loaded stems (empty -> panel hidden).
+    stemMixer.setRoles(nativeTimebase?.getLoadedStemRoles() ?? []);
 
     audioTransportPanel.playBtn.disabled = false;
     audioTransportPanel.pauseBtn.disabled = false;

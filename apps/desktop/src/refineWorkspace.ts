@@ -526,6 +526,91 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
    * stem (or the first) when the role has none. Returns null when the manifest
    * has no usable stem (e.g. a zip container the asset protocol can't reach).
    */
+  // --- "All" mix --------------------------------------------------------
+  // Stems-only packs carry no audio/mix.wav, so the "All" mode builds the full
+  // mix on the fly from the base stems (excluding the derived guitar splits,
+  // which would double-count guitar). Rendered once per song via an
+  // OfflineAudioContext into a WAV blob that the existing single <audio> element
+  // plays — so the transport stays an unchanged single-element clock. Cached +
+  // revoked on song change.
+  const DERIVED_STEMS = new Set(["lead_guitar", "rhythm_guitar", "guitar_split_source"]);
+  let cachedMixUrl: string | null = null;
+  let cachedMixKey: string | null = null;
+
+  function clearCachedMix(): void {
+    if (cachedMixUrl) {
+      try { URL.revokeObjectURL(cachedMixUrl); } catch { /* ignore */ }
+    }
+    cachedMixUrl = null;
+    cachedMixKey = null;
+  }
+
+  function audioBufferToWavBlob(buf: AudioBuffer): Blob {
+    const numCh = buf.numberOfChannels;
+    const len = buf.length;
+    const blockAlign = numCh * 2; // 16-bit PCM
+    const dataLen = len * blockAlign;
+    const ab = new ArrayBuffer(44 + dataLen);
+    const view = new DataView(ab);
+    const writeStr = (off: number, s: string): void => {
+      for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+    };
+    writeStr(0, "RIFF"); view.setUint32(4, 36 + dataLen, true); writeStr(8, "WAVE");
+    writeStr(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, numCh, true); view.setUint32(24, buf.sampleRate, true);
+    view.setUint32(28, buf.sampleRate * blockAlign, true); view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, "data"); view.setUint32(40, dataLen, true);
+    const chans: Float32Array[] = [];
+    for (let c = 0; c < numCh; c++) chans.push(buf.getChannelData(c));
+    let off = 44;
+    for (let i = 0; i < len; i++) {
+      for (let c = 0; c < numCh; c++) {
+        const s = Math.max(-1, Math.min(1, chans[c]![i]!));
+        view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        off += 2;
+      }
+    }
+    return new Blob([ab], { type: "audio/wav" });
+  }
+
+  async function buildAllStemsMixUrl(stems: ManifestStem[]): Promise<string | null> {
+    if (!containerPath) return null;
+    if (cachedMixUrl && cachedMixKey === containerPath) return cachedMixUrl;
+    const base = stems.filter((s) => s.file && !DERIVED_STEMS.has(s.id ?? ""));
+    if (base.length === 0) return null;
+    if (base.length === 1) {
+      // One base stem (e.g. a separation-skipped "mix" stem): play it directly.
+      return convertFileSrc(joinContainer(containerPath, base[0]!.file!));
+    }
+    setStatus("Building the full mix from stems…");
+    const ctx = new AudioContext();
+    try {
+      const buffers: AudioBuffer[] = [];
+      for (const s of base) {
+        const resp = await fetch(convertFileSrc(joinContainer(containerPath, s.file!)));
+        buffers.push(await ctx.decodeAudioData(await resp.arrayBuffer()));
+      }
+      const sr = buffers[0]!.sampleRate;
+      const numCh = Math.max(...buffers.map((b) => b.numberOfChannels));
+      const length = Math.max(...buffers.map((b) => b.length));
+      const offline = new OfflineAudioContext(numCh, length, sr);
+      for (const b of buffers) {
+        const src = offline.createBufferSource();
+        src.buffer = b;
+        src.connect(offline.destination);
+        src.start(0);
+      }
+      const mixed = await offline.startRendering();
+      clearCachedMix();
+      cachedMixUrl = URL.createObjectURL(audioBufferToWavBlob(mixed));
+      cachedMixKey = containerPath;
+      return cachedMixUrl;
+    } finally {
+      try { await ctx.close(); } catch { /* ignore */ }
+    }
+  }
+
   async function resolveStemUrl(solo: boolean): Promise<string | null> {
     if (!containerPath) return null;
     try {
@@ -535,12 +620,10 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       );
       const stems = details.manifest_raw?.stems ?? [];
       if (!solo) {
-        // "All (mix)": prefer an explicit mix/full stem, else the conventional
-        // audio/mix.wav. If neither exists the audio element errors and
-        // loadStemAudio falls back to the instrument stem.
-        const mix = stems.find((s) => /^(mix|mixture|mixdown|full|all)$/i.test(s.id ?? ""));
-        if (mix?.file) return convertFileSrc(joinContainer(containerPath, mix.file));
-        return convertFileSrc(joinContainer(containerPath, "audio/mix.wav"));
+        // "All": stems-only packs have no mix file — build the full mix from the
+        // base stems on the fly. Falls back to the instrument stem via
+        // loadStemAudio if the mix can't be built.
+        return await buildAllStemsMixUrl(stems);
       }
       if (stems.length === 0) return null;
       const match =
@@ -652,6 +735,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   async function openForAuralSong(path: string, opts?: { instrument?: string }): Promise<void> {
     containerPath = path;
+    clearCachedMix(); // stems-only "All" mix is per-song; drop the previous one
     songTitleEl!.textContent = songDisplayName(path);
     songTitleEl!.title = path; // full path on hover
     setDirty(false);
