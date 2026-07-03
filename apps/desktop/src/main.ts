@@ -425,11 +425,12 @@ root.innerHTML = `
             </div>
             <div id="stemMidiSummaryMake" class="meta makeSummary"></div>
             <div class="row">
-              <button id="stemMidiImportMake">Import AuralSong</button>
+              <button id="stemMidiImportMake">Import song</button>
             </div>
+            <div class="meta" style="margin-top:4px">Imports an editable draft you clean up in Refine — export a <code>.feedpak</code> when it's finished.</div>
             <pre id="stemMidiStatusMake" class="meta">(not imported)</pre>
             <div id="stemMidiNextStepsMake" class="postImportCard" style="display:none;">
-              <div class="postImportTitle">✓ AuralSong imported</div>
+              <div class="postImportTitle">✓ Song imported</div>
               <div class="postImportHint">Next: clean up the auto-transcription so the gameplay chart matches your intent.</div>
               <div class="row">
                 <button class="postImportPrimary" id="stemMidiOpenRefine">Open in Refine workspace</button>
@@ -3021,7 +3022,7 @@ function renderStemMidiAuditTable(inspection: RawSongFolderInspection): string {
 
 function renderStemMidiSelection() {
   stemMidiPickFolderBtn.textContent = "Choose Suno folder...";
-  stemMidiImportBtn.textContent = "Import AuralSong";
+  stemMidiImportBtn.textContent = "Import song";
   stemMidiFolderLabel.textContent = stemMidiFolderPath ?? "(no folder selected)";
   stemMidiImportBtn.disabled = !stemMidiInspection;
   if (!stemMidiInspection) {
