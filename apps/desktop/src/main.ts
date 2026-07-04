@@ -1522,6 +1522,10 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     .join("");
 
   const bothReady = r.spectrogram && r.candidates;
+  // Drums use the pack-root drum_tab (authored at import / in the lane editor),
+  // not the melodic candidate system — so relabel that readout row and drop the
+  // "Compute candidates" action for them.
+  const isDrums = role === "drums";
 
   cleanupActionEl.innerHTML = `
     <div class="cleanupHeader">
@@ -1547,10 +1551,10 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       <div class="cleanupReadoutRow">
         ${statusIcon(r.candidates)}
         <div class="cleanupReadoutText">
-          <div class="cleanupReadoutTitle">Note candidates</div>
-          <div class="meta">the transcription you clean up</div>
+          <div class="cleanupReadoutTitle">${isDrums ? "Drum tab" : "Note candidates"}</div>
+          <div class="meta">${isDrums ? "the kit hits you clean up" : "the transcription you clean up"}</div>
         </div>
-        <div class="cleanupReadoutState ${r.candidates ? "isReady" : ""}">${r.candidates ? "ready" : "not computed yet"}</div>
+        <div class="cleanupReadoutState ${r.candidates ? "isReady" : ""}">${r.candidates ? "ready" : isDrums ? "no drum tab" : "not computed yet"}</div>
       </div>
     </div>
 
@@ -1558,9 +1562,9 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       <button id="cleanupBuildSpectro" class="${r.spectrogram ? "" : "cleanupPrimary"}">
         <i class="ti ti-photo" aria-hidden="true"></i> ${r.spectrogram ? "Rebuild spectrogram" : "Build spectrogram"}
       </button>
-      <button id="cleanupComputeCandidates" class="${r.candidates ? "" : "cleanupPrimary"}">
+      ${isDrums ? "" : `<button id="cleanupComputeCandidates" class="${r.candidates ? "" : "cleanupPrimary"}">
         <i class="ti ti-wand" aria-hidden="true"></i> Compute candidates
-      </button>
+      </button>`}
       <button id="cleanupOpenEditor" class="${bothReady ? "cleanupPrimary" : ""}" ${bothReady ? "" : "disabled"}>
         <i class="ti ti-edit" aria-hidden="true"></i> Open cleanup editor
       </button>
@@ -1579,7 +1583,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
   const runStatusEl = document.getElementById("cleanupRunStatus") as HTMLPreElement;
   const instSelect = document.getElementById("cleanupInstrument") as HTMLSelectElement;
   const buildSpectroBtn = document.getElementById("cleanupBuildSpectro") as HTMLButtonElement;
-  const computeBtn = document.getElementById("cleanupComputeCandidates") as HTMLButtonElement;
+  const computeBtn = document.getElementById("cleanupComputeCandidates") as HTMLButtonElement | null;
   const openEditorBtn = document.getElementById("cleanupOpenEditor") as HTMLButtonElement;
   const reloadBtn = document.getElementById("auralsongRefreshSelection") as HTMLButtonElement;
   const lyricsBtn = document.getElementById("auralsongGenerateLyrics") as HTMLButtonElement;
@@ -1624,7 +1628,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     }
   });
 
-  computeBtn.addEventListener("click", async () => {
+  computeBtn?.addEventListener("click", async () => {
     computeBtn.disabled = true;
     setRunStatus(`Computing candidates for ${roleLabel(role)}…`);
     try {
@@ -1653,7 +1657,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     if (openEditorBtn.disabled) return;
     cleanupSelectedRole = role;
     setRoute("refine");
-    void refineWorkspace.openForAuralSong(pack);
+    void refineWorkspace.openForAuralSong(pack, { instrument: role });
   });
 
   reloadBtn.addEventListener("click", () => {

@@ -131,6 +131,21 @@ describe("getRoleReadiness", () => {
     expect(seen).toContain("aural/refine_candidates.keys.json");
   });
 
+  it("for drums, the drum_tab.json plays the 'candidates' role (no refine_candidates file)", async () => {
+    const seen: string[] = [];
+    invokeMock.mockImplementation((_cmd: string, args: { relPath?: string }) => {
+      const rel = args.relPath ?? "";
+      seen.push(rel);
+      return rel === "drum_tab.json" || rel.includes("spectrogram/drums/")
+        ? Promise.resolve({})
+        : Promise.reject(new Error("nf"));
+    });
+    const r = await getRoleReadiness("/x.feedpak", "drums");
+    expect(r).toEqual({ spectrogram: true, candidates: true });
+    expect(seen).toContain("drum_tab.json");
+    expect(seen).not.toContain("aural/refine_candidates.drums.json");
+  });
+
   it("caches results, re-probing only when forced", async () => {
     mockBackend({ exists: () => false });
     await getRoleReadiness("/x.feedpak", "keys");
@@ -178,5 +193,28 @@ describe("detectMelodicStems", () => {
     const { roles, primary } = await detectMelodicStems("/x.feedpak");
     expect(roles).toEqual(["keys"]);
     expect(primary).toBe("keys");
+  });
+
+  it("REGRESSION: a drums-only pack opens without any melodic stem (no bogus 'keys')", async () => {
+    mockBackend({
+      exists: (rel) => rel === "drum_tab.json" || rel.includes("spectrogram/drums/"),
+      stems: ["drums"],
+    });
+    const { roles, primary, readiness } = await detectMelodicStems("/drumsonly.feedpak");
+    expect(roles).toEqual(["drums"]);
+    expect(primary).toBe("drums");
+    expect(readiness.get("drums")).toEqual({ spectrogram: true, candidates: true });
+  });
+
+  it("offers drums alongside melodic instruments when the pack has both", async () => {
+    mockBackend({
+      exists: (rel) =>
+        rel.includes("/keys/") || rel.includes(".keys.") || rel === "drum_tab.json" || rel.includes("spectrogram/drums/"),
+      stems: ["keys", "drums"],
+    });
+    const { roles, primary } = await detectMelodicStems("/both.feedpak");
+    expect(roles).toContain("keys");
+    expect(roles).toContain("drums");
+    expect(primary).toBe("keys"); // melodic stays the default; drums is a switch in the editor
   });
 });
