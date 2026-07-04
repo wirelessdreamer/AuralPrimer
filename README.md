@@ -77,17 +77,29 @@ alongside the code. The work directly informs production defaults —
 nothing in the ingest pipeline is shipped without head-to-head benchmark
 evidence captured in a document below.
 
-### Headline results (synth + annotated corpora, June 2026 round)
+### Top-tier transcription stack (per instrument)
 
-| Instrument | Production default                       | Corpus                                | F1     | Precision | Recall | Δ vs prior |
-|------------|------------------------------------------|---------------------------------------|-------:|----------:|-------:|-----------|
-| **Drums**  | `librosa_superflux_dense`                | E-GMD test (20 cases)                 | 0.153  |  —        | —      | **+50%** vs base `librosa_superflux`; +5.5% vs prior leader `adaptive_beat_grid` |
-| **Bass**   | `melodic_pyin_bass_strict`               | GuitarSet low strings (8 cases)       | 0.270  |  0.271    | 0.268  | **+13%** vs `melodic_pyin`; MAE 20 ms → 13 ms |
-| **Guitar** | `melodic_combined` (unchanged) + new `melodic_combined_guitar` workspace candidate | GuitarSet mic (12 cases) | 0.261 → 0.248 | trade   | trade  | precision/recall trade — variant ships as high-recall option only |
-| **Keys**   | `piano_chord_supplement` (PTI + cleanup + echo dedup + low-pitch pyin supplement + analytical chord-onset fallback) | Synthetic piano corpus (4 cases, 117 notes) | **0.928** | **0.981** | **0.880** | +0.222 absolute over raw `piano_pti` (0.706); precision +18 pts; recall +27 pts |
+Ingest auto-selects a **primary transcriber per instrument** — the
+`gameplay_default` profile (`transcription.py`) — backed by a fail-safe
+fallback chain so machines without the neural checkpoints still import.
+The current production picks:
+
+| Instrument | Top-tier transcriber | Why it leads | Fallback chain |
+|------------|----------------------|--------------|----------------|
+| **Drums** | **`mr_mt3_drums`** — neural MT3 ADT (GPU/CPU auto) | catches the dense hi-hats / ghost notes the DSP engines miss (their E-GMD recall collapses to F1 ≈ 0.13) | beat-conditioned multiband → spectral-flux multiband → adaptive-beat-grid → DSP bandpass — used when the MT3 checkpoint/runtime is absent |
+| **Bass** | **`torchcrepe`** — neural monophonic pitch (MIT) | octave-clean (~0.3% octave jumps vs ~45% for Basic Pitch), tighter low register, ~9× faster | YIN octave+HPS fix → adaptive → YIN-bass80 → octave-fix |
+| **Guitar — lead** | **`torchcrepe`** — monophonic | octave-clean, ~6–8× faster than the DSP chain | melodic-adaptive → octave-fix → combined → Basic Pitch |
+| **Guitar — rhythm** | **`melodic_hpss_combined`** — HPSS + onset (polyphonic) | keeps the chord voices a monophonic tracker drops | melodic-adaptive → octave-fix → combined |
+| **Keys / piano** | **`piano_auto`** — scored gate: Basic Pitch → PTI (Edwards/Kong) cleanup | picks the best-scoring engine per stem; the tuned `piano_chord_supplement` path benchmarks **F1 0.928 / precision 0.981** on the synthetic piano corpus | PTI-consensus-clean → PTI-clean → polyphonic-clean |
+| **Vocals** | *(no pitch transcription)* | vocals drive lyric alignment, not a note chart | — |
+
+Alternate profiles are selectable per import: `fidelity_midi` (denser
+symbolic output for A/B review) and `research_ab` (every local candidate,
+defaults unchanged). Distorted/electric guitar is a known frontier
+(rendered-tone onset-F1 ceiling ~0.78–0.84) — see the amp-tone research doc.
 
 Per-case breakdowns, JSON reports, reproducibility commands, and the
-"what didn't work and why" notes live in the doc below.
+"what didn't work and why" notes live in the docs below.
 
 ### Research docs (start here)
 
@@ -113,6 +125,12 @@ Per-case breakdowns, JSON reports, reproducibility commands, and the
   architectural assumptions baked into the original pipeline. Each
   assumption is checked against published work, the resulting paths-
   forward list is the source of the current production-default trail.
+
+- [**Electric-guitar amp-tone transcription — 2026-06-27**](docs/research-guitar-amptone-2026-06-27.md)
+  Adversarially-verified research on the distorted/electric-guitar
+  frontier: why general models collapse on real amp tone, the amp-tone
+  augmentation lever (the dominant fix), license-clean datasets/assets,
+  and a ranked plan. Sets the ~0.78–0.84 onset-F1 ceiling cited above.
 
 - [**Research decision gates**](docs/research-decision-gates.md)
   The locked-in production defaults the rest of the codebase reads from
