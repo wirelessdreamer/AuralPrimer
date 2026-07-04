@@ -455,6 +455,10 @@ function resetTransportController(timebase: TransportTimebase): void {
     timeSignature: [4, 4]
   });
   transportController.setPlaybackRate(currentPlaybackRate);
+  // Re-apply the persisted A/V calibration — a fresh controller starts at
+  // offset 0, so without this a native->HTML fallback silently drops the
+  // user's calibration until they next touch the slider.
+  transportController.setAudioVisualOffsetSec(getEffectiveOffsetSec());
   if (transport.loop) {
     transportController.setLoop(transport.loop);
   }

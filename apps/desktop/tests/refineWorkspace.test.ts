@@ -601,6 +601,35 @@ describe("stem audio playback (native engine)", () => {
     expect(lastT).toBeLessThan(20.1);
   });
 
+  it("playhead subtracts BOTH the output latency and the A/V offset (formula wiring)", async () => {
+    // Drives the refine call-site with a NON-zero calibration + real buffer so a
+    // regression that drops/negates the offset or the latency term fails here —
+    // every other refine test runs with offset 0 / latency 0.
+    const { setAvCalibration } = await import("../src/avOffset");
+    await setAvCalibration(200, 0); // effective A/V offset = 0.2s
+    try {
+      await open();
+      el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+      await flush();
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "native_audio_get_state")
+          return Promise.resolve(nativeState({ t_sec: 20, output_buffer_frames: 480 }));
+        if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
+        return Promise.reject(new Error("unexpected"));
+      });
+      const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]> } }).mock.calls.at(-1)![0];
+      rafCb(0);
+      await flush();
+      rafCb(0);
+      // audible = 20 − (480*2/48000)·1 − 0.2 = 20 − 0.02 − 0.2 = 19.78
+      const lastT = (spectroInstance.setTime as unknown as { mock: { calls: number[][] } }).mock.calls.at(-1)![0];
+      expect(lastT).toBeGreaterThanOrEqual(19.78);
+      expect(lastT).toBeLessThan(19.81);
+    } finally {
+      await setAvCalibration(0, 0); // reset the shared module state for other tests
+    }
+  });
+
   it("plays the synth alongside the stem when 'Hear notes' is checked", async () => {
     await open();
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));

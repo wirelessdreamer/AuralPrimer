@@ -606,14 +606,8 @@ impl NativeAudioHandle {
         let playback_rate = f64::from_bits(playback_rate_bits);
         let pos_frames = self.snapshot.position_frames.load(Ordering::Relaxed);
         let loop_frames = self.snapshot.read_loop_frames();
-        // Prefer the live per-callback frame count (the real device buffer);
-        // fall back to the config value (only set when BufferSize::Fixed).
         let observed = self.snapshot.observed_buffer_frames.load(Ordering::Relaxed);
-        let outbuf = if observed > 0 {
-            observed
-        } else {
-            self.output_buffer_frames.load(Ordering::Relaxed)
-        };
+        let config = self.output_buffer_frames.load(Ordering::Relaxed);
 
         NativeAudioState {
             output_host: self.output_host.clone(),
@@ -626,7 +620,7 @@ impl NativeAudioHandle {
             loop_t0_sec: loop_frames.map(|(s, _)| s as f64 / self.sample_rate_hz as f64),
             loop_t1_sec: loop_frames.map(|(_, e)| e as f64 / self.sample_rate_hz as f64),
             has_audio: self.snapshot.has_audio.load(Ordering::Relaxed),
-            output_buffer_frames: if outbuf == 0 { None } else { Some(outbuf) },
+            output_buffer_frames: pick_output_buffer_frames(observed, config),
             callback_count: self.snapshot.callback_count.load(Ordering::Relaxed),
             callback_overrun_count: self.snapshot.callback_overrun_count.load(Ordering::Relaxed),
         }
@@ -1012,6 +1006,29 @@ fn update_callback_telemetry(
     }
 }
 
+fn sync_transport_to_source_cursor(runtime: &mut EngineRuntimeState) {
+    let frame = if runtime.source_frame_cursor.is_finite() && runtime.source_frame_cursor > 0.0 {
+        runtime.source_frame_cursor.floor() as u64
+    } else {
+        0
+    };
+    runtime.transport.seek_frames(frame);
+}
+
+/// The output buffer size to report as latency: the live per-callback count
+/// (the real device buffer) when known, else the config value (only set under
+/// BufferSize::Fixed). `None` disables the auto output-latency compensation.
+/// Observed MUST win, or the WASAPI BufferSize::Default path (config == 0)
+/// silently zeroes the latency term.
+fn pick_output_buffer_frames(observed: u32, config: u32) -> Option<u32> {
+    let frames = if observed > 0 { observed } else { config };
+    if frames == 0 {
+        None
+    } else {
+        Some(frames)
+    }
+}
+
 fn process_audio_callback_f32(
     runtime: &mut EngineRuntimeState,
     commands: &mut Consumer<EngineCommand>,
@@ -1023,8 +1040,12 @@ fn process_audio_callback_f32(
     let callback_t0 = Instant::now();
 
     drain_engine_commands(runtime, commands, engine_channels);
-    let rendered_frames = render_output_block(runtime, out, engine_channels);
-    runtime.transport.advance_frames(rendered_frames);
+    render_output_block(runtime, out, engine_channels);
+    // Report the position from the SOURCE cursor (how much audio was actually
+    // consumed), not the output frame count — at playback_rate != 1 those
+    // differ, and advancing by output frames makes the playhead run at the
+    // wrong speed relative to the audio. Matches the game engine.
+    sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);
 
     update_callback_telemetry(
@@ -1509,6 +1530,39 @@ mod tests {
         // A zero-length callback must not clobber a known-good buffer size.
         update_callback_telemetry(&snap, Instant::now(), 0, 48_000);
         assert_eq!(snap.observed_buffer_frames.load(Ordering::Relaxed), 512);
+    }
+
+    #[test]
+    fn pick_output_buffer_frames_prefers_observed_over_config() {
+        // WASAPI BufferSize::Default: config is 0, observed is the only source.
+        assert_eq!(pick_output_buffer_frames(512, 0), Some(512));
+        // Nothing known yet -> no auto latency (falls to manual calibration).
+        assert_eq!(pick_output_buffer_frames(0, 0), None);
+        // Observed (real) wins even when a config value is also present.
+        assert_eq!(pick_output_buffer_frames(512, 256), Some(512));
+        // BufferSize::Fixed with no callback yet -> use the config value.
+        assert_eq!(pick_output_buffer_frames(0, 256), Some(256));
+    }
+
+    #[test]
+    fn process_audio_callback_tracks_source_position_at_playback_rate() {
+        // At 2x, a 2-frame output block consumes 4 SOURCE frames; the reported
+        // position must track source consumption (else the Studio playhead runs
+        // at the wrong speed vs the audio when the refine speed selector != 1x).
+        let mut st = mk_runtime(48_000);
+        st.wav = Some(mono(&[100, 200, 300, 400, 500]));
+        st.is_playing = true;
+        st.transport.set_playing(true);
+        st.playback_rate = 2.0;
+        let snapshot = EngineSnapshot::default();
+        let (_producer, mut consumer) = RingBuffer::<EngineCommand>::new(8);
+        let mut out = vec![0.0f32; 2];
+
+        process_audio_callback_f32(&mut st, &mut consumer, &snapshot, &mut out, 1, 48_000);
+
+        assert_eq!(st.source_frame_cursor, 4.0);
+        assert_eq!(st.transport.position_frames(), 4);
+        assert_eq!(snapshot.position_frames.load(Ordering::Relaxed), 4);
     }
 
     #[test]

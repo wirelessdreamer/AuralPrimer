@@ -26,7 +26,11 @@ np = pytest.importorskip("numpy")
 librosa = pytest.importorskip("librosa")
 sf = pytest.importorskip("soundfile")
 
-from aural_ingest.spectrogram import compute_cqt_db, write_spectrogram_artifact  # noqa: E402
+from aural_ingest.spectrogram import (  # noqa: E402
+    compute_cqt_db,
+    n_octaves_for_role,
+    write_spectrogram_artifact,
+)
 
 SR = 22_050
 BURST_HZ = 220.0  # A3, comfortably inside the CQT range (fmin ~ 32.7 Hz)
@@ -60,6 +64,27 @@ def test_geometry_is_internally_consistent(tmp_path: Path) -> None:
     )
     # n_frames must cover the real audio length (± one hop), not a stale guess.
     assert geom["duration_sec"] == pytest.approx(DURATION_SEC, abs=2 * geom["hop_length"] / SR)
+    # Integer identity: n_frames is exactly duration*fps rounded (guards a
+    # float reformulation that keeps the ratio but shifts where frames land).
+    assert geom["n_frames"] == round(geom["duration_sec"] * geom["frames_per_sec"])
+    # The last event must sit strictly inside the tiled content (not off the end).
+    last_frame = round((max(EVENT_TIMES) + BURST_SEC / 2) * geom["frames_per_sec"])
+    assert last_frame < geom["n_frames"]
+
+
+def test_drums_role_gets_the_taller_octave_range(tmp_path: Path) -> None:
+    # Drum lanes span kick..cymbals, so the drums spectrogram must be 8 octaves
+    # (96 bins); shrinking it to the 7-octave melodic range drifts the hi-hat/
+    # ride lanes off their energy — the vertical analogue of time drift.
+    assert n_octaves_for_role("drums") == 8
+    for role in ("melodic", "keys", "bass", "guitar"):
+        assert n_octaves_for_role(role) == 7
+
+    wav = tmp_path / "clicks.wav"
+    _write_click_track(wav)
+    geom = write_spectrogram_artifact(str(wav), tmp_path / "drums_spec", role="drums", sr=SR)
+    assert geom["n_bins"] == 96  # 8 octaves * 12 bins
+    assert geom["bins_per_octave"] == 12
 
 
 def test_tone_bursts_land_on_their_frames(tmp_path: Path) -> None:

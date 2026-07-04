@@ -165,6 +165,30 @@ describe("TransportController", () => {
     tc.dispose();
   });
 
+  it("feeds the live A/V offset into the playhead (not rate-scaled), alongside latency", async () => {
+    // Locks the call-site wiring: a regression dropping/negating avOffsetSec, or
+    // rate-scaling it, must fail here even though the pure formula is unit-tested.
+    const tb = new FakeTimebase();
+    const tc = new TransportController(tb);
+    await tc.loadAudio({ blob: new Blob([]), mime: "audio/ogg" });
+    await tc.play();
+    tb.setOutputLatencySec(0.02);
+    tc.setAudioVisualOffsetSec(0.2);
+
+    tb.seek(5);
+    tc.tick(0.016);
+    // audible = 5 - 0.02*1 - 0.2
+    expect(tc.getState().t).toBeCloseTo(4.78, 6);
+
+    // At 2x the latency term scales with rate; the A/V offset must NOT.
+    tc.setPlaybackRate(2);
+    tb.seek(5);
+    tc.tick(0.016);
+    // audible = 5 - 0.02*2 - 0.2 (offset stays 0.2, not 0.4)
+    expect(tc.getState().t).toBeCloseTo(4.76, 6);
+    tc.dispose();
+  });
+
   it("can follow external clock (when enabled) and ignores timebase as authority", async () => {
     const tb = new FakeTimebase();
     await tb.load({ blob: new Blob([]), mime: "audio/ogg" });

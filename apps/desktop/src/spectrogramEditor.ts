@@ -23,6 +23,14 @@
  * row 0 = lowest pitch (MIDI = fmin_midi) sits at the BOTTOM of the view.
  */
 
+import {
+  frameToNorm,
+  laneBandRows,
+  laneMarkerXSpan,
+  noteBodyXSpan,
+  secToFrame,
+} from "./spectrogramGeometry";
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -843,7 +851,7 @@ export class SpectrogramEditor {
   }
 
   private timeToFrame(t: number): number {
-    return t * (this.geom?.frames_per_sec ?? 1);
+    return secToFrame(t, this.geom?.frames_per_sec ?? 1);
   }
   private frameToTime(f: number): number {
     return f / (this.geom?.frames_per_sec ?? 1);
@@ -851,8 +859,7 @@ export class SpectrogramEditor {
 
   /** Content X (frames) -> device px X on overlay. */
   private frameToPx(frame: number): number {
-    const nx = (frame - this.view.originX) / this.view.spanX; // 0..1
-    return nx * this.overlay.width;
+    return frameToNorm(frame, this.view.originX, this.view.spanX) * this.overlay.width;
   }
   private timeToPx(t: number): number {
     return this.frameToPx(this.timeToFrame(t));
@@ -867,7 +874,7 @@ export class SpectrogramEditor {
   private rowsPerLane(): number {
     const lanes = this.lanes;
     if (!lanes || !this.geom) return 1;
-    return this.geom.n_bins / lanes.length;
+    return laneBandRows(this.geom.n_bins, lanes.length);
   }
 
   /**
@@ -890,14 +897,9 @@ export class SpectrogramEditor {
    */
   private noteXSpan(n: SpectroNote): { xLeft: number; xRight: number } {
     if (this.lanes) {
-      const xc = this.timeToPx(n.t_on);
-      const half = (DRUM_MARK_CSS_PX * this.dpr()) / 2;
-      return { xLeft: xc - half, xRight: xc + half };
+      return laneMarkerXSpan(this.timeToPx(n.t_on), DRUM_MARK_CSS_PX, this.dpr());
     }
-    const x0 = this.timeToPx(n.t_on);
-    const x1 = this.timeToPx(n.t_off);
-    const left = Math.min(x0, x1);
-    return { xLeft: left, xRight: Math.max(left + 1, Math.max(x0, x1)) };
+    return noteBodyXSpan(this.timeToPx(n.t_on), this.timeToPx(n.t_off));
   }
 
   /** Device px (relative to stage, CSS px) -> content {frame, row}. */

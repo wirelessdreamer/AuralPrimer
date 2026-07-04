@@ -1232,6 +1232,47 @@ describe("NativeAudioTimebase", () => {
     expect(tb.getOutputLatencySec()).toBeUndefined();
   });
 
+  it("dead-reckons while playing: linear, capped at 0.25s, scaled by rate", async () => {
+    let now = 1000;
+    const nowSpy = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_get_state") {
+        return {
+          output_host: { id: "wasapi" },
+          sample_rate_hz: 48_000,
+          channels: 2,
+          output_device: { name: "Built-in", channels: 2, sample_rate_hz: 48_000 },
+          is_playing: true,
+          t_sec: 3.5,
+          playback_rate: 1,
+          loop_t0_sec: null,
+          loop_t1_sec: null,
+          has_audio: true,
+          output_buffer_frames: null,
+          callback_count: 2,
+          callback_overrun_count: 0
+        };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+
+    tb.getCurrentTimeSec(); // fire the first poll (anchors _lastPollWall at now=1000)
+    await Promise.resolve();
+    // Subsequent reads fire more polls but we don't await, so the anchor holds.
+    now = 1100; // +0.1s: linear projection at 1x
+    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.6, 6);
+    now = 3000; // +2s: projection capped at 0.25s so a stalled poll can't run away
+    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.75, 6);
+    tb.setPlaybackRate(0.5);
+    now = 1100; // +0.1s at 0.5x -> +0.05 (slope scales with rate)
+    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.55, 6);
+
+    nowSpy.mockRestore();
+  });
+
   it("loadFromAuralSong falls back to sentinel when duration cache is cleared during apply", async () => {
     let tbRef: { loadedDurationSec: number | null } | null = null;
     const invoke = vi.fn(async (cmd: string) => {
