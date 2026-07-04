@@ -412,11 +412,14 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       pauseTransport();
       return;
     }
-    // A/V sync offset: the user hears the output `avOffset` after the clock, so
-    // draw the cursor at the position that's actually audible right now (same
-    // calibration the game applies to its falling notes). End-of-song uses the
-    // raw clock above so a positive offset doesn't cut playback short.
-    setPlayhead(raw - getAvOffsetSec(), true);
+    // A/V sync offset: the user hears the output `avOffset` (wall-clock) after
+    // the clock, so draw the cursor at the position that's actually audible
+    // right now (same calibration the game applies to its falling notes). The
+    // offset is wall-clock latency but `raw` is song-time, so scale it by the
+    // playback rate — at 0.75x, 133ms of latency is only ~100ms of song time,
+    // and an unscaled subtraction drifts the cursor off the audio. End-of-song
+    // uses the raw clock above so a positive offset doesn't cut playback short.
+    setPlayhead(raw - getAvOffsetSec() * playbackRate, true);
     rafId = requestAnimationFrame(tick);
   }
 
