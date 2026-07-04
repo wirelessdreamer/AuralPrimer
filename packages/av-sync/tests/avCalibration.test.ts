@@ -278,15 +278,34 @@ describe("avCalibration (two-pass)", () => {
     expect(countEl().textContent).toBe("Taps: 0");
   });
 
-  it("starting twice is a no-op (already running guard)", async () => {
+  it("Restart resets the tap count and lets you tap again", async () => {
     const { deps } = makeDeps();
     initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(startBtn().textContent).toBe("Restart");
+    audioNow = 8.0;
+    vi.advanceTimersByTime(30);
+    await flush();
+    tapPhase(3, 30);
+    expect(countEl().textContent).toBe("Taps: 3");
+
+    // Clicking "Restart" must clear the taps and re-anchor the clock — not be
+    // a no-op (the button bailed here before, so Restart appeared dead).
+    audioNow = 0;
+    perfNow = 1000;
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(startBtn().textContent).toBe("Restart");
+    expect(countEl().textContent).toBe("Taps: 0");
+    expect(nextBtn().disabled).toBe(true);
+
+    // …and tapping works again after the restart.
+    audioNow = 8.0;
+    vi.advanceTimersByTime(30);
+    await flush();
+    tapPhase(5, 20);
+    expect(countEl().textContent).toBe("Taps: 5");
   });
 
   it("falls back to webkitAudioContext when AudioContext is undefined", async () => {

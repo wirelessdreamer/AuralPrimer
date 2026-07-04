@@ -329,7 +329,13 @@ export function initAvCalibration(deps: AvCalibrationDeps): AvCalibrationHandle 
       document.head.appendChild(style);
     }
 
-    startBtn?.addEventListener("click", () => void startMetronome());
+    startBtn?.addEventListener("click", () => {
+      // The button becomes "Restart" once running; restarting must reset the
+      // tap count + re-anchor the clock, but startMetronome() bails while
+      // running, so stop first (a no-op when not yet started).
+      stopMetronome();
+      void startMetronome();
+    });
     pulseEl?.addEventListener("click", () => {
       if (running) registerTap(performance.now());
     });
