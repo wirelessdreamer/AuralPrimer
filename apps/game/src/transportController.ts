@@ -1,4 +1,5 @@
 import type { TransportState } from "@auralprimer/viz-sdk";
+import { audiblePlayheadSec } from "@auralprimer/av-sync";
 import type { TransportTimebase } from "./audioBackend";
 import { clampLoop, clampToLoop } from "./audioBackend";
 
@@ -253,7 +254,14 @@ export class TransportController {
       const outputLatencySec = isPlaying ? Math.max(0, this.timebase.getOutputLatencySec?.() ?? 0) : 0;
       // Subtract the backend's auto latency estimate AND the user's manual
       // calibration offset so `t` tracks what is actually audible right now.
-      const audibleT = Math.max(0, audioT - outputLatencySec * playbackRate - this.avOffsetSec);
+      // Shared formula (also used by the Studio refine playhead) so the two
+      // apps can never drift apart.
+      const audibleT = audiblePlayheadSec({
+        nativePosSec: audioT,
+        outputLatencySec,
+        playbackRate,
+        avOffsetSec: this.avOffsetSec,
+      });
 
       let t = clampToLoop(audibleT, this.state.loop);
 

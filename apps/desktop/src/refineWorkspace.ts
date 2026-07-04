@@ -37,6 +37,7 @@ import {
   type RefinementInstrument,
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
+import { audiblePlayheadSec } from "@auralprimer/av-sync";
 import { getAvOffsetSec } from "./avOffset";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { detectMelodicStems, auralsongJsonExists } from "./cleanupReadiness";
@@ -421,7 +422,17 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     const outLatency = audioLoaded && nativeAudio.getIsPlaying()
       ? (nativeAudio.getOutputLatencySec() ?? 0)
       : 0;
-    setPlayhead(raw - outLatency * playbackRate - getAvOffsetSec(), true);
+    // Shared formula (identical to the game's transport) so the playhead lands
+    // on what's audible and the two apps can never drift apart.
+    setPlayhead(
+      audiblePlayheadSec({
+        nativePosSec: raw,
+        outputLatencySec: outLatency,
+        playbackRate,
+        avOffsetSec: getAvOffsetSec(),
+      }),
+      true,
+    );
     rafId = requestAnimationFrame(tick);
   }
 

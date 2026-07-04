@@ -1,5 +1,6 @@
 export {
   AV_OFFSET_MAX_MS,
+  audiblePlayheadSec,
   clampOffsetMs,
   effectiveAvOffsetMs,
   effectiveAvOffsetSec,

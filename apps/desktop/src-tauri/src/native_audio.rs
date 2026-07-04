@@ -1462,6 +1462,56 @@ mod tests {
     }
 
     #[test]
+    fn golden_click_track_renders_without_time_drift() {
+        // Impulses at known source frames; at rate 1 they must appear at the
+        // SAME output frames, proving the render cursor never drifts from the
+        // audio it emits (the root property behind "playhead sits on the hit").
+        let clicks = [100usize, 200, 300];
+        let mut samples = vec![0i16; 512];
+        for &f in &clicks {
+            samples[f] = 30_000;
+        }
+        let mut st = mk_runtime(48_000);
+        st.wav = Some(mono(&samples));
+        st.is_playing = true;
+        st.transport.set_playing(true);
+        st.source_frame_cursor = 0.0;
+
+        // Render 6 contiguous 64-frame callbacks (384 frames, inside the clip)
+        // to exercise cross-callback continuity without reaching end-of-audio.
+        let mut rendered = Vec::<f32>::new();
+        for _ in 0..6 {
+            let prev = rendered.len();
+            let mut out = vec![0.0f32; 64];
+            let frames = render_output_block(&mut st, &mut out, 1) as usize;
+            assert_eq!(frames, 64);
+            // Cursor advanced by exactly the frames rendered — no drift.
+            approx_eq(st.source_frame_cursor as f32, (prev + 64) as f32);
+            rendered.extend_from_slice(&out[..frames]);
+        }
+
+        assert_eq!(rendered.len(), 384);
+        for (i, &v) in rendered.iter().enumerate() {
+            let expect = if clicks.contains(&i) { 30_000.0 / i16::MAX as f32 } else { 0.0 };
+            approx_eq(v, expect);
+        }
+    }
+
+    #[test]
+    fn callback_telemetry_reports_real_output_buffer_frames() {
+        // The playhead subtracts (output_buffer_frames*2)/sr as output latency,
+        // so the engine MUST surface its real per-callback buffer size — WASAPI's
+        // BufferSize::Default yields no config value, and regressing this to 0
+        // silently dumps the whole output latency onto the manual calibration.
+        let snap = EngineSnapshot::default();
+        update_callback_telemetry(&snap, Instant::now(), 512, 48_000);
+        assert_eq!(snap.observed_buffer_frames.load(Ordering::Relaxed), 512);
+        // A zero-length callback must not clobber a known-good buffer size.
+        update_callback_telemetry(&snap, Instant::now(), 0, 48_000);
+        assert_eq!(snap.observed_buffer_frames.load(Ordering::Relaxed), 512);
+    }
+
+    #[test]
     fn apply_engine_command_seek_respects_loop_invariant() {
         let mut st = mk_runtime(48_000);
         apply_engine_command(

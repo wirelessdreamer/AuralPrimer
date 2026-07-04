@@ -30,3 +30,29 @@ export function effectiveAvOffsetMs(audioMs: number, videoMs: number): number {
 export function effectiveAvOffsetSec(audioMs: number, videoMs: number): number {
   return effectiveAvOffsetMs(audioMs, videoMs) / 1000;
 }
+
+/**
+ * The song-time position that is actually AUDIBLE right now, given the native
+ * engine's reported (write-cursor) position. This is the ONE formula the game
+ * transport and the Studio refine playhead both draw with, so they can never
+ * drift apart:
+ *
+ *   audible = nativePos − outputLatency·rate − avOffset   (clamped ≥ 0)
+ *
+ * `outputLatencySec` is a wall-clock buffer latency, so it is multiplied by the
+ * playback rate to convert it into song time. `avOffsetSec` is the user's
+ * perceptual A/V calibration and is applied in song time DIRECTLY — it must NOT
+ * be rate-scaled (a past regression that did so is guarded by unit tests).
+ */
+export function audiblePlayheadSec(params: {
+  nativePosSec: number;
+  outputLatencySec: number;
+  playbackRate: number;
+  avOffsetSec: number;
+}): number {
+  const { nativePosSec, outputLatencySec, playbackRate, avOffsetSec } = params;
+  const rate = Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1;
+  const latency = Number.isFinite(outputLatencySec) && outputLatencySec > 0 ? outputLatencySec : 0;
+  const offset = Number.isFinite(avOffsetSec) ? avOffsetSec : 0;
+  return Math.max(0, nativePosSec - latency * rate - offset);
+}
