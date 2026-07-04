@@ -3952,6 +3952,36 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
     return 0 if overall_ok else 1
 
 
+def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
+    """Snap the pack's drum-tab hit times onto the drums-stem audio transients.
+
+    Reads ``drum_tab.json`` (pack root) + ``audio/stems/drums.wav``, refines each
+    hit's time to the nearest real transient in its voice's frequency band (see
+    ``drum_onset_align``), writes ``drum_tab.json`` back in place, and prints a
+    JSON status line so the Studio button / import step can report the result.
+    """
+    from aural_ingest.drum_onset_align import align_drum_tab_to_onsets
+
+    pack = Path(args.auralsong_dir)
+    tab_path = pack / "drum_tab.json"
+    drums = pack / "audio" / "stems" / "drums.wav"
+    if not tab_path.is_file():
+        print(json.dumps({"ok": False, "error": f"no drum_tab.json in {pack}"}, sort_keys=True))
+        return 1
+    if not drums.is_file():
+        print(json.dumps({"ok": False, "error": f"no drums stem in {pack}"}, sort_keys=True))
+        return 1
+    try:
+        tab = json.loads(tab_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"failed to read drum_tab.json: {exc}"}, sort_keys=True))
+        return 1
+    aligned, stats = align_drum_tab_to_onsets(tab, drums)
+    tab_path.write_text(json.dumps(aligned, indent=2), encoding="utf-8")
+    print(json.dumps({"ok": True, **stats}, sort_keys=True))
+    return 0
+
+
 def cmd_gt_benchmark(args: argparse.Namespace) -> int:
     """Run a ground-truth benchmark sweep and write the JSON report.
 
@@ -4208,6 +4238,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     s_spectrogram.set_defaults(func=cmd_build_spectrogram)
+
+    s_align_drums = sub.add_parser(
+        "align-drum-onsets",
+        help="Snap a pack's drum_tab hit times onto the drums-stem audio transients (in place).",
+    )
+    s_align_drums.add_argument(
+        "auralsong_dir",
+        help="Path to an existing pack root (the directory containing drum_tab.json + audio/stems/drums.wav).",
+    )
+    s_align_drums.set_defaults(func=cmd_align_drum_onsets)
 
     s_bench_overlay = sub.add_parser(
         "benchmark-transcribers",

@@ -130,6 +130,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const instSelectEl = $<HTMLSelectElement>("refineInstrumentSelect");
   const reloadBtn = $<HTMLButtonElement>("refineReloadBtn");
   const saveBtn = $<HTMLButtonElement>("refineSaveBtn");
+  const snapBtn = document.getElementById("refineSnapBtn") as HTMLButtonElement | null;
   const backBtn = $<HTMLElement>("refineBack");
   const transportEl = $<HTMLElement>("refineTransport");
   const playBtn = $<HTMLButtonElement>("refinePlayBtn");
@@ -729,6 +730,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       instrument = available[0] as RefinementInstrument;
     }
     syncInstrumentControl();
+    // "Snap to onsets" only applies to the drum lane editor.
+    if (snapBtn) snapBtn.style.display = instrument === "drums" ? "inline-block" : "none";
 
     // ---- Drum mode: lane editor over the drums spectrogram --------------
     if (instrument === "drums") {
@@ -831,7 +834,52 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (containerPath) void openForAuralSong(containerPath, { instrument });
   });
   saveBtn.addEventListener("click", () => void save());
+  snapBtn?.addEventListener("click", () => void snapDrumOnsets());
   backBtn.addEventListener("click", () => { stopTransport(); deps.onBack(); });
+
+  // Refine the drum-hit TIMES onto the real drums-stem transients (mr_mt3's
+  // onsets wobble by tens of ms). Persists current edits, runs the sidecar's
+  // onset alignment, and reloads the result — setNotes snapshots the pre-snap
+  // hits so a single Undo reverts it.
+  async function snapDrumOnsets(): Promise<void> {
+    if (!drumMode || !containerPath || !drumTabOriginal || !snapBtn) return;
+    const label = snapBtn.textContent;
+    snapBtn.disabled = true;
+    snapBtn.textContent = "Snapping…";
+    setStatus("Snapping drum hits onto the audio transients…");
+    try {
+      const cur = notesToTab(editor.getNotes(), drumLanes, drumTabOriginal);
+      await invoke<void>("write_auralsong_features_json", {
+        containerPath, relPath: "drum_tab.json", value: cur,
+      });
+      const res = await invoke<{ stdout?: string }>("ingest_align_drum_onsets", {
+        req: { container_path: containerPath },
+      });
+      const aligned = (await invoke("read_auralsong_json", {
+        containerPath, relPath: "drum_tab.json",
+      })) as DrumTabFile;
+      drumTabOriginal = aligned;
+      editor.setNotes(hitsToNotes(aligned, drumLanes)); // undoable (snapshots current)
+      setDirty(false);
+      updateUndoButtons();
+      let moved: number | undefined;
+      try {
+        moved = JSON.parse((res?.stdout ?? "").trim().split(/\r?\n/).pop() ?? "{}").moved;
+      } catch {
+        /* status line not parseable — still applied */
+      }
+      setStatus(
+        moved != null
+          ? `Snapped ${moved} hit${moved === 1 ? "" : "s"} onto onsets — Undo to revert`
+          : "Snapped hits onto onsets — Undo to revert",
+      );
+    } catch (e) {
+      setStatus(`Snap to onsets failed: ${String(e)}`);
+    } finally {
+      snapBtn.disabled = false;
+      snapBtn.textContent = label ?? "Snap to onsets";
+    }
+  }
 
   playBtn.addEventListener("click", () => toggleTransport());
   stopBtn.addEventListener("click", () => stopTransport());

@@ -729,6 +729,31 @@ pub fn run_ingest_spectrogram(
     run_tauri_sidecar_capture(app, &args)
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct AlignDrumOnsetsRequest {
+    /// Path to the pack directory (contains `drum_tab.json` + `audio/stems/drums.wav`).
+    pub container_path: String,
+}
+
+/// Run the sidecar's `align-drum-onsets` subcommand: snap the pack's drum-tab
+/// hit times onto the drums-stem audio transients, in place. Backs the drum
+/// cleanup editor's "Snap to onsets" button.
+pub fn run_ingest_align_drum_onsets(
+    req: AlignDrumOnsetsRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let container = req.container_path.trim();
+    if container.is_empty() {
+        return Err("missing container_path".to_string());
+    }
+    let args: Vec<String> = vec!["align-drum-onsets".to_string(), container.to_string()];
+    let app = app.ok_or_else(|| {
+        "Tauri AppHandle required for sidecar execution; ingest_align_drum_onsets can't run headless"
+            .to_string()
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

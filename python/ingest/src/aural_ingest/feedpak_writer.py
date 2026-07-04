@@ -587,6 +587,18 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
     )
 
     if drum_tab_doc is not None:
+        # Refine the hit times onto the real drums-stem transients — mr_mt3's
+        # onsets wobble by tens of ms, which reads as markers off the energy in
+        # the cleanup spectrogram. Best-effort + never fatal (degrades to the
+        # transcriber's times if audio/librosa are unavailable).
+        drums_stem = feedpak_dir / "audio" / "stems" / "drums.wav"
+        if drums_stem.is_file():
+            try:
+                from aural_ingest.drum_onset_align import align_drum_tab_to_onsets
+
+                drum_tab_doc, _ = align_drum_tab_to_onsets(drum_tab_doc, drums_stem)
+            except Exception:  # noqa: BLE001 — alignment must never break import
+                pass
         (feedpak_dir / "drum_tab.json").write_text(
             json.dumps(drum_tab_doc, indent=2), encoding="utf-8"
         )
