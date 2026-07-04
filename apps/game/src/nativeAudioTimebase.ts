@@ -74,6 +74,9 @@ export class NativeAudioTimebase implements TransportTimebase {
   private _lastIsPlaying = false;
   private _lastSampleRateHz = 0;
   private _lastOutputBufferFrames: number | null = null;
+  // performance.now() at the last state poll — lets getCurrentTimeSec() project
+  // the position forward between polls instead of returning a stale value.
+  private _lastPollWall = 0;
 
   constructor(private readonly opts: { sampleRateHz?: number; channels?: number } = {}) {}
 
@@ -108,6 +111,7 @@ export class NativeAudioTimebase implements TransportTimebase {
     this._lastIsPlaying = s.is_playing;
     this._lastSampleRateHz = s.sample_rate_hz;
     this._lastOutputBufferFrames = s.output_buffer_frames;
+    this._lastPollWall = performance.now();
   }
 
   private async readNativeStateSafe(): Promise<NativeAudioState | null> {
@@ -352,11 +356,15 @@ export class NativeAudioTimebase implements TransportTimebase {
     void invoke("native_audio_stop");
     this._lastIsPlaying = false;
     this._lastT = 0;
+    this._lastPollWall = 0;
   }
 
   seek(tSec: number): void {
     void invoke("native_audio_seek", { tSec });
     this._lastT = tSec;
+    // Re-anchor the dead-reckoning clock so the projection resumes from the
+    // seek target rather than overshooting by the pre-seek elapsed time.
+    this._lastPollWall = performance.now();
   }
 
   setLoop(loop?: { t0: number; t1: number }): void {
@@ -388,7 +396,15 @@ export class NativeAudioTimebase implements TransportTimebase {
       .catch(() => {
         // keep last-known state on transient invoke failures
       });
-    return this._lastT;
+    // The poll above is async, so _lastT is one round-trip stale. While playing,
+    // dead-reckon from the last poll with the wall clock so the reported time
+    // tracks real audio to sub-frame accuracy instead of lagging a full poll.
+    // Cap the projection so a stalled poll can't run the cursor away.
+    if (!this._lastIsPlaying || this._lastPollWall === 0) {
+      return this._lastT;
+    }
+    const elapsed = Math.min((performance.now() - this._lastPollWall) / 1000, 0.25);
+    return this._lastT + Math.max(0, elapsed) * this.playbackRate;
   }
 
   getIsPlaying(): boolean {

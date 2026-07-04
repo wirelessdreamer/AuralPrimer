@@ -97,6 +97,10 @@ struct EngineSnapshot {
 
     callback_count: AtomicU64,
     callback_overrun_count: AtomicU64,
+    // Actual frames per output callback, observed live. WASAPI's BufferSize::
+    // Default gives no config buffer size, so this is the only real source for
+    // the output-latency estimate the playhead uses.
+    observed_buffer_frames: AtomicU32,
 }
 
 impl EngineSnapshot {
@@ -602,7 +606,14 @@ impl NativeAudioHandle {
         let playback_rate = f64::from_bits(playback_rate_bits);
         let pos_frames = self.snapshot.position_frames.load(Ordering::Relaxed);
         let loop_frames = self.snapshot.read_loop_frames();
-        let outbuf = self.output_buffer_frames.load(Ordering::Relaxed);
+        // Prefer the live per-callback frame count (the real device buffer);
+        // fall back to the config value (only set when BufferSize::Fixed).
+        let observed = self.snapshot.observed_buffer_frames.load(Ordering::Relaxed);
+        let outbuf = if observed > 0 {
+            observed
+        } else {
+            self.output_buffer_frames.load(Ordering::Relaxed)
+        };
 
         NativeAudioState {
             output_host: self.output_host.clone(),
@@ -988,6 +999,11 @@ fn update_callback_telemetry(
     sample_rate_hz: u32,
 ) {
     snapshot.callback_count.fetch_add(1, Ordering::Relaxed);
+    if frame_count > 0 {
+        snapshot
+            .observed_buffer_frames
+            .store(frame_count as u32, Ordering::Relaxed);
+    }
     let callback_budget_sec = (frame_count as f64) / sample_rate_hz as f64;
     if callback_t0.elapsed().as_secs_f64() > callback_budget_sec {
         snapshot

@@ -595,8 +595,10 @@ describe("stem audio playback (native engine)", () => {
     const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]> } }).mock.calls.at(-1)![0];
     rafCb(0); // triggers a get_state poll (caches position 20)
     await flush();
-    rafCb(0); // cached position is now 20 -> playhead 20
-    expect(spectroInstance.setTime).toHaveBeenLastCalledWith(20);
+    rafCb(0); // cached position is now 20 -> playhead 20 (+ sub-ms dead-reckon)
+    const lastT = (spectroInstance.setTime as unknown as { mock: { calls: number[][] } }).mock.calls.at(-1)![0];
+    expect(lastT).toBeGreaterThanOrEqual(20);
+    expect(lastT).toBeLessThan(20.1);
   });
 
   it("plays the synth alongside the stem when 'Hear notes' is checked", async () => {

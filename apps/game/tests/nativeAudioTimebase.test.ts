@@ -158,7 +158,11 @@ describe("NativeAudioTimebase", () => {
     await Promise.resolve();
 
     expect(tb.getIsPlaying()).toBe(true);
-    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.5, 6);
+    // While playing, getCurrentTimeSec dead-reckons forward from the polled
+    // position with the wall clock, so it lands at 3.5 + a sub-ms projection.
+    const t = tb.getCurrentTimeSec();
+    expect(t).toBeGreaterThanOrEqual(3.5);
+    expect(t).toBeLessThan(3.6);
     expect(tb.getOutputLatencySec()).toBeCloseTo((2 * 240) / 48_000, 6);
   });
 
@@ -1171,7 +1175,10 @@ describe("NativeAudioTimebase", () => {
     tb.seek(5.5);
     expect(tb.getCurrentTimeSec()).toBe(5.5);
     await Promise.resolve();
-    expect(tb.getCurrentTimeSec()).toBeCloseTo(1.23, 6);
+    // Playing now, so the reported time dead-reckons forward from 1.23.
+    const tPlaying = tb.getCurrentTimeSec();
+    expect(tPlaying).toBeGreaterThanOrEqual(1.23);
+    expect(tPlaying).toBeLessThan(1.33);
     await Promise.resolve();
     expect(tb.getIsPlaying()).toBe(true);
     expect(tb.getOutputLatencySec()).toBeCloseTo((2 * 480) / 48_000, 6);
