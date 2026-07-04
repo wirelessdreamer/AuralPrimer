@@ -191,3 +191,31 @@ export function classifySpectroResult(res: SidecarRunResult): SpectroOutcome {
   if (Object.keys(roles).length === 0 && !res.stderr.trim()) return "nostem";
   return "error";
 }
+
+/** Per-instrument outcome of a refine-candidates run. A silent stem ("no
+ * audible content" after the silence gate) is a benign SKIP, not a failure —
+ * band songs legitimately carry an empty keys stem, and treating that as an
+ * error made "Prep all unbuilt" look broken. */
+export type CandidateOutcome = { built: string[]; skipped: string[]; failed: string[] };
+
+export function classifyCandidateResult(
+  res: SidecarRunResult,
+  requested: string[],
+): CandidateOutcome {
+  const parsed = parseSidecarStatusLine(res.stdout);
+  const instruments = (parsed?.instruments ?? {}) as Record<
+    string,
+    { ok?: boolean; error?: string }
+  >;
+  const built: string[] = [];
+  const skipped: string[] = [];
+  const failed: string[] = [];
+  for (const role of requested) {
+    const r = instruments[role];
+    if (r?.ok) built.push(role);
+    else if (typeof r?.error === "string" && /no audible content/i.test(r.error)) skipped.push(role);
+    else if (res.ok && !r) built.push(role); // top-level ok, no per-role detail
+    else failed.push(role);
+  }
+  return { built, skipped, failed };
+}

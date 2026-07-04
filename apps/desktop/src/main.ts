@@ -48,6 +48,7 @@ import {
   detectMelodicStems,
   parseSidecarStatusLine,
   classifySpectroResult,
+  classifyCandidateResult,
   type RoleReadiness,
   type RowReady,
   type SidecarRunResult,
@@ -1050,14 +1051,18 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     return;
   }
   cleanupBuildAllBtn.disabled = true;
+  cleanupBuildAllBtn.textContent = "Prepping…";
+  cleanupBuildAllStatusEl?.classList.add("isBusy");
   let specBuilt = 0;
   let candBuilt = 0;
+  let candSkipped = 0; // silent stems (no audible content) — benign, not failed
   let noStem = 0;
   let failed = 0;
   const tally = (): string => {
     const parts: string[] = [];
     if (specBuilt) parts.push(`${specBuilt} spec`);
     if (candBuilt) parts.push(`${candBuilt} cand`);
+    if (candSkipped) parts.push(`${candSkipped} silent`);
     if (noStem) parts.push(`${noStem} skipped`);
     if (failed) parts.push(`${failed} failed`);
     return parts.length ? ` · ${parts.join(", ")}` : "";
@@ -1087,13 +1092,18 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     // 2) Candidate precompute (only the roles that lack candidates). Skipped
     //    for a stem-less pack, where there's nothing to transcribe.
     if (t.candRoles.length && !stemless) {
-      setStatus(`Building ${i + 1}/${todo.length}: ${t.title} — candidates…${tally()}`);
+      setStatus(`Prepping ${i + 1}/${todo.length}: ${t.title} — candidates (${t.candRoles.join(", ")})…${tally()}`);
       try {
-        const res = await safeInvoke<{ ok: boolean }>("ingest_refine_candidates", {
+        const res = await safeInvoke<SidecarRunResult>("ingest_refine_candidates", {
           req: { container_path: t.path, instruments: t.candRoles },
         });
-        if (res.ok) candBuilt += 1;
-        else failed += 1;
+        // A silent stem ("no audible content" after the silence gate) is a
+        // benign SKIP, not a failure — band songs carry an empty keys stem
+        // with nothing to transcribe. Only real errors count as failed.
+        const outcome = classifyCandidateResult(res, t.candRoles);
+        if (outcome.built.length) candBuilt += 1;
+        candSkipped += outcome.skipped.length;
+        if (outcome.failed.length) failed += 1;
       } catch {
         failed += 1;
       }
@@ -1105,10 +1115,13 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       ?.classList.remove("isBuilding");
   }
   cleanupBuildAllBtn.disabled = false;
+  cleanupBuildAllBtn.textContent = "Prep all unbuilt";
+  cleanupBuildAllStatusEl?.classList.remove("isBusy");
   const parts = [
     `Built ${specBuilt} spectrogram${specBuilt === 1 ? "" : "s"}`,
     `${candBuilt} candidate set${candBuilt === 1 ? "" : "s"}`,
   ];
+  if (candSkipped) parts.push(`${candSkipped} silent stem${candSkipped === 1 ? "" : "s"} skipped`);
   if (noStem) parts.push(`${noStem} with no melodic stem`);
   if (failed) parts.push(`${failed} failed`);
   setStatus(`${parts.join(", ")}.`);

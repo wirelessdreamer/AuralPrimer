@@ -15,6 +15,7 @@ import {
   melodicStemRoles,
   detectMelodicStems,
   classifySpectroResult,
+  classifyCandidateResult,
   parseSidecarStatusLine,
   _resetReadinessCachesForTest,
   type SidecarRunResult,
@@ -63,6 +64,45 @@ describe("classifySpectroResult", () => {
   });
   it("error when ok:false but some roles actually built", () => {
     expect(classifySpectroResult(res({ ok: false, stdout: '{"roles":{"keys":{"ok":true}}}' }))).toBe("error");
+  });
+});
+
+describe("classifyCandidateResult", () => {
+  it("counts every requested instrument as built when all succeed", () => {
+    const r = res({ ok: true, stdout: '{"instruments":{"bass":{"ok":true},"guitar":{"ok":true}},"ok":true}' });
+    expect(classifyCandidateResult(r, ["bass", "guitar"])).toEqual({
+      built: ["bass", "guitar"],
+      skipped: [],
+      failed: [],
+    });
+  });
+
+  it("treats a silent stem ('no audible content') as a skip, not a failure", () => {
+    // The band-song case: keys stem is silent, bass built fine. Top-level ok
+    // is false, but that must NOT count keys as a failure.
+    const r = res({
+      ok: false,
+      stdout:
+        '{"instruments":{"keys":{"ok":false,"error":"no audible content for instrument=\'keys\' after the silence gate; skipping candidates for this stem"},"bass":{"ok":true}},"ok":false}',
+    });
+    expect(classifyCandidateResult(r, ["keys", "bass"])).toEqual({
+      built: ["bass"],
+      skipped: ["keys"],
+      failed: [],
+    });
+  });
+
+  it("counts a real per-instrument error as failed", () => {
+    const r = res({ ok: false, stdout: '{"instruments":{"keys":{"ok":false,"error":"model crashed"}},"ok":false}' });
+    expect(classifyCandidateResult(r, ["keys"])).toEqual({ built: [], skipped: [], failed: ["keys"] });
+  });
+
+  it("falls back to built on top-level ok with no per-instrument detail", () => {
+    expect(classifyCandidateResult(res({ ok: true, stdout: "{}" }), ["keys"])).toEqual({
+      built: ["keys"],
+      skipped: [],
+      failed: [],
+    });
   });
 });
 

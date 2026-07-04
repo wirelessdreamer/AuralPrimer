@@ -1307,3 +1307,28 @@ button.cleanupPrimary:hover:not(:disabled) {
     grid-template-columns: 1fr;
   }
 }
+
+/* "Prep all unbuilt" running state — the job runs for minutes in the sidecar,
+   so make it obvious rather than a muted status line: accent colour, bold, and
+   a spinner. Toggled via .isBusy from the click handler. */
+.cleanupBuildAllStatus.isBusy {
+  color: var(--accent);
+  font-weight: 600;
+}
+.cleanupBuildAllStatus.isBusy::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: prepSpin 0.8s linear infinite;
+}
+@keyframes prepSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
