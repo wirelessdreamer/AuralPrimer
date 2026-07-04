@@ -38,7 +38,14 @@ import {
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
 import { getAvOffsetSec } from "./avOffset";
-import { detectMelodicStems } from "./cleanupReadiness";
+import { detectMelodicStems, auralsongJsonExists } from "./cleanupReadiness";
+import {
+  laneOrderForTab,
+  hitsToNotes,
+  notesToTab,
+  drumLaneLabel,
+  type DrumTabFile,
+} from "./drumTabIo";
 import type { RefinementNote } from "./refineCandidatesIo";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -105,6 +112,10 @@ const INSTRUMENT_LABELS: Record<string, string> = {
   guitar: "Guitar",
   lead_guitar: "Lead Guitar",
   rhythm_guitar: "Rhythm Guitar",
+  // Drums are the exception to the candidates flow: the picker offers them
+  // when the pack has a drum_tab.json, and the workspace switches to the lane
+  // editor over the drums spectrogram (see the drumMode branches below).
+  drums: "Drums",
 };
 
 export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceHandle {
@@ -157,6 +168,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let isDirty = false;
   let selectedIndex: number | null = null;
   let durationSec = 0;
+  // Drum-cleanup mode: the editor shows kit lanes over the drums spectrogram
+  // and edits the pack's drum_tab.json directly (no candidates/regions).
+  let drumMode = false;
+  let drumLanes: string[] = [];
+  let drumTabOriginal: DrumTabFile | null = null;
 
   // transport
   //  - When a stem is loaded, `audio` plays the real recording and its
@@ -205,20 +221,23 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       renderInspector(index);
     },
     // Audition a note as it's placed or edited, so the user hears the pitch
-    // they're putting down (gated by the "Audition edits" toggle).
+    // they're putting down (gated by the "Audition edits" toggle). Drum-mode
+    // "pitches" are lane indices — nothing meaningful to synthesize.
     onNoteAuditioned: (note) => {
-      if (editAuditionToggle!.checked) audition.playNote(note.pitch, note.velocity);
+      if (!drumMode && editAuditionToggle!.checked) audition.playNote(note.pitch, note.velocity);
     },
     // Sonic-Visualiser-style cursor readout: show the pitch + time under the
-    // cursor in the inspector whenever no note is actively selected.
+    // cursor in the inspector whenever no note is actively selected. In drum
+    // mode `pitch` is a lane index and reads as the lane name.
     onHover: (info) => {
       if (selectedIndex != null) return;
       if (!info) {
-        selInfoEl!.textContent = "No note selected";
+        selInfoEl!.textContent = drumMode ? "No hit selected" : "No note selected";
         return;
       }
+      const label = drumMode ? drumLaneLabel(drumLanes[info.pitch] ?? "?") : pitchLabel(info.pitch);
       selInfoEl!.innerHTML =
-        `<span class="rfSelPitch">${pitchLabel(info.pitch)}</span> · ${formatTime(info.time)}`
+        `<span class="rfSelPitch">${label}</span> · ${formatTime(info.time)}`
         + ` <span style="color:#64748b;">· cursor</span>`;
     },
   });
@@ -272,6 +291,20 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // -------------------------------------------------------------------------
 
   function renderInspector(index: number | null): void {
+    // Drum mode: lane + time readout only — no candidate chips (drums have no
+    // candidate system; the drum tab is the single source of truth).
+    if (drumMode) {
+      candChipsEl!.innerHTML = "";
+      const hit = index != null ? editor.getNotes()[index] : undefined;
+      if (!hit) {
+        selInfoEl!.textContent = "No hit selected";
+        return;
+      }
+      selInfoEl!.innerHTML =
+        `<span class="rfSelPitch">${drumLaneLabel(drumLanes[hit.pitch] ?? "?")}</span>`
+        + ` · ${formatTime(hit.t_on)}`;
+      return;
+    }
     if (index == null || !session) {
       selInfoEl!.textContent = "No note selected";
       candChipsEl!.innerHTML = "";
@@ -405,7 +438,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
         setStatus(`Stem audio couldn't start for ${instrument} — playing notes only`);
       });
     }
-    if (auditionToggle!.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+    // Drum-mode "pitches" are lane indices — the melodic synth can't audition
+    // them, so drum playback relies on the real drums stem alone.
+    if (!drumMode && auditionToggle!.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
     rafId = requestAnimationFrame(tick);
   }
 
@@ -446,7 +481,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // Empty / loaded state
   // -------------------------------------------------------------------------
 
-  function showEmpty(empty: boolean, reason?: "candidates" | "spectrogram" | "error", detail?: string): void {
+  function showEmpty(empty: boolean, reason?: "candidates" | "spectrogram" | "drumtab" | "error", detail?: string): void {
     emptyEl!.style.display = empty ? "flex" : "none";
     stageEl!.style.display = empty ? "none" : "block";
     transportEl!.style.display = empty ? "none" : "flex";
@@ -456,6 +491,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (reason === "spectrogram") {
       if (h3) h3.textContent = "No spectrogram for this stem";
       emptyCmdEl!.textContent = `aural_ingest spectrogram "${containerPath ?? "<song>"}" --instrument ${instrument}`;
+    } else if (reason === "drumtab") {
+      if (h3) h3.textContent = "No drum chart in this pack";
+      emptyCmdEl!.textContent = detail ?? "This pack has no drum_tab.json — reimport with a drums stem to chart drums.";
     } else if (reason === "error") {
       if (h3) h3.textContent = "Failed to load";
       emptyCmdEl!.textContent = detail ?? "";
@@ -469,8 +507,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // Spectrogram + notes load
   // -------------------------------------------------------------------------
 
-  async function loadSpectrogramIntoEditor(): Promise<boolean> {
-    if (!containerPath || !session) return false;
+  async function loadSpectrogramIntoEditor(notes: SpectroNote[]): Promise<boolean> {
+    if (!containerPath) return false;
     const role = instrument;
     // feedpak relocates spectrogram artifacts under aural/ (legacy: features/).
     const fd = containerPath.endsWith(".feedpak") ? "aural" : "features";
@@ -491,7 +529,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
         urls.push(url);
         spectroTileUrls.push(url);
       }
-      await editor.load(geom, urls, assembleFullNotes(session));
+      await editor.load(geom, urls, notes);
       durationSec = editor.getDurationSec();
       return true;
     } catch {
@@ -684,6 +722,26 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // -------------------------------------------------------------------------
 
   async function save(): Promise<void> {
+    // Drum mode: convert the edited lane hits back into the pack's root
+    // drum_tab.json (preserving version/name/kit) — the game charts straight
+    // from that file, so the edit lands with no further pipeline step.
+    if (drumMode) {
+      if (!containerPath || !drumTabOriginal) return;
+      const tab = notesToTab(editor.getNotes(), drumLanes, drumTabOriginal);
+      try {
+        await invoke<void>("write_auralsong_features_json", {
+          containerPath,
+          relPath: "drum_tab.json",
+          value: tab,
+        });
+        drumTabOriginal = tab;
+        setDirty(false);
+        setStatus(`Saved ${tab.hits?.length ?? 0} drum hits`);
+      } catch (e) {
+        setStatus(`Save failed: ${String(e)}`);
+      }
+      return;
+    }
     if (!session) return;
     if (regionsSorted.length === 0) {
       setStatus("Nothing to save (no regions).");
@@ -743,9 +801,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     setTransportEnabled(false);
 
     // The dropdown should offer only this song's editable instruments — the
-    // melodic roles that actually have candidates. That keeps absent / non-
-    // melodic instruments (Drums lives in the drum tab, not candidates) out of
-    // the picker, and defaults to a role that will actually load.
+    // melodic roles that actually have candidates, plus Drums when the pack
+    // carries a drum chart (drum_tab.json), which opens the lane editor
+    // instead of the candidates flow.
     let available: string[] = [];
     let primary = "keys";
     try {
@@ -754,6 +812,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       available = MELODIC_PICK_ORDER.filter((r) => det.readiness.get(r)?.candidates);
     } catch {
       // Detection failed — leave the static option set + current instrument.
+    }
+    try {
+      if (await auralsongJsonExists(path, "drum_tab.json")) available.push("drums");
+    } catch {
+      /* no drum option on probe failure */
     }
     if (available.length) populateInstrumentOptions(available);
 
@@ -765,6 +828,53 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       instrument = available[0] as RefinementInstrument;
     }
     syncInstrumentControl();
+
+    // ---- Drum mode: lane editor over the drums spectrogram --------------
+    if (instrument === "drums") {
+      drumMode = true;
+      session = null;
+      regionsSorted = [];
+      setStatus(`Loading drum chart from ${path}…`);
+      try {
+        const tab = (await invoke("read_auralsong_json", {
+          containerPath: path,
+          relPath: "drum_tab.json",
+        })) as DrumTabFile;
+        if (!tab || !Array.isArray(tab.hits)) {
+          showEmpty(true, "drumtab");
+          setStatus("No drum chart in this pack");
+          return;
+        }
+        drumTabOriginal = tab;
+        drumLanes = laneOrderForTab(tab);
+        editor.setLaneMode(drumLanes);
+        const ok = await loadSpectrogramIntoEditor(hitsToNotes(tab, drumLanes));
+        if (!ok) {
+          showEmpty(true, "spectrogram");
+          setStatus("No drums spectrogram — build it first (Prep all unbuilt, or the command below)");
+          return;
+        }
+        showEmpty(false);
+        updateUndoButtons();
+        buildSections();
+        selectedIndex = null;
+        renderInspector(null);
+        setTransportEnabled(durationSec > 0);
+        setPlayhead(0, false);
+        sectionSelectEl!.value = "";
+        await loadStemAudio();
+        const audioNote = stemLoaded ? "" : " (no stem audio)";
+        setStatus(`Loaded ${editor.getNotes().length} drum hits across ${drumLanes.length} lanes${audioNote}`);
+      } catch (e) {
+        showEmpty(true, "error", String(e));
+        setStatus(`Failed to load drum chart: ${String(e)}`);
+      }
+      return;
+    }
+    drumMode = false;
+    drumTabOriginal = null;
+    drumLanes = [];
+    editor.setLaneMode(null);
 
     setStatus(`Loading ${path}…`);
     try {
@@ -779,7 +889,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       session = loaded;
       regionsSorted = [...loaded.candidates.regions].sort((a, b) => a.t_start - b.t_start);
 
-      const ok = await loadSpectrogramIntoEditor();
+      const ok = await loadSpectrogramIntoEditor(assembleFullNotes(session));
       if (!ok) {
         showEmpty(true, "spectrogram");
         setStatus(`No spectrogram for ${instrument} — build it first`);

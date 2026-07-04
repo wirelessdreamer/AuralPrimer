@@ -439,6 +439,10 @@ fn is_allowed_feature_rel(rel_path: &str) -> bool {
     rel_path.starts_with("features/")
         || rel_path.starts_with("aural/")
         || rel_path.starts_with("arrangements/")
+        // The drum chart is a root-level, manifest-referenced artifact
+        // (`drum_tab: drum_tab.json`); the Studio drum-cleanup editor writes
+        // edited hits back to it so the game picks them up directly.
+        || rel_path == "drum_tab.json"
 }
 
 /// Read+parse a feedpak `manifest.yaml` from a directory or zip container.

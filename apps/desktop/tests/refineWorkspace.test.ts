@@ -38,6 +38,7 @@ const spectroInstance = {
   canRedo: vi.fn(() => false),
   undo: vi.fn(),
   redo: vi.fn(),
+  setLaneMode: vi.fn(),
 };
 let lastSpectroOpts: {
   onNotesChanged?: (notes: unknown[]) => void;

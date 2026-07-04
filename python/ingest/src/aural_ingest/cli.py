@@ -3581,6 +3581,11 @@ def cmd_import(args: argparse.Namespace) -> int:
             fallback = lead_stem if lead_stem.is_file() else dst_wav
             if Path(fallback).is_file():
                 spec_sources = {"melodic": fallback}
+        # Drums get an overlay too (8-octave, see spectrogram.n_octaves_for_role)
+        # so the Studio drum-cleanup editor works out of the box on new imports.
+        drums_spec_stem = stems_dir / "drums.wav"
+        if drums_spec_stem.is_file():
+            spec_sources.setdefault("drums", drums_spec_stem)
         for role, stem_path in spec_sources.items():
             if not Path(stem_path).is_file():
                 continue
@@ -3904,11 +3909,14 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
 
     feat_dir = pack_feature_dirname(auralsong)
     stems_dir = auralsong / "audio" / "stems"
-    excluded = {"drums", "vocals"}
+    # Drums are excluded from the melodic default but buildable on explicit
+    # request (`--instrument drums`) for the Studio drum-cleanup overlay;
+    # vocals have no overlay at all.
+    default_excluded = {"drums", "vocals"}
     present: dict[str, Path] = {}
     for stem_path in sorted(stems_dir.glob("*.wav")):
         role = stem_path.stem
-        if role in excluded:
+        if role == "vocals":
             continue
         present[role] = stem_path
 
@@ -3917,7 +3925,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         target_roles = [r for r in requested if r in present]
     else:
         # Default (or explicit "melodic"): all melodic stems present.
-        target_roles = sorted(present.keys())
+        target_roles = sorted(r for r in present if r not in default_excluded)
 
     results: dict[str, dict[str, object]] = {}
     for role in target_roles:
@@ -4193,8 +4201,11 @@ def build_parser() -> argparse.ArgumentParser:
     s_spectrogram.add_argument(
         "--instrument",
         action="append",
-        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "melodic"]),
-        help="Melodic stem to build. May be repeated. Defaults to all melodic stems present.",
+        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "melodic"]),
+        help=(
+            "Stem to build. May be repeated. Defaults to all melodic stems present; "
+            "'drums' (8-octave overlay for the drum-cleanup editor) is built only on explicit request."
+        ),
     )
     s_spectrogram.set_defaults(func=cmd_build_spectrogram)
 

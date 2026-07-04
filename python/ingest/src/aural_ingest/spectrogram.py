@@ -30,6 +30,15 @@ import numpy as np
 FMIN_MIDI = 24
 BINS_PER_OCTAVE = 12
 N_OCTAVES = 7
+# Drums: hi-hats/cymbals live mostly above the 7-octave (~4 kHz) melodic
+# ceiling, so the drum-cleanup overlay gets one more octave (~7.9 kHz). Kick /
+# snare / toms sit comfortably inside the shared fmin.
+N_OCTAVES_DRUMS = 8
+
+
+def n_octaves_for_role(role: str) -> int:
+    """Octave count for a stem role's spectrogram (drums see higher)."""
+    return N_OCTAVES_DRUMS if role == "drums" else N_OCTAVES
 SAMPLE_RATE = 22050
 HOP_LENGTH = 512
 # Cross-platform-safe WebGL MAX_TEXTURE_SIZE floor (see research) -> tile width.
@@ -105,10 +114,12 @@ def write_spectrogram_artifact(
 ) -> dict[str, Any]:
     """Compute the CQT and write tiled grayscale data PNGs + spectrogram.json.
 
-    Returns the geometry dict.
+    Returns the geometry dict. Unless the caller overrides ``n_octaves``, the
+    octave count follows the role (drums get the taller range).
     """
     from PIL import Image
 
+    kwargs.setdefault("n_octaves", n_octaves_for_role(role))
     res = compute_cqt_db(audio_path, **kwargs)
     rgb = _pack_rg(_quantize_u16(res["db"]))  # (n_bins, n_frames, 3)
     n_bins, n_frames = rgb.shape[0], rgb.shape[1]

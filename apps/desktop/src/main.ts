@@ -1041,6 +1041,18 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       if (!rr.spectrogram) specRoles.push(role);
       if (!rr.candidates) candRoles.push(role);
     }
+    // Drums: packs with a drum chart get a drums spectrogram for the Refine
+    // lane editor. Spectrogram only — drums have no candidate system (the
+    // drum tab is the source of truth), so candRoles never includes drums.
+    try {
+      if (await auralsongJsonExists(path, "drum_tab.json")) {
+        const fd = featureDir(path);
+        const hasDrumSpec = await auralsongJsonExists(path, `${fd}/spectrogram/drums/spectrogram.json`);
+        if (!hasDrumSpec) specRoles.push("drums");
+      }
+    } catch {
+      /* skip drums on probe failure */
+    }
     if (specRoles.length || candRoles.length) {
       const title = row.querySelector(".cleanupSongTitle")?.textContent ?? path;
       todo.push({ path, title, specRoles, candRoles });
