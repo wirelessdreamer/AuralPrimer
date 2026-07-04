@@ -228,6 +228,11 @@ type DragMode = "none" | "move" | "resize-l" | "resize-r" | "pan";
 
 const EDGE_HIT_PX = 6; // px from a note edge that counts as a resize grab
 const MIN_NOTE_SEC = 0.02;
+// Lane-mode (drum) hits are INSTANTS: a fixed-width marker CENTERED on the
+// onset, so it stays glued to the transient at any zoom. A left-anchored,
+// time-spanning box would balloon to ~0.8s of visual width when zoomed out
+// and read as drift. CSS px (scaled by dpr at draw time).
+const DRUM_MARK_CSS_PX = 5;
 
 export class SpectrogramEditor {
   private readonly container: HTMLElement;
@@ -780,18 +785,16 @@ export class SpectrogramEditor {
       }
     }
 
-    // Note rectangles (lane mode: hits get a minimum on-screen width and fill
-    // their lane band with a slight inset).
-    const minHitW = this.lanes ? 6 * this.dpr() : 1;
+    // Note rectangles. Lane mode draws a fixed-width marker centered on the
+    // onset (see noteXSpan) filling its lane band with a slight inset.
     for (let i = 0; i < this.notes.length; i++) {
       const n = this.notes[i]!;
-      const x0 = this.timeToPx(n.t_on);
-      const x1 = this.timeToPx(n.t_off);
+      const span = this.noteXSpan(n);
       const band = this.noteRowBand(n);
       const yBottom = this.rowToPx(band.rLo);
       const yTop = this.rowToPx(band.rHi);
-      const x = Math.min(x0, x1);
-      const w = Math.max(minHitW, Math.abs(x1 - x0));
+      const x = span.xLeft;
+      const w = Math.max(1, span.xRight - span.xLeft);
       let y = Math.min(yTop, yBottom);
       let h = Math.max(1, Math.abs(yBottom - yTop));
       if (this.lanes && h > 6) {
@@ -878,6 +881,23 @@ export class SpectrogramEditor {
     }
     const row = n.pitch - (this.geom?.fmin_midi ?? 0);
     return { rLo: row, rHi: row + 1 };
+  }
+
+  /**
+   * A note's device-px horizontal span. Lane mode: a fixed-width marker
+   * CENTERED on the onset (an instant). Pitch mode: t_on..t_off (a real
+   * duration), min 1px. Shared by draw + hit-test so they always agree.
+   */
+  private noteXSpan(n: SpectroNote): { xLeft: number; xRight: number } {
+    if (this.lanes) {
+      const xc = this.timeToPx(n.t_on);
+      const half = (DRUM_MARK_CSS_PX * this.dpr()) / 2;
+      return { xLeft: xc - half, xRight: xc + half };
+    }
+    const x0 = this.timeToPx(n.t_on);
+    const x1 = this.timeToPx(n.t_off);
+    const left = Math.min(x0, x1);
+    return { xLeft: left, xRight: Math.max(left + 1, Math.max(x0, x1)) };
   }
 
   /** Device px (relative to stage, CSS px) -> content {frame, row}. */
@@ -1183,17 +1203,14 @@ export class SpectrogramEditor {
     const pxX = cssX * dpr;
     const pxY = cssY * dpr;
     // Iterate last-drawn first so newer/selected notes win.
-    const minHitW = this.lanes ? 6 * dpr : 0;
     for (let i = this.notes.length - 1; i >= 0; i--) {
       const n = this.notes[i]!;
-      const x0 = this.timeToPx(n.t_on);
-      const x1 = this.timeToPx(n.t_off);
+      const span = this.noteXSpan(n);
       const band = this.noteRowBand(n);
       const yB = this.rowToPx(band.rLo);
       const yT = this.rowToPx(band.rHi);
-      let left = Math.min(x0, x1);
-      let right = Math.max(x0, x1);
-      if (right - left < minHitW) right = left + minHitW; // match drawn width
+      const left = span.xLeft;
+      const right = span.xRight;
       const top = Math.min(yT, yB);
       const bot = Math.max(yT, yB);
       if (pxX < left - EDGE_HIT_PX * dpr || pxX > right + EDGE_HIT_PX * dpr) continue;
