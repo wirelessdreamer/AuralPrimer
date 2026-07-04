@@ -529,6 +529,41 @@ impl NativeAudioHandle {
         })
     }
 
+    /// Load several stems summed into one buffer (unity gain). Each stem is
+    /// resampled to the engine rate and padded to the longest, so the sum is
+    /// well-defined. Unlike the game's mixer this keeps no per-stem state — the
+    /// Studio refine workspace only needs summed playback, not live gain.
+    pub fn load_stems(&self, stems: Vec<(u32, u16, Vec<i16>)>) -> Result<(), String> {
+        if stems.is_empty() {
+            return Err("load_stems: no stems provided".to_string());
+        }
+        let mut resampled: Vec<Vec<i16>> = Vec::with_capacity(stems.len());
+        for (sr, ch, data) in stems {
+            if ch != self.channels {
+                return Err(format!("stem channels {} != engine channels {}", ch, self.channels));
+            }
+            resampled.push(resample_pcm16_linear_interleaved(&data, ch, sr, self.sample_rate_hz)?);
+        }
+        let max_len = resampled.iter().map(|s| s.len()).max().unwrap_or(0);
+        let mut mixed = vec![0i32; max_len];
+        for s in &resampled {
+            for (i, &v) in s.iter().enumerate() {
+                mixed[i] += v as i32;
+            }
+        }
+        let data: Vec<i16> = mixed
+            .into_iter()
+            .map(|v| v.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+            .collect();
+        self.enqueue(EngineCommand::LoadPcm16 {
+            wav: WavPcm16 {
+                sample_rate: self.sample_rate_hz,
+                channels: self.channels,
+                data,
+            },
+        })
+    }
+
     pub fn play(&self) -> Result<(), String> {
         self.enqueue(EngineCommand::Play)
     }

@@ -14,13 +14,13 @@
  *    notes is replaced by the candidate's transcription.
  *  - The 12+ hot-spot regions are navigation only — a "Jump" dropdown scrolls
  *    the editor view to a section start.
- *  - Transport plays the ISOLATED STEM audio for the current instrument,
- *    streamed off disk via Tauri's asset protocol (convertFileSrc -> an
- *    <audio> element), so the user hears the real recording while editing.
- *    When a stem is loaded, audio.currentTime drives the playhead clock;
- *    when none loads (zip container, missing file, decode error) the
- *    transport falls back to the wall-clock playhead. The "Hear notes"
- *    synth (refineAudition) plays ALONGSIDE the stem when checked, so the
+ *  - Transport plays the ISOLATED STEM audio for the current instrument (or
+ *    the summed "All" mix) through the SAME native engine the game uses
+ *    (NativeAudioTimebase), so the shared A/V calibration is valid and the
+ *    playhead is drawn at the audible position. When audio is loaded the native
+ *    engine position drives the playhead clock; when none loads (missing file,
+ *    decode error) the transport falls back to the wall-clock playhead. The
+ *    "Hear notes" synth (refineAudition) plays ALONGSIDE the stem when checked, so the
  *    user can A/B the transcription against the recording.
  *
  * On save, the edited note set is partitioned back into the candidate regions
@@ -38,6 +38,7 @@ import {
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
 import { getAvOffsetSec } from "./avOffset";
+import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { detectMelodicStems, auralsongJsonExists } from "./cleanupReadiness";
 import {
   laneOrderForTab,
@@ -47,7 +48,7 @@ import {
   type DrumTabFile,
 } from "./drumTabIo";
 import type { RefinementNote } from "./refineCandidatesIo";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import {
   SpectrogramEditor,
   type SpectrogramGeometry,
@@ -175,9 +176,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let drumTabOriginal: DrumTabFile | null = null;
 
   // transport
-  //  - When a stem is loaded, `audio` plays the real recording and its
-  //    `currentTime` is the playhead clock (driven via rAF).
-  //  - When no stem loads, we fall back to the wall-clock playhead below.
+  //  - Audio plays through the SAME native engine as the game (via
+  //    NativeAudioTimebase), so the shared A/V calibration is valid here too —
+  //    the playhead is drawn at the audible position (native pos − output
+  //    latency·rate − calibration offset), exactly as the game's transport does.
+  //  - When no audio loads, we fall back to the wall-clock playhead below.
   //  - refineAudition (the "Hear notes" synth) plays alongside either path.
   let isPlaying = false;
   let playStartOffset = 0; // playhead position (sec) when play began (wall-clock path)
@@ -187,18 +190,13 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let playbackRate = 1; // transport speed multiplier
   let soloMode = true; // true = play the current instrument's isolated stem; false = full mix
 
-  // Isolated-stem playback. The element lives outside the DOM template — it
-  // never needs to be visible, just to decode + play the asset:// stream.
-  const audio = new Audio();
-  audio.preload = "auto";
-  let stemLoaded = false; // true once a stem src has loaded (metadata) for the current instrument
-  audio.addEventListener("ended", () => stopTransport());
-  audio.addEventListener("error", () => {
-    // The stem failed to decode/stream: drop back to the wall-clock + synth
-    // path so the editor stays usable, and tell the user why there's no audio.
-    if (stemLoaded) setStatus(`Stem audio failed to load for ${instrument} — playing notes only`);
-    stemLoaded = false;
-  });
+  // Native audio engine (same one the game uses). audioLoaded flips true once a
+  // stem/mix is loaded; a load miss leaves it false -> wall-clock fallback.
+  const nativeAudio = new NativeAudioTimebase();
+  let audioLoaded = false;
+  // Monotonic token so a rapid instrument/solo switch can't let a slower,
+  // earlier load win the shared engine buffer after a newer one started.
+  let loadGeneration = 0;
 
   const spectroTileUrls: string[] = [];
   function revokeSpectroUrls(): void {
@@ -401,25 +399,29 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   function tick(): void {
     if (!isPlaying) return;
-    // Clock source: the stem's own playback position when a stem is loaded,
-    // otherwise the wall clock. Keeping the playhead on audio.currentTime
-    // keeps the spectrogram glued to what the user actually hears.
-    const raw = stemLoaded
-      ? audio.currentTime
+    // Clock source: the native engine's playback position when audio is loaded,
+    // otherwise the wall clock.
+    const raw = audioLoaded
+      ? nativeAudio.getCurrentTimeSec()
       : playStartOffset + ((performance.now() - playStartWall) / 1000) * playbackRate;
     if (raw >= durationSec) {
       setPlayhead(durationSec, false);
       pauseTransport();
       return;
     }
-    // A/V sync offset: the user hears the output `avOffset` (wall-clock) after
-    // the clock, so draw the cursor at the position that's actually audible
-    // right now (same calibration the game applies to its falling notes). The
-    // offset is wall-clock latency but `raw` is song-time, so scale it by the
-    // playback rate — at 0.75x, 133ms of latency is only ~100ms of song time,
-    // and an unscaled subtraction drifts the cursor off the audio. End-of-song
-    // uses the raw clock above so a positive offset doesn't cut playback short.
-    setPlayhead(raw - getAvOffsetSec() * playbackRate, true);
+    // Draw the cursor at the position that's actually AUDIBLE right now — the
+    // same math the game's transport uses, so the shared calibration lines up:
+    //   audible = nativePos − outputLatency·rate − avOffset
+    // outputLatency is a wall-clock buffer latency (scaled by rate to song
+    // time); avOffset is the user's perceptual calibration (unscaled, as the
+    // game applies it). Zero on the wall-clock fallback (no native latency).
+    // Only compensate output latency once the engine is actually playing — the
+    // native position is pinned during the start-up window, so subtracting
+    // latency then would nudge the cursor off. (Matches the game.)
+    const outLatency = audioLoaded && nativeAudio.getIsPlaying()
+      ? (nativeAudio.getOutputLatencySec() ?? 0)
+      : 0;
+    setPlayhead(raw - outLatency * playbackRate - getAvOffsetSec(), true);
     rafId = requestAnimationFrame(tick);
   }
 
@@ -430,15 +432,25 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     playStartWall = performance.now();
     isPlaying = true;
     playBtn!.textContent = "⏸";
-    if (stemLoaded) {
-      // Seek the stem to the playhead and start it; if play() rejects (autoplay
-      // policy, transient decode failure) fall back to the wall-clock path so
-      // the synth + playhead still run.
-      audio.currentTime = playheadSec;
-      audio.playbackRate = playbackRate;
-      audio.play().catch(() => {
-        stemLoaded = false;
-        setStatus(`Stem audio couldn't start for ${instrument} — playing notes only`);
+    if (audioLoaded) {
+      // Seek to the playhead + start; if native start fails, drop to the
+      // wall-clock path so the synth + playhead still run.
+      nativeAudio.seek(playheadSec);
+      nativeAudio.setPlaybackRate(playbackRate);
+      void nativeAudio.play().catch(() => {
+        audioLoaded = false;
+        // The native start-poll can take seconds; re-anchor the wall clock to
+        // NOW (not the stale play-start time) so the playhead resumes smoothly
+        // from where it sits instead of lurching forward by the stall, and
+        // restart the synth from the current playhead so it stays in sync.
+        if (isPlaying) {
+          playStartOffset = playheadSec;
+          playStartWall = performance.now();
+          if (!drumMode && auditionToggle!.checked) {
+            audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+          }
+        }
+        setStatus(`Audio couldn't start for ${instrument} — playing notes only`);
       });
     }
     // Drum-mode "pitches" are lane indices — the melodic synth can't audition
@@ -449,7 +461,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   function pauseTransport(): void {
     if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
-    try { audio.pause(); } catch { /* ignore */ }
+    if (audioLoaded) nativeAudio.pause();
     audition.stop();
     isPlaying = false;
     playBtn!.textContent = "▶";
@@ -457,7 +469,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   function stopTransport(): void {
     pauseTransport();
-    if (stemLoaded) { try { audio.currentTime = 0; } catch { /* ignore */ } }
+    if (audioLoaded) nativeAudio.seek(0);
     setPlayhead(0, false);
   }
 
@@ -470,7 +482,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     const wasPlaying = isPlaying;
     if (wasPlaying) pauseTransport();
     setPlayhead(t, true);
-    if (stemLoaded) { try { audio.currentTime = playheadSec; } catch { /* ignore */ } }
+    if (audioLoaded) nativeAudio.seek(playheadSec);
     if (wasPlaying) playTransport();
   }
 
@@ -541,173 +553,49 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   }
 
   // -------------------------------------------------------------------------
-  // Stem audio (asset-protocol stream of the current instrument's stem)
+  // Audio — native engine (the SAME one the game uses), so the shared A/V
+  // calibration is valid and drum/melodic auditioning is sample-accurate.
   // -------------------------------------------------------------------------
 
-  type ManifestStem = { id?: string; file?: string; default?: boolean | string };
-
-  /** Truthy "default" per the manifest schema (boolean or true/on/yes string). */
-  function isDefaultStem(s: ManifestStem): boolean {
-    const d = s.default;
-    if (typeof d === "boolean") return d;
-    if (typeof d === "string") return /^(true|on|yes)$/i.test(d.trim());
-    return false;
-  }
-
-  /** Join the container path with a POSIX-relative stem file (forward slashes). */
-  function joinContainer(container: string, relFile: string): string {
-    const sep = container.includes("\\") ? "\\" : "/";
-    const base = container.replace(/[\\/]+$/, "");
-    return `${base}${sep}${relFile.replace(/\//g, sep)}`;
-  }
-
   /**
-   * Resolve the current instrument's stem to a convertFileSrc URL. Reads the
-   * manifest's `stems[]`, matches `id === role`, and falls back to the default
-   * stem (or the first) when the role has none. Returns null when the manifest
-   * has no usable stem (e.g. a zip container the asset protocol can't reach).
+   * Load the current instrument's stem (solo) or the summed base stems ("All")
+   * into the native engine. Rust reads + decodes the pack audio directly (no
+   * multi-MB IPC of the old browser path). A miss leaves audioLoaded false ->
+   * wall-clock + synth fallback.
    */
-  // --- "All" mix --------------------------------------------------------
-  // Stems-only packs carry no audio/mix.wav, so the "All" mode builds the full
-  // mix on the fly from the base stems (excluding the derived guitar splits,
-  // which would double-count guitar). Rendered once per song via an
-  // OfflineAudioContext into a WAV blob that the existing single <audio> element
-  // plays — so the transport stays an unchanged single-element clock. Cached +
-  // revoked on song change.
-  const DERIVED_STEMS = new Set(["lead_guitar", "rhythm_guitar", "guitar_split_source"]);
-  let cachedMixUrl: string | null = null;
-  let cachedMixKey: string | null = null;
-
-  function clearCachedMix(): void {
-    if (cachedMixUrl) {
-      try { URL.revokeObjectURL(cachedMixUrl); } catch { /* ignore */ }
-    }
-    cachedMixUrl = null;
-    cachedMixKey = null;
-  }
-
-  function audioBufferToWavBlob(buf: AudioBuffer): Blob {
-    const numCh = buf.numberOfChannels;
-    const len = buf.length;
-    const blockAlign = numCh * 2; // 16-bit PCM
-    const dataLen = len * blockAlign;
-    const ab = new ArrayBuffer(44 + dataLen);
-    const view = new DataView(ab);
-    const writeStr = (off: number, s: string): void => {
-      for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
-    };
-    writeStr(0, "RIFF"); view.setUint32(4, 36 + dataLen, true); writeStr(8, "WAVE");
-    writeStr(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
-    view.setUint16(22, numCh, true); view.setUint32(24, buf.sampleRate, true);
-    view.setUint32(28, buf.sampleRate * blockAlign, true); view.setUint16(32, blockAlign, true);
-    view.setUint16(34, 16, true);
-    writeStr(36, "data"); view.setUint32(40, dataLen, true);
-    const chans: Float32Array[] = [];
-    for (let c = 0; c < numCh; c++) chans.push(buf.getChannelData(c));
-    let off = 44;
-    for (let i = 0; i < len; i++) {
-      for (let c = 0; c < numCh; c++) {
-        const s = Math.max(-1, Math.min(1, chans[c]![i]!));
-        view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-        off += 2;
-      }
-    }
-    return new Blob([ab], { type: "audio/wav" });
-  }
-
-  async function buildAllStemsMixUrl(stems: ManifestStem[]): Promise<string | null> {
-    if (!containerPath) return null;
-    if (cachedMixUrl && cachedMixKey === containerPath) return cachedMixUrl;
-    const base = stems.filter((s) => s.file && !DERIVED_STEMS.has(s.id ?? ""));
-    if (base.length === 0) return null;
-    if (base.length === 1) {
-      // One base stem (e.g. a separation-skipped "mix" stem): play it directly.
-      return convertFileSrc(joinContainer(containerPath, base[0]!.file!));
-    }
-    setStatus("Building the full mix from stems…");
-    const ctx = new AudioContext();
+  async function loadAudioForMode(): Promise<void> {
+    const gen = ++loadGeneration;
+    const stale = (): boolean => gen !== loadGeneration;
+    audioLoaded = false;
+    if (!containerPath) return;
+    // Capture the mode/role NOW so an in-flight load isn't corrupted by a
+    // concurrent instrument/solo switch mutating the module state mid-await.
+    const path = containerPath;
+    const wantSolo = soloMode;
+    const inst = instrument;
+    // Drum mode auditions the drums stem; melodic uses the picked role. "All"
+    // sums the base stems Rust-side (derived guitar splits are excluded there).
+    const primaryRole = wantSolo ? inst : "all";
+    // If the primary can't load, try the other: a silent/absent solo stem
+    // (e.g. a band song's empty keys) falls to the full mix; a mix that can't
+    // build falls to the instrument's own stem — so there's always audio.
+    const fallbackRole = wantSolo ? "all" : inst;
+    const fallbackMsg = wantSolo
+      ? `No isolated ${inst} stem — playing the full mix`
+      : `No mix for this song — playing the ${inst} stem`;
     try {
-      const buffers: AudioBuffer[] = [];
-      for (const s of base) {
-        const resp = await fetch(convertFileSrc(joinContainer(containerPath, s.file!)));
-        buffers.push(await ctx.decodeAudioData(await resp.arrayBuffer()));
-      }
-      const sr = buffers[0]!.sampleRate;
-      const numCh = Math.max(...buffers.map((b) => b.numberOfChannels));
-      const length = Math.max(...buffers.map((b) => b.length));
-      const offline = new OfflineAudioContext(numCh, length, sr);
-      for (const b of buffers) {
-        const src = offline.createBufferSource();
-        src.buffer = b;
-        src.connect(offline.destination);
-        src.start(0);
-      }
-      const mixed = await offline.startRendering();
-      clearCachedMix();
-      cachedMixUrl = URL.createObjectURL(audioBufferToWavBlob(mixed));
-      cachedMixKey = containerPath;
-      return cachedMixUrl;
-    } finally {
-      try { await ctx.close(); } catch { /* ignore */ }
-    }
-  }
-
-  async function resolveStemUrl(solo: boolean): Promise<string | null> {
-    if (!containerPath) return null;
-    try {
-      const details = await invoke<{ manifest_raw?: { stems?: ManifestStem[] } | null }>(
-        "get_auralsong_details",
-        { containerPath },
-      );
-      const stems = details.manifest_raw?.stems ?? [];
-      if (!solo) {
-        // "All": stems-only packs have no mix file — build the full mix from the
-        // base stems on the fly. Falls back to the instrument stem via
-        // loadStemAudio if the mix can't be built.
-        return await buildAllStemsMixUrl(stems);
-      }
-      if (stems.length === 0) return null;
-      const match =
-        stems.find((s) => s.id === instrument)
-        ?? stems.find((s) => isDefaultStem(s))
-        ?? stems[0];
-      if (!match?.file) return null;
-      return convertFileSrc(joinContainer(containerPath, match.file));
+      await nativeAudio.loadPackAudio(path, primaryRole);
+      if (!stale()) audioLoaded = true;
     } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Point the <audio> element at the current instrument's stem. Resets the
-   * loaded flag; `stemLoaded` flips true on the first `loadedmetadata` and the
-   * transport then drives the playhead off `audio.currentTime`. A resolve miss
-   * or decode error leaves `stemLoaded` false -> wall-clock fallback.
-   */
-  async function loadStemAudio(): Promise<void> {
-    const tryLoad = async (url: string | null): Promise<boolean> => {
-      stemLoaded = false;
-      try { audio.pause(); } catch { /* ignore */ }
-      audio.removeAttribute("src");
-      if (!url) return false;
-      return new Promise<boolean>((resolve) => {
-        const onMeta = (): void => { stemLoaded = true; cleanup(); resolve(true); };
-        const onErr = (): void => { stemLoaded = false; cleanup(); resolve(false); };
-        const cleanup = (): void => {
-          audio.removeEventListener("loadedmetadata", onMeta);
-          audio.removeEventListener("error", onErr);
-        };
-        audio.addEventListener("loadedmetadata", onMeta, { once: true });
-        audio.addEventListener("error", onErr, { once: true });
-        audio.src = url;
-        audio.load();
-      });
-    };
-    const ok = await tryLoad(await resolveStemUrl(soloMode));
-    if (!ok && !soloMode) {
-      // "All (mix)" had no usable mix — fall back to the instrument's stem.
-      const ok2 = await tryLoad(await resolveStemUrl(true));
-      if (ok2) setStatus(`No mix for this song — playing the ${instrument} stem`);
+      if (stale()) return;
+      try {
+        await nativeAudio.loadPackAudio(path, fallbackRole);
+        if (stale()) return;
+        audioLoaded = true;
+        setStatus(fallbackMsg);
+      } catch {
+        if (!stale()) audioLoaded = false;
+      }
     }
   }
 
@@ -715,7 +603,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   async function switchAudioSource(): Promise<void> {
     const wasPlaying = isPlaying;
     if (wasPlaying) pauseTransport();
-    await loadStemAudio();
+    await loadAudioForMode();
     setTransportEnabled(durationSec > 0);
     if (wasPlaying) playTransport();
   }
@@ -796,7 +684,6 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   async function openForAuralSong(path: string, opts?: { instrument?: string }): Promise<void> {
     containerPath = path;
-    clearCachedMix(); // stems-only "All" mix is per-song; drop the previous one
     songTitleEl!.textContent = songDisplayName(path);
     songTitleEl!.title = path; // full path on hover
     setDirty(false);
@@ -865,8 +752,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
         setTransportEnabled(durationSec > 0);
         setPlayhead(0, false);
         sectionSelectEl!.value = "";
-        await loadStemAudio();
-        const audioNote = stemLoaded ? "" : " (no stem audio)";
+        await loadAudioForMode();
+        const audioNote = audioLoaded ? "" : " (no stem audio)";
         setStatus(`Loaded ${editor.getNotes().length} drum hits across ${drumLanes.length} lanes${audioNote}`);
       } catch (e) {
         showEmpty(true, "error", String(e));
@@ -906,12 +793,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       setTransportEnabled(durationSec > 0);
       setPlayhead(0, false);
       sectionSelectEl!.value = "";
-      // Stream the isolated stem for this instrument (asset protocol). Best
-      // effort: a miss leaves stemLoaded false and the transport runs on the
-      // wall clock + synth.
-      await loadStemAudio();
+      // Load the instrument stem into the native engine. Best effort: a miss
+      // leaves audioLoaded false and the transport runs on the wall clock + synth.
+      await loadAudioForMode();
       const noteCount = editor.getNotes().length;
-      const audioNote = stemLoaded ? "" : " (no stem audio — notes only)";
+      const audioNote = audioLoaded ? "" : " (no stem audio — notes only)";
       setStatus(`Loaded ${noteCount} notes across ${loaded.candidates.regions.length} regions for ${instrument}${audioNote}`);
     } catch (e) {
       session = null;
@@ -946,7 +832,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     // Re-anchor the wall clock so the playhead doesn't jump on a rate change.
     if (isPlaying) { playStartOffset = playheadSec; playStartWall = performance.now(); }
     playbackRate = r;
-    if (stemLoaded) audio.playbackRate = r;
+    if (audioLoaded) nativeAudio.setPlaybackRate(r);
   });
   soloSelectEl.addEventListener("change", () => {
     soloMode = soloSelectEl.value !== "all";

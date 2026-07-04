@@ -1525,6 +1525,105 @@ fn native_audio_load_auralsong_audio(
     })
 }
 
+/// Base stems the refine "All" playback sums (mirrors the game's mixer set).
+const MIXER_BASE_STEMS: &[&str] = &["bass", "drums", "vocals", "guitar", "keys", "other"];
+
+fn audio_mime_for_path(rel: &str) -> &'static str {
+    let lower = rel.to_ascii_lowercase();
+    if lower.ends_with(".ogg") {
+        "audio/ogg"
+    } else if lower.ends_with(".mp3") {
+        "audio/mpeg"
+    } else if lower.ends_with(".flac") {
+        "audio/flac"
+    } else {
+        "audio/wav"
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct LoadedPackAudioInfo {
+    pub mime: String,
+    pub duration_sec: f64,
+    pub roles: Vec<String>,
+}
+
+/// Load a feedpak's audio into the native engine for the refine workspace, so
+/// Studio auditioning runs through the SAME engine as the game — which is what
+/// makes the shared A/V calibration valid. `role`:
+///   - None / "all" -> the base stems summed at unity gain
+///   - "<role>"      -> that single stem, solo
+/// Stems are read + decoded Rust-side (no multi-MB IPC of the browser path).
+#[tauri::command]
+fn native_audio_load_pack_audio(
+    state: tauri::State<NativeAudioState>,
+    container_path: String,
+    role: Option<String>,
+) -> Result<LoadedPackAudioInfo, String> {
+    let p = PathBuf::from(&container_path);
+    if !is_feedpak_path(&container_path) {
+        return Err("native_audio_load_pack_audio requires a .feedpak container".to_string());
+    }
+    let manifest = read_feedpak_manifest(&p)?;
+    let solo = role
+        .as_deref()
+        .filter(|r| !r.is_empty() && *r != "all")
+        .map(|r| r.to_string());
+
+    let mut roles: Vec<String> = Vec::new();
+    let mut decoded_stems: Vec<(u32, u16, Vec<i16>)> = Vec::new();
+    let mut fmt: Option<(u32, u16)> = None;
+    let mut max_frames: usize = 0;
+    let mut mime_out = "audio/wav";
+    for stem in &manifest.stems {
+        let take = match &solo {
+            Some(r) => stem.id.as_str() == r.as_str(),
+            None => MIXER_BASE_STEMS.contains(&stem.id.as_str()),
+        };
+        if !take {
+            continue;
+        }
+        let mime = audio_mime_for_path(&stem.file);
+        mime_out = mime;
+        let bytes = if p.is_dir() {
+            read_dir_audio(&p, &stem.file)?
+        } else {
+            read_zip_audio(&p, &stem.file)?
+        };
+        let d = audio_decode::decode_to_pcm16(&bytes, mime)?;
+        if d.channels == 0 || d.sample_rate_hz == 0 {
+            continue;
+        }
+        if fmt.is_none() {
+            fmt = Some((d.sample_rate_hz, d.channels));
+        }
+        let frames = d.data.len() / (d.channels as usize).max(1);
+        max_frames = max_frames.max(frames);
+        roles.push(stem.id.clone());
+        decoded_stems.push((d.sample_rate_hz, d.channels, d.data));
+    }
+
+    let Some((sr, channels)) = fmt else {
+        return Err(format!("no decodable stem for role {role:?}"));
+    };
+    let duration_sec = if sr > 0 { max_frames as f64 / sr as f64 } else { 0.0 };
+
+    let target_sr = preferred_native_audio_sample_rate_hz(&state, sr)?;
+    ensure_native_audio_engine_format(&state, target_sr, channels)?;
+    if decoded_stems.len() == 1 {
+        let (s_sr, s_ch, s_data) = decoded_stems.pop().unwrap();
+        with_native_engine(&state, move |e| e.load_pcm16(s_sr, s_ch, s_data))?;
+    } else {
+        with_native_engine(&state, move |e| e.load_stems(decoded_stems))?;
+    }
+
+    Ok(LoadedPackAudioInfo {
+        mime: mime_out.to_string(),
+        duration_sec,
+        roles,
+    })
+}
+
 #[tauri::command]
 fn read_auralsong_json(
     container_path: String,
@@ -2205,6 +2304,7 @@ pub fn run() {
             native_audio_load_wav_bytes,
             native_audio_load_audio_bytes,
             native_audio_load_auralsong_audio,
+            native_audio_load_pack_audio,
             native_audio_play,
             native_audio_pause,
             native_audio_stop,
