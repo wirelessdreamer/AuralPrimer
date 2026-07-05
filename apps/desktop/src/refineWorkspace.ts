@@ -137,6 +137,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const reloadBtn = $<HTMLButtonElement>("refineReloadBtn");
   const saveBtn = $<HTMLButtonElement>("refineSaveBtn");
   const snapBtn = document.getElementById("refineSnapBtn") as HTMLButtonElement | null;
+  const refreshMeterBtn = document.getElementById("refineRefreshMeterBtn") as HTMLButtonElement | null;
   const quantSelect = document.getElementById("refineQuantSelect") as HTMLSelectElement | null;
   const backBtn = $<HTMLElement>("refineBack");
   const transportEl = $<HTMLElement>("refineTransport");
@@ -926,6 +927,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   });
   saveBtn.addEventListener("click", () => void save());
   snapBtn?.addEventListener("click", () => void snapDrumOnsets());
+  refreshMeterBtn?.addEventListener("click", () => void refreshMeter());
   quantSelect?.addEventListener("change", () => applyQuant());
   backBtn.addEventListener("click", () => { stopTransport(); deps.onBack(); });
 
@@ -970,6 +972,58 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     } finally {
       snapBtn.disabled = false;
       snapBtn.textContent = label ?? "Snap to onsets";
+    }
+  }
+
+  // Re-track beats/downbeats/meter (Beat This!) on this pack and reload the
+  // grid from the rewritten song_timeline.json (the sidecar backs the old one
+  // up to .bak). Instrument-agnostic — unlike Snap it only touches the timeline,
+  // so it's always available. The new grid can move beats, which desyncs edits
+  // anchored to the old grid; the returned warning is surfaced to the user.
+  async function refreshMeter(): Promise<void> {
+    if (!containerPath || !refreshMeterBtn) return;
+    const label = refreshMeterBtn.textContent;
+    refreshMeterBtn.disabled = true;
+    refreshMeterBtn.textContent = "Refreshing…";
+    setStatus("Re-tracking the beat grid + meter…");
+    try {
+      const res = await invoke<{ stdout?: string }>("ingest_refresh_meter", {
+        req: { container_path: containerPath },
+      });
+      let info: {
+        ok?: boolean;
+        bpm?: number;
+        time_signature?: string;
+        error?: string;
+        meter_denominator_provisional?: boolean;
+      } = {};
+      try {
+        info = JSON.parse((res?.stdout ?? "").trim().split(/\r?\n/).pop() ?? "{}");
+      } catch {
+        /* status line not parseable — reload anyway, it may have written */
+      }
+      if (info.ok === false) {
+        // Pack left unchanged (e.g. no checkpoint) — nothing to reload.
+        setStatus(`Refresh meter: ${info.error ?? "meter model unavailable"}`);
+        return;
+      }
+      await applyBeatGrid(); // re-reads the rewritten song_timeline.json
+      // NOTE: do NOT touch the dirty flag here — refresh-meter only re-tracks the
+      // grid (song_timeline.json, written by the sidecar). Any unsaved editor
+      // note/hit edits are untouched, so clearing dirty would hide the "Save *"
+      // indicator and mislead the user into thinking their edits were persisted.
+      const ts = info.time_signature ? ` ${info.time_signature}` : "";
+      const prov = info.meter_denominator_provisional ? " (denominator provisional)" : "";
+      setStatus(
+        info.bpm != null
+          ? `Meter refreshed — ${info.bpm} bpm${ts}${prov} · old grid saved to .bak`
+          : "Meter refreshed · old grid saved to .bak",
+      );
+    } catch (e) {
+      setStatus(`Refresh meter failed: ${String(e)}`);
+    } finally {
+      refreshMeterBtn.disabled = false;
+      refreshMeterBtn.textContent = label ?? "Refresh meter";
     }
   }
 

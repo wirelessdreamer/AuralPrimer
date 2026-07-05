@@ -133,6 +133,7 @@ export function refineWorkspaceHtml(): string {
         </label>
         <button class="rfBtn" id="refineReloadBtn">Reload</button>
         <button class="rfBtn" id="refineSnapBtn" title="Refine hit times onto the drums-stem audio transients (undoable)" style="display:none">Snap to onsets</button>
+        <button class="rfBtn" id="refineRefreshMeterBtn" title="Re-track the beat grid + meter (Beat This!) and rewrite song_timeline.json in place (backs up to .bak)">Refresh meter</button>
         <button class="rfBtn isPrimary" id="refineSaveBtn">Save</button>
       </header>
 

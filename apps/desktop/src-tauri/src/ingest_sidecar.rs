@@ -754,6 +754,26 @@ pub fn run_ingest_align_drum_onsets(
     run_tauri_sidecar_capture(app, &args)
 }
 
+/// Run the sidecar's `refresh-meter` subcommand: re-track beats/downbeats/meter
+/// (Beat This!) on an existing pack and rewrite `song_timeline.json` in place
+/// (auto-backup to `.bak`). Backs the Cleanup/Edit "Refresh meter" button.
+/// Reuses the container-path request shape.
+pub fn run_ingest_refresh_meter(
+    req: AlignDrumOnsetsRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let container = req.container_path.trim();
+    if container.is_empty() {
+        return Err("missing container_path".to_string());
+    }
+    let args: Vec<String> = vec!["refresh-meter".to_string(), container.to_string()];
+    let app = app.ok_or_else(|| {
+        "Tauri AppHandle required for sidecar execution; ingest_refresh_meter can't run headless"
+            .to_string()
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

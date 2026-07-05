@@ -4069,6 +4069,7 @@ def cmd_refresh_meter(args: argparse.Namespace) -> int:
         return 1
 
     tmp_audio: Path | None = None
+    backup_name: str | None = None
     try:
         audio, is_tmp = _pack_audio_for_analysis(pack)
         tmp_audio = audio if is_tmp else None
@@ -4097,7 +4098,27 @@ def cmd_refresh_meter(args: argparse.Namespace) -> int:
         # OLD grid (quantized cleanup edits, drum_tab snapping, notation measures).
         backup = tl_path.parent / (tl_path.name + ".bak")
         backup.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-        tl_path.write_text(json.dumps(new_tl, indent=2), encoding="utf-8")
+        backup_name = backup.name
+        # Atomic overwrite: write the new timeline to a sibling temp file, then
+        # os.replace() it over song_timeline.json. A truncating write_text() could
+        # leave the primary half-written on a disk-full / I/O error / kill — and
+        # this file is the artifact the editor grid + game timeline depend on.
+        # os.replace is atomic within one volume, so the primary is always either
+        # the old file or the fully-written new one, never a partial. The backup
+        # (written just above) is the belt-and-suspenders second copy.
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(tl_path.parent), prefix=tl_path.name + ".", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(new_tl, indent=2))
+            os.replace(tmp_name, tl_path)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
         print(json.dumps(
             {
                 "ok": True,
@@ -4119,7 +4140,16 @@ def cmd_refresh_meter(args: argparse.Namespace) -> int:
         ))
         return 0
     except Exception as exc:  # noqa: BLE001
-        print(json.dumps({"ok": False, "error": f"refresh-meter failed: {exc}"}, sort_keys=True))
+        err = {"ok": False, "error": f"refresh-meter failed: {exc}"}
+        if backup_name is not None:
+            # The backup was written and the rewrite is atomic, so the original
+            # timeline is intact (either still at song_timeline.json, or in the
+            # backup). Tell the user so recovery isn't a guess.
+            err["backup"] = backup_name
+            err["recovery"] = (
+                f"song_timeline.json is unchanged or restorable from {backup_name}"
+            )
+        print(json.dumps(err, sort_keys=True))
         return 1
     finally:
         if tmp_audio is not None:
