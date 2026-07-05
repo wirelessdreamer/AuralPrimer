@@ -1323,6 +1323,16 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
         },
     )
 
+    # gameplay_default now leads with mr_mt3_drums, which resolves its checkpoint
+    # independently of the DSP registry above. Simulate a checkpoint-less machine
+    # so the profile chain falls through to the DSP engines this test verifies.
+    from aural_ingest import transcription as _transcription
+
+    def _mt3_unavailable(_stem: Path, _engine: str):
+        raise RuntimeError("mr_mt3 checkpoint unavailable in test")
+
+    monkeypatch.setattr(_transcription, "_transcribe_drums_mt3_events", _mt3_unavailable)
+
     args = type("Args", (), {})()
     args.input_audio_path = str(src)
     args.out = str(out)
@@ -1348,7 +1358,8 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
     assert tr["drum_filter_requested"] == "auto"
     assert tr["drum_filter"] == "profile"
     assert tr["drum_filter_used"] == "beat_conditioned_multiband_decoder"
-    assert tr["drum_profile_engines"][0] == "beat_conditioned_multiband_decoder"
+    assert tr["drum_profile_engines"][0] == "mr_mt3_drums"
+    assert tr["drum_profile_engines"][1] == "beat_conditioned_multiband_decoder"
     assert manifest["recognition"]["drums"]["normalized_engine"] == "profile"
     assert manifest["recognition"]["drums"]["used_engine"] == "beat_conditioned_multiband_decoder"
 

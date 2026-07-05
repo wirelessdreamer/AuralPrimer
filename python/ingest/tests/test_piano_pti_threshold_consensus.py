@@ -349,6 +349,11 @@ def test_consensus_clean_resolves_mix_despite_denoise_temp_path(tmp_path, monkey
     monkeypatch.setattr(piano_denoise, "maybe_denoised_stem", fake_denoise)
     monkeypatch.setattr(piano_cleanup, "cleanup_notes", lambda notes, **kw: notes)
 
+    # Kong PTI is gated off by default under the sidecar's torch 2.x (see
+    # piano_pti_enabled()); force-enable it so the consensus_clean producer
+    # runs and we can assert mix-path resolution despite the denoise temp file.
+    monkeypatch.setenv("AURAL_ENABLE_PIANO_PTI", "1")
+
     registry = build_default_melodic_algorithm_registry(instrument="keys")
     registry["piano_pti_consensus_clean"](stem)
 

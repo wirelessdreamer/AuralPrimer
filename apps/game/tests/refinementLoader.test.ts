@@ -20,11 +20,28 @@ import type { InstrumentRole } from "../src/chartLoader";
 
 const ROLES: InstrumentRole[] = ["bass", "keys"];
 
+/**
+ * A refinement file shaped exactly like what the Studio writes
+ * (`refineCandidatesIo.saveDecisions`): a semver `version`, the instrument
+ * tag, and one region carrying `accepted_candidate` / `accepted_at` plus the
+ * materialized `notes`. Using the real output shape (rather than an empty
+ * `regions: []` stub) means this test would fail if the loader targeted the
+ * candidates file, whose schema omits these region fields.
+ */
 function fakeRefinement(instrument: string): RefinementFile {
   return {
-    version: "1.0.0",
+    version: "0.1.0",
     instrument: instrument as RefinementFile["instrument"],
-    regions: [],
+    regions: [
+      {
+        id: "region_0",
+        t_start: 0,
+        t_end: 2,
+        accepted_candidate: "consensus_tight",
+        accepted_at: "2026-07-04T00:00:00.000Z",
+        notes: [{ t_on: 0.5, t_off: 1, pitch: 60, velocity: 100 }],
+      },
+    ],
   };
 }
 
@@ -49,11 +66,11 @@ describe("loadRefinementsForRoles", () => {
     expect(out).toHaveLength(2);
     expect(invoke).toHaveBeenCalledWith("read_auralsong_json", {
       containerPath: "/song",
-      relPath: "aural/refine_candidates.bass.json",
+      relPath: "aural/refinement.bass.json",
     });
     expect(invoke).toHaveBeenCalledWith("read_auralsong_json", {
       containerPath: "/song",
-      relPath: "aural/refine_candidates.keys.json",
+      relPath: "aural/refinement.keys.json",
     });
     expect(warn).not.toHaveBeenCalled();
   });
@@ -98,7 +115,7 @@ describe("loadRefinementsForRoles", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       "play",
-      "refine_candidates.bass.json failed validation; ignoring",
+      "refinement.bass.json failed validation; ignoring",
       [{ path: "version", message: "missing" }],
     );
   });
@@ -132,7 +149,7 @@ describe("loadRefinementsForRoles", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       "play",
-      "refine_candidates.rhythm_guitar.json failed validation; ignoring",
+      "refinement.rhythm_guitar.json failed validation; ignoring",
       [{ path: "x", message: "y" }],
     );
   });

@@ -4042,6 +4042,11 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
 
         cases = list(_yc(corpus_root, limit=args.limit))
         family = "melodic"
+    elif dataset == "maestro":
+        from .dataset_adapters.maestro import yield_cases as _yc
+
+        cases = list(_yc(corpus_root, split=args.split, limit=args.limit))
+        family = "melodic"
     else:
         print(json.dumps({"ok": False, "error": f"unknown dataset: {dataset}"}))
         return 1
@@ -4286,7 +4291,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_gt_benchmark.add_argument(
         "--dataset",
         required=True,
-        choices=sorted(["egmd", "guitarset", "guitarset_bass", "guitar_techs", "piano_synthetic"]),
+        choices=sorted(["egmd", "guitarset", "guitarset_bass", "guitar_techs", "piano_synthetic", "maestro"]),
         help=(
             "Annotated corpus to sweep. ``guitarset_bass`` is the low-string"
             " filter of GuitarSet for bass-pitch benchmarks."

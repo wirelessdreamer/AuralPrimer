@@ -166,6 +166,59 @@ def test_classify_hot_spot_empty_scores_is_low_confidence_zero():
     assert conf == 0.0
 
 
+# --- single-candidate palette hot-spot classification (drums/bass/guitar) ---
+# These palettes have exactly one algorithm, so the disagreement-based
+# classifier must NOT flag every region: with nothing to disagree with there
+# is no hot-spot signal, and comparing a candidate against itself is circular.
+
+# A diatonic bass run with 8 distinct pitch classes: its own top-4 dominant
+# set leaves >= 50% of notes "off", which trips detect_off_chord when the
+# guards are missing. Used to prove single-candidate regions stay clean.
+_DIATONIC_RUN_PITCHES = [36, 38, 40, 43, 45, 47, 49, 51]
+
+
+def test_classify_hot_spot_single_candidate_is_clean_not_flagged():
+    notes = [n(i * 0.25, p) for i, p in enumerate(_DIATONIC_RUN_PITCHES)]
+    candidate_notes = {"melodic_pyin_bass_strict": notes}
+    scores = {"melodic_pyin_bass_strict": 1.0}
+    hot, conf = classify_hot_spot(
+        scores, candidate_notes=candidate_notes, instrument="bass"
+    )
+    # Must be clean, not off_chord (circular self-comparison) or low_confidence
+    # (unreachable clean-gate) -- otherwise the Studio flags every region.
+    assert hot == "clean"
+    assert conf == pytest.approx(1.0)
+
+
+def test_detect_off_chord_requires_two_candidates():
+    from aural_ingest.refine_precompute import detect_off_chord
+
+    notes = [n(i * 0.25, p) for i, p in enumerate(_DIATONIC_RUN_PITCHES)]
+    # Single candidate compared against itself must never flag.
+    assert detect_off_chord({"only": notes}, notes) is False
+
+
+def test_detect_off_chord_still_fires_with_two_candidates():
+    from aural_ingest.refine_precompute import detect_off_chord
+
+    in_key = [n(i * 0.25, p) for i, p in enumerate([60, 64, 67] * 3)]  # C major
+    off_key = [n(i * 0.25, p) for i, p in enumerate([61, 66])]  # mostly off {0,4,7}
+    consensus = union_of_candidates({"a": in_key, "b": off_key})
+    assert detect_off_chord({"a": in_key, "b": off_key}, consensus) is True
+
+
+def test_detect_octave_ghost_requires_two_distinct_collisions():
+    from aural_ingest.refine_precompute import detect_octave_ghost
+
+    # One physical octave collision between two candidates (60 vs 72 @ t=0):
+    # must NOT flag now that collisions are counted once (unordered pairs).
+    one = {"a": [n(0.0, 60)], "b": [n(0.0, 72)]}
+    assert detect_octave_ghost(one) is False
+    # Two distinct collisions -> flag.
+    two = {"a": [n(0.0, 60), n(1.0, 62)], "b": [n(0.0, 72), n(1.0, 74)]}
+    assert detect_octave_ghost(two) is True
+
+
 def test_pick_auto_candidate_breaks_ties_toward_display_order():
     # All tied at 0.5 -- the earliest in CANDIDATE_DISPLAY wins.
     scores = {cid: 0.5 for cid in CANDIDATE_IDS}
