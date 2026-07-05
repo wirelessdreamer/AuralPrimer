@@ -13,6 +13,7 @@ src/aural_ingest/ground_truth_benchmark.py
 src/aural_ingest/guitar_split.py
 src/aural_ingest/melodic_benchmark.py
 src/aural_ingest/melodic_benchmark_suite.py
+src/aural_ingest/meter_tracker.py
 src/aural_ingest/mt3_compat.py
 src/aural_ingest/piano_benchmark.py
 src/aural_ingest/piano_benchmark_suite.py
@@ -121,6 +122,7 @@ tests/test_import_pipeline.py
 tests/test_ingest_quality_improvements.py
 tests/test_ingest_runtime_benchmarks.py
 tests/test_melodic_torchcrepe_fmin.py
+tests/test_meter_tracker.py
 tests/test_mt3_compat.py
 tests/test_piano_benchmark.py
 tests/test_piano_cleanup.py
