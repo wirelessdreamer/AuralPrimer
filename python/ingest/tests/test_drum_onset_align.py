@@ -68,3 +68,21 @@ def test_two_hits_never_collapse_onto_one_transient(tmp_path: Path) -> None:
     times = sorted(h["t"] for h in out["hits"])
     assert len(times) == 2
     assert times[1] - times[0] > 0.3  # stayed two separate hits, not merged
+
+
+def test_high_voices_are_not_snapped(tmp_path: Path) -> None:
+    # A real transient sits at 1.0s, but hi-hats/cymbals are excluded from
+    # snapping (high-band onset detection is smeared/late and the window grabs
+    # neighboring dense hi-hats), so a mistimed hi-hat hit is LEFT where the
+    # transcriber put it — unlike a kick, which would be pulled onto the onset.
+    y = np.zeros(int(2.0 * SR), dtype=np.float32)
+    _kick(y, 1.0)
+    wav = tmp_path / "drums.wav"
+    sf.write(str(wav), y, SR, subtype="PCM_16")
+
+    tab = {"hits": [{"t": 1.05, "p": "hihat_closed", "v": 110}]}
+    out, stats = align_drum_tab_to_onsets(tab, wav)
+
+    assert stats["moved"] == 0
+    assert out["hits"][0]["t"] == 1.05  # unchanged despite a transient 50 ms away
+    assert out["hits"][0]["p"] == "hihat_closed" and out["hits"][0]["v"] == 110
