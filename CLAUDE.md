@@ -38,7 +38,8 @@ When one changes, before committing:
 1. Add or remove the component in `README.md` → **Third-party components &
    attribution** — in BOTH the "Who makes what we use" org table AND the
    matching category table (music-ML / Python runtime / frontend / Rust), with
-   the maker, its role, and the license.
+   a **link to its upstream** (repo/homepage URL on the component name), the
+   maker, its role, and the license. Verify the URL resolves.
 2. Confirm the license clears the gate — for a neural model, verify the trained
    *weights* license separately from the code license. If it fails the gate it
    does not ship; pick a compliant alternative (see the license-gate note + the
