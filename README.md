@@ -84,60 +84,32 @@ dependencies; no non-commercial model weights.
 
 ### Who makes what we use
 
-```mermaid
-flowchart TB
-  classDef model fill:#2d2a4a,stroke:#8b7fd6,color:#eae6ff;
-  classDef audio fill:#173a34,stroke:#4fbfa8,color:#e3fff8;
-  classDef app fill:#3a2a17,stroke:#d69a4f,color:#fff3e3;
+One row per maker, ordered by layer — models first, then ML runtime, app
+shell, and native audio/MIDI:
 
-  subgraph meta["Meta AI / FAIR"]
-    D["Demucs — stem separation · MIT (code+weights)"]:::model
-    PT["PyTorch (torch/audio/vision) — ML runtime · BSD"]:::audio
-  end
-  subgraph sony["Sony AI (Tan, Cheuk, Mitsufuji …)"]
-    MR["MR-MT3 — neural drum transcription · MIT (code+weights)"]:::model
-  end
-  subgraph google["Google Research · Magenta"]
-    MT["MT3 — model architecture / lineage · Apache-2.0"]:::model
-  end
-  subgraph spotify["Spotify — Audio Intelligence Lab"]
-    BP["Basic Pitch — piano / melodic transcription · Apache-2.0"]:::model
-  end
-  subgraph cpjku["CPJKU · JKU Linz (Foscarin, Schlüter, Widmer)"]
-    BT["Beat This! — beat / downbeat / meter · MIT (code+weights)"]:::model
-  end
-  subgraph pitch["NYU MARL (CREPE) · Northwestern (torchcrepe)"]
-    CR["CREPE + torchcrepe — bass / guitar pitch · MIT"]:::model
-  end
-  subgraph hf["Hugging Face"]
-    TF["transformers — model architectures · Apache-2.0"]:::audio
-  end
-  subgraph numfocus["NumFOCUS community · Brian McFee"]
-    NP["NumPy · SciPy · scikit-learn · BSD"]:::audio
-    LB["librosa — DSP / onset / CQT · ISC"]:::audio
-  end
-  subgraph indie["Independent maintainers"]
-    LR["x-transformers / rotary-embedding — Phil Wang (lucidrains) · MIT"]:::audio
-    SF["soundfile — Bastian Bechtold · BSD (libsndfile LGPL)"]:::audio
-  end
-  subgraph tauri["Tauri Working Group · Commons Conservancy"]
-    TA["Tauri v2 + plugins — desktop shell · MIT/Apache-2.0"]:::app
-  end
-  subgraph voidzero["VoidZero (Evan You / Anthony Fu)"]
-    VI["Vite · Vitest — build & test · MIT"]:::app
-  end
-  subgraph ms["Microsoft"]
-    TS["TypeScript · Playwright · Apache-2.0"]:::app
-  end
-  subgraph rust["RustAudio + indie Rust"]
-    CP["cpal · rtrb · symphonia · midir · midly · Apache/MIT/MPL"]:::app
-  end
-  subgraph ff["FFmpeg project"]
-    FM["ffmpeg — decode binary · LGPL (dynamic)"]:::audio
-  end
+| Layer | Organization / maintainer | What AuralPrimer uses from them | License |
+|---|---|---|---|
+| Model | **Meta AI · FAIR** — Défossez et al. | **Demucs** — stem separation | MIT (code + weights) |
+| Model | **Sony AI** — Tan · Cheuk · Mitsufuji | **MR-MT3** — neural drum transcription (+ `mt3-infer` wrapper) | MIT (code + weights) |
+| Model | **Google Research · Magenta** | **MT3** — the architecture MR-MT3 is fine-tuned from | Apache-2.0 |
+| Model | **Spotify · Audio Intelligence Lab** | **Basic Pitch** — piano / polyphonic melodic transcription | Apache-2.0 |
+| Model | **CPJKU · JKU Linz** — Foscarin · Schlüter · Widmer | **Beat This!** — beat / downbeat / meter (drives the editor grid) | MIT (code + weights) |
+| Model | **NYU MARL · Northwestern** — Kim · Salamon · Bello · Morrison | **CREPE** + **torchcrepe** — bass / guitar pitch | MIT |
+| Runtime | **Meta Platforms** — PyTorch project | **PyTorch** (`torch` · `torchaudio` · `torchvision`) — ML runtime | BSD |
+| Runtime | **Hugging Face** | **transformers** — model architectures | Apache-2.0 |
+| Runtime | **Lightning AI** — William Falcon | **PyTorch Lightning** — inference scaffolding | Apache-2.0 |
+| Runtime | **Phil Wang** (lucidrains) | **x-transformers** · **rotary-embedding-torch** | MIT |
+| Runtime | **NumFOCUS community** — Brian McFee et al. | **NumPy** · **SciPy** · **scikit-learn** · **librosa** (onset / CQT / tempo) | BSD · ISC |
+| Runtime | **Bastian Bechtold** · libsndfile team | **soundfile** — audio I/O | BSD (LGPL backend, dynamic) |
+| Runtime | **The FFmpeg project** | **ffmpeg** — decode binary | LGPL-2.1+ (dynamic) |
+| App | **Tauri WG · Commons Conservancy** | **Tauri v2** — desktop shell + dialog/shell plugins | MIT / Apache-2.0 |
+| App | **VoidZero** — Evan You · Anthony Fu | **Vite** · **Vitest** — build & test | MIT |
+| App | **Microsoft** | **TypeScript** · **Playwright** | Apache-2.0 |
+| Native | **RustAudio + independent Rust** | **cpal** · **rtrb** · **symphonia** · **midir** · **midly** — native audio/MIDI | Apache / MIT / MPL-2.0 |
 
-  MT -. "fine-tuned into" .-> MR
-```
+*Lineage: Google/Magenta's **MT3** → Sony's **MR-MT3** (fine-tuned for drums).
+Full per-component detail — including build/test-only deps — is in the tables
+below.*
 
 ### Music-ML models & audio analysis (the differentiating stack)
 
