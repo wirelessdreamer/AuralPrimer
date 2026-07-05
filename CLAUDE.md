@@ -23,6 +23,29 @@ verify a UI/behavior change without first producing a fresh portable.
 - The portable repack fails if `AuralPrimer.exe` is running (webview cache
   lock). If repack fails on a locked file, ask the user to close the app.
 
+## Attribution — keep it current (before every commit)
+
+**Any commit that adds or removes a third-party dependency MUST update the
+attribution in `README.md` in the same commit.** The project ships commercially
+under a strict license gate (permissive code only; no GPL runtime deps; no
+non-commercial model weights), so the dependency list must stay complete and
+accurate — attribution is a shipping requirement here, not optional metadata.
+
+Watch these dependency manifests: `python/ingest/pyproject.toml` (+ its
+`.egg-info` regen), any `package.json`, and the `src-tauri/Cargo.toml` files.
+When one changes, before committing:
+
+1. Add or remove the component in `README.md` → **Third-party components &
+   attribution** — in BOTH the "Who makes what we use" org table AND the
+   matching category table (music-ML / Python runtime / frontend / Rust), with
+   the maker, its role, and the license.
+2. Confirm the license clears the gate — for a neural model, verify the trained
+   *weights* license separately from the code license. If it fails the gate it
+   does not ship; pick a compliant alternative (see the license-gate note + the
+   research docs).
+3. On removal, delete the component's rows so the list never overstates what we
+   actually bundle.
+
 ## CLAUDE.md note
 
 The cross-project coding-behavior guidelines (Think before coding /
