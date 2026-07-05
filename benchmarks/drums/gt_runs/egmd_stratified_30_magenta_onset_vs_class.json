@@ -1,0 +1,21 @@
+{
+  "engine": "magenta_egmd_drums",
+  "cases": 30,
+  "tolerance_ms": 50.0,
+  "class_aware": {
+    "tp": 1936,
+    "fp": 1394,
+    "fn": 1968,
+    "precision": 0.581381,
+    "recall": 0.495902,
+    "f1": 0.53525
+  },
+  "onset_only": {
+    "tp": 2808,
+    "fp": 522,
+    "fn": 1096,
+    "precision": 0.843243,
+    "recall": 0.719262,
+    "f1": 0.776334
+  }
+}

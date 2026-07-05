@@ -1,0 +1,21 @@
+{
+  "engine": "beat_conditioned_multiband_decoder",
+  "cases": 30,
+  "tolerance_ms": 50.0,
+  "class_aware": {
+    "tp": 867,
+    "fp": 1343,
+    "fn": 3037,
+    "precision": 0.3923,
+    "recall": 0.2221,
+    "f1": 0.2836
+  },
+  "onset_only": {
+    "tp": 1545,
+    "fp": 665,
+    "fn": 2359,
+    "precision": 0.6991,
+    "recall": 0.3957,
+    "f1": 0.5054
+  }
+}

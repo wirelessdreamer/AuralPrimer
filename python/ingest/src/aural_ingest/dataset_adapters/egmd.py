@@ -181,6 +181,7 @@ def yield_cases(
     *,
     split: str | Iterable[str] | None = "test",
     style_filter: Sequence[str] | None = None,
+    case_ids: Iterable[str] | None = None,
     limit: int | None = None,
 ) -> Iterator[GroundTruthCase]:
     """Yield ``GroundTruthCase``s from a prepared E-GMD corpus.
@@ -196,8 +197,15 @@ def yield_cases(
         those, or ``None`` to yield every row.
     style_filter
         Only yield rows whose ``style`` column matches one of these.
+    case_ids
+        Only yield rows whose derived ``case_id`` is in this set. This
+        is how a stratified sample is consumed: the CSV is still scanned
+        in file order, but a case is emitted only when it appears in the
+        allow-list, so ``--limit`` no longer collapses the sweep onto the
+        first-N (all-one-groove) rows. ``None`` disables the filter.
     limit
-        Stop after this many cases. Useful for fast smoke runs.
+        Stop after this many cases. Useful for fast smoke runs. Applied
+        after the ``case_ids`` / ``style_filter`` filters.
     """
     metadata_csv = corpus_root / "e_gmd_metadata" / "e-gmd-v1.0.0.csv"
     audio_root = corpus_root / "e_gmd_full" / "e-gmd-v1.0.0"
@@ -212,6 +220,7 @@ def yield_cases(
         else None
     )
     style_set = set(style_filter) if style_filter else None
+    case_id_set = set(case_ids) if case_ids is not None else None
 
     from aural_ingest.transcription import _BENCHMARK_NOTE_TO_CLASS as note_to_class
 
@@ -224,6 +233,12 @@ def yield_cases(
                 continue
             midi_rel = row["midi_filename"]
             audio_rel = row["audio_filename"]
+            # The CSV's ``id`` column is the abstract performance id; the
+            # same MIDI is recorded against multiple kits, so we add the
+            # audio basename to keep case_ids unique across kit rows.
+            case_id = f"egmd:{row['id']}::{Path(audio_rel).stem}"
+            if case_id_set is not None and case_id not in case_id_set:
+                continue
             midi_path = audio_root / midi_rel
             audio_path = audio_root / audio_rel
             if not midi_path.is_file() or not audio_path.is_file():
@@ -235,10 +250,6 @@ def yield_cases(
                 continue
             if not events:
                 continue
-            # The CSV's ``id`` column is the abstract performance id; the
-            # same MIDI is recorded against multiple kits, so we add the
-            # audio basename to keep case_ids unique across kit rows.
-            case_id = f"egmd:{row['id']}::{Path(audio_rel).stem}"
             duration_sec = float(row.get("duration", "0") or 0.0)
             yield GroundTruthCase(
                 case_id=case_id,

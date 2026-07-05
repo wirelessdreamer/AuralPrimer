@@ -1,0 +1,714 @@
+{
+  "dataset": "egmd",
+  "family": "drums",
+  "algorithm_id": "magenta_onsets_frames_egmd",
+  "case_count": 20,
+  "tolerance_ms": 50.0,
+  "mean_runtime_sec": 5.94,
+  "overall": {
+    "exact_class": {
+      "tp": 2005,
+      "fp": 4727,
+      "fn": 6195,
+      "precision": 0.297831,
+      "recall": 0.244512,
+      "f1": 0.268551
+    },
+    "onset_only": {
+      "tp": 3622,
+      "fp": 3110,
+      "fn": 4578,
+      "precision": 0.538027,
+      "recall": 0.441707,
+      "f1": 0.485133
+    }
+  },
+  "per_class_exact": {
+    "crash": {
+      "tp": 1,
+      "fp": 21,
+      "fn": 79,
+      "precision": 0.045455,
+      "recall": 0.0125,
+      "f1": 0.019608
+    },
+    "hi_hat": {
+      "tp": 717,
+      "fp": 1390,
+      "fn": 1620,
+      "precision": 0.340294,
+      "recall": 0.306804,
+      "f1": 0.322682
+    },
+    "kick": {
+      "tp": 159,
+      "fp": 928,
+      "fn": 921,
+      "precision": 0.146274,
+      "recall": 0.147222,
+      "f1": 0.146747
+    },
+    "oov_54": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 123,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "ride": {
+      "tp": 703,
+      "fp": 1177,
+      "fn": 1837,
+      "precision": 0.373936,
+      "recall": 0.276772,
+      "f1": 0.3181
+    },
+    "snare": {
+      "tp": 425,
+      "fp": 1191,
+      "fn": 1595,
+      "precision": 0.262995,
+      "recall": 0.210396,
+      "f1": 0.233773
+    },
+    "tom1": {
+      "tp": 0,
+      "fp": 20,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "tom3": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 20,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  },
+  "cases": [
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_1",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 349,
+      "n_ref": 410,
+      "exact": {
+        "tp": 106,
+        "fp": 243,
+        "fn": 304,
+        "precision": 0.303725,
+        "recall": 0.258537,
+        "f1": 0.279315,
+        "onset_mae_sec": 0.02540469554030875
+      },
+      "onset": {
+        "tp": 184,
+        "fp": 165,
+        "fn": 226,
+        "precision": 0.527221,
+        "recall": 0.44878,
+        "f1": 0.484848
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Acoustic Kit",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_10",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 315,
+      "n_ref": 410,
+      "exact": {
+        "tp": 95,
+        "fp": 220,
+        "fn": 315,
+        "precision": 0.301587,
+        "recall": 0.231707,
+        "f1": 0.262069,
+        "onset_mae_sec": 0.024973086124401942
+      },
+      "onset": {
+        "tp": 179,
+        "fp": 136,
+        "fn": 231,
+        "precision": 0.568254,
+        "recall": 0.436585,
+        "f1": 0.493793
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "JingleStacks (2nd Hi-Hat)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_11",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 349,
+      "n_ref": 410,
+      "exact": {
+        "tp": 107,
+        "fp": 242,
+        "fn": 303,
+        "precision": 0.30659,
+        "recall": 0.260976,
+        "f1": 0.28195,
+        "onset_mae_sec": 0.02597352024922116
+      },
+      "onset": {
+        "tp": 185,
+        "fp": 164,
+        "fn": 225,
+        "precision": 0.530086,
+        "recall": 0.45122,
+        "f1": 0.487484
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Studio (Live Room)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_12",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 370,
+      "n_ref": 410,
+      "exact": {
+        "tp": 113,
+        "fp": 257,
+        "fn": 297,
+        "precision": 0.305405,
+        "recall": 0.27561,
+        "f1": 0.289744,
+        "onset_mae_sec": 0.026375201126307358
+      },
+      "onset": {
+        "tp": 188,
+        "fp": 182,
+        "fn": 222,
+        "precision": 0.508108,
+        "recall": 0.458537,
+        "f1": 0.482051
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Classic Rock",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_13",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 382,
+      "n_ref": 410,
+      "exact": {
+        "tp": 116,
+        "fp": 266,
+        "fn": 294,
+        "precision": 0.303665,
+        "recall": 0.282927,
+        "f1": 0.292929,
+        "onset_mae_sec": 0.02609064785788921
+      },
+      "onset": {
+        "tp": 193,
+        "fp": 189,
+        "fn": 217,
+        "precision": 0.505236,
+        "recall": 0.470732,
+        "f1": 0.487374
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Jazz Funk",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_14",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 350,
+      "n_ref": 410,
+      "exact": {
+        "tp": 103,
+        "fp": 247,
+        "fn": 307,
+        "precision": 0.294286,
+        "recall": 0.25122,
+        "f1": 0.271053,
+        "onset_mae_sec": 0.02638827596351871
+      },
+      "onset": {
+        "tp": 180,
+        "fp": 170,
+        "fn": 230,
+        "precision": 0.514286,
+        "recall": 0.439024,
+        "f1": 0.473684
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "ClassicMetal (80s-90s)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_15",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 322,
+      "n_ref": 410,
+      "exact": {
+        "tp": 98,
+        "fp": 224,
+        "fn": 312,
+        "precision": 0.304348,
+        "recall": 0.239024,
+        "f1": 0.26776,
+        "onset_mae_sec": 0.02565321583178732
+      },
+      "onset": {
+        "tp": 177,
+        "fp": 145,
+        "fn": 233,
+        "precision": 0.549689,
+        "recall": 0.431707,
+        "f1": 0.483607
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "60s Rock",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_16",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 346,
+      "n_ref": 410,
+      "exact": {
+        "tp": 105,
+        "fp": 241,
+        "fn": 305,
+        "precision": 0.303468,
+        "recall": 0.256098,
+        "f1": 0.277778,
+        "onset_mae_sec": 0.02590097402597406
+      },
+      "onset": {
+        "tp": 188,
+        "fp": 158,
+        "fn": 222,
+        "precision": 0.543353,
+        "recall": 0.458537,
+        "f1": 0.497354
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Modern Funk",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_17",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 313,
+      "n_ref": 410,
+      "exact": {
+        "tp": 57,
+        "fp": 256,
+        "fn": 353,
+        "precision": 0.182109,
+        "recall": 0.139024,
+        "f1": 0.157676,
+        "onset_mae_sec": 0.02686735778841043
+      },
+      "onset": {
+        "tp": 179,
+        "fp": 134,
+        "fn": 231,
+        "precision": 0.571885,
+        "recall": 0.436585,
+        "f1": 0.495159
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Dark Hybrid",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_18",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 313,
+      "n_ref": 410,
+      "exact": {
+        "tp": 95,
+        "fp": 218,
+        "fn": 315,
+        "precision": 0.303514,
+        "recall": 0.231707,
+        "f1": 0.262794,
+        "onset_mae_sec": 0.024553429027113167
+      },
+      "onset": {
+        "tp": 180,
+        "fp": 133,
+        "fn": 230,
+        "precision": 0.57508,
+        "recall": 0.439024,
+        "f1": 0.497925
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Big Room (Layered)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_19",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 310,
+      "n_ref": 410,
+      "exact": {
+        "tp": 95,
+        "fp": 215,
+        "fn": 315,
+        "precision": 0.306452,
+        "recall": 0.231707,
+        "f1": 0.263889,
+        "onset_mae_sec": 0.02609350079744813
+      },
+      "onset": {
+        "tp": 170,
+        "fp": 140,
+        "fn": 240,
+        "precision": 0.548387,
+        "recall": 0.414634,
+        "f1": 0.472222
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Raw Dnb (Layered Hybrid)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_2",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 300,
+      "n_ref": 410,
+      "exact": {
+        "tp": 90,
+        "fp": 210,
+        "fn": 320,
+        "precision": 0.3,
+        "recall": 0.219512,
+        "f1": 0.253521,
+        "onset_mae_sec": 0.025901725589225495
+      },
+      "onset": {
+        "tp": 171,
+        "fp": 129,
+        "fn": 239,
+        "precision": 0.57,
+        "recall": 0.417073,
+        "f1": 0.48169
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Fat Rock (Power Toms)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_21",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 363,
+      "n_ref": 410,
+      "exact": {
+        "tp": 111,
+        "fp": 252,
+        "fn": 299,
+        "precision": 0.305785,
+        "recall": 0.270732,
+        "f1": 0.287193,
+        "onset_mae_sec": 0.026335995085995132
+      },
+      "onset": {
+        "tp": 186,
+        "fp": 177,
+        "fn": 224,
+        "precision": 0.512397,
+        "recall": 0.453659,
+        "f1": 0.481242
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Pop-Rock (Studio)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_22",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 331,
+      "n_ref": 410,
+      "exact": {
+        "tp": 98,
+        "fp": 233,
+        "fn": 312,
+        "precision": 0.296073,
+        "recall": 0.239024,
+        "f1": 0.264507,
+        "onset_mae_sec": 0.026701646567718024
+      },
+      "onset": {
+        "tp": 175,
+        "fp": 156,
+        "fn": 235,
+        "precision": 0.528701,
+        "recall": 0.426829,
+        "f1": 0.472335
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Dry & Heavy (Folk Rock)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_23",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 347,
+      "n_ref": 410,
+      "exact": {
+        "tp": 106,
+        "fp": 241,
+        "fn": 304,
+        "precision": 0.305476,
+        "recall": 0.258537,
+        "f1": 0.280053,
+        "onset_mae_sec": 0.02631503716409378
+      },
+      "onset": {
+        "tp": 185,
+        "fp": 162,
+        "fn": 225,
+        "precision": 0.533141,
+        "recall": 0.45122,
+        "f1": 0.488771
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Second Line",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_24",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 356,
+      "n_ref": 410,
+      "exact": {
+        "tp": 107,
+        "fp": 249,
+        "fn": 303,
+        "precision": 0.300562,
+        "recall": 0.260976,
+        "f1": 0.279373,
+        "onset_mae_sec": 0.025950509770603203
+      },
+      "onset": {
+        "tp": 188,
+        "fp": 168,
+        "fn": 222,
+        "precision": 0.52809,
+        "recall": 0.458537,
+        "f1": 0.490862
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Heavy Metal",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_25",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 357,
+      "n_ref": 410,
+      "exact": {
+        "tp": 107,
+        "fp": 250,
+        "fn": 303,
+        "precision": 0.29972,
+        "recall": 0.260976,
+        "f1": 0.279009,
+        "onset_mae_sec": 0.0260691022373266
+      },
+      "onset": {
+        "tp": 186,
+        "fp": 171,
+        "fn": 224,
+        "precision": 0.521008,
+        "recall": 0.453659,
+        "f1": 0.485007
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Arena Stage",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_26",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 342,
+      "n_ref": 410,
+      "exact": {
+        "tp": 102,
+        "fp": 240,
+        "fn": 308,
+        "precision": 0.298246,
+        "recall": 0.24878,
+        "f1": 0.271277,
+        "onset_mae_sec": 0.024945224301841897
+      },
+      "onset": {
+        "tp": 182,
+        "fp": 160,
+        "fn": 228,
+        "precision": 0.532164,
+        "recall": 0.443902,
+        "f1": 0.484043
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Warmer Funk",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_28",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 298,
+      "n_ref": 410,
+      "exact": {
+        "tp": 92,
+        "fp": 206,
+        "fn": 318,
+        "precision": 0.308725,
+        "recall": 0.22439,
+        "f1": 0.259887,
+        "onset_mae_sec": 0.02568964097496713
+      },
+      "onset": {
+        "tp": 168,
+        "fp": 130,
+        "fn": 242,
+        "precision": 0.563758,
+        "recall": 0.409756,
+        "f1": 0.474576
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Super Boom (Layered)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/1::1_funk-groove1_138_beat_4-4_3",
+      "algorithm_id": "magenta_onsets_frames_egmd",
+      "n_pred": 319,
+      "n_ref": 410,
+      "exact": {
+        "tp": 102,
+        "fp": 217,
+        "fn": 308,
+        "precision": 0.319749,
+        "recall": 0.24878,
+        "f1": 0.279835,
+        "onset_mae_sec": 0.025864341948900763
+      },
+      "onset": {
+        "tp": 178,
+        "fp": 141,
+        "fn": 232,
+        "precision": 0.557994,
+        "recall": 0.434146,
+        "f1": 0.48834
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Jazz",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    }
+  ]
+}

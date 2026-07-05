@@ -123,3 +123,41 @@ Phase 1 + 2 landings:
 - **Path 5 (overlapping-hits at the model level)** — heuristic
   precursor landed in Phase 2 as the multi-label emitter in
   `combined_filter`. A real multi-label CRNN remains held with path 2.
+
+## ADT training-source correction (2026-07-02)
+
+**Supersedes Path 2's "CRNN trained on ADTOF or to YourMT3+"
+recommendation.** Both proposed training sources are license-blocked for a
+commercial product, verified 2026-07-02 against the actual repo LICENSE
+files (not README badges); see
+[`research-drums-license-resolution-2026-07-02.md`](research-drums-license-resolution-2026-07-02.md):
+
+- **ADTOF is CC BY-NC-SA 4.0** — the README applies it to the entire repo
+  content: code, pretrained CRNN weights, **and the dataset builds**. So we
+  can neither ship ADTOF weights nor even *retrain on the ADTOF dataset* for
+  shippable weights. The Path 2 fallback ("retrain the CRNN on the ADTOF
+  dataset") does not survive this reading.
+- **YourMT3 / YourMT3+ is GPL-3.0** — code and, by conservative default,
+  checkpoints. Research reference / distillation teacher only.
+
+**Revised Path 2 (production drum default):** train an in-house 5-class CRNN
+on **E-GMD (CC BY 4.0, commercial retrain permitted with attribution)**,
+optionally augmented with our own Ableton-MCP-rendered corpus, and ship those
+weights under `assets/models/…` per the no-bundled-weights policy. The
+training harness exists at
+`python/ingest/src/aural_ingest/training/drum_crnn/` (compact CRNN
+reimplemented from public Vogl/Southall papers, ONNX-exportable).
+
+**Empirical justification (verified 2026-07-02, stratified 30-case E-GMD
+test, class-aware @ 50 ms):** the DSP stack is structurally capped at F1
+≈ 0.284 — it scores **0.000 on toms** across every heuristic engine and the
+default is blind to cymbals. The pretrained Magenta E-GMD checkpoint
+(license-unstated, benchmark-only) reaches **F1 0.535 exact / 0.776 onset**
+and recovers toms (0.836) and cymbals (0.546). That 0.535 is the floor the
+in-house model must clear before it flips the production default. Artifacts:
+[`benchmarks/drums/magenta_egmd_anchor.md`](../benchmarks/drums/magenta_egmd_anchor.md).
+
+Unchanged from the 2026-05-07 revision: 5-class taxonomy as the output
+target, Demucs preprocessing for the production drum path, and tatum/pattern-LM
+decoding as the precision post-filter (indicated for the neural model's
+residual hi-hat over-triggering).

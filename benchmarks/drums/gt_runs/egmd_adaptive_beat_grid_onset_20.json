@@ -1,0 +1,81 @@
+{
+  "algorithm_id": "adaptive_beat_grid",
+  "case_count": 20,
+  "mean_runtime_sec": 3.013,
+  "overall": {
+    "exact_class": {
+      "tp": 819,
+      "fp": 2253,
+      "fn": 7381,
+      "precision": 0.266602,
+      "recall": 0.099878,
+      "f1": 0.145316
+    },
+    "onset_only": {
+      "tp": 2123,
+      "fp": 949,
+      "fn": 6077,
+      "precision": 0.691081,
+      "recall": 0.258902,
+      "f1": 0.376686
+    }
+  },
+  "per_class_exact": {
+    "crash": {
+      "tp": 0,
+      "fp": 13,
+      "fn": 80,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "hi_hat": {
+      "tp": 482,
+      "fp": 971,
+      "fn": 1855,
+      "precision": 0.331727,
+      "recall": 0.206247,
+      "f1": 0.254354
+    },
+    "kick": {
+      "tp": 130,
+      "fp": 723,
+      "fn": 950,
+      "precision": 0.152403,
+      "recall": 0.12037,
+      "f1": 0.134506
+    },
+    "oov_54": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 123,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "ride": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2540,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "snare": {
+      "tp": 207,
+      "fp": 546,
+      "fn": 1813,
+      "precision": 0.2749,
+      "recall": 0.102475,
+      "f1": 0.149297
+    },
+    "tom3": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 20,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  }
+}

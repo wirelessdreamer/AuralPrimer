@@ -3967,6 +3967,43 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
     return 0 if overall_ok else 1
 
 
+def _load_case_ids(path) -> set[str]:
+    """Load a set of case ids from a JSON or plain-text allow-list.
+
+    Accepts three shapes so the same flag consumes either a stratified
+    sample manifest or a hand-written list:
+
+    * ``{"cases": [{"case_id": "..."}, ...]}`` -- the stratified sample JSON.
+    * ``["id1", "id2", ...]`` -- a bare JSON array of case ids.
+    * newline-delimited text -- one case id per line (``#`` comments and
+      blank lines ignored).
+    """
+    from pathlib import Path as _Path
+
+    text = _Path(path).read_text(encoding="utf-8")
+    stripped = text.lstrip()
+    if stripped[:1] in "{[":
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            rows = obj.get("cases", [])
+            return {
+                str(r["case_id"]) if isinstance(r, dict) else str(r)
+                for r in rows
+            }
+        if isinstance(obj, list):
+            return {
+                str(r["case_id"]) if isinstance(r, dict) else str(r)
+                for r in obj
+            }
+        raise ValueError("unsupported case-id-file JSON shape")
+    ids: set[str] = set()
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            ids.add(line)
+    return ids
+
+
 def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
     """Snap the pack's drum-tab hit times onto the drums-stem audio transients.
 
@@ -4187,7 +4224,27 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
     if dataset == "egmd":
         from .dataset_adapters.egmd import yield_cases
 
-        cases = list(yield_cases(corpus_root, split=args.split, limit=args.limit))
+        case_ids = None
+        case_id_file = getattr(args, "case_id_file", None)
+        if case_id_file:
+            cif = _Path(case_id_file)
+            if not cif.is_file():
+                print(json.dumps({"ok": False, "error": f"case-id-file not found: {cif}"}))
+                return 1
+            case_ids = _load_case_ids(cif)
+            if not case_ids:
+                print(json.dumps({"ok": False, "error": f"no case ids in {cif}"}))
+                return 1
+        style_filter = getattr(args, "style_filter", None) or None
+        cases = list(
+            yield_cases(
+                corpus_root,
+                split=args.split,
+                style_filter=style_filter,
+                case_ids=case_ids,
+                limit=args.limit,
+            )
+        )
         family = "drums"
     elif dataset == "guitarset":
         from .dataset_adapters.guitarset import yield_cases as _yc
@@ -4511,6 +4568,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Cap the number of cases (useful for smoke runs).",
+    )
+    s_gt_benchmark.add_argument(
+        "--case-id-file",
+        default=None,
+        help=(
+            "E-GMD only: path to a stratified-sample JSON (``{cases:[{case_id}]}``) "
+            "or newline-delimited case-id list. Only listed cases are swept, so "
+            "``--limit`` no longer collapses onto the first-N (single-groove) rows."
+        ),
+    )
+    s_gt_benchmark.add_argument(
+        "--style-filter",
+        action="append",
+        default=None,
+        help="E-GMD only: restrict to these ``style`` values. Repeat to allow several.",
     )
     s_gt_benchmark.add_argument(
         "--tolerance-ms",
