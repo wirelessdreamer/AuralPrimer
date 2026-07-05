@@ -9,6 +9,7 @@ import io
 import inspect
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -801,6 +802,20 @@ def _analyze_beats_tempo(
 ) -> tuple[float, dict[str, Any], dict[str, Any], dict[str, Any]]:
     bpm_hint = float(config.get("bpm_hint")) if "bpm_hint" in config else None
     if beat_analysis_mode == "high_accuracy":
+        # Real beat+downbeat+meter via Beat This! (modelpack-gated, MIT). Returns
+        # None when the checkpoint/package is absent or on any error -> we keep
+        # the librosa path. Opt out with AURALPRIMER_DISABLE_METER_MODEL=1.
+        if os.getenv("AURALPRIMER_DISABLE_METER_MODEL", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            try:
+                from . import meter_tracker
+
+                model_result = meter_tracker.track_meter(
+                    wav_path, duration_sec=duration_sec, config=config
+                )
+                if model_result is not None:
+                    return model_result
+            except Exception:
+                pass  # any failure -> librosa fallback below
         return _analyze_beats_tempo_high_accuracy(
             wav_path,
             duration_sec=duration_sec,
@@ -3982,6 +3997,138 @@ def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
     return 0
 
 
+def _pack_audio_for_analysis(pack: Path) -> tuple[Path, bool]:
+    """Return an audio file to analyze for a pack, plus whether it is a temp file
+    to clean up. Prefers audio/mix.wav (present during import); for a feedpak
+    (stems-only, no mix) it sums the non-derived stems into a temp wav.
+
+    Stems are loaded at a common sample rate + mono via librosa, so mixed-rate
+    stems can never produce a time-warped sum. The temp file is cleaned up on a
+    write failure here (the caller also unlinks it in its finally block).
+    """
+    mix = pack / "audio" / "mix.wav"
+    if mix.is_file():
+        return mix, False
+    import numpy as np
+    import soundfile as sf
+    import librosa
+
+    roles = ["bass", "drums", "guitar", "keys", "other", "vocals"]
+    stems_dir = pack / "audio" / "stems"
+    target_sr = 44100
+    summed = None
+    for role in roles:
+        p = stems_dir / f"{role}.wav"
+        if not p.is_file():
+            continue
+        # sr=target_sr forces a single rate; mono=True collapses channels.
+        y, _ = librosa.load(str(p), sr=target_sr, mono=True)
+        y = np.asarray(y, dtype="float64")
+        if summed is None:
+            summed = y
+        else:
+            n = min(len(summed), len(y))
+            summed = summed[:n] + y[:n]
+    if summed is None:
+        raise FileNotFoundError(f"no audio/mix.wav or audio/stems/*.wav in {pack}")
+    peak = float(np.max(np.abs(summed))) + 1e-9
+    summed = (summed / peak).astype("float32")
+    fd, tmp_name = tempfile.mkstemp(prefix="auralmeter_", suffix=".wav")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        sf.write(str(tmp), summed, target_sr)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    return tmp, True
+
+
+def cmd_refresh_meter(args: argparse.Namespace) -> int:
+    """Re-run beat/downbeat/meter tracking on an EXISTING pack and rewrite only
+    ``song_timeline.json`` (beats + time_signatures + tempos), in place.
+
+    Uses the neural meter engine (Beat This!, modelpack-gated); if unavailable,
+    reports ``ok:false`` and leaves the pack untouched rather than silently
+    falling back to the old hardcoded 4/4. Never rewrites notes.mid (the game
+    derives note seconds from its tempo events), drum_tab.json (absolute time),
+    or arrangements. ``sections`` in the timeline are preserved.
+    """
+    from aural_ingest import meter_tracker
+    from aural_ingest.feedpak_writer import _build_song_timeline
+
+    pack = Path(args.auralsong_dir)
+    tl_path = pack / "song_timeline.json"
+    if not tl_path.is_file():
+        print(json.dumps({"ok": False, "error": f"no song_timeline.json in {pack}"}, sort_keys=True))
+        return 1
+    try:
+        existing = json.loads(tl_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"failed to read song_timeline.json: {exc}"}, sort_keys=True))
+        return 1
+
+    tmp_audio: Path | None = None
+    try:
+        audio, is_tmp = _pack_audio_for_analysis(pack)
+        tmp_audio = audio if is_tmp else None
+        # Duration from the audio (soundfile info is cheap).
+        import soundfile as sf
+
+        info = sf.info(str(audio))
+        duration_sec = float(info.frames) / float(info.samplerate) if info.samplerate else 0.0
+
+        result = meter_tracker.track_meter(audio, duration_sec=duration_sec, config={})
+        if result is None:
+            print(json.dumps(
+                {"ok": False, "error": "meter model unavailable (no Beat This! checkpoint) — pack left unchanged"},
+                sort_keys=True,
+            ))
+            return 1
+        _bpm, beats, tempo_map, meta = result
+
+        new_tl = _build_song_timeline(tempo_map, beats, None)
+        # Preserve anything the model doesn't produce (sections, duration, etc.).
+        for k, v in existing.items():
+            if k not in new_tl:
+                new_tl[k] = v
+        # Back up the previous timeline so a bad meter call is recoverable — the
+        # new grid moves beats/downbeats, which desyncs anything anchored to the
+        # OLD grid (quantized cleanup edits, drum_tab snapping, notation measures).
+        backup = tl_path.parent / (tl_path.name + ".bak")
+        backup.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        tl_path.write_text(json.dumps(new_tl, indent=2), encoding="utf-8")
+        print(json.dumps(
+            {
+                "ok": True,
+                "beat_source": meta.get("beat_source"),
+                "bpm": meta.get("estimated_bpm"),
+                "time_signature": meta.get("time_signature"),
+                "beats_per_bar": meta.get("beats_per_bar"),
+                "beats": meta.get("detected_beat_count"),
+                "downbeats": meta.get("detected_downbeat_count"),
+                "meter_denominator_provisional": meta.get("meter_denominator_provisional", False),
+                "backup": backup.name,
+                "warning": (
+                    "grid changed; edits anchored to the old grid (quantized "
+                    "placements, drum-onset snaps, notation measures) may need "
+                    "re-alignment. Previous timeline saved to " + backup.name
+                ),
+            },
+            sort_keys=True,
+        ))
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"refresh-meter failed: {exc}"}, sort_keys=True))
+        return 1
+    finally:
+        if tmp_audio is not None:
+            try:
+                tmp_audio.unlink()
+            except Exception:
+                pass
+
+
 def cmd_gt_benchmark(args: argparse.Namespace) -> int:
     """Run a ground-truth benchmark sweep and write the JSON report.
 
@@ -4253,6 +4400,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to an existing pack root (the directory containing drum_tab.json + audio/stems/drums.wav).",
     )
     s_align_drums.set_defaults(func=cmd_align_drum_onsets)
+
+    s_refresh_meter = sub.add_parser(
+        "refresh-meter",
+        help="Re-run neural beat/downbeat/meter tracking on an existing pack and rewrite song_timeline.json (in place).",
+    )
+    s_refresh_meter.add_argument(
+        "auralsong_dir",
+        help="Path to an existing pack root (the directory containing song_timeline.json + audio/stems/*.wav).",
+    )
+    s_refresh_meter.set_defaults(func=cmd_refresh_meter)
 
     s_bench_overlay = sub.add_parser(
         "benchmark-transcribers",
