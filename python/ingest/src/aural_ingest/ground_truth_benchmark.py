@@ -41,6 +41,41 @@ DrumTranscribeFn = Callable[[Path], list[DrumEvent]]
 MelodicTranscribeFn = Callable[[Path], list[MelodicNote]]
 
 
+# ---------------------------------------------------------------------------
+# 5-class drum taxonomy for per-class diagnostics.
+# ---------------------------------------------------------------------------
+#
+# The benchmark's fine ``_BENCHMARK_NOTE_TO_CLASS`` map splits toms/cymbals
+# into sub-buckets (tom1/2/3, crash/ride). For the per-class P/R/F breakdown
+# we collapse onto the standard 5-class ADT taxonomy (kick / snare / hi_hat /
+# toms / cymbals -- see ``algorithms._common.STANDARD_5CLASS_DRUM_VOCABULARY``)
+# so a diagnostic reads "which of the 5 classes collapses" without the noise
+# of which particular tom.
+FIVE_CLASS_DRUM_LABELS: tuple[str, ...] = ("kick", "snare", "hi_hat", "toms", "cymbals")
+
+_BENCHMARK_CLASS_TO_5CLASS: dict[str, str] = {
+    "kick": "kick",
+    "snare": "snare",
+    "hi_hat": "hi_hat",
+    "tom1": "toms",
+    "tom2": "toms",
+    "tom3": "toms",
+    "crash": "cymbals",
+    "ride": "cymbals",
+}
+
+
+def _midi_note_to_5class(note: int) -> str | None:
+    """Map a GM drum MIDI note onto the 5-class taxonomy, or ``None`` if the
+    note is outside the benchmark drum vocabulary."""
+    from .transcription import _midi_note_to_benchmark_class
+
+    fine = _midi_note_to_benchmark_class(note)
+    if fine is None:
+        return None
+    return _BENCHMARK_CLASS_TO_5CLASS.get(fine)
+
+
 def get_drum_algorithm(algorithm_id: str) -> DrumTranscribeFn:
     """Resolve a drum algorithm id to a callable.
 
@@ -158,6 +193,9 @@ class CaseScore:
     onset_mae_sec: float | None
     metadata: dict[str, str] = field(default_factory=dict)
     error: str | None = None
+    # Per-5-class TP/FP/FN, e.g. {"kick": {"tp": 4, "fp": 0, "fn": 1}, ...}.
+    # Only populated for drum cases; empty for melodic.
+    per_class: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @property
     def precision(self) -> float:
@@ -190,6 +228,10 @@ class CaseScore:
             ),
             "metadata": dict(self.metadata),
         }
+        if self.per_class:
+            d["per_class"] = {
+                cls: dict(counts) for cls, counts in self.per_class.items()
+            }
         if self.error:
             d["error"] = self.error
         return d
@@ -249,6 +291,30 @@ def score_drum_case(
             errs.extend(e for _r, _p, e in matches)
 
     onset_mae = statistics.mean(errs) if errs else None
+
+    # Per-5-class breakdown (always computed; the aggregate tp/fp/fn above is
+    # kept on the fine benchmark taxonomy so overall numbers are unchanged).
+    # Notes outside the 5-class vocabulary are dropped from this diagnostic --
+    # they neither help nor hurt any of the 5 buckets.
+    ref_5: dict[str, list[float]] = defaultdict(list)
+    pred_5: dict[str, list[float]] = defaultdict(list)
+    for ev in case.drum_events:
+        c5 = _midi_note_to_5class(ev.note)
+        if c5 is not None:
+            ref_5[c5].append(ev.time)
+    for ev in predicted:
+        c5 = _midi_note_to_5class(ev.note)
+        if c5 is not None:
+            pred_5[c5].append(ev.time)
+    per_class: dict[str, dict[str, int]] = {}
+    for c5 in FIVE_CLASS_DRUM_LABELS:
+        r = ref_5.get(c5, [])
+        p = pred_5.get(c5, [])
+        if not r and not p:
+            continue
+        m, ref_un, pred_un = _greedy_match_onsets(r, p, tolerance_sec)
+        per_class[c5] = {"tp": len(m), "fp": len(pred_un), "fn": len(ref_un)}
+
     return CaseScore(
         case_id=case.case_id,
         algorithm_id=algorithm_id,
@@ -258,6 +324,7 @@ def score_drum_case(
         fn=fn,
         onset_mae_sec=onset_mae,
         metadata=dict(case.metadata),
+        per_class=per_class,
     )
 
 
@@ -353,6 +420,42 @@ def _safe_mean(values: Iterable[float | None]) -> float | None:
     return statistics.mean(vs) if vs else None
 
 
+def _summarise_per_class(scores: Sequence[CaseScore]) -> dict[str, dict[str, Any]]:
+    """Micro-average per-5-class TP/FP/FN across a group of scores.
+
+    Returns ``{class: {tp, fp, fn, precision, recall, f1, support}}`` where
+    ``support = tp + fn`` (reference-event count). Classes absent from every
+    case are omitted.
+    """
+    agg: dict[str, dict[str, int]] = {}
+    for s in scores:
+        for cls, counts in s.per_class.items():
+            bucket = agg.setdefault(cls, {"tp": 0, "fp": 0, "fn": 0})
+            bucket["tp"] += counts.get("tp", 0)
+            bucket["fp"] += counts.get("fp", 0)
+            bucket["fn"] += counts.get("fn", 0)
+    result: dict[str, dict[str, Any]] = {}
+    for cls in FIVE_CLASS_DRUM_LABELS:
+        if cls not in agg:
+            continue
+        tp = agg[cls]["tp"]
+        fp = agg[cls]["fp"]
+        fn = agg[cls]["fn"]
+        p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+        result[cls] = {
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "support": tp + fn,
+            "precision": round(p, 6),
+            "recall": round(r, 6),
+            "f1": round(f1, 6),
+        }
+    return result
+
+
 def aggregate(
     scores: Sequence[CaseScore],
     *,
@@ -376,7 +479,7 @@ def aggregate(
         p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1 = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
-        return {
+        out = {
             "cases": len(group),
             "cases_ok": len(ok),
             "cases_err": len(group) - len(ok),
@@ -392,6 +495,10 @@ def aggregate(
             "mean_runtime_sec": round(_safe_mean(s.runtime_sec for s in ok), 4)
                 if ok else None,
         }
+        per_class = _summarise_per_class(ok)
+        if per_class:
+            out["per_class"] = per_class
+        return out
 
     by_alg: dict[str, list[CaseScore]] = defaultdict(list)
     for s in scores:

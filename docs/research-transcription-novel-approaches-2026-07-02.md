@@ -116,16 +116,17 @@ single biggest factor", ADTOF weights "CC BY 4.0".)
 
 ## Implementation queue (recommended order)
 
-| # | Work item | Problem | Expected lift | Effort | Blocked by |
+| # | Work item | Problem | Expected lift | Effort | Status |
 |---|---|---|---|---|---|
-| 1 | Benchmark composed `guitar_auto` (cleanup + chord supplement now co-located) on full Guitar-TECHS micamp + DI | Guitar | measure the ~2× smoke lift properly; DI now meaningful post-24-bit-fix | one `gt-benchmark` run | nothing |
-| 2 | `melodic_penn` adapter (mirror `melodic_torchcrepe.py`) + A/B on GuitarSet low-strings | Bass | frame-level gains are 4.7× cents-error; note-level TBD | ~half day | nothing |
-| 3 | Download Magenta E-GMD checkpoint, wire as research-only drum engine, A/B vs `combined_filter` on E-GMD + Psalms guard set | Drums | unknown → first neural baseline | ~1 day (TF1-era estimator stack) | checkpoint-license diligence before *shipping* (not before benchmarking) |
-| 4 | Bass note-segmentation layer A/B (envelope-gated vs CQT joint decode) on top of penn f0 | Bass | converts f0 wins into recall — the actual KPI | ~1–2 days | #2 |
-| 5 | Ableton render farm v1: drum corpus (MIDI grooves → drum racks → full mixes w/ accompaniment) per the three realism levers | Drums | enables #6 | ~2–3 days of MCP scripting | nothing |
-| 6 | Train in-house permissive drum CRNN on E-GMD + rendered corpus (own code, own weights, CC-BY attribution) | Drums | targets the 0.7–0.9 strong-ADT band vs our real-world ~0.15–0.4 | the big one — ~1–2 weeks | #3 (baseline), #5 |
-| 7 | Ableton render farm v2: paired dry/wet guitar corpus → train de-distortion front-end → A/B transcription F1 | Guitar | unmeasured in literature; we'd be first | ~1 week | #1 (baseline) |
-| 8 | f0-layer voting ensemble (penn + torchcrepe + pYIN median vote w/ alignment) for bass/lead | Bass/Guitar | RPA5 2.2× in paper; cheap to try | ~1 day | #2 |
+| 1 | Benchmark composed `guitar_auto` (cleanup + chord supplement now co-located) on full Guitar-TECHS micamp + DI | Guitar | measure the ~2× smoke lift properly; DI now meaningful post-24-bit-fix | one `gt-benchmark` run | pending |
+| 2 | `melodic_penn` adapter (mirror `melodic_torchcrepe.py`) + A/B on GuitarSet low-strings | Bass | frame-level gains are 4.7× cents-error; note-level TBD | ~half day | pending |
+| 3 | ✅ **DONE** — Magenta E-GMD checkpoint wired as research-only engine, A/B vs 6 DSP engines on stratified E-GMD | Drums | **0.284 → 0.535 exact-class F1, toms 0.000 → 0.836** — neural justified | done (`drums-transcription-upgrade`) | done |
+| 4 | Bass note-segmentation layer A/B (envelope-gated vs CQT joint decode) on top of penn f0 | Bass | converts f0 wins into recall — the actual KPI | ~1–2 days | pending (needs #2) |
+| 5 | Ableton render farm v1: drum corpus (MIDI grooves → drum racks → full mixes w/ accompaniment) per the three realism levers | Drums | augmentation on top of E-GMD | ~2–3 days of MCP scripting | pending (optional for #6) |
+| 6 | 🔄 **IN PROGRESS** — Train in-house permissive drum CRNN on E-GMD (own weights, CC-BY) | Drums | must clear the **0.535 floor**; DSP structurally can't see toms/cymbals | harness done; first run underway | in progress |
+| 7 | Ableton render farm v2: paired dry/wet guitar corpus → train de-distortion front-end → A/B transcription F1 | Guitar | unmeasured in literature; we'd be first | ~1 week | pending (needs #1) |
+| 8 | f0-layer voting ensemble (penn + torchcrepe + pYIN median vote w/ alignment) for bass/lead | Bass/Guitar | RPA5 2.2× in paper; cheap to try | ~1 day | pending (needs #2) |
+| 9 | Per-class DSP ensemble (best engine per class) as a cheap interim drum win | Drums | beats any single engine's 0.284; still < neural on toms/cymbals | ~half day | new (found during verification) |
 
 Items 1–3 are immediately actionable and independent — they can run in
 parallel agents like the guitar-upgrade round did.
