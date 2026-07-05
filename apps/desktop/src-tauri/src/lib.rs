@@ -443,6 +443,10 @@ fn is_allowed_feature_rel(rel_path: &str) -> bool {
         // (`drum_tab: drum_tab.json`); the Studio drum-cleanup editor writes
         // edited hits back to it so the game picks them up directly.
         || rel_path == "drum_tab.json"
+        // The beat/measure timeline is a root-level, manifest-referenced
+        // artifact (`song_timeline.json`); the Cleanup/Edit editor reads it to
+        // build the beat grid (bars/beats/subdivisions) and quantized placement.
+        || rel_path == "song_timeline.json"
 }
 
 /// Read+parse a feedpak `manifest.yaml` from a directory or zip container.
@@ -1279,6 +1283,17 @@ async fn ingest_align_drum_onsets(
 ) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
     run_blocking_command("align drum onsets", move || {
         ingest_sidecar::run_ingest_align_drum_onsets(req, Some(&app))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn ingest_refresh_meter(
+    app: AppHandle,
+    req: ingest_sidecar::AlignDrumOnsetsRequest,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("refresh meter", move || {
+        ingest_sidecar::run_ingest_refresh_meter(req, Some(&app))
     })
     .await
 }
@@ -2332,6 +2347,7 @@ pub fn run() {
             ingest_refine_candidates,
             ingest_spectrogram,
             ingest_align_drum_onsets,
+            ingest_refresh_meter,
             inspect_raw_song_folder,
             import_raw_song_folder,
             scan_auralsongs,

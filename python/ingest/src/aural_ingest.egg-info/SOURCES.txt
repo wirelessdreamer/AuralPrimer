@@ -5,6 +5,7 @@ src/aural_ingest/cli.py
 src/aural_ingest/device.py
 src/aural_ingest/drum_benchmark.py
 src/aural_ingest/drum_benchmark_suite.py
+src/aural_ingest/drum_onset_align.py
 src/aural_ingest/drum_reference_shootout.py
 src/aural_ingest/feedpak_validate.py
 src/aural_ingest/feedpak_writer.py
@@ -12,6 +13,7 @@ src/aural_ingest/ground_truth_benchmark.py
 src/aural_ingest/guitar_split.py
 src/aural_ingest/melodic_benchmark.py
 src/aural_ingest/melodic_benchmark_suite.py
+src/aural_ingest/meter_tracker.py
 src/aural_ingest/mt3_compat.py
 src/aural_ingest/piano_benchmark.py
 src/aural_ingest/piano_benchmark_suite.py
@@ -34,6 +36,7 @@ src/aural_ingest/algorithms/adaptive_beat_grid_multilabel.py
 src/aural_ingest/algorithms/aural_onset.py
 src/aural_ingest/algorithms/beat_conditioned_multiband_decoder.py
 src/aural_ingest/algorithms/combined_filter.py
+src/aural_ingest/algorithms/drums_oaf.py
 src/aural_ingest/algorithms/dsp_bandpass.py
 src/aural_ingest/algorithms/dsp_bandpass_improved.py
 src/aural_ingest/algorithms/dsp_spectral_flux.py
@@ -95,6 +98,7 @@ src/aural_ingest/dataset_adapters/common.py
 src/aural_ingest/dataset_adapters/egmd.py
 src/aural_ingest/dataset_adapters/guitar_techs.py
 src/aural_ingest/dataset_adapters/guitarset.py
+src/aural_ingest/dataset_adapters/maestro.py
 src/aural_ingest/dataset_adapters/piano_synthetic.py
 tests/test_algorithms_common_primitives.py
 tests/test_algorithms_stubs.py
@@ -105,6 +109,7 @@ tests/test_device_selection.py
 tests/test_drum_5class_taxonomy.py
 tests/test_drum_benchmark.py
 tests/test_drum_benchmark_suite.py
+tests/test_drum_onset_align.py
 tests/test_drum_psalm_12_equivalent.py
 tests/test_drum_recognizer_false_positives.py
 tests/test_drum_reference_shootout.py
@@ -112,10 +117,12 @@ tests/test_drum_silence_gate_cli_options.py
 tests/test_drum_sparse_source_precision.py
 tests/test_drum_stem_silence_gate.py
 tests/test_feedpak_writer.py
+tests/test_import_dir_extension_rewrite.py
 tests/test_import_pipeline.py
 tests/test_ingest_quality_improvements.py
 tests/test_ingest_runtime_benchmarks.py
 tests/test_melodic_torchcrepe_fmin.py
+tests/test_meter_tracker.py
 tests/test_mt3_compat.py
 tests/test_piano_benchmark.py
 tests/test_piano_cleanup.py
@@ -124,10 +131,12 @@ tests/test_piano_pti_threshold_consensus.py
 tests/test_piano_refinement.py
 tests/test_piano_research_adapters.py
 tests/test_progress.py
+tests/test_protected_stems.py
 tests/test_quality_benchmark.py
 tests/test_refine_precompute.py
 tests/test_smoke.py
 tests/test_spectrogram.py
+tests/test_spectrogram_time_alignment.py
 tests/test_transcription_orchestration.py
 tests/test_transcription_resilience.py
 tests/test_transcription_scoring.py

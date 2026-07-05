@@ -91,12 +91,53 @@ export function snapTimeToGrid(t: number, gridTimes: number[]): number {
 
 /** Downbeat times from a `song_timeline.json` beats array (first beat of each measure). */
 export function downbeatTimes(beats: Array<{ time?: number; measure?: number }>): number[] {
-  const out: number[] = [];
+  return downbeatTimesShifted(beats, 0);
+}
+
+/**
+ * Downbeat times shifted by `offset` beat positions (`offset` 0 == downbeatTimes).
+ *
+ * Beat trackers reliably lock the tempo but often put "the one" on the wrong beat
+ * of the bar — a backbeat groove (kick on 1 AND 3) reads those alike, so the
+ * detected downbeat can sit a beat or two off. This rotates the measure phase by
+ * moving each detected downbeat `offset` beats along the beat sequence, so the
+ * editor can drop the accent / bar line onto the true downbeat. Wrapping past a
+ * bar is the caller's concern (offset is taken as given, clamped to the range).
+ */
+export function downbeatTimesShifted(
+  beats: Array<{ time?: number; measure?: number }>,
+  offset: number,
+): number[] {
+  const times: number[] = [];
+  const downbeatIdx: number[] = [];
   let prevMeasure: number | undefined;
   for (const b of beats) {
     if (typeof b?.time !== "number") continue;
-    if (prevMeasure === undefined || b.measure !== prevMeasure) out.push(b.time);
+    const i = times.length;
+    times.push(b.time);
+    if (prevMeasure === undefined || b.measure !== prevMeasure) downbeatIdx.push(i);
     prevMeasure = b.measure;
   }
+  if (times.length === 0) return [];
+  const shift = Number.isFinite(offset) ? Math.round(offset) : 0;
+  const out: number[] = [];
+  let last = -1;
+  for (const idx of downbeatIdx) {
+    const j = Math.min(times.length - 1, Math.max(0, idx + shift));
+    if (j !== last) {
+      out.push(times[j]!);
+      last = j;
+    }
+  }
   return out;
+}
+
+/** Beats per bar from a `song_timeline.json` `time_signatures` array (numerator of
+ *  the first entry, e.g. `{ ts: [4, 4] }` -> 4). Defaults to 4 when absent/malformed. */
+export function beatsPerBarFromTimeSignatures(
+  timeSignatures: Array<{ ts?: number[] }> | undefined,
+): number {
+  const first = Array.isArray(timeSignatures) ? timeSignatures[0] : undefined;
+  const n = Array.isArray(first?.ts) ? first?.ts?.[0] : undefined;
+  return typeof n === "number" && n >= 1 ? Math.round(n) : 4;
 }

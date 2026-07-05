@@ -2,12 +2,18 @@
  * Per-instrument refinement overlay loader.
  *
  * For each `InstrumentRole`, best-effort fetches
- * `aural/refine_candidates.<role>.json` from a feedpak via the existing
- * `read_auralsong_json` Tauri command. Missing files are silent (the
- * common case — no refinement has been authored). Invalid files are
- * surfaced via the caller-provided `warn` callback and skipped, so a
- * broken refinement file never prevents the base `notes.mid` track from
- * rendering.
+ * `aural/refinement.<role>.json` from a feedpak via the existing
+ * `read_auralsong_json` Tauri command. This is the file the Studio writes
+ * the user's accepted picks to (see `refineCandidatesIo.saveDecisions`);
+ * the editor-time `refine_candidates.<role>.json` is NOT read at runtime —
+ * pointing at it here was a regression (feedpak-migration a74671c) that
+ * silently dropped every refinement because its candidates schema fails
+ * `validateRefinement`.
+ *
+ * Missing files are silent (the common case — no refinement has been
+ * authored). Invalid files are surfaced via the caller-provided `warn`
+ * callback and skipped, so a broken refinement file never prevents the
+ * base `notes.mid` track from rendering.
  *
  * Extracted from main.ts as part of the Phase 2 decomposition. The
  * caller is responsible for applying the returned refinements to the
@@ -31,7 +37,7 @@ export async function loadRefinementsForRoles(
 ): Promise<RefinementFile[]> {
   const out: RefinementFile[] = [];
   for (const role of roles) {
-    const relPath = `aural/refine_candidates.${role}.json`;
+    const relPath = `aural/refinement.${role}.json`;
     let raw: unknown;
     try {
       raw = await invoke<unknown>("read_auralsong_json", { containerPath, relPath });
@@ -44,7 +50,7 @@ export async function loadRefinementsForRoles(
     if (!result.ok) {
       deps.warn(
         "play",
-        `refine_candidates.${role}.json failed validation; ignoring`,
+        `refinement.${role}.json failed validation; ignoring`,
         result.errors,
       );
       continue;

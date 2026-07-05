@@ -69,6 +69,105 @@ OS-level prerequisites.
 - **Rights-neutral importer scope.** PRs for source-specific proprietary
   game/DLC archive importers are out of scope.
 
+## Third-party components & attribution
+
+AuralPrimer stands on open-source music-ML research and tooling. Because it
+ships commercially, **every component below is commercially licensed — and for
+the neural models we verify the trained *weights* license separately from the
+code license** (an open-code / non-commercial-weights split is exactly what
+disqualifies a model here; see the license gate in the research docs). Current
+stack: permissive throughout (MIT / Apache-2.0 / BSD / ISC / MPL-2.0 / CC0 /
+Unlicense), with LGPL present only as dynamically-linked binaries (`ffmpeg`,
+`libsndfile`) and GPL only in a build-time tool (`PyInstaller`, used under its
+bootloader exception — its output is not GPL-encumbered). No GPL runtime
+dependencies; no non-commercial model weights.
+
+### Who makes what we use
+
+One row per maker, ordered by layer — models first, then ML runtime, app
+shell, and native audio/MIDI:
+
+| Layer | Organization / maintainer | What AuralPrimer uses from them | License |
+|---|---|---|---|
+| Model | **Meta AI · FAIR** — Défossez et al. | **Demucs** — stem separation | MIT (code + weights) |
+| Model | **Sony AI** — Tan · Cheuk · Mitsufuji | **MR-MT3** — neural drum transcription (+ `mt3-infer` wrapper) | MIT (code + weights) |
+| Model | **Google Research · Magenta** | **MT3** — the architecture MR-MT3 is fine-tuned from | Apache-2.0 |
+| Model | **Spotify · Audio Intelligence Lab** | **Basic Pitch** — piano / polyphonic melodic transcription | Apache-2.0 |
+| Model | **CPJKU · JKU Linz** — Foscarin · Schlüter · Widmer | **Beat This!** — beat / downbeat / meter (drives the editor grid) | MIT (code + weights) |
+| Model | **NYU MARL · Northwestern** — Kim · Salamon · Bello · Morrison | **CREPE** + **torchcrepe** — bass / guitar pitch | MIT |
+| Runtime | **Meta Platforms** — PyTorch project | **PyTorch** (`torch` · `torchaudio` · `torchvision`) — ML runtime | BSD |
+| Runtime | **Hugging Face** | **transformers** — model architectures | Apache-2.0 |
+| Runtime | **Lightning AI** — William Falcon | **PyTorch Lightning** — inference scaffolding | Apache-2.0 |
+| Runtime | **Phil Wang** (lucidrains) | **x-transformers** · **rotary-embedding-torch** | MIT |
+| Runtime | **NumFOCUS community** — Brian McFee et al. | **NumPy** · **SciPy** · **scikit-learn** · **librosa** (onset / CQT / tempo) | BSD · ISC |
+| Runtime | **Bastian Bechtold** · libsndfile team | **soundfile** — audio I/O | BSD (LGPL backend, dynamic) |
+| Runtime | **The FFmpeg project** | **ffmpeg** — decode binary | LGPL-2.1+ (dynamic) |
+| App | **Tauri WG · Commons Conservancy** | **Tauri v2** — desktop shell + dialog/shell plugins | MIT / Apache-2.0 |
+| App | **VoidZero** — Evan You · Anthony Fu | **Vite** · **Vitest** — build & test | MIT |
+| App | **Microsoft** | **TypeScript** · **Playwright** | Apache-2.0 |
+| Native | **RustAudio + independent Rust** | **cpal** · **rtrb** · **symphonia** · **midir** · **midly** — native audio/MIDI | Apache / MIT / MPL-2.0 |
+
+*Lineage: Google/Magenta's **MT3** → Sony's **MR-MT3** (fine-tuned for drums).
+Full per-component detail — including build/test-only deps — is in the tables
+below.*
+
+### Music-ML models & audio analysis (the differentiating stack)
+
+| Component | Role in AuralPrimer | Made by | License (code / weights) |
+|---|---|---|---|
+| **Demucs** (`htdemucs_6s`) | Stem separation (vocals/drums/bass/guitar/keys/other) | Meta AI / FAIR — Alexandre Défossez | MIT / **MIT** |
+| **MR-MT3** (`mr_mt3` ckpt) + **mt3-infer** | Neural drum transcription (which drum + velocity) | Sony AI — Hao Hao Tan, Kin Wai Cheuk, Yuki Mitsufuji et al.; wrapper by *openmirlab* | MIT / **MIT** |
+| **MT3** (lineage) | Base multi-track transcription architecture MR-MT3 derives from | Google Research · Magenta | Apache-2.0 / Apache-2.0 |
+| **Basic Pitch** | Piano / polyphonic melodic transcription | Spotify — Audio Intelligence Lab | Apache-2.0 / Apache-2.0 |
+| **Beat This!** | Beat / downbeat / **meter** tracking (drives the editor grid) | CPJKU, JKU Linz — Foscarin, Schlüter, Widmer | MIT / **MIT** |
+| **torchcrepe** + **CREPE** | Monophonic bass / guitar pitch tracking | Max Morrison (Northwestern) · CREPE by NYU MARL (Kim, Salamon, Bello) | MIT / **MIT** |
+| **librosa** | DSP: onset detection, CQT/spectrogram, tempo analysis | librosa dev team (Brian McFee, NYU) | ISC |
+
+### ML runtime & Python libraries
+
+| Component | Made by | License |
+|---|---|---|
+| **PyTorch** (`torch`, `torchaudio`, `torchvision`) | Meta Platforms (PyTorch project) | BSD-2/3-Clause |
+| **PyTorch Lightning** | Lightning AI (William Falcon) | Apache-2.0 |
+| **transformers** | Hugging Face, Inc. | Apache-2.0 |
+| **x-transformers**, **rotary-embedding-torch** | Phil Wang (lucidrains) | MIT |
+| **NumPy**, **SciPy**, **scikit-learn** | NumFOCUS-sponsored communities | BSD-3-Clause |
+| **soundfile** (+ **libsndfile**) | Bastian Bechtold · libsndfile team | BSD-3-Clause (LGPL backend, dynamic) |
+| **beartype** | Cecil Curry | MIT |
+| **ffmpeg** (bundled binary) | The FFmpeg project | LGPL-2.1+ (dynamic) |
+| **PyInstaller** (build tool) | PyInstaller Development Team | GPL-2.0+ w/ bootloader exception |
+
+### Desktop app, frontend & build
+
+| Component | Made by | License |
+|---|---|---|
+| **Tauri v2** (+ `@tauri-apps/api`, dialog/shell plugins) | Tauri Working Group / Commons Conservancy | MIT / Apache-2.0 |
+| **Vite**, **Vitest** | VoidZero (Evan You / Anthony Fu) | MIT |
+| **TypeScript**, **Playwright** | Microsoft | Apache-2.0 |
+| **ajv** (JSON Schema) | Evgeny Poberezkin | MIT |
+| **fflate** (in-browser zip) | Arjun Barrett | MIT |
+| **jsdom** (test DOM) | jsdom project (Domenic Denicola et al.) | MIT |
+
+### Native (Rust) crates
+
+| Component | Made by | License |
+|---|---|---|
+| **cpal** (native audio out) | RustAudio | Apache-2.0 |
+| **rtrb** (realtime ring buffer) | Matthias Geier | MIT / Apache-2.0 |
+| **symphonia** (pure-Rust decode) | Philip Deljanov | MPL-2.0 |
+| **midir** / **midly** (MIDI I/O + `.mid` parse) | Patrick Reisert · Martín Andrighetti | MIT · Unlicense |
+| **tokio** (async runtime) | tokio-rs | MIT |
+| **serde**(+`json`/`yaml`) | David Tolnay | MIT / Apache-2.0 |
+| **zip**, **sha2**, **hex**, **notify** | zip-rs · RustCrypto · rust-hex · notify-rs | MIT / Apache-2.0 / CC0 |
+
+> **License-gate note.** Two widely-repeated misconceptions were checked against
+> primary sources and cleared: (1) the *Demucs* `htdemucs_*` weights are **MIT**
+> (the CC-BY-NC claim circulating in third-party repackagings conflates them with
+> the 2019 Conv-TasNet research models); (2) `madmom`'s trained models are
+> CC-BY-NC-SA and were therefore **rejected** for meter tracking in favor of Beat
+> This! Pin exact model revisions (HF/checkpoint) so a future card relicense
+> can't silently breach the gate.
+
 ## Research & methodology — first class
 
 We treat transcription quality as a research problem and publish the

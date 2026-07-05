@@ -1,4 +1,5 @@
 basic-pitch>=0.4.0
+beat-this>=1.1.0
 beartype>=0.22.9
 demucs==4.0.1
 librosa>=0.11.0

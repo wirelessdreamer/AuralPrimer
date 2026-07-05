@@ -7,9 +7,11 @@ frequency band, so the drum-tab markers land on the energy in the spectrogram
 (and the game charts on the true attack).
 
 Low/mid voices (kick, snare, toms) align tightly. High voices (hi-hats, cymbals)
-are best-effort: onset detection on a source-separated stem's high band is
-unreliable, so a hit with no nearby transient is left exactly where the
-transcriber put it — never moved to a wrong one.
+are NOT snapped at all (``_NO_SNAP_LANES``): onset detection on a separated
+stem's high band is smeared/late and, with dense hi-hats, the snap window grabs
+a neighboring transient and drags hits ~30 ms late — measurably worse than the
+raw mr_mt3 times, which already sit ~on the onset. So those lanes keep the
+transcriber's timing.
 
 Pure-ish: imports numpy/librosa lazily and degrades to the input unchanged if
 audio or those libs are unavailable, so callers never hard-fail on it.
@@ -21,7 +23,8 @@ from pathlib import Path
 from typing import Any
 
 # Per-lane (band_lo_hz, band_hi_hz, onset_delta). Higher/quieter voices get a
-# lower peak-pick threshold. A lane not listed here is never moved.
+# lower peak-pick threshold. A lane not listed here (or in _NO_SNAP_LANES) is
+# never moved.
 _LANE_BANDS: dict[str, tuple[float, float, float]] = {
     "kick": (30.0, 130.0, 0.12),
     "tom_low": (60.0, 200.0, 0.12),
@@ -33,6 +36,13 @@ _LANE_BANDS: dict[str, tuple[float, float, float]] = {
     "ride": (4000.0, 11000.0, 0.06),
     "crash": (2500.0, 11000.0, 0.06),
 }
+
+# High voices are NOT snapped. Measured on real songs (Beat It, ~150-170s):
+# the raw mr_mt3 hi-hats sit ~on the onset (median -7 ms) but the snap dragged
+# them ~+30 ms LATE — the 5-11 kHz onset detection is smeared/late and the 90 ms
+# window grabs a *neighboring* dense-hi-hat transient. So we keep the
+# transcriber's times for these lanes; kick/snare/toms still snap tightly.
+_NO_SNAP_LANES: frozenset[str] = frozenset({"hihat_closed", "hihat_open", "ride", "crash"})
 _SNAP_WINDOW_SEC = 0.09  # mr_mt3 is often off by >50ms; still < a 16th @ ~150 BPM
 _HOP = 128  # ~5.8ms resolution at 22050 Hz
 
@@ -96,7 +106,7 @@ def align_drum_tab_to_onsets(
     new_t: dict[int, float] = {}
     moved = 0
     for lane, idxs in by_lane.items():
-        band = _LANE_BANDS.get(lane)
+        band = None if lane in _NO_SNAP_LANES else _LANE_BANDS.get(lane)
         det = band_onsets(*band) if band is not None else np.empty(0)
         if det.size == 0:
             for i in idxs:
