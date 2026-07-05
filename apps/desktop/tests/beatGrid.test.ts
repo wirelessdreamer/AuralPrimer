@@ -3,6 +3,8 @@ import {
   buildGridTimes,
   snapTimeToGrid,
   downbeatTimes,
+  downbeatTimesShifted,
+  beatsPerBarFromTimeSignatures,
   quantLevelByValue,
 } from "../src/beatGrid";
 
@@ -63,6 +65,50 @@ describe("downbeatTimes", () => {
 
   it("skips beats without a numeric time", () => {
     expect(downbeatTimes([{ measure: 1 }, { time: 1, measure: 2 }])).toEqual([1]);
+  });
+});
+
+describe("downbeatTimesShifted", () => {
+  // 4/4: beats every 0.5s, detected downbeats on beats 0 and 4 (times 0 and 2).
+  const beats = [
+    { time: 0, measure: 1 },
+    { time: 0.5, measure: 1 },
+    { time: 1, measure: 1 },
+    { time: 1.5, measure: 1 },
+    { time: 2, measure: 2 },
+    { time: 2.5, measure: 2 },
+    { time: 3, measure: 2 },
+    { time: 3.5, measure: 2 },
+  ];
+
+  it("offset 0 matches downbeatTimes", () => {
+    expect(downbeatTimesShifted(beats, 0)).toEqual(downbeatTimes(beats));
+    expect(downbeatTimesShifted(beats, 0)).toEqual([0, 2]);
+  });
+
+  it("shifts the accent forward by N beats (moves 'the one')", () => {
+    // Detected downbeat on beat 0 was really beat 3 -> shift +2 puts it on the
+    // true one (beat 2 of the array).
+    expect(downbeatTimesShifted(beats, 2)).toEqual([1, 3]);
+    expect(downbeatTimesShifted(beats, 1)).toEqual([0.5, 2.5]);
+  });
+
+  it("clamps at the array ends without duplicating", () => {
+    // Large positive shift collapses everything toward the last beat, de-duped.
+    expect(downbeatTimesShifted(beats, 100)).toEqual([3.5]);
+  });
+
+  it("returns [] for no beats", () => {
+    expect(downbeatTimesShifted([], 2)).toEqual([]);
+  });
+});
+
+describe("beatsPerBarFromTimeSignatures", () => {
+  it("reads the numerator; defaults to 4", () => {
+    expect(beatsPerBarFromTimeSignatures([{ ts: [3, 4] }])).toBe(3);
+    expect(beatsPerBarFromTimeSignatures([{ ts: [7, 8] }])).toBe(7);
+    expect(beatsPerBarFromTimeSignatures(undefined)).toBe(4);
+    expect(beatsPerBarFromTimeSignatures([{}])).toBe(4);
   });
 });
 

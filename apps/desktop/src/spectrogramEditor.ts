@@ -243,6 +243,26 @@ const MIN_NOTE_SEC = 0.02;
 // and read as drift. CSS px (scaled by dpr at draw time).
 const DRUM_MARK_CSS_PX = 5;
 
+// Beat-grid zoom level-of-detail: a tier is only drawn once its lines are at
+// least this many device px apart, so a zoomed-out view shows just the bar
+// lines (the 1s) and progressively reveals beats, then subdivisions, as you
+// zoom in. Bars are always drawn. CSS px scaled by dpr at compare time.
+const GRID_BEAT_MIN_PX = 14;
+const GRID_SUBDIV_MIN_PX = 9;
+
+/** Median positive gap between consecutive (sorted) times, or 0 if < 2 gaps. */
+function medianGap(times: number[]): number {
+  if (times.length < 2) return 0;
+  const gaps: number[] = [];
+  for (let i = 1; i < times.length; i += 1) {
+    const d = times[i]! - times[i - 1]!;
+    if (d > 0) gaps.push(d);
+  }
+  if (gaps.length === 0) return 0;
+  gaps.sort((a, b) => a - b);
+  return gaps[gaps.length >> 1]!;
+}
+
 export class SpectrogramEditor {
   private readonly container: HTMLElement;
   private readonly opts: SpectrogramEditorOptions;
@@ -803,22 +823,41 @@ export class SpectrogramEditor {
     gl.bindVertexArray(null);
   }
 
-  /** Vertical beat grid behind the notes: subdivisions faint, beats medium,
-   * downbeats (measure starts) brightest. Off-screen ticks are culled. */
+  /** Vertical beat grid behind the notes, with zoom level-of-detail: bar lines
+   * (the 1s) are always drawn brightest; beat lines and then subdivisions reveal
+   * only once they are far enough apart on screen to read (GRID_*_MIN_PX). So a
+   * zoomed-out view shows just the measure grid and fills in as you zoom in.
+   * Off-screen ticks are culled. */
   private drawBeatGrid(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-    const vline = (t: number, style: string, width: number): void => {
-      const px = this.timeToPx(t);
-      if (px < -1 || px > W + 1) return;
+    const dpr = this.dpr();
+    const pxPerSec = this.timeToPx(1) - this.timeToPx(0);
+    const beatGapSec = medianGap(this.beatTimes);
+    const beatPx = beatGapSec > 0 ? beatGapSec * pxPerSec : Infinity;
+    const perBeat = this.quantPerBeat && this.quantPerBeat > 0 ? this.quantPerBeat : 0;
+    const subdivPx = perBeat > 0 && Number.isFinite(beatPx) ? beatPx / perBeat : 0;
+
+    const tier = (times: number[], style: string, width: number): void => {
+      if (times.length === 0) return;
       ctx.strokeStyle = style;
       ctx.lineWidth = width;
       ctx.beginPath();
-      ctx.moveTo(px + 0.5, 0);
-      ctx.lineTo(px + 0.5, H);
+      for (const t of times) {
+        const px = this.timeToPx(t);
+        if (px < -1 || px > W + 1) continue;
+        ctx.moveTo(px + 0.5, 0);
+        ctx.lineTo(px + 0.5, H);
+      }
       ctx.stroke();
     };
-    for (const t of this.gridTimes) vline(t, "rgba(120,180,255,0.09)", 1);
-    for (const t of this.beatTimes) vline(t, "rgba(150,190,255,0.22)", 1);
-    for (const t of this.downbeatTimes) vline(t, "rgba(170,205,255,0.42)", Math.max(1, 1.5 * this.dpr()));
+
+    // Painted faint -> bright so the stronger line wins where tiers coincide.
+    if (perBeat > 0 && subdivPx >= GRID_SUBDIV_MIN_PX * dpr) {
+      tier(this.gridTimes, "rgba(120,180,255,0.10)", 1);
+    }
+    if (beatPx >= GRID_BEAT_MIN_PX * dpr) {
+      tier(this.beatTimes, "rgba(150,195,255,0.28)", 1);
+    }
+    tier(this.downbeatTimes, "rgba(190,215,255,0.60)", Math.max(1, 1.5 * dpr));
   }
 
   private renderOverlay(): void {

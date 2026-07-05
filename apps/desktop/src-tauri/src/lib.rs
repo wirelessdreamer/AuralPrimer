@@ -443,6 +443,10 @@ fn is_allowed_feature_rel(rel_path: &str) -> bool {
         // (`drum_tab: drum_tab.json`); the Studio drum-cleanup editor writes
         // edited hits back to it so the game picks them up directly.
         || rel_path == "drum_tab.json"
+        // The beat/measure timeline is a root-level, manifest-referenced
+        // artifact (`song_timeline.json`); the Cleanup/Edit editor reads it to
+        // build the beat grid (bars/beats/subdivisions) and quantized placement.
+        || rel_path == "song_timeline.json"
 }
 
 /// Read+parse a feedpak `manifest.yaml` from a directory or zip container.

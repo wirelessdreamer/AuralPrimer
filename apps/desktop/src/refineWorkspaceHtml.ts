@@ -180,6 +180,14 @@ export function refineWorkspaceHtml(): string {
         <label class="rfAuditionToggle" title="Play a note when you place or edit it">
           <input type="checkbox" id="refineEditAuditionToggle" checked /> Audition edits
         </label>
+        <label class="rfAuditionToggle" title="Click each beat (accent on the one) to hear whether the grid aligns to the audio">
+          <input type="checkbox" id="refineMetronomeToggle" /> Metronome
+        </label>
+        <span class="rfDownbeatCtl" title="Move which beat is 'the one' (accent + bar line) when the detected downbeat is off — flip on the Metronome and nudge until the accent lands on beat 1">
+          Downbeat
+          <button class="rfTransBtn" id="refineDownbeatMinus" title="Shift the one back one beat">◀</button>
+          <button class="rfTransBtn" id="refineDownbeatPlus" title="Shift the one forward one beat">▶</button>
+        </span>
         <button class="rfTransBtn" id="refineUndoBtn" title="Undo (Ctrl+Z)" disabled>↶</button>
         <button class="rfTransBtn" id="refineRedoBtn" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
       </div>

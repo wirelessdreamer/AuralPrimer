@@ -38,9 +38,14 @@ import {
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
 import { audiblePlayheadSec } from "@auralprimer/av-sync";
-import { downbeatTimes as computeDownbeats, quantLevelByValue } from "./beatGrid";
+import {
+  downbeatTimesShifted,
+  beatsPerBarFromTimeSignatures,
+  quantLevelByValue,
+} from "./beatGrid";
 import { getAvOffsetSec } from "./avOffset";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
+import { GridMetronome } from "./gridMetronome";
 import { detectMelodicStems, auralsongJsonExists } from "./cleanupReadiness";
 import {
   laneOrderForTab,
@@ -142,6 +147,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const sectionSelectEl = $<HTMLSelectElement>("refineSectionSelect");
   const auditionToggle = $<HTMLInputElement>("refineAuditionToggle");
   const editAuditionToggle = $<HTMLInputElement>("refineEditAuditionToggle");
+  const metronomeToggle = $<HTMLInputElement>("refineMetronomeToggle");
+  const downbeatMinusBtn = $<HTMLButtonElement>("refineDownbeatMinus");
+  const downbeatPlusBtn = $<HTMLButtonElement>("refineDownbeatPlus");
   const speedSelectEl = $<HTMLSelectElement>("refineSpeedSelect");
   const soloSelectEl = $<HTMLSelectElement>("refineSoloSelect");
   const stageEl = $<HTMLElement>("refineStage");
@@ -156,7 +164,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   if (
     !root || !songTitleEl || !instLabelEl || !instSelectEl || !reloadBtn || !saveBtn
     || !backBtn || !transportEl || !playBtn || !stopBtn || !timeReadoutEl || !scrubEl
-    || !sectionSelectEl || !auditionToggle || !editAuditionToggle || !stageEl || !inspectorEl || !selInfoEl
+    || !sectionSelectEl || !auditionToggle || !editAuditionToggle || !metronomeToggle
+    || !downbeatMinusBtn || !downbeatPlusBtn || !stageEl || !inspectorEl || !selInfoEl
     || !candChipsEl || !emptyEl || !emptyCmdEl || !undoBtn || !redoBtn
     || !speedSelectEl || !soloSelectEl
   ) {
@@ -197,6 +206,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // Native audio engine (same one the game uses). audioLoaded flips true once a
   // stem/mix is loaded; a load miss leaves it false -> wall-clock fallback.
   const nativeAudio = new NativeAudioTimebase();
+  // Optional beat-grid metronome (accent on the one), driven off the audible
+  // playhead — an on-demand audible test of whether the grid aligns to the song.
+  const metronome = new GridMetronome();
   let audioLoaded = false;
   // Monotonic token so a rapid instrument/solo switch can't let a slower,
   // earlier load win the shared engine buffer after a newer one started.
@@ -427,15 +439,26 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       : 0;
     // Shared formula (identical to the game's transport) so the playhead lands
     // on what's audible and the two apps can never drift apart.
-    setPlayhead(
-      audiblePlayheadSec({
-        nativePosSec: raw,
-        outputLatencySec: outLatency,
-        playbackRate,
-        avOffsetSec: getAvOffsetSec(),
-      }),
-      true,
-    );
+    const audibleSec = audiblePlayheadSec({
+      nativePosSec: raw,
+      outputLatencySec: outLatency,
+      playbackRate,
+      avOffsetSec: getAvOffsetSec(),
+    });
+    setPlayhead(audibleSec, true);
+    // Drive the metronome off the AUDIO-audible position, not the visual playhead.
+    // The click and the stem exit the same output, so the perceptual A/V offset
+    // (audioMs − videoMs) is common to both and cancels — applying it would shove
+    // the click off by the whole calibration. We reuse the SAME av-sync formula
+    // (so the engine's output-buffer latency is handled identically) but with
+    // avOffset 0; GridMetronome then compensates only its own WebAudio buffer.
+    const audibleAudioSec = audiblePlayheadSec({
+      nativePosSec: raw,
+      outputLatencySec: outLatency,
+      playbackRate,
+      avOffsetSec: 0,
+    });
+    metronome.update(audibleAudioSec, true, playbackRate);
     rafId = requestAnimationFrame(tick);
   }
 
@@ -477,6 +500,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
     if (audioLoaded) nativeAudio.pause();
     audition.stop();
+    metronome.stop();
     isPlaying = false;
     playBtn!.textContent = "▶";
   }
@@ -573,6 +597,21 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     editor.setQuant(level ? level.perBeat : null);
   }
 
+  // The loaded beat grid + the current downbeat-phase nudge. We keep the raw
+  // beats so the ◀▶ control can re-derive the accented downbeats without a reload.
+  let loadedBeats: Array<{ time?: number; measure?: number }> = [];
+  let loadedBeatTimes: number[] = [];
+  let beatsPerBar = 4;
+  let downbeatOffset = 0;
+
+  // Push the current beats + phase-shifted downbeats to BOTH the editor overlay
+  // and the metronome, so the bar lines and the accent always agree.
+  function refreshGrid(): void {
+    const downbeats = downbeatTimesShifted(loadedBeats, downbeatOffset);
+    editor.setBeatGrid(loadedBeatTimes, downbeats);
+    metronome.setBeats(loadedBeatTimes, downbeats);
+  }
+
   // Load the pack's beats (song_timeline.json) into the editor's grid, then
   // apply the current quant level. No timeline -> no grid (snap becomes inert).
   async function applyBeatGrid(): Promise<void> {
@@ -581,16 +620,39 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       const tl = (await invoke("read_auralsong_json", {
         containerPath,
         relPath: "song_timeline.json",
-      })) as { beats?: Array<{ time?: number; measure?: number }> };
-      const beats = Array.isArray(tl?.beats) ? tl.beats : [];
-      const beatTimes = beats
+      })) as {
+        beats?: Array<{ time?: number; measure?: number }>;
+        time_signatures?: Array<{ ts?: number[] }>;
+      };
+      // Use the DETECTED beats directly: measured against drum onsets they track
+      // the audio to ~12-23 ms, whereas an even/regularized grid drifts 50-80 ms
+      // (and worsens over the song) because real tracks have natural micro-timing
+      // a single tempo can't match. Downbeats are the detected measure-starts,
+      // rotatable by the ◀▶ nudge when the tracker put "the one" on the wrong beat.
+      loadedBeats = Array.isArray(tl?.beats) ? tl.beats : [];
+      loadedBeatTimes = loadedBeats
         .map((b) => b?.time)
         .filter((t): t is number => typeof t === "number");
-      editor.setBeatGrid(beatTimes, computeDownbeats(beats));
+      beatsPerBar = beatsPerBarFromTimeSignatures(tl?.time_signatures);
+      downbeatOffset = 0;
+      refreshGrid();
     } catch {
+      loadedBeats = [];
+      loadedBeatTimes = [];
+      downbeatOffset = 0;
       editor.setBeatGrid([], []);
+      metronome.setBeats([], []);
     }
     applyQuant();
+  }
+
+  // Rotate which beat carries the accent + bar line (measure phase) by `delta`
+  // beats, wrapped within a bar. Updates the overlay and metronome immediately.
+  function nudgeDownbeat(delta: number): void {
+    if (loadedBeatTimes.length === 0) return;
+    const n = beatsPerBar > 0 ? beatsPerBar : 4;
+    downbeatOffset = (((downbeatOffset + delta) % n) + n) % n;
+    refreshGrid();
   }
 
   // -------------------------------------------------------------------------
@@ -948,6 +1010,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (auditionToggle.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
     else audition.stop();
   });
+  metronomeToggle.addEventListener("change", () => {
+    metronome.setEnabled(metronomeToggle.checked);
+  });
+  downbeatMinusBtn.addEventListener("click", () => nudgeDownbeat(-1));
+  downbeatPlusBtn.addEventListener("click", () => nudgeDownbeat(1));
 
   // Space toggles transport when the refine route is active and we're not
   // typing in a field. (Delete/Escape/zoom are handled by the editor stage.)
