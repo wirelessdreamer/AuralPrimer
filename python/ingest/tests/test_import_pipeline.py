@@ -1301,7 +1301,7 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
     out = tmp_path / "ProfileDrums.auralsong"
 
-    from aural_ingest import cli
+    from aural_ingest import cli, transcription
     from aural_ingest.transcription import DrumEvent
 
     calls: list[str] = []
@@ -1323,15 +1323,15 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
         },
     )
 
-    # gameplay_default now leads with mr_mt3_drums, which resolves its checkpoint
-    # independently of the DSP registry above. Simulate a checkpoint-less machine
-    # so the profile chain falls through to the DSP engines this test verifies.
-    from aural_ingest import transcription as _transcription
+    # The gameplay_default profile now leads with the neural mr_mt3 engine,
+    # which gracefully falls through to the DSP chain when its checkpoint is
+    # absent. Force it unavailable so this test deterministically exercises
+    # the fall-through into the classic registry regardless of whether an
+    # mr_mt3 checkpoint happens to be installed on the test machine.
+    def unavailable_mt3(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("mr_mt3 checkpoint unavailable (test)")
 
-    def _mt3_unavailable(_stem: Path, _engine: str):
-        raise RuntimeError("mr_mt3 checkpoint unavailable in test")
-
-    monkeypatch.setattr(_transcription, "_transcribe_drums_mt3_events", _mt3_unavailable)
+    monkeypatch.setattr(transcription, "_transcribe_drums_mt3_events", unavailable_mt3)
 
     args = type("Args", (), {})()
     args.input_audio_path = str(src)
@@ -1358,6 +1358,9 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
     assert tr["drum_filter_requested"] == "auto"
     assert tr["drum_filter"] == "profile"
     assert tr["drum_filter_used"] == "beat_conditioned_multiband_decoder"
+    # Profile is neural-first: mr_mt3 leads, the classic DSP engines follow.
+    # With mr_mt3 forced unavailable above, the chain falls through to the
+    # first registry-backed engine (beat_conditioned_multiband_decoder).
     assert tr["drum_profile_engines"][0] == "mr_mt3_drums"
     assert tr["drum_profile_engines"][1] == "beat_conditioned_multiband_decoder"
     assert manifest["recognition"]["drums"]["normalized_engine"] == "profile"
