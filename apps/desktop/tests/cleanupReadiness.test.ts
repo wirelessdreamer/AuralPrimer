@@ -15,6 +15,7 @@ import {
   melodicStemRoles,
   detectMelodicStems,
   classifySpectroResult,
+  classifyCandidateResult,
   parseSidecarStatusLine,
   _resetReadinessCachesForTest,
   type SidecarRunResult,
@@ -66,6 +67,45 @@ describe("classifySpectroResult", () => {
   });
 });
 
+describe("classifyCandidateResult", () => {
+  it("counts every requested instrument as built when all succeed", () => {
+    const r = res({ ok: true, stdout: '{"instruments":{"bass":{"ok":true},"guitar":{"ok":true}},"ok":true}' });
+    expect(classifyCandidateResult(r, ["bass", "guitar"])).toEqual({
+      built: ["bass", "guitar"],
+      skipped: [],
+      failed: [],
+    });
+  });
+
+  it("treats a silent stem ('no audible content') as a skip, not a failure", () => {
+    // The band-song case: keys stem is silent, bass built fine. Top-level ok
+    // is false, but that must NOT count keys as a failure.
+    const r = res({
+      ok: false,
+      stdout:
+        '{"instruments":{"keys":{"ok":false,"error":"no audible content for instrument=\'keys\' after the silence gate; skipping candidates for this stem"},"bass":{"ok":true}},"ok":false}',
+    });
+    expect(classifyCandidateResult(r, ["keys", "bass"])).toEqual({
+      built: ["bass"],
+      skipped: ["keys"],
+      failed: [],
+    });
+  });
+
+  it("counts a real per-instrument error as failed", () => {
+    const r = res({ ok: false, stdout: '{"instruments":{"keys":{"ok":false,"error":"model crashed"}},"ok":false}' });
+    expect(classifyCandidateResult(r, ["keys"])).toEqual({ built: [], skipped: [], failed: ["keys"] });
+  });
+
+  it("falls back to built on top-level ok with no per-instrument detail", () => {
+    expect(classifyCandidateResult(res({ ok: true, stdout: "{}" }), ["keys"])).toEqual({
+      built: ["keys"],
+      skipped: [],
+      failed: [],
+    });
+  });
+});
+
 describe("parseSidecarStatusLine", () => {
   it("parses the trailing JSON line", () => {
     expect(parseSidecarStatusLine("log line\nmore log\n{\"a\":1}")).toEqual({ a: 1 });
@@ -89,6 +129,21 @@ describe("getRoleReadiness", () => {
     expect(r.candidates).toBe(false);
     expect(seen).toContain("aural/spectrogram/keys/spectrogram.json");
     expect(seen).toContain("aural/refine_candidates.keys.json");
+  });
+
+  it("for drums, the drum_tab.json plays the 'candidates' role (no refine_candidates file)", async () => {
+    const seen: string[] = [];
+    invokeMock.mockImplementation((_cmd: string, args: { relPath?: string }) => {
+      const rel = args.relPath ?? "";
+      seen.push(rel);
+      return rel === "drum_tab.json" || rel.includes("spectrogram/drums/")
+        ? Promise.resolve({})
+        : Promise.reject(new Error("nf"));
+    });
+    const r = await getRoleReadiness("/x.feedpak", "drums");
+    expect(r).toEqual({ spectrogram: true, candidates: true });
+    expect(seen).toContain("drum_tab.json");
+    expect(seen).not.toContain("aural/refine_candidates.drums.json");
   });
 
   it("caches results, re-probing only when forced", async () => {
@@ -138,5 +193,28 @@ describe("detectMelodicStems", () => {
     const { roles, primary } = await detectMelodicStems("/x.feedpak");
     expect(roles).toEqual(["keys"]);
     expect(primary).toBe("keys");
+  });
+
+  it("REGRESSION: a drums-only pack opens without any melodic stem (no bogus 'keys')", async () => {
+    mockBackend({
+      exists: (rel) => rel === "drum_tab.json" || rel.includes("spectrogram/drums/"),
+      stems: ["drums"],
+    });
+    const { roles, primary, readiness } = await detectMelodicStems("/drumsonly.feedpak");
+    expect(roles).toEqual(["drums"]);
+    expect(primary).toBe("drums");
+    expect(readiness.get("drums")).toEqual({ spectrogram: true, candidates: true });
+  });
+
+  it("offers drums alongside melodic instruments when the pack has both", async () => {
+    mockBackend({
+      exists: (rel) =>
+        rel.includes("/keys/") || rel.includes(".keys.") || rel === "drum_tab.json" || rel.includes("spectrogram/drums/"),
+      stems: ["keys", "drums"],
+    });
+    const { roles, primary } = await detectMelodicStems("/both.feedpak");
+    expect(roles).toContain("keys");
+    expect(roles).toContain("drums");
+    expect(primary).toBe("keys"); // melodic stays the default; drums is a switch in the editor
   });
 });

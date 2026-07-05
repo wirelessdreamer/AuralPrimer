@@ -64,13 +64,16 @@ def test_transcription_profiles_are_valid_and_role_specific() -> None:
     ]
     assert "piano_transkun_clean" in melodic_methods_for_profile("fidelity_midi", "keys")
     assert "torchcrepe" in melodic_methods_for_profile("research_ab", "bass")
-    # torchcrepe was promoted to primary in the gameplay bass chain in
-    # commit bb61b71 ("torchcrepe for bass + lead guitar, fix drum default"):
-    # ~9x faster than YIN and, once the second-harmonic fmax clamp is
-    # applied inside the adapter, strict-F1 wins the head-to-head on
-    # GuitarSet low-strings (see benchmarks/bass/gt_runs/).
-    assert melodic_methods_for_profile("gameplay_default", "bass")[0] == "torchcrepe"
-    assert drum_engines_for_profile("gameplay_default")[0] == "beat_conditioned_multiband_decoder"
+    # torchcrepe was promoted to the production bass head in June 2026 (octave-clean,
+    # ~9x faster); the YIN chain now trails it as the score-gated fallback.
+    gameplay_bass = melodic_methods_for_profile("gameplay_default", "bass")
+    assert gameplay_bass[0] == "torchcrepe"
+    assert "melodic_yin_octave_hps_fix" in gameplay_bass
+    # mr_mt3_drums is the promoted neural drum head; beat_conditioned_multiband_decoder
+    # is now the first DSP fallback (used when the MT3 checkpoint/runtime is absent).
+    gameplay_drums = drum_engines_for_profile("gameplay_default")
+    assert gameplay_drums[0] == "mr_mt3_drums"
+    assert gameplay_drums[1] == "beat_conditioned_multiband_decoder"
 
 
 def test_melodic_gameplay_metrics_flag_density_duplicates_and_polyphony() -> None:

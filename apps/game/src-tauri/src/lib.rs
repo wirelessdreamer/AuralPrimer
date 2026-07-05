@@ -133,6 +133,9 @@ pub struct MidiBlob {
 pub struct LoadedAuralSongAudioInfo {
     pub mime: String,
     pub duration_sec: f64,
+    /// Stem roles loaded into the engine (in mix order), for the per-track
+    /// mixer UI. Empty when the pack played as a single stem (no mixer).
+    pub roles: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -1479,10 +1482,11 @@ fn native_audio_load_auralsong_audio(
         // mixer. Fall back to the single default stem for packs with no base
         // stems (mix-only / legacy feedpaks).
         match feedpak_load_base_stems(&p, &state) {
-            Ok((_roles, duration_sec)) => {
+            Ok((roles, duration_sec)) => {
                 return Ok(LoadedAuralSongAudioInfo {
                     mime: "audio/wav".to_string(),
                     duration_sec,
+                    roles,
                 });
             }
             Err(_) => feedpak_read_default_stem(&p)?,
@@ -1538,6 +1542,7 @@ fn native_audio_load_auralsong_audio(
     Ok(LoadedAuralSongAudioInfo {
         mime: mime.to_string(),
         duration_sec,
+        roles: Vec::new(),
     })
 }
 

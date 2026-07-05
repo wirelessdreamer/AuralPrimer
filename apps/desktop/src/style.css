@@ -340,6 +340,11 @@ code {
 .meta {
   font-size: 12px;
   color: var(--muted2);
+  /* Break long no-space tokens (paths, filenames) so a status/summary line
+     wraps within its column rather than establishing a min-content width that
+     pushes the layout past the viewport. Partners with the minmax(0, …)
+     .twoCol tracks. */
+  overflow-wrap: anywhere;
 }
 
 .row {
@@ -626,6 +631,14 @@ pre {
   background: rgba(0, 0, 0, 0.22);
   color: rgba(240, 245, 255, 0.82);
   overflow: auto;
+  /* Status/log <pre> boxes carry long single-line strings (e.g. the Suno
+     import "validated: … | chart: …" summary). Default white-space: pre never
+     wraps, so inside the .twoCol grid (grid items = min-width: auto) that long
+     line expands its track past the viewport and the whole page scrolls
+     sideways. pre-wrap keeps newlines/spacing but wraps long lines; anywhere
+     also breaks unbreakable tokens (paths) so the min-content width stays small. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 audio {
@@ -637,7 +650,13 @@ audio {
 
 .twoCol {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  /* minmax(0, …) instead of a bare fr: a bare fr track has an implicit
+     min-width of auto, so a long unbreakable string in a child (e.g. a
+     no-space Windows path/filename in the Suno import summary) forces its
+     column to the token's width and blows the whole grid — and the page —
+     past the viewport. minmax(0, …) lets the tracks shrink so content wraps
+     inside its column instead of scrolling the page sideways. */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   gap: 14px;
 }
 
@@ -1286,5 +1305,30 @@ button.cleanupPrimary:hover:not(:disabled) {
 @media (max-width: 980px) {
   .cleanupLayout {
     grid-template-columns: 1fr;
+  }
+}
+
+/* "Prep all unbuilt" running state — the job runs for minutes in the sidecar,
+   so make it obvious rather than a muted status line: accent colour, bold, and
+   a spinner. Toggled via .isBusy from the click handler. */
+.cleanupBuildAllStatus.isBusy {
+  color: var(--accent);
+  font-weight: 600;
+}
+.cleanupBuildAllStatus.isBusy::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: prepSpin 0.8s linear infinite;
+}
+@keyframes prepSpin {
+  to {
+    transform: rotate(360deg);
   }
 }

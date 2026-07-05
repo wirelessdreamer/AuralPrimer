@@ -66,11 +66,15 @@ export class NativeAudioTimebase implements TransportTimebase {
 
   private lastLoadedAuralSongPath: string | null = null;
   private lastLoadedAudio: { mime: string; bytes: number[] } | null = null;
+  private lastLoadedPack: { containerPath: string; role: string | null } | null = null;
 
   private _lastT = 0;
   private _lastIsPlaying = false;
   private _lastSampleRateHz = 0;
   private _lastOutputBufferFrames: number | null = null;
+  // performance.now() at the last state poll — lets getCurrentTimeSec() project
+  // the position forward between polls instead of returning a stale value.
+  private _lastPollWall = 0;
 
   constructor(private readonly opts: { sampleRateHz?: number; channels?: number } = {}) {}
 
@@ -91,6 +95,20 @@ export class NativeAudioTimebase implements TransportTimebase {
     return info;
   }
 
+  private async loadPackAudioIntoNative(
+    containerPath: string,
+    role: string | null,
+  ): Promise<{ mime: string; roles: string[] }> {
+    const info = await invoke<{ mime: string; duration_sec: number; roles: string[] }>(
+      "native_audio_load_pack_audio",
+      { containerPath, role },
+    );
+    this.initialized = true;
+    const d = Number(info.duration_sec ?? 0);
+    this.loadedDurationSec = Number.isFinite(d) && d > 0 ? d : LONG_DURATION_SENTINEL_SEC;
+    return { mime: info.mime, roles: info.roles ?? [] };
+  }
+
   private async applyRuntimeSettings(): Promise<void> {
     await invoke("native_audio_set_playback_rate", { rate: this.playbackRate });
     await invoke("native_audio_set_loop", {
@@ -104,6 +122,7 @@ export class NativeAudioTimebase implements TransportTimebase {
     this._lastIsPlaying = s.is_playing;
     this._lastSampleRateHz = s.sample_rate_hz;
     this._lastOutputBufferFrames = s.output_buffer_frames;
+    this._lastPollWall = performance.now();
   }
 
   private async readNativeStateSafe(): Promise<NativeAudioState | null> {
@@ -211,7 +230,9 @@ export class NativeAudioTimebase implements TransportTimebase {
       return;
     }
 
-    if (this.lastLoadedAuralSongPath) {
+    if (this.lastLoadedPack) {
+      await this.loadPackAudioIntoNative(this.lastLoadedPack.containerPath, this.lastLoadedPack.role);
+    } else if (this.lastLoadedAuralSongPath) {
       await this.loadAuralSongAudioIntoNative(this.lastLoadedAuralSongPath);
     } else if (this.lastLoadedAudio) {
       await this.loadAudioBytesIntoNative(this.lastLoadedAudio.mime, this.lastLoadedAudio.bytes);
@@ -275,6 +296,7 @@ export class NativeAudioTimebase implements TransportTimebase {
     const bytes = Array.from(new Uint8Array(ab));
 
     this.lastLoadedAuralSongPath = null;
+    this.lastLoadedPack = null;
     this.lastLoadedAudio = { mime: source.mime, bytes };
 
     await this.loadAudioBytesIntoNative(source.mime, bytes);
@@ -283,12 +305,36 @@ export class NativeAudioTimebase implements TransportTimebase {
 
   async loadFromAuralSong(containerPath: string): Promise<{ mime: string; durationSec: number } | void> {
     this.lastLoadedAuralSongPath = containerPath;
+    this.lastLoadedPack = null;
     this.lastLoadedAudio = null;
 
     const info = await this.loadAuralSongAudioIntoNative(containerPath);
     await this.applyRuntimeSettings();
 
     return { mime: info.mime, durationSec: this.loadedDurationSec ?? LONG_DURATION_SENTINEL_SEC };
+  }
+
+  /**
+   * Load a feedpak's audio for the refine workspace: `role` = null/"all" sums
+   * the base stems, "<role>" plays that stem solo. Reads + decodes Rust-side
+   * (no multi-MB IPC) and routes through the same engine as the game so the
+   * shared A/V calibration is valid.
+   */
+  async loadPackAudio(
+    containerPath: string,
+    role: string | null,
+  ): Promise<{ durationSec: number; roles: string[] }> {
+    this.lastLoadedAuralSongPath = null;
+    this.lastLoadedAudio = null;
+    this.lastLoadedPack = { containerPath, role };
+
+    const info = await this.loadPackAudioIntoNative(containerPath, role);
+    await this.applyRuntimeSettings();
+
+    return {
+      durationSec: this.loadedDurationSec ?? LONG_DURATION_SENTINEL_SEC,
+      roles: info.roles,
+    };
   }
 
   async play(): Promise<void> {
@@ -342,11 +388,15 @@ export class NativeAudioTimebase implements TransportTimebase {
     void invoke("native_audio_stop");
     this._lastIsPlaying = false;
     this._lastT = 0;
+    this._lastPollWall = 0;
   }
 
   seek(tSec: number): void {
     void invoke("native_audio_seek", { tSec });
     this._lastT = tSec;
+    // Re-anchor the dead-reckoning clock so the projection resumes from the
+    // seek target rather than overshooting by the pre-seek elapsed time.
+    this._lastPollWall = performance.now();
   }
 
   setLoop(loop?: { t0: number; t1: number }): void {
@@ -378,7 +428,15 @@ export class NativeAudioTimebase implements TransportTimebase {
       .catch(() => {
         // keep last-known state on transient invoke failures
       });
-    return this._lastT;
+    // The poll above is async, so _lastT is one round-trip stale. While playing,
+    // dead-reckon from the last poll with the wall clock so the reported time
+    // tracks real audio to sub-frame accuracy instead of lagging a full poll.
+    // Cap the projection so a stalled poll can't run the cursor away.
+    if (!this._lastIsPlaying || this._lastPollWall === 0) {
+      return this._lastT;
+    }
+    const elapsed = Math.min((performance.now() - this._lastPollWall) / 1000, 0.25);
+    return this._lastT + Math.max(0, elapsed) * this.playbackRate;
   }
 
   getIsPlaying(): boolean {
@@ -390,7 +448,10 @@ export class NativeAudioTimebase implements TransportTimebase {
     if (!sampleRate || this._lastOutputBufferFrames == null) {
       return undefined;
     }
-    return this._lastOutputBufferFrames / sampleRate;
+    // Double-buffering model (device buffer + one callback buffer in flight),
+    // matching the game so the shared A/V calibration compensates the same
+    // latency in both apps.
+    return (this._lastOutputBufferFrames * 2) / sampleRate;
   }
 
   dispose(): void {

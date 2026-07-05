@@ -23,6 +23,15 @@
  * row 0 = lowest pitch (MIDI = fmin_midi) sits at the BOTTOM of the view.
  */
 
+import {
+  frameToNorm,
+  laneBandRows,
+  laneMarkerXSpan,
+  noteBodyXSpan,
+  secToFrame,
+} from "./spectrogramGeometry";
+import { buildGridTimes, snapTimeToGrid } from "./beatGrid";
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -228,6 +237,31 @@ type DragMode = "none" | "move" | "resize-l" | "resize-r" | "pan";
 
 const EDGE_HIT_PX = 6; // px from a note edge that counts as a resize grab
 const MIN_NOTE_SEC = 0.02;
+// Lane-mode (drum) hits are INSTANTS: a fixed-width marker CENTERED on the
+// onset, so it stays glued to the transient at any zoom. A left-anchored,
+// time-spanning box would balloon to ~0.8s of visual width when zoomed out
+// and read as drift. CSS px (scaled by dpr at draw time).
+const DRUM_MARK_CSS_PX = 5;
+
+// Beat-grid zoom level-of-detail: a tier is only drawn once its lines are at
+// least this many device px apart, so a zoomed-out view shows just the bar
+// lines (the 1s) and progressively reveals beats, then subdivisions, as you
+// zoom in. Bars are always drawn. CSS px scaled by dpr at compare time.
+const GRID_BEAT_MIN_PX = 14;
+const GRID_SUBDIV_MIN_PX = 9;
+
+/** Median positive gap between consecutive (sorted) times, or 0 if < 2 gaps. */
+function medianGap(times: number[]): number {
+  if (times.length < 2) return 0;
+  const gaps: number[] = [];
+  for (let i = 1; i < times.length; i += 1) {
+    const d = times[i]! - times[i - 1]!;
+    if (d > 0) gaps.push(d);
+  }
+  if (gaps.length === 0) return 0;
+  gaps.sort((a, b) => a - b);
+  return gaps[gaps.length >> 1]!;
+}
 
 export class SpectrogramEditor {
   private readonly container: HTMLElement;
@@ -252,6 +286,10 @@ export class SpectrogramEditor {
   private geom: SpectrogramGeometry | null = null;
   private notes: SpectroNote[] = [];
   private selected: number | null = null;
+  // Lane mode (drum cleanup): when set, notes are HITS whose `pitch` is a lane
+  // INDEX (bottom lane 0) rather than a MIDI pitch. Lanes divide the content
+  // height into equal bands; resize is disabled (hits are instants).
+  private lanes: string[] | null = null;
 
   // View + render state
   private view: View = { originX: 0, originY: 0, spanX: 1, spanY: 1 };
@@ -269,6 +307,15 @@ export class SpectrogramEditor {
   // not undoable). Capped so a long session can't grow unbounded.
   private undoStack: SpectroNote[][] = [];
   private redoStack: SpectroNote[][] = [];
+
+  // Beat grid + quantization. beatTimes/downbeatTimes drive the grid overlay;
+  // gridTimes are the snap targets (subdivisions). quantPerBeat null = snap off.
+  // snapBypass mirrors the Ctrl key at pointer-down for a single free placement.
+  private beatTimes: number[] = [];
+  private downbeatTimes: number[] = [];
+  private gridTimes: number[] = [];
+  private quantPerBeat: number | null = null;
+  private snapBypass = false;
   private static readonly MAX_HISTORY = 200;
   // Set once we've installed the app-wide middle-click autoscroll suppressor.
   private static autoscrollSuppressed = false;
@@ -389,6 +436,7 @@ export class SpectrogramEditor {
     notes: SpectroNote[] = [],
   ): Promise<void> {
     this.geom = geometry;
+    this.recomputeGrid(); // grid extrapolation depends on the song duration
     this.notes = notes.map((n) => ({ ...n }));
     this.selected = null;
     // A fresh song starts with an empty history.
@@ -419,6 +467,52 @@ export class SpectrogramEditor {
       this.setSelection(null);
     }
     this.requestRender();
+  }
+
+  /**
+   * Toggle lane mode (drum cleanup). `lanes` is the bottom-to-top lane order;
+   * while set, notes are hits whose `pitch` is a lane index and resize is
+   * disabled. Pass null to return to pitch (melodic) mode. Call BEFORE load()/
+   * setNotes() for the mode's content — it clears undo history since the two
+   * modes' note coordinates aren't interchangeable.
+   */
+  setLaneMode(lanes: string[] | null): void {
+    this.lanes = lanes && lanes.length ? [...lanes] : null;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.setSelection(null);
+    this.requestRender();
+  }
+
+  /**
+   * Set the beat grid (from the pack's song_timeline). `beatTimes` are all beats,
+   * `downbeatTimes` the first beat of each measure — used only for the overlay.
+   */
+  setBeatGrid(beatTimes: number[], downbeatTimes: number[]): void {
+    this.beatTimes = Array.isArray(beatTimes) ? beatTimes.filter((t) => Number.isFinite(t)) : [];
+    this.downbeatTimes = Array.isArray(downbeatTimes) ? downbeatTimes.filter((t) => Number.isFinite(t)) : [];
+    this.recomputeGrid();
+    this.requestRender();
+  }
+
+  /** Set the quantization subdivision (subdivisions per beat); null disables snap. */
+  setQuant(perBeat: number | null): void {
+    this.quantPerBeat = perBeat && perBeat > 0 ? perBeat : null;
+    this.recomputeGrid();
+    this.requestRender();
+  }
+
+  private recomputeGrid(): void {
+    this.gridTimes =
+      this.quantPerBeat && this.beatTimes.length
+        ? buildGridTimes(this.beatTimes, this.quantPerBeat, this.geom?.duration_sec ?? 0)
+        : [];
+  }
+
+  /** Snap a time to the quant grid, unless snap is off or bypassed (Ctrl). */
+  private snapTime(t: number): number {
+    if (this.snapBypass || this.gridTimes.length === 0) return t;
+    return snapTimeToGrid(t, this.gridTimes);
   }
 
   /** Push the current note set onto the undo stack (call BEFORE a mutation). */
@@ -729,6 +823,43 @@ export class SpectrogramEditor {
     gl.bindVertexArray(null);
   }
 
+  /** Vertical beat grid behind the notes, with zoom level-of-detail: bar lines
+   * (the 1s) are always drawn brightest; beat lines and then subdivisions reveal
+   * only once they are far enough apart on screen to read (GRID_*_MIN_PX). So a
+   * zoomed-out view shows just the measure grid and fills in as you zoom in.
+   * Off-screen ticks are culled. */
+  private drawBeatGrid(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const dpr = this.dpr();
+    const pxPerSec = this.timeToPx(1) - this.timeToPx(0);
+    const beatGapSec = medianGap(this.beatTimes);
+    const beatPx = beatGapSec > 0 ? beatGapSec * pxPerSec : Infinity;
+    const perBeat = this.quantPerBeat && this.quantPerBeat > 0 ? this.quantPerBeat : 0;
+    const subdivPx = perBeat > 0 && Number.isFinite(beatPx) ? beatPx / perBeat : 0;
+
+    const tier = (times: number[], style: string, width: number): void => {
+      if (times.length === 0) return;
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      for (const t of times) {
+        const px = this.timeToPx(t);
+        if (px < -1 || px > W + 1) continue;
+        ctx.moveTo(px + 0.5, 0);
+        ctx.lineTo(px + 0.5, H);
+      }
+      ctx.stroke();
+    };
+
+    // Painted faint -> bright so the stronger line wins where tiers coincide.
+    if (perBeat > 0 && subdivPx >= GRID_SUBDIV_MIN_PX * dpr) {
+      tier(this.gridTimes, "rgba(120,180,255,0.10)", 1);
+    }
+    if (beatPx >= GRID_BEAT_MIN_PX * dpr) {
+      tier(this.beatTimes, "rgba(150,195,255,0.28)", 1);
+    }
+    tier(this.downbeatTimes, "rgba(190,215,255,0.60)", Math.max(1, 1.5 * dpr));
+  }
+
   private renderOverlay(): void {
     const ctx = this.ovCtx;
     const geom = this.geom;
@@ -737,18 +868,49 @@ export class SpectrogramEditor {
     const H = this.overlay.height;
     ctx.clearRect(0, 0, W, H);
 
-    // Note rectangles.
+    this.drawBeatGrid(ctx, W, H);
+
+    // Lane guides + labels (drum mode): a line per band boundary and the lane
+    // name pinned at the left edge, so hits always read against their voice.
+    if (this.lanes) {
+      const rpl = this.rowsPerLane();
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.font = `${Math.round(11 * this.dpr())}px system-ui, sans-serif`;
+      ctx.textBaseline = "middle";
+      for (let i = 0; i <= this.lanes.length; i++) {
+        const y = this.rowToPx(i * rpl);
+        if (y >= -1 && y <= H + 1) {
+          ctx.beginPath();
+          ctx.moveTo(0, y + 0.5);
+          ctx.lineTo(W, y + 0.5);
+          ctx.stroke();
+        }
+        if (i < this.lanes.length) {
+          const yMid = this.rowToPx((i + 0.5) * rpl);
+          if (yMid >= 0 && yMid <= H) ctx.fillText(this.lanes[i]!, 6 * this.dpr(), yMid);
+        }
+      }
+    }
+
+    // Note rectangles. Lane mode draws a fixed-width marker centered on the
+    // onset (see noteXSpan) filling its lane band with a slight inset.
     for (let i = 0; i < this.notes.length; i++) {
       const n = this.notes[i]!;
-      const x0 = this.timeToPx(n.t_on);
-      const x1 = this.timeToPx(n.t_off);
-      const row = n.pitch - geom.fmin_midi; // row 0 = lowest pitch
-      const yBottom = this.rowToPx(row);
-      const yTop = this.rowToPx(row + 1);
-      const x = Math.min(x0, x1);
-      const w = Math.max(1, Math.abs(x1 - x0));
-      const y = Math.min(yTop, yBottom);
-      const h = Math.max(1, Math.abs(yBottom - yTop));
+      const span = this.noteXSpan(n);
+      const band = this.noteRowBand(n);
+      const yBottom = this.rowToPx(band.rLo);
+      const yTop = this.rowToPx(band.rHi);
+      const x = span.xLeft;
+      const w = Math.max(1, span.xRight - span.xLeft);
+      let y = Math.min(yTop, yBottom);
+      let h = Math.max(1, Math.abs(yBottom - yTop));
+      if (this.lanes && h > 6) {
+        const inset = h * 0.18;
+        y += inset;
+        h -= inset * 2;
+      }
 
       const isSel = i === this.selected;
       ctx.fillStyle = isSel ? "rgba(0,229,255,0.28)" : "rgba(0,229,255,0.12)";
@@ -757,8 +919,8 @@ export class SpectrogramEditor {
       ctx.strokeStyle = isSel ? "rgba(120,245,255,0.95)" : "rgba(0,229,255,0.75)";
       ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
-      if (isSel) {
-        // Resize handles.
+      if (isSel && !this.lanes) {
+        // Resize handles (pitch mode only — hits are instants).
         ctx.fillStyle = "rgba(120,245,255,0.95)";
         const hh = Math.min(h, 14 * this.dpr());
         ctx.fillRect(x, y + (h - hh) / 2, 2 * this.dpr(), hh);
@@ -790,7 +952,7 @@ export class SpectrogramEditor {
   }
 
   private timeToFrame(t: number): number {
-    return t * (this.geom?.frames_per_sec ?? 1);
+    return secToFrame(t, this.geom?.frames_per_sec ?? 1);
   }
   private frameToTime(f: number): number {
     return f / (this.geom?.frames_per_sec ?? 1);
@@ -798,8 +960,7 @@ export class SpectrogramEditor {
 
   /** Content X (frames) -> device px X on overlay. */
   private frameToPx(frame: number): number {
-    const nx = (frame - this.view.originX) / this.view.spanX; // 0..1
-    return nx * this.overlay.width;
+    return frameToNorm(frame, this.view.originX, this.view.spanX) * this.overlay.width;
   }
   private timeToPx(t: number): number {
     return this.frameToPx(this.timeToFrame(t));
@@ -808,6 +969,38 @@ export class SpectrogramEditor {
   private rowToPx(row: number): number {
     const ny = (row - this.view.originY) / this.view.spanY; // 0..1 from bottom
     return (1 - ny) * this.overlay.height;
+  }
+
+  /** Content rows per lane band (lane mode divides n_bins evenly). */
+  private rowsPerLane(): number {
+    const lanes = this.lanes;
+    if (!lanes || !this.geom) return 1;
+    return laneBandRows(this.geom.n_bins, lanes.length);
+  }
+
+  /**
+   * The content-row band a note occupies: its lane's band in lane mode, its
+   * semitone row otherwise. Shared by draw + hit-test so they always agree.
+   */
+  private noteRowBand(n: SpectroNote): { rLo: number; rHi: number } {
+    if (this.lanes) {
+      const rpl = this.rowsPerLane();
+      return { rLo: n.pitch * rpl, rHi: (n.pitch + 1) * rpl };
+    }
+    const row = n.pitch - (this.geom?.fmin_midi ?? 0);
+    return { rLo: row, rHi: row + 1 };
+  }
+
+  /**
+   * A note's device-px horizontal span. Lane mode: a fixed-width marker
+   * CENTERED on the onset (an instant). Pitch mode: t_on..t_off (a real
+   * duration), min 1px. Shared by draw + hit-test so they always agree.
+   */
+  private noteXSpan(n: SpectroNote): { xLeft: number; xRight: number } {
+    if (this.lanes) {
+      return laneMarkerXSpan(this.timeToPx(n.t_on), DRUM_MARK_CSS_PX, this.dpr());
+    }
+    return noteBodyXSpan(this.timeToPx(n.t_on), this.timeToPx(n.t_off));
   }
 
   /** Device px (relative to stage, CSS px) -> content {frame, row}. */
@@ -929,6 +1122,8 @@ export class SpectrogramEditor {
   private onPointerDown(e: PointerEvent): void {
     if (!this.geom) return;
     this.stage.focus();
+    // Ctrl held at the start of a placement/drag bypasses quant snapping.
+    this.snapBypass = e.ctrlKey;
     const rect = this.stage.getBoundingClientRect();
     const cssX = e.clientX - rect.left;
     const cssY = e.clientY - rect.top;
@@ -998,19 +1193,25 @@ export class SpectrogramEditor {
 
     if (this.drag === "move") {
       const dFrame = c.frame - this.dragStartContent.x;
-      const dRow = Math.round(c.row - this.dragStartContent.y); // snap pitch
       const dT = this.frameToTime(dFrame);
       const dur = orig.t_off - orig.t_on;
-      let newOn = orig.t_on + dT;
+      let newOn = this.snapTime(orig.t_on + dT); // quantize (bypassed with Ctrl)
       const maxOn = (this.geom.duration_sec || Infinity) - dur;
       newOn = Math.max(0, Math.min(maxOn, newOn));
       note.t_on = newOn;
       note.t_off = newOn + dur;
-      const newPitch = orig.pitch + dRow;
-      note.pitch = Math.max(
-        this.geom.fmin_midi,
-        Math.min(this.geom.fmin_midi + this.geom.n_bins - 1, newPitch),
-      );
+      if (this.lanes) {
+        // Vertical drag snaps whole lane bands; pitch is the lane index.
+        const dLane = Math.round((c.row - this.dragStartContent.y) / this.rowsPerLane());
+        note.pitch = Math.max(0, Math.min(this.lanes.length - 1, orig.pitch + dLane));
+      } else {
+        const dRow = Math.round(c.row - this.dragStartContent.y); // snap pitch
+        const newPitch = orig.pitch + dRow;
+        note.pitch = Math.max(
+          this.geom.fmin_midi,
+          Math.min(this.geom.fmin_midi + this.geom.n_bins - 1, newPitch),
+        );
+      }
     } else if (this.drag === "resize-l") {
       const t = Math.max(0, Math.min(note.t_off - MIN_NOTE_SEC, this.frameToTime(c.frame)));
       note.t_on = t;
@@ -1082,10 +1283,13 @@ export class SpectrogramEditor {
     let cursor = "crosshair";
     if (hit) cursor = hit.edge ? "ew-resize" : "move";
     this.stage.style.cursor = cursor;
-    // Emit pitch + time under the cursor for the host's readout.
+    // Emit pitch + time under the cursor for the host's readout. In lane mode
+    // `pitch` carries the LANE INDEX; the host maps it to the lane name.
     if (this.opts.onHover) {
       const c = this.pxToContent(cssX, cssY);
-      const pitch = Math.round(this.geom.fmin_midi + Math.floor(c.row));
+      const pitch = this.lanes
+        ? Math.max(0, Math.min(this.lanes.length - 1, Math.floor(c.row / this.rowsPerLane())))
+        : Math.round(this.geom.fmin_midi + Math.floor(c.row));
       this.opts.onHover({ time: this.frameToTime(c.frame), pitch });
     }
   }
@@ -1106,20 +1310,24 @@ export class SpectrogramEditor {
     // Iterate last-drawn first so newer/selected notes win.
     for (let i = this.notes.length - 1; i >= 0; i--) {
       const n = this.notes[i]!;
-      const x0 = this.timeToPx(n.t_on);
-      const x1 = this.timeToPx(n.t_off);
-      const row = n.pitch - geom.fmin_midi;
-      const yB = this.rowToPx(row);
-      const yT = this.rowToPx(row + 1);
-      const left = Math.min(x0, x1);
-      const right = Math.max(x0, x1);
+      const span = this.noteXSpan(n);
+      const band = this.noteRowBand(n);
+      const yB = this.rowToPx(band.rLo);
+      const yT = this.rowToPx(band.rHi);
+      const left = span.xLeft;
+      const right = span.xRight;
       const top = Math.min(yT, yB);
       const bot = Math.max(yT, yB);
       if (pxX < left - EDGE_HIT_PX * dpr || pxX > right + EDGE_HIT_PX * dpr) continue;
       if (pxY < top || pxY > bot) continue;
-      if (Math.abs(pxX - left) <= EDGE_HIT_PX * dpr) return { index: i, edge: "l" };
-      if (Math.abs(pxX - right) <= EDGE_HIT_PX * dpr) return { index: i, edge: "r" };
-      if (pxX >= left && pxX <= right) return { index: i, edge: null };
+      // Lane mode: hits are instants — no resize edges, body hits only.
+      if (!this.lanes) {
+        if (Math.abs(pxX - left) <= EDGE_HIT_PX * dpr) return { index: i, edge: "l" };
+        if (Math.abs(pxX - right) <= EDGE_HIT_PX * dpr) return { index: i, edge: "r" };
+      }
+      if (pxX >= left - EDGE_HIT_PX * dpr && pxX <= right + EDGE_HIT_PX * dpr) {
+        return { index: i, edge: null };
+      }
     }
     return null;
   }
@@ -1128,17 +1336,32 @@ export class SpectrogramEditor {
     const geom = this.geom;
     if (!geom) return;
     const c = this.pxToContent(cssX, cssY);
-    const pitch = Math.max(
-      geom.fmin_midi,
-      Math.min(geom.fmin_midi + geom.n_bins - 1, geom.fmin_midi + Math.floor(c.row)),
-    );
+    let pitch: number;
+    let dur: number;
+    let velocity: number;
+    if (this.lanes) {
+      // Lane mode: pitch = lane index under the cursor; hits are instants with
+      // a fixed display length, at the transcriber's velocity convention.
+      pitch = Math.max(0, Math.min(this.lanes.length - 1, Math.floor(c.row / this.rowsPerLane())));
+      dur = 0.08;
+      velocity = 127;
+    } else {
+      pitch = Math.max(
+        geom.fmin_midi,
+        Math.min(geom.fmin_midi + geom.n_bins - 1, geom.fmin_midi + Math.floor(c.row)),
+      );
+      // Default new-note length: ~1/8 of the visible window, clamped sane.
+      const visSec = this.frameToTime(this.view.spanX);
+      dur = Math.min(Math.max(visSec * 0.08, 0.08), 0.5);
+      velocity = 100;
+    }
     const tCenter = this.frameToTime(c.frame);
-    // Default new-note length: ~1/8 of the visible window, clamped sane.
-    const visSec = this.frameToTime(this.view.spanX);
-    const dur = Math.min(Math.max(visSec * 0.08, 0.08), 0.5);
-    const tOn = Math.max(0, tCenter - dur / 2);
+    // Drums are instants (hit time = where you click); melodic notes start half
+    // their default length before the click. Snap the onset to the quant grid.
+    const rawOn = this.lanes ? tCenter : Math.max(0, tCenter - dur / 2);
+    const tOn = Math.max(0, this.snapTime(rawOn));
     const tOff = tOn + dur;
-    const note: SpectroNote = { t_on: tOn, t_off: tOff, pitch, velocity: 100 };
+    const note: SpectroNote = { t_on: tOn, t_off: tOff, pitch, velocity };
     this.pushUndo();
     this.notes.push(note);
     this.setSelection(this.notes.length - 1);

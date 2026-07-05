@@ -197,6 +197,7 @@ export function appShellHtml(): string {
                   <button id="loopClear" disabled>Clear</button>
                 </div>
                 <pre id="audioStatus">(no audio)</pre>
+                <div id="stemMixer" class="stemMixer" style="display:none"></div>
               </aside>
 
               <div class="bandSetupStage">

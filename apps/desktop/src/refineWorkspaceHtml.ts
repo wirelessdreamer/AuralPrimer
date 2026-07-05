@@ -132,6 +132,8 @@ export function refineWorkspaceHtml(): string {
           </select>
         </label>
         <button class="rfBtn" id="refineReloadBtn">Reload</button>
+        <button class="rfBtn" id="refineSnapBtn" title="Refine hit times onto the drums-stem audio transients (undoable)" style="display:none">Snap to onsets</button>
+        <button class="rfBtn" id="refineRefreshMeterBtn" title="Re-track the beat grid + meter (Beat This!) and rewrite song_timeline.json in place (backs up to .bak)">Refresh meter</button>
         <button class="rfBtn isPrimary" id="refineSaveBtn">Save</button>
       </header>
 
@@ -161,12 +163,32 @@ export function refineWorkspaceHtml(): string {
             <option value="2">2x</option>
           </select>
         </label>
+        <label class="rfPill" title="Snap placed/moved notes to the beat grid. Hold Ctrl while placing to bypass.">
+          <span>Quantize</span>
+          <select id="refineQuantSelect">
+            <option value="off">Off</option>
+            <option value="1/4">1/4</option>
+            <option value="1/8">1/8</option>
+            <option value="1/8t">1/8T</option>
+            <option value="1/16" selected>1/16</option>
+            <option value="1/16t">1/16T</option>
+            <option value="1/32">1/32</option>
+          </select>
+        </label>
         <label class="rfAuditionToggle" title="Also synthesize the notes while playing">
           <input type="checkbox" id="refineAuditionToggle" checked /> Hear notes
         </label>
         <label class="rfAuditionToggle" title="Play a note when you place or edit it">
           <input type="checkbox" id="refineEditAuditionToggle" checked /> Audition edits
         </label>
+        <label class="rfAuditionToggle" title="Click each beat (accent on the one) to hear whether the grid aligns to the audio">
+          <input type="checkbox" id="refineMetronomeToggle" /> Metronome
+        </label>
+        <span class="rfDownbeatCtl" title="Move which beat is 'the one' (accent + bar line) when the detected downbeat is off — flip on the Metronome and nudge until the accent lands on beat 1">
+          Downbeat
+          <button class="rfTransBtn" id="refineDownbeatMinus" title="Shift the one back one beat">◀</button>
+          <button class="rfTransBtn" id="refineDownbeatPlus" title="Shift the one forward one beat">▶</button>
+        </span>
         <button class="rfTransBtn" id="refineUndoBtn" title="Undo (Ctrl+Z)" disabled>↶</button>
         <button class="rfTransBtn" id="refineRedoBtn" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
       </div>

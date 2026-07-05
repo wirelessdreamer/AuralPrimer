@@ -25,6 +25,7 @@ export const MELODIC_ROLE_LABELS: Record<string, string> = {
   lead_guitar: "Lead guitar",
   rhythm_guitar: "Rhythm guitar",
   melodic: "Melodic",
+  drums: "Drums",
 };
 
 export type RoleReadiness = { spectrogram: boolean; candidates: boolean };
@@ -94,7 +95,11 @@ export async function getRoleReadiness(
   const fd = featureDir(pack);
   const [spectrogram, candidates] = await Promise.all([
     auralsongJsonExists(pack, `${fd}/spectrogram/${role}/spectrogram.json`),
-    auralsongJsonExists(pack, `${fd}/refine_candidates.${role}.json`),
+    // Drums have no candidate system — the pack-root drum_tab.json is the source
+    // of truth the lane editor edits, so it plays the "candidates" role here.
+    role === "drums"
+      ? auralsongJsonExists(pack, "drum_tab.json")
+      : auralsongJsonExists(pack, `${fd}/refine_candidates.${role}.json`),
   ]);
   const readiness: RoleReadiness = { spectrogram, candidates };
   cleanupReadinessCache.set(key, readiness);
@@ -148,7 +153,14 @@ export async function detectMelodicStems(
     }),
   );
   const roles = MELODIC_ROLES.filter((r) => present.includes(r)) as string[];
-  if (roles.length === 0) {
+  // Drums are a first-class cleanup instrument (lane editor over the drums
+  // spectrogram) whenever the pack carries a drum tab — no melodic stem needed.
+  const drums = await getRoleReadiness(pack, "drums");
+  readiness.set("drums", drums);
+  const hasDrums = drums.candidates; // drum_tab.json present
+  if (roles.length === 0 && !hasDrums) {
+    // No melodic artifacts AND no drums — offer the melodic stems the pack has
+    // (or "keys" as a last resort) so a build targets real audio.
     const stemRoles = await melodicStemRoles(pack);
     const chosen = stemRoles.length ? stemRoles : ["keys"];
     for (const role of chosen) {
@@ -158,8 +170,9 @@ export async function detectMelodicStems(
       }
     }
   }
-  // Prefer a role that actually has candidates (real content) over one that
-  // only has a spectrogram — a guitar song whose "keys" stem is just bleed
+  if (hasDrums) roles.push("drums");
+  // Prefer a role that actually has content (candidates, or a drum tab) over one
+  // that only has a spectrogram — a guitar song whose "keys" stem is just bleed
   // gates to zero notes, so it shouldn't become the primary / default editor.
   const withCandidates = roles.filter((r) => readiness.get(r)?.candidates);
   const pool = withCandidates.length ? withCandidates : roles;
@@ -190,4 +203,32 @@ export function classifySpectroResult(res: SidecarRunResult): SpectroOutcome {
   const roles = (parsed?.roles ?? {}) as Record<string, unknown>;
   if (Object.keys(roles).length === 0 && !res.stderr.trim()) return "nostem";
   return "error";
+}
+
+/** Per-instrument outcome of a refine-candidates run. A silent stem ("no
+ * audible content" after the silence gate) is a benign SKIP, not a failure —
+ * band songs legitimately carry an empty keys stem, and treating that as an
+ * error made "Prep all unbuilt" look broken. */
+export type CandidateOutcome = { built: string[]; skipped: string[]; failed: string[] };
+
+export function classifyCandidateResult(
+  res: SidecarRunResult,
+  requested: string[],
+): CandidateOutcome {
+  const parsed = parseSidecarStatusLine(res.stdout);
+  const instruments = (parsed?.instruments ?? {}) as Record<
+    string,
+    { ok?: boolean; error?: string }
+  >;
+  const built: string[] = [];
+  const skipped: string[] = [];
+  const failed: string[] = [];
+  for (const role of requested) {
+    const r = instruments[role];
+    if (r?.ok) built.push(role);
+    else if (typeof r?.error === "string" && /no audible content/i.test(r.error)) skipped.push(role);
+    else if (res.ok && !r) built.push(role); // top-level ok, no per-role detail
+    else failed.push(role);
+  }
+  return { built, skipped, failed };
 }

@@ -41,7 +41,18 @@ KNOWN_MT3_DRUM_ENGINES: tuple[str, ...] = (
     "yourmt3_drums",
 )
 
-KNOWN_DRUM_ENGINES: tuple[str, ...] = KNOWN_HEURISTIC_DRUM_FILTERS + KNOWN_MT3_DRUM_ENGINES
+# Optional neural ADT engines that are NOT MT3-family but behave the same way:
+# they return [] (rather than raising) when their checkpoint / runtime is
+# absent, so they slot harmlessly into a fallback chain. Registered so they are
+# selectable, but deliberately NOT added to any profile's `drum_engines` list
+# until benchmarked (see docs/research-drum-data-2026-06-23.md for drums_oaf).
+KNOWN_NEURAL_DRUM_ENGINES: tuple[str, ...] = (
+    "drums_oaf",
+)
+
+KNOWN_DRUM_ENGINES: tuple[str, ...] = (
+    KNOWN_HEURISTIC_DRUM_FILTERS + KNOWN_MT3_DRUM_ENGINES + KNOWN_NEURAL_DRUM_ENGINES
+)
 KNOWN_DRUM_FILTERS: tuple[str, ...] = KNOWN_DRUM_ENGINES
 
 KNOWN_MELODIC_METHODS: tuple[str, ...] = (
@@ -1253,6 +1264,20 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
     for engine_id in KNOWN_MT3_DRUM_ENGINES:
         registry[engine_id] = _wrap_mt3(engine_id)
 
+    # Optional non-MT3 neural engines. Registered like the MT3 engines: they are
+    # inert (return []) when their checkpoint / runtime is absent. The import is
+    # guarded so a sidecar build that predates the module simply leaves the
+    # engine unavailable rather than failing the whole registry build.
+    try:
+        from aural_ingest.algorithms import drums_oaf
+
+        def _wrap_drums_oaf(stem_path: Path) -> list[DrumEvent]:
+            return drums_oaf.transcribe(stem_path)
+
+        registry["drums_oaf"] = _wrap_drums_oaf
+    except ImportError:
+        pass
+
     return registry
 
 
@@ -1344,6 +1369,53 @@ PIANO_PTI_ROBUST_CHECKPOINT_URL = (
 
 def _piano_pti_model_subdir() -> Path:
     return Path("piano_pti")
+
+
+# Env override: force-enable the Kong PTI producers even under torch 2.x.
+# Anyone who pins torch 1.x (where PTI is numerically sound) can set
+# AURAL_ENABLE_PIANO_PTI=1 to restore them to the meta-router / A-B chains.
+AURAL_ENABLE_PIANO_PTI_ENV = "AURAL_ENABLE_PIANO_PTI"
+
+
+def _torch_major_version() -> int | None:
+    """Best-effort major version of the installed torch, or None if torch
+    can't be imported / parsed. Kept cheap: uses find_spec + a light import
+    guarded by exceptions so a missing/broken torch never raises here."""
+    try:
+        if importlib.util.find_spec("torch") is None:
+            return None
+        import torch  # type: ignore
+
+        version = str(getattr(torch, "__version__", "") or "")
+        head = version.split("+", 1)[0]
+        major_str = head.split(".", 1)[0]
+        return int(major_str)
+    except Exception:
+        return None
+
+
+def piano_pti_enabled() -> bool:
+    """Whether the Kong PTI producers (piano_pti / piano_pti_clean /
+    piano_pti_consensus[_clean] / piano_pti_clean_dedup*) should run.
+
+    Kong PTI is numerically broken under the sidecar's torch 2.x — it emits
+    NaN velocities and ~100x too many notes, which the score gate then throws
+    away — so by default we treat these producers as unavailable (no-ops that
+    return []) whenever torch reports a major version >= 2. This keeps them in
+    the code but inert, so they neither burn transcription time nor feed the
+    piano_chord_supplement FFT-fallback misfire.
+
+    Set AURAL_ENABLE_PIANO_PTI=1 to force-enable them (e.g. on a torch-1.x
+    pin where PTI is sound). When torch's version can't be determined we err
+    on the safe side and keep PTI disabled unless the override is set."""
+    override = os.getenv(AURAL_ENABLE_PIANO_PTI_ENV, "").strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        return True
+    if override in {"0", "false", "no", "off"}:
+        return False
+    major = _torch_major_version()
+    # torch 1.x (or older) is the only environment where PTI is trustworthy.
+    return major is not None and major < 2
 
 
 def _expanded_model_roots(root: Path) -> list[Path]:
@@ -1716,17 +1788,25 @@ def build_default_melodic_algorithm_registry(
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
     def _piano_pti(stem_path: Path) -> list[MelodicNote]:
+        if not piano_pti_enabled():
+            return []
         return piano_pti.transcribe(stem_path, instrument=_inst)
 
     def _piano_pti_clean(stem_path: Path) -> list[MelodicNote]:
+        if not piano_pti_enabled():
+            return []
         with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
             notes = piano_pti.transcribe(in_path, instrument=_inst)
         return piano_cleanup.cleanup_notes(notes, stem_path=stem_path, instrument=_inst)
 
     def _piano_pti_clean_dedup(stem_path: Path) -> list[MelodicNote]:
+        if not piano_pti_enabled():
+            return []
         return piano_pti_clean_dedup.transcribe(stem_path, instrument=_inst)
 
     def _piano_pti_clean_dedup_pyin(stem_path: Path) -> list[MelodicNote]:
+        if not piano_pti_enabled():
+            return []
         return piano_pti_clean_dedup_pyin.transcribe(stem_path, instrument=_inst)
 
     def _piano_chord_supplement(stem_path: Path) -> list[MelodicNote]:
@@ -1737,6 +1817,8 @@ def build_default_melodic_algorithm_registry(
         # Mix discovery walks up from <pack>/audio/stems/keys.wav to
         # <pack>/audio/mix.{wav,mp3,ogg}; if no mix is present the wrapper
         # silently falls back to the stem-only result.
+        if not piano_pti_enabled():
+            return []
         return piano_pti.transcribe_consensus(stem_path, instrument=_inst)
 
     def _piano_pti_consensus_clean(stem_path: Path) -> list[MelodicNote]:
@@ -1744,6 +1826,8 @@ def build_default_melodic_algorithm_registry(
         # maybe_denoised_stem may hand back a temp path whose parent isn't
         # the auralsong's audio/stems/ dir, which would defeat mix discovery
         # and silently collapse consensus back to a stem-only pass.
+        if not piano_pti_enabled():
+            return []
         mix_path = piano_pti._find_mix_audio(stem_path)
         with piano_denoise.maybe_denoised_stem(stem_path) as in_path:
             notes = piano_pti.transcribe_consensus(in_path, instrument=_inst, mix_path=mix_path)
@@ -1875,7 +1959,11 @@ def drum_engines_for_profile(profile: str | None) -> list[str]:
 def drum_fallback_chain(requested_filter: str | None) -> list[str]:
     normalized, _warnings = resolve_drum_engine(requested_filter)
 
-    if normalized in KNOWN_MT3_DRUM_ENGINES:
+    # Neural engines (MT3-family + OaF) run as a single-engine chain: when their
+    # checkpoint/runtime is absent they yield [] and the caller (e.g. profile
+    # orchestration) decides what to fall through to, rather than silently
+    # swapping in a DSP engine under the same requested id.
+    if normalized in KNOWN_MT3_DRUM_ENGINES or normalized in KNOWN_NEURAL_DRUM_ENGINES:
         return [normalized]
 
     if normalized == "spectral_template_with_grid":
@@ -2569,15 +2657,19 @@ def transcribe_drums_with_profile(
     failure (rather than ending the chain like the per-engine path does)
     and DSP engines use their normal fallback chains.
 
-    Implements path 4 of `docs/research-deep-dive-adt-2026-05-07.md`:
-    `fidelity_midi` profile lists MT3 engines first; this function lets
-    the orchestration actually try MT3 first and silently fall back to
-    DSP when MT3 weights/runtime are absent. Behavior on the
-    `gameplay_default` profile is unchanged because its drum_engines
-    list begins with `beat_conditioned_multiband_decoder` already.
+    Implements path 4 of `docs/research-deep-dive-adt-2026-05-07.md`.
+    Since the June 2026 promotion, the `gameplay_default` profile lists
+    `mr_mt3_drums` first: on any machine that has the MR-MT3 checkpoint
+    installed, neural ADT now leads (it recovers the dense hi-hats and
+    ghost notes the DSP engines miss). When the checkpoint or MT3 runtime
+    is absent, `mr_mt3_drums` yields no events and the chain falls through
+    to `beat_conditioned_multiband_decoder` and the rest of the DSP
+    fallbacks, so checkpoint-less machines still import identically to the
+    old DSP-only behavior.
 
-    The MT3 path remains opt-in via profile selection; this function
-    does NOT change which engine is the global default."""
+    `DEFAULT_DRUM_ENGINE` (the explicit-engine / no-profile default) is
+    still `beat_conditioned_multiband_decoder`; only the profile-driven
+    orchestration prefers MT3, and only when its weights are present."""
 
     profile_normalized = validate_transcription_profile(profile)
     engines = drum_engines_for_profile(profile_normalized) or []
