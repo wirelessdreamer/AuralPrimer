@@ -162,6 +162,18 @@ export function refineWorkspaceHtml(): string {
             <option value="2">2x</option>
           </select>
         </label>
+        <label class="rfPill" title="Snap placed/moved notes to the beat grid. Hold Ctrl while placing to bypass.">
+          <span>Quantize</span>
+          <select id="refineQuantSelect">
+            <option value="off">Off</option>
+            <option value="1/4">1/4</option>
+            <option value="1/8">1/8</option>
+            <option value="1/8t">1/8T</option>
+            <option value="1/16" selected>1/16</option>
+            <option value="1/16t">1/16T</option>
+            <option value="1/32">1/32</option>
+          </select>
+        </label>
         <label class="rfAuditionToggle" title="Also synthesize the notes while playing">
           <input type="checkbox" id="refineAuditionToggle" checked /> Hear notes
         </label>

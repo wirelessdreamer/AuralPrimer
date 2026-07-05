@@ -30,6 +30,7 @@ import {
   noteBodyXSpan,
   secToFrame,
 } from "./spectrogramGeometry";
+import { buildGridTimes, snapTimeToGrid } from "./beatGrid";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -286,6 +287,15 @@ export class SpectrogramEditor {
   // not undoable). Capped so a long session can't grow unbounded.
   private undoStack: SpectroNote[][] = [];
   private redoStack: SpectroNote[][] = [];
+
+  // Beat grid + quantization. beatTimes/downbeatTimes drive the grid overlay;
+  // gridTimes are the snap targets (subdivisions). quantPerBeat null = snap off.
+  // snapBypass mirrors the Ctrl key at pointer-down for a single free placement.
+  private beatTimes: number[] = [];
+  private downbeatTimes: number[] = [];
+  private gridTimes: number[] = [];
+  private quantPerBeat: number | null = null;
+  private snapBypass = false;
   private static readonly MAX_HISTORY = 200;
   // Set once we've installed the app-wide middle-click autoscroll suppressor.
   private static autoscrollSuppressed = false;
@@ -406,6 +416,7 @@ export class SpectrogramEditor {
     notes: SpectroNote[] = [],
   ): Promise<void> {
     this.geom = geometry;
+    this.recomputeGrid(); // grid extrapolation depends on the song duration
     this.notes = notes.map((n) => ({ ...n }));
     this.selected = null;
     // A fresh song starts with an empty history.
@@ -451,6 +462,37 @@ export class SpectrogramEditor {
     this.redoStack = [];
     this.setSelection(null);
     this.requestRender();
+  }
+
+  /**
+   * Set the beat grid (from the pack's song_timeline). `beatTimes` are all beats,
+   * `downbeatTimes` the first beat of each measure — used only for the overlay.
+   */
+  setBeatGrid(beatTimes: number[], downbeatTimes: number[]): void {
+    this.beatTimes = Array.isArray(beatTimes) ? beatTimes.filter((t) => Number.isFinite(t)) : [];
+    this.downbeatTimes = Array.isArray(downbeatTimes) ? downbeatTimes.filter((t) => Number.isFinite(t)) : [];
+    this.recomputeGrid();
+    this.requestRender();
+  }
+
+  /** Set the quantization subdivision (subdivisions per beat); null disables snap. */
+  setQuant(perBeat: number | null): void {
+    this.quantPerBeat = perBeat && perBeat > 0 ? perBeat : null;
+    this.recomputeGrid();
+    this.requestRender();
+  }
+
+  private recomputeGrid(): void {
+    this.gridTimes =
+      this.quantPerBeat && this.beatTimes.length
+        ? buildGridTimes(this.beatTimes, this.quantPerBeat, this.geom?.duration_sec ?? 0)
+        : [];
+  }
+
+  /** Snap a time to the quant grid, unless snap is off or bypassed (Ctrl). */
+  private snapTime(t: number): number {
+    if (this.snapBypass || this.gridTimes.length === 0) return t;
+    return snapTimeToGrid(t, this.gridTimes);
   }
 
   /** Push the current note set onto the undo stack (call BEFORE a mutation). */
@@ -761,6 +803,24 @@ export class SpectrogramEditor {
     gl.bindVertexArray(null);
   }
 
+  /** Vertical beat grid behind the notes: subdivisions faint, beats medium,
+   * downbeats (measure starts) brightest. Off-screen ticks are culled. */
+  private drawBeatGrid(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const vline = (t: number, style: string, width: number): void => {
+      const px = this.timeToPx(t);
+      if (px < -1 || px > W + 1) return;
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(px + 0.5, 0);
+      ctx.lineTo(px + 0.5, H);
+      ctx.stroke();
+    };
+    for (const t of this.gridTimes) vline(t, "rgba(120,180,255,0.09)", 1);
+    for (const t of this.beatTimes) vline(t, "rgba(150,190,255,0.22)", 1);
+    for (const t of this.downbeatTimes) vline(t, "rgba(170,205,255,0.42)", Math.max(1, 1.5 * this.dpr()));
+  }
+
   private renderOverlay(): void {
     const ctx = this.ovCtx;
     const geom = this.geom;
@@ -768,6 +828,8 @@ export class SpectrogramEditor {
     const W = this.overlay.width;
     const H = this.overlay.height;
     ctx.clearRect(0, 0, W, H);
+
+    this.drawBeatGrid(ctx, W, H);
 
     // Lane guides + labels (drum mode): a line per band boundary and the lane
     // name pinned at the left edge, so hits always read against their voice.
@@ -1021,6 +1083,8 @@ export class SpectrogramEditor {
   private onPointerDown(e: PointerEvent): void {
     if (!this.geom) return;
     this.stage.focus();
+    // Ctrl held at the start of a placement/drag bypasses quant snapping.
+    this.snapBypass = e.ctrlKey;
     const rect = this.stage.getBoundingClientRect();
     const cssX = e.clientX - rect.left;
     const cssY = e.clientY - rect.top;
@@ -1092,7 +1156,7 @@ export class SpectrogramEditor {
       const dFrame = c.frame - this.dragStartContent.x;
       const dT = this.frameToTime(dFrame);
       const dur = orig.t_off - orig.t_on;
-      let newOn = orig.t_on + dT;
+      let newOn = this.snapTime(orig.t_on + dT); // quantize (bypassed with Ctrl)
       const maxOn = (this.geom.duration_sec || Infinity) - dur;
       newOn = Math.max(0, Math.min(maxOn, newOn));
       note.t_on = newOn;
@@ -1253,7 +1317,10 @@ export class SpectrogramEditor {
       velocity = 100;
     }
     const tCenter = this.frameToTime(c.frame);
-    const tOn = Math.max(0, tCenter - dur / 2);
+    // Drums are instants (hit time = where you click); melodic notes start half
+    // their default length before the click. Snap the onset to the quant grid.
+    const rawOn = this.lanes ? tCenter : Math.max(0, tCenter - dur / 2);
+    const tOn = Math.max(0, this.snapTime(rawOn));
     const tOff = tOn + dur;
     const note: SpectroNote = { t_on: tOn, t_off: tOff, pitch, velocity };
     this.pushUndo();

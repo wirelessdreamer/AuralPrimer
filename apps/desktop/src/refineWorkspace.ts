@@ -38,6 +38,7 @@ import {
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
 import { audiblePlayheadSec } from "@auralprimer/av-sync";
+import { downbeatTimes as computeDownbeats, quantLevelByValue } from "./beatGrid";
 import { getAvOffsetSec } from "./avOffset";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { detectMelodicStems, auralsongJsonExists } from "./cleanupReadiness";
@@ -131,6 +132,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const reloadBtn = $<HTMLButtonElement>("refineReloadBtn");
   const saveBtn = $<HTMLButtonElement>("refineSaveBtn");
   const snapBtn = document.getElementById("refineSnapBtn") as HTMLButtonElement | null;
+  const quantSelect = document.getElementById("refineQuantSelect") as HTMLSelectElement | null;
   const backBtn = $<HTMLElement>("refineBack");
   const transportEl = $<HTMLElement>("refineTransport");
   const playBtn = $<HTMLButtonElement>("refinePlayBtn");
@@ -558,10 +560,37 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       }
       await editor.load(geom, urls, notes);
       durationSec = editor.getDurationSec();
+      await applyBeatGrid();
       return true;
     } catch {
       return false;
     }
+  }
+
+  // Push the current quant-dropdown level into the editor (null = Off).
+  function applyQuant(): void {
+    const level = quantSelect ? quantLevelByValue(quantSelect.value) : undefined;
+    editor.setQuant(level ? level.perBeat : null);
+  }
+
+  // Load the pack's beats (song_timeline.json) into the editor's grid, then
+  // apply the current quant level. No timeline -> no grid (snap becomes inert).
+  async function applyBeatGrid(): Promise<void> {
+    if (!containerPath) return;
+    try {
+      const tl = (await invoke("read_auralsong_json", {
+        containerPath,
+        relPath: "song_timeline.json",
+      })) as { beats?: Array<{ time?: number; measure?: number }> };
+      const beats = Array.isArray(tl?.beats) ? tl.beats : [];
+      const beatTimes = beats
+        .map((b) => b?.time)
+        .filter((t): t is number => typeof t === "number");
+      editor.setBeatGrid(beatTimes, computeDownbeats(beats));
+    } catch {
+      editor.setBeatGrid([], []);
+    }
+    applyQuant();
   }
 
   // -------------------------------------------------------------------------
@@ -835,6 +864,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   });
   saveBtn.addEventListener("click", () => void save());
   snapBtn?.addEventListener("click", () => void snapDrumOnsets());
+  quantSelect?.addEventListener("change", () => applyQuant());
   backBtn.addEventListener("click", () => { stopTransport(); deps.onBack(); });
 
   // Refine the drum-hit TIMES onto the real drums-stem transients (mr_mt3's
