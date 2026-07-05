@@ -59,6 +59,25 @@ export class TransportController {
   }
 
   /**
+   * Apply the song's initial tempo + time signature (read from song_timeline
+   * at load). These drive the metronome click grid and the visualizer bar
+   * lines, replacing the hardcoded 120 bpm / 4-4 default so 6/8 (etc.) songs
+   * and real tempos are respected. Anything missing/invalid keeps the current
+   * value; external MIDI clock still overrides bpm at tick time when enabled.
+   */
+  setSongMeter(bpm: number, timeSignature: [number, number]): void {
+    const nextBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : this.state.bpm;
+    const ts: [number, number] =
+      Array.isArray(timeSignature) &&
+      timeSignature.length >= 2 &&
+      Number.isFinite(timeSignature[0]) && timeSignature[0] >= 1 &&
+      Number.isFinite(timeSignature[1]) && timeSignature[1] >= 1
+        ? [Math.round(timeSignature[0]), Math.round(timeSignature[1])]
+        : this.state.timeSignature;
+    this.state = { ...this.state, bpm: nextBpm, timeSignature: ts };
+  }
+
+  /**
    * Load audio into the timebase and reset transport to t=0.
    */
   async loadAudio(source: { blob: Blob; mime: string }): Promise<void> {

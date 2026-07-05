@@ -798,6 +798,30 @@ async function selectAuralSong(containerPath: string) {
     selectedDrumChartSelection = chartSelection.drumSelection;
     selectedMelodicTracks = chartSelection.melodicTracks;
 
+    // Load the song's real meter (initial tempo + time signature) from
+    // song_timeline.json so the metronome + visualizer bar grid use it instead
+    // of the hardcoded 120 bpm / 4-4. Reset to default per song; a pack without
+    // a timeline (e.g. legacy .auralsong) keeps the default. External MIDI clock
+    // still overrides bpm at tick time.
+    {
+      let songBpm = 120;
+      let songTimeSig: [number, number] = [4, 4];
+      try {
+        const tl = await invoke<{
+          tempos?: Array<{ bpm?: number }>;
+          time_signatures?: Array<{ ts?: number[] }>;
+        }>("read_auralsong_json", { containerPath, relPath: "song_timeline.json" });
+        const b = tl?.tempos?.[0]?.bpm;
+        if (typeof b === "number" && b > 0) songBpm = b;
+        const ts = tl?.time_signatures?.[0]?.ts;
+        if (Array.isArray(ts) && ts.length >= 2) songTimeSig = [Math.round(ts[0]), Math.round(ts[1])];
+      } catch {
+        // no song_timeline (or read blocked) -> keep the default meter
+      }
+      transportController.setSongMeter(songBpm, songTimeSig);
+      transport = transportController.getState();
+    }
+
     // Now that the melodic notes are loaded, refresh the HUD key/mode from the
     // primary melodic track (keys/piano when present) so the header shows the
     // data-driven key instead of the manifest default.
