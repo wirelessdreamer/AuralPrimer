@@ -430,6 +430,11 @@ def test_clean_research_registry_methods_apply_cleanup(monkeypatch, tmp_path: Pa
     cleaned = [MelodicNote(t_on=0.0, t_off=0.2, pitch=60, velocity=80, instrument="keys")]
     calls: list[str] = []
 
+    # Kong PTI is gated off by default under the sidecar's torch 2.x (see
+    # piano_pti_enabled()); force-enable it so this test still exercises the
+    # piano_pti_clean cleanup wrapper alongside the other research adapters.
+    monkeypatch.setenv("AURAL_ENABLE_PIANO_PTI", "1")
+
     monkeypatch.setattr(piano_transkun, "transcribe", lambda _path, *, instrument="keys": raw)
     monkeypatch.setattr(piano_pti, "transcribe", lambda _path, *, instrument="keys": raw)
     monkeypatch.setattr(piano_hft, "transcribe", lambda _path, *, instrument="keys": raw)

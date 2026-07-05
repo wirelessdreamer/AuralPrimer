@@ -16,6 +16,7 @@ Supported datasets (corpora prepared under
   - ``egmd``         Expanded Groove MIDI Dataset v1.0.0 -- drums
   - ``guitarset``   GuitarSet v1.1.0 -- acoustic guitar
   - ``guitar_techs`` Guitar-TECHS v1 -- electric guitar
+  - ``maestro``      MAESTRO v3.0.0 -- real acoustic piano (keys)
 """
 
 from .common import GroundTruthCase, GroundTruthInstrument

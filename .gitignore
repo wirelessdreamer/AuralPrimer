@@ -133,3 +133,6 @@ python/ingest/src/aural_ingest/training/**/*.onnx
 # intentionally committed fixtures under subdirs are untouched).
 /*.wav
 /*.pdf
+
+# Local idea/scratch material dropped at the repo root (not for VCS for now).
+/00_Ideas_for_nashville_number_stuff/

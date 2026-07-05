@@ -127,6 +127,47 @@ describe("readSongChartSelection", () => {
     });
   });
 
+  it("prefers drum_tab.json over the notes.mid drum selection when present", async () => {
+    // 1st invoke = notes.mid blob; 2nd invoke = drum_tab.json (root-level read).
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid") return { bytes: midiBytesArray() };
+      if (cmd === "read_auralsong_json" && args.relPath === "drum_tab.json") {
+        return { version: 1, name: "drums", kit: [], hits: [
+          { t: 0, p: "kick" }, { t: 0.5, p: "snare" }, { t: 1, p: "hihat_closed" },
+        ] };
+      }
+      return undefined;
+    });
+    const bridge = makeBridge();
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: { has_notes_mid: true },
+      consoleBridge: bridge,
+    });
+    expect(out.drumSelection).not.toBeNull();
+    expect(out.drumSelection!.reason).toBe("drum_tab");
+    expect(out.drumSelection!.events).toHaveLength(3);
+    expect(bridge.log).toHaveBeenCalledWith(
+      "play",
+      expect.stringContaining("drum_tab.json"),
+    );
+  });
+
+  it("falls back to the notes.mid drum selection when drum_tab.json is absent", async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "read_auralsong_mid") return { bytes: midiBytesArray() };
+      // drum_tab.json read rejects (missing file).
+      throw new Error("not found");
+    });
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: { has_notes_mid: true },
+      consoleBridge: makeBridge(),
+    });
+    expect(out.drumSelection).not.toBeNull();
+    expect(out.drumSelection!.reason).not.toBe("drum_tab");
+  });
+
   it("applies refinement overlays and appends a refinement suffix to the log", async () => {
     invokeMock.mockResolvedValueOnce({ bytes: midiBytesArray() });
     loadRefinementsForRoles.mockResolvedValueOnce([

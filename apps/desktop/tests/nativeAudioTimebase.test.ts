@@ -158,8 +158,13 @@ describe("NativeAudioTimebase", () => {
     await Promise.resolve();
 
     expect(tb.getIsPlaying()).toBe(true);
-    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.5, 6);
-    expect(tb.getOutputLatencySec()).toBeCloseTo(240 / 48_000, 6);
+    // While playing, getCurrentTimeSec dead-reckons forward from the polled
+    // position with the wall clock, so it lands at 3.5 + a sub-ms projection.
+    const t = tb.getCurrentTimeSec();
+    expect(t).toBeGreaterThanOrEqual(3.5);
+    expect(t).toBeLessThan(3.6);
+    // Double-buffered latency model (device + callback buffer), matching the game.
+    expect(tb.getOutputLatencySec()).toBeCloseTo((240 * 2) / 48_000, 6);
   });
 
   it("play waits for callback activity before reporting playing", async () => {
@@ -1171,10 +1176,13 @@ describe("NativeAudioTimebase", () => {
     tb.seek(5.5);
     expect(tb.getCurrentTimeSec()).toBe(5.5);
     await Promise.resolve();
-    expect(tb.getCurrentTimeSec()).toBeCloseTo(1.23, 6);
+    // Playing now, so the reported time dead-reckons forward from 1.23.
+    const tPlaying = tb.getCurrentTimeSec();
+    expect(tPlaying).toBeGreaterThanOrEqual(1.23);
+    expect(tPlaying).toBeLessThan(1.33);
     await Promise.resolve();
     expect(tb.getIsPlaying()).toBe(true);
-    expect(tb.getOutputLatencySec()).toBeCloseTo(480 / 48_000, 6);
+    expect(tb.getOutputLatencySec()).toBeCloseTo((480 * 2) / 48_000, 6);
 
     tb.pause();
     expect(tb.getIsPlaying()).toBe(false);
@@ -1222,6 +1230,47 @@ describe("NativeAudioTimebase", () => {
     await Promise.resolve();
     expect(tb.getCurrentTimeSec()).toBeCloseTo(2.5, 6);
     expect(tb.getOutputLatencySec()).toBeUndefined();
+  });
+
+  it("dead-reckons while playing: linear, capped at 0.25s, scaled by rate", async () => {
+    let now = 1000;
+    const nowSpy = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_get_state") {
+        return {
+          output_host: { id: "wasapi" },
+          sample_rate_hz: 48_000,
+          channels: 2,
+          output_device: { name: "Built-in", channels: 2, sample_rate_hz: 48_000 },
+          is_playing: true,
+          t_sec: 3.5,
+          playback_rate: 1,
+          loop_t0_sec: null,
+          loop_t1_sec: null,
+          has_audio: true,
+          output_buffer_frames: null,
+          callback_count: 2,
+          callback_overrun_count: 0
+        };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+
+    tb.getCurrentTimeSec(); // fire the first poll (anchors _lastPollWall at now=1000)
+    await Promise.resolve();
+    // Subsequent reads fire more polls but we don't await, so the anchor holds.
+    now = 1100; // +0.1s: linear projection at 1x
+    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.6, 6);
+    now = 3000; // +2s: projection capped at 0.25s so a stalled poll can't run away
+    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.75, 6);
+    tb.setPlaybackRate(0.5);
+    now = 1100; // +0.1s at 0.5x -> +0.05 (slope scales with rate)
+    expect(tb.getCurrentTimeSec()).toBeCloseTo(3.55, 6);
+
+    nowSpy.mockRestore();
   });
 
   it("loadFromAuralSong falls back to sentinel when duration cache is cleared during apply", async () => {
@@ -1308,7 +1357,7 @@ describe("NativeAudioTimebase", () => {
     const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
     const tb = new NativeAudioTimebase({ sampleRateHz: 44_100 });
     (tb as unknown as { _lastOutputBufferFrames: number | null })._lastOutputBufferFrames = 441;
-    expect(tb.getOutputLatencySec()).toBeCloseTo(0.01, 6);
+    expect(tb.getOutputLatencySec()).toBeCloseTo((441 * 2) / 44_100, 6);
   });
 
   it("getOutputLatencySec returns undefined when sample rate is unavailable even with buffered frames", async () => {

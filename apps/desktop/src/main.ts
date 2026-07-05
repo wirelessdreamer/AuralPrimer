@@ -48,6 +48,7 @@ import {
   detectMelodicStems,
   parseSidecarStatusLine,
   classifySpectroResult,
+  classifyCandidateResult,
   type RoleReadiness,
   type RowReady,
   type SidecarRunResult,
@@ -425,11 +426,12 @@ root.innerHTML = `
             </div>
             <div id="stemMidiSummaryMake" class="meta makeSummary"></div>
             <div class="row">
-              <button id="stemMidiImportMake">Import AuralSong</button>
+              <button id="stemMidiImportMake">Import song</button>
             </div>
+            <div class="meta" style="margin-top:4px">Imports an editable draft you clean up in Refine — export a <code>.feedpak</code> when it's finished.</div>
             <pre id="stemMidiStatusMake" class="meta">(not imported)</pre>
             <div id="stemMidiNextStepsMake" class="postImportCard" style="display:none;">
-              <div class="postImportTitle">✓ AuralSong imported</div>
+              <div class="postImportTitle">✓ Song imported</div>
               <div class="postImportHint">Next: clean up the auto-transcription so the gameplay chart matches your intent.</div>
               <div class="row">
                 <button class="postImportPrimary" id="stemMidiOpenRefine">Open in Refine workspace</button>
@@ -1040,6 +1042,18 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       if (!rr.spectrogram) specRoles.push(role);
       if (!rr.candidates) candRoles.push(role);
     }
+    // Drums: packs with a drum chart get a drums spectrogram for the Refine
+    // lane editor. Spectrogram only — drums have no candidate system (the
+    // drum tab is the source of truth), so candRoles never includes drums.
+    try {
+      if (await auralsongJsonExists(path, "drum_tab.json")) {
+        const fd = featureDir(path);
+        const hasDrumSpec = await auralsongJsonExists(path, `${fd}/spectrogram/drums/spectrogram.json`);
+        if (!hasDrumSpec) specRoles.push("drums");
+      }
+    } catch {
+      /* skip drums on probe failure */
+    }
     if (specRoles.length || candRoles.length) {
       const title = row.querySelector(".cleanupSongTitle")?.textContent ?? path;
       todo.push({ path, title, specRoles, candRoles });
@@ -1050,14 +1064,18 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     return;
   }
   cleanupBuildAllBtn.disabled = true;
+  cleanupBuildAllBtn.textContent = "Prepping…";
+  cleanupBuildAllStatusEl?.classList.add("isBusy");
   let specBuilt = 0;
   let candBuilt = 0;
+  let candSkipped = 0; // silent stems (no audible content) — benign, not failed
   let noStem = 0;
   let failed = 0;
   const tally = (): string => {
     const parts: string[] = [];
     if (specBuilt) parts.push(`${specBuilt} spec`);
     if (candBuilt) parts.push(`${candBuilt} cand`);
+    if (candSkipped) parts.push(`${candSkipped} silent`);
     if (noStem) parts.push(`${noStem} skipped`);
     if (failed) parts.push(`${failed} failed`);
     return parts.length ? ` · ${parts.join(", ")}` : "";
@@ -1087,13 +1105,18 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     // 2) Candidate precompute (only the roles that lack candidates). Skipped
     //    for a stem-less pack, where there's nothing to transcribe.
     if (t.candRoles.length && !stemless) {
-      setStatus(`Building ${i + 1}/${todo.length}: ${t.title} — candidates…${tally()}`);
+      setStatus(`Prepping ${i + 1}/${todo.length}: ${t.title} — candidates (${t.candRoles.join(", ")})…${tally()}`);
       try {
-        const res = await safeInvoke<{ ok: boolean }>("ingest_refine_candidates", {
+        const res = await safeInvoke<SidecarRunResult>("ingest_refine_candidates", {
           req: { container_path: t.path, instruments: t.candRoles },
         });
-        if (res.ok) candBuilt += 1;
-        else failed += 1;
+        // A silent stem ("no audible content" after the silence gate) is a
+        // benign SKIP, not a failure — band songs carry an empty keys stem
+        // with nothing to transcribe. Only real errors count as failed.
+        const outcome = classifyCandidateResult(res, t.candRoles);
+        if (outcome.built.length) candBuilt += 1;
+        candSkipped += outcome.skipped.length;
+        if (outcome.failed.length) failed += 1;
       } catch {
         failed += 1;
       }
@@ -1105,10 +1128,13 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       ?.classList.remove("isBuilding");
   }
   cleanupBuildAllBtn.disabled = false;
+  cleanupBuildAllBtn.textContent = "Prep all unbuilt";
+  cleanupBuildAllStatusEl?.classList.remove("isBusy");
   const parts = [
     `Built ${specBuilt} spectrogram${specBuilt === 1 ? "" : "s"}`,
     `${candBuilt} candidate set${candBuilt === 1 ? "" : "s"}`,
   ];
+  if (candSkipped) parts.push(`${candSkipped} silent stem${candSkipped === 1 ? "" : "s"} skipped`);
   if (noStem) parts.push(`${noStem} with no melodic stem`);
   if (failed) parts.push(`${failed} failed`);
   setStatus(`${parts.join(", ")}.`);
@@ -1412,9 +1438,9 @@ function renderDetails(details: AuralSongDetails) {
 
     <h4>Audio</h4>
     <ul>
-      <li>mix.mp3: ${escapeHtml(yesNo(details.has_mix_mp3))}</li>
-      <li>mix.ogg: ${escapeHtml(yesNo(details.has_mix_ogg))}</li>
-      <li>mix.wav: ${escapeHtml(yesNo(Boolean(details.has_mix_wav)))}</li>
+      <li>stem.mp3: ${escapeHtml(yesNo(details.has_mix_mp3))}</li>
+      <li>stem.ogg: ${escapeHtml(yesNo(details.has_mix_ogg))}</li>
+      <li>stem.wav: ${escapeHtml(yesNo(Boolean(details.has_mix_wav)))}</li>
     </ul>
 
     <h4>Charts</h4>
@@ -1497,6 +1523,10 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     .join("");
 
   const bothReady = r.spectrogram && r.candidates;
+  // Drums use the pack-root drum_tab (authored at import / in the lane editor),
+  // not the melodic candidate system — so relabel that readout row and drop the
+  // "Compute candidates" action for them.
+  const isDrums = role === "drums";
 
   cleanupActionEl.innerHTML = `
     <div class="cleanupHeader">
@@ -1522,10 +1552,10 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       <div class="cleanupReadoutRow">
         ${statusIcon(r.candidates)}
         <div class="cleanupReadoutText">
-          <div class="cleanupReadoutTitle">Note candidates</div>
-          <div class="meta">the transcription you clean up</div>
+          <div class="cleanupReadoutTitle">${isDrums ? "Drum tab" : "Note candidates"}</div>
+          <div class="meta">${isDrums ? "the kit hits you clean up" : "the transcription you clean up"}</div>
         </div>
-        <div class="cleanupReadoutState ${r.candidates ? "isReady" : ""}">${r.candidates ? "ready" : "not computed yet"}</div>
+        <div class="cleanupReadoutState ${r.candidates ? "isReady" : ""}">${r.candidates ? "ready" : isDrums ? "no drum tab" : "not computed yet"}</div>
       </div>
     </div>
 
@@ -1533,9 +1563,9 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       <button id="cleanupBuildSpectro" class="${r.spectrogram ? "" : "cleanupPrimary"}">
         <i class="ti ti-photo" aria-hidden="true"></i> ${r.spectrogram ? "Rebuild spectrogram" : "Build spectrogram"}
       </button>
-      <button id="cleanupComputeCandidates" class="${r.candidates ? "" : "cleanupPrimary"}">
+      ${isDrums ? "" : `<button id="cleanupComputeCandidates" class="${r.candidates ? "" : "cleanupPrimary"}">
         <i class="ti ti-wand" aria-hidden="true"></i> Compute candidates
-      </button>
+      </button>`}
       <button id="cleanupOpenEditor" class="${bothReady ? "cleanupPrimary" : ""}" ${bothReady ? "" : "disabled"}>
         <i class="ti ti-edit" aria-hidden="true"></i> Open cleanup editor
       </button>
@@ -1554,7 +1584,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
   const runStatusEl = document.getElementById("cleanupRunStatus") as HTMLPreElement;
   const instSelect = document.getElementById("cleanupInstrument") as HTMLSelectElement;
   const buildSpectroBtn = document.getElementById("cleanupBuildSpectro") as HTMLButtonElement;
-  const computeBtn = document.getElementById("cleanupComputeCandidates") as HTMLButtonElement;
+  const computeBtn = document.getElementById("cleanupComputeCandidates") as HTMLButtonElement | null;
   const openEditorBtn = document.getElementById("cleanupOpenEditor") as HTMLButtonElement;
   const reloadBtn = document.getElementById("auralsongRefreshSelection") as HTMLButtonElement;
   const lyricsBtn = document.getElementById("auralsongGenerateLyrics") as HTMLButtonElement;
@@ -1599,7 +1629,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     }
   });
 
-  computeBtn.addEventListener("click", async () => {
+  computeBtn?.addEventListener("click", async () => {
     computeBtn.disabled = true;
     setRunStatus(`Computing candidates for ${roleLabel(role)}…`);
     try {
@@ -1628,7 +1658,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     if (openEditorBtn.disabled) return;
     cleanupSelectedRole = role;
     setRoute("refine");
-    void refineWorkspace.openForAuralSong(pack);
+    void refineWorkspace.openForAuralSong(pack, { instrument: role });
   });
 
   reloadBtn.addEventListener("click", () => {
@@ -1904,9 +1934,9 @@ function renderCaps(details: AuralSongDetails | null, drumSelection: DrumChartSe
     .join("\n");
 
   const audioPills = [
-    pill("mix.wav", caps.audio.wav),
-    pill("mix.mp3", caps.audio.mp3),
-    pill("mix.ogg", caps.audio.ogg),
+    pill("stem.wav", caps.audio.wav),
+    pill("stem.mp3", caps.audio.mp3),
+    pill("stem.ogg", caps.audio.ogg),
   ].join("\n");
 
   capsEl.innerHTML = `
@@ -3022,7 +3052,7 @@ function renderStemMidiAuditTable(inspection: RawSongFolderInspection): string {
 
 function renderStemMidiSelection() {
   stemMidiPickFolderBtn.textContent = "Choose Suno folder...";
-  stemMidiImportBtn.textContent = "Import AuralSong";
+  stemMidiImportBtn.textContent = "Import song";
   stemMidiFolderLabel.textContent = stemMidiFolderPath ?? "(no folder selected)";
   stemMidiImportBtn.disabled = !stemMidiInspection;
   if (!stemMidiInspection) {

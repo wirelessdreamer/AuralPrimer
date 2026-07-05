@@ -165,6 +165,30 @@ describe("TransportController", () => {
     tc.dispose();
   });
 
+  it("feeds the live A/V offset into the playhead (not rate-scaled), alongside latency", async () => {
+    // Locks the call-site wiring: a regression dropping/negating avOffsetSec, or
+    // rate-scaling it, must fail here even though the pure formula is unit-tested.
+    const tb = new FakeTimebase();
+    const tc = new TransportController(tb);
+    await tc.loadAudio({ blob: new Blob([]), mime: "audio/ogg" });
+    await tc.play();
+    tb.setOutputLatencySec(0.02);
+    tc.setAudioVisualOffsetSec(0.2);
+
+    tb.seek(5);
+    tc.tick(0.016);
+    // audible = 5 - 0.02*1 - 0.2
+    expect(tc.getState().t).toBeCloseTo(4.78, 6);
+
+    // At 2x the latency term scales with rate; the A/V offset must NOT.
+    tc.setPlaybackRate(2);
+    tb.seek(5);
+    tc.tick(0.016);
+    // audible = 5 - 0.02*2 - 0.2 (offset stays 0.2, not 0.4)
+    expect(tc.getState().t).toBeCloseTo(4.76, 6);
+    tc.dispose();
+  });
+
   it("can follow external clock (when enabled) and ignores timebase as authority", async () => {
     const tb = new FakeTimebase();
     await tb.load({ blob: new Blob([]), mime: "audio/ogg" });
@@ -255,5 +279,30 @@ describe("TransportController", () => {
     expect(tc.getState().t).toBe(0);
     expect(tc.getState().isPlaying).toBe(false);
     tc.dispose();
+  });
+
+  it("setSongMeter applies real tempo + time signature", () => {
+    const tc = new TransportController(new FakeTimebase());
+    expect(tc.getState().bpm).toBe(120);
+    expect(tc.getState().timeSignature).toEqual([4, 4]);
+    tc.setSongMeter(103.4, [6, 8]);
+    expect(tc.getState().bpm).toBeCloseTo(103.4);
+    expect(tc.getState().timeSignature).toEqual([6, 8]);
+  });
+
+  it("setSongMeter ignores invalid values and keeps the current meter", () => {
+    const tc = new TransportController(new FakeTimebase(), { bpm: 90, timeSignature: [3, 4] });
+    tc.setSongMeter(0, [0, 0]);
+    expect(tc.getState().bpm).toBe(90);
+    expect(tc.getState().timeSignature).toEqual([3, 4]);
+    tc.setSongMeter(NaN, [4] as unknown as [number, number]);
+    expect(tc.getState().bpm).toBe(90);
+    expect(tc.getState().timeSignature).toEqual([3, 4]);
+  });
+
+  it("setSongMeter rounds fractional time-signature entries", () => {
+    const tc = new TransportController(new FakeTimebase());
+    tc.setSongMeter(136.4, [4.0, 4.0]);
+    expect(tc.getState().timeSignature).toEqual([4, 4]);
   });
 });

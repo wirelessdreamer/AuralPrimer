@@ -38,6 +38,9 @@ const spectroInstance = {
   canRedo: vi.fn(() => false),
   undo: vi.fn(),
   redo: vi.fn(),
+  setLaneMode: vi.fn(),
+  setBeatGrid: vi.fn(),
+  setQuant: vi.fn(),
 };
 let lastSpectroOpts: {
   onNotesChanged?: (notes: unknown[]) => void;
@@ -90,6 +93,9 @@ const REQUIRED_IDS: ReadonlyArray<readonly [string, string]> = [
   ["refineSectionSelect", "select"],
   ["refineAuditionToggle", "input"],
   ["refineEditAuditionToggle", "input"],
+  ["refineMetronomeToggle", "input"],
+  ["refineDownbeatMinus", "button"],
+  ["refineDownbeatPlus", "button"],
   ["refineStage", "div"],
   ["refineInspector", "div"],
   ["refineSelInfo", "div"],
@@ -231,7 +237,7 @@ function makeDeps(): RefineWorkspaceDeps {
 }
 
 /** Mock invoke so the spectrogram load path succeeds with a 1-tile geometry. */
-function mockSpectrogramOk(relPaths?: string[]): void {
+function mockSpectrogramOk(relPaths?: string[], audioFails = false): void {
   const geom = {
     fmin_midi: 24, bins_per_octave: 12, bins_per_semitone: 1, n_bins: 84,
     n_frames: 100, frames_per_sec: 10, duration_sec: 30, db_floor: -80, db_ceil: 0,
@@ -252,8 +258,36 @@ function mockSpectrogramOk(relPaths?: string[]): void {
         },
       });
     }
+    // Native audio engine (same one the game uses).
+    if (cmd === "native_audio_load_pack_audio") {
+      return audioFails
+        ? Promise.reject(new Error("no audio"))
+        : Promise.resolve({ mime: "audio/wav", duration_sec: 30, roles: ["keys"] });
+    }
+    if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
+    if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
     return Promise.reject(new Error("unexpected"));
   });
+}
+
+/** A minimal NativeAudioState for the get_state poll. */
+function nativeState(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    output_host: { id: "default" },
+    sample_rate_hz: 48000,
+    channels: 2,
+    output_device: { name: "dev", channels: 2, sample_rate_hz: 48000 },
+    is_playing: true,
+    t_sec: 0,
+    playback_rate: 1,
+    loop_t0_sec: null,
+    loop_t1_sec: null,
+    has_audio: true,
+    output_buffer_frames: null,
+    callback_count: 1,
+    callback_overrun_count: 0,
+    ...over,
+  };
 }
 
 async function open(container = "/songs/x.auralsong"): Promise<void> {
@@ -509,16 +543,17 @@ describe("transport", () => {
     expect(() => speed.dispatchEvent(new Event("change"))).not.toThrow();
   });
 
-  it("Solo/All switch reloads the audio source", async () => {
+  it("Solo/All switch reloads the audio through the native engine (role=all)", async () => {
     await open();
-    const detailsCalls = () =>
-      invokeMock.mock.calls.filter((c) => c[0] === "get_auralsong_details").length;
-    const before = detailsCalls();
+    const loadCalls = () => invokeMock.mock.calls.filter((c) => c[0] === "native_audio_load_pack_audio");
+    const before = loadCalls().length;
     const solo = el("refineSoloSelect") as HTMLSelectElement;
     solo.value = "all";
     solo.dispatchEvent(new Event("change"));
     await flush();
-    expect(detailsCalls()).toBeGreaterThan(before);
+    const after = loadCalls();
+    expect(after.length).toBeGreaterThan(before);
+    expect(after.at(-1)![1]).toMatchObject({ role: "all" });
   });
 
   it("scrubbing seeks the playhead", async () => {
@@ -530,70 +565,106 @@ describe("transport", () => {
   });
 });
 
-describe("stem audio playback", () => {
-  it("loads the current instrument's stem via convertFileSrc on open", async () => {
+describe("stem audio playback (native engine)", () => {
+  const loadCalls = () => invokeMock.mock.calls.filter((c) => c[0] === "native_audio_load_pack_audio");
+  const nativeCalls = (cmd: string) => invokeMock.mock.calls.filter((c) => c[0] === cmd);
+
+  it("loads the current instrument's stem into the native engine on open", async () => {
     await open();
-    // get_auralsong_details -> stems[id===keys].file -> joined to container -> convertFileSrc.
-    expect(convertFileSrcMock).toHaveBeenCalledWith(
-      expect.stringContaining("audio/stems/keys.wav"),
-    );
-    const audio = FakeAudio.latest();
-    expect(audio.src).toContain("keys.wav");
+    // soloMode defaults true + instrument keys -> load role "keys" (no browser audio).
+    expect(loadCalls().at(-1)![1]).toMatchObject({
+      containerPath: "/songs/x.auralsong",
+      role: "keys",
+    });
   });
 
-  it("play() seeks the audio element to the playhead + drives the playhead off currentTime", async () => {
+  it("play() seeks the native engine to the playhead + starts it; the playhead follows the native position", async () => {
     await open();
-    const audio = FakeAudio.latest();
-    // Park the playhead at 15s via the scrub, then press play.
     const scrub = el("refineScrub") as HTMLInputElement;
-    scrub.value = "500"; // 50% of 30s
+    scrub.value = "500"; // 50% of 30s = 15s
     scrub.dispatchEvent(new Event("change"));
-    expect(audio.currentTime).toBe(15);
 
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
-    expect(audio.play).toHaveBeenCalled();
-    expect(audio.currentTime).toBe(15); // seeked to the playhead on play
+    // seek(playhead) is synchronous in playTransport; play() resolves async.
+    expect(nativeCalls("native_audio_seek").some((c) => (c[1] as { tSec: number }).tSec === 15)).toBe(true);
+    await flush();
+    expect(nativeCalls("native_audio_play").length).toBeGreaterThan(0);
 
-    // The rAF tick reads audio.currentTime as the clock: advance the element and
-    // fire one tick (the test's rAF runs the callback once, non-recursively).
-    audio.currentTime = 20;
-    const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]>} }).mock.calls.at(-1)![0];
-    rafCb(0);
-    expect(spectroInstance.setTime).toHaveBeenLastCalledWith(20);
+    // The rAF tick reads the native position as the clock. Advance the engine
+    // position; the cached position updates after the get_state poll lands.
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "native_audio_get_state") return Promise.resolve(nativeState({ t_sec: 20 }));
+      if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
+      return Promise.reject(new Error("unexpected"));
+    });
+    const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]> } }).mock.calls.at(-1)![0];
+    rafCb(0); // triggers a get_state poll (caches position 20)
+    await flush();
+    rafCb(0); // cached position is now 20 -> playhead 20 (+ sub-ms dead-reckon)
+    const lastT = (spectroInstance.setTime as unknown as { mock: { calls: number[][] } }).mock.calls.at(-1)![0];
+    expect(lastT).toBeGreaterThanOrEqual(20);
+    expect(lastT).toBeLessThan(20.1);
+  });
+
+  it("playhead subtracts BOTH the output latency and the A/V offset (formula wiring)", async () => {
+    // Drives the refine call-site with a NON-zero calibration + real buffer so a
+    // regression that drops/negates the offset or the latency term fails here —
+    // every other refine test runs with offset 0 / latency 0.
+    const { setAvCalibration } = await import("../src/avOffset");
+    await setAvCalibration(200, 0); // effective A/V offset = 0.2s
+    try {
+      await open();
+      el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+      await flush();
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "native_audio_get_state")
+          return Promise.resolve(nativeState({ t_sec: 20, output_buffer_frames: 480 }));
+        if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
+        return Promise.reject(new Error("unexpected"));
+      });
+      const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]> } }).mock.calls.at(-1)![0];
+      rafCb(0);
+      await flush();
+      rafCb(0);
+      // audible = 20 − (480*2/48000)·1 − 0.2 = 20 − 0.02 − 0.2 = 19.78
+      const lastT = (spectroInstance.setTime as unknown as { mock: { calls: number[][] } }).mock.calls.at(-1)![0];
+      expect(lastT).toBeGreaterThanOrEqual(19.78);
+      expect(lastT).toBeLessThan(19.81);
+    } finally {
+      await setAvCalibration(0, 0); // reset the shared module state for other tests
+    }
   });
 
   it("plays the synth alongside the stem when 'Hear notes' is checked", async () => {
     await open();
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
-    const audio = FakeAudio.latest();
-    expect(audio.play).toHaveBeenCalled();
+    await flush();
+    expect(nativeCalls("native_audio_play").length).toBeGreaterThan(0);
     expect(auditionInstance.playRegion).toHaveBeenCalled();
   });
 
-  it("falls back to wall-clock + surfaces status when the stem fails to load", async () => {
+  it("falls back to wall-clock + surfaces status when the audio fails to load", async () => {
     loadSessionMock.mockResolvedValue(makeSession());
-    mockSpectrogramOk();
-    FakeAudio.nextResult = "err";
+    mockSpectrogramOk(undefined, /* audioFails */ true);
     const deps = makeDeps();
     const h = initRefineWorkspace(deps);
     await h.openForAuralSong("/songs/x.auralsong");
     await flush();
     expect(deps.setStatus).toHaveBeenCalledWith(expect.stringContaining("no stem audio"));
-    // Transport still works: play starts the synth without throwing.
+    // Transport still works: play starts the synth without calling native play.
+    const playsBefore = nativeCalls("native_audio_play").length;
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+    await flush();
     expect(auditionInstance.playRegion).toHaveBeenCalled();
-    const audio = FakeAudio.latest();
-    expect(audio.play).not.toHaveBeenCalled();
+    expect(nativeCalls("native_audio_play").length).toBe(playsBefore);
   });
 
-  it("stop resets the audio element to 0", async () => {
+  it("stop seeks the native engine back to 0", async () => {
     await open();
-    const audio = FakeAudio.latest();
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
-    audio.currentTime = 12;
+    await flush();
     el("refineStopBtn").dispatchEvent(new MouseEvent("click"));
-    expect(audio.pause).toHaveBeenCalled();
-    expect(audio.currentTime).toBe(0);
+    expect(nativeCalls("native_audio_seek").some((c) => (c[1] as { tSec: number }).tSec === 0)).toBe(true);
   });
 });
 

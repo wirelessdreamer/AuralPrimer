@@ -39,8 +39,11 @@ export type AvCalibrationHandle = {
 type Phase = "audio" | "video";
 
 const PERIOD_SEC = 0.6; // 100 BPM
-const LOOKAHEAD_SEC = 0.12;
-const SCHEDULER_INTERVAL_MS = 25;
+const FIRST_BEAT_MS = 200; // lead-in before the first beat
+// Small, fixed lead for scheduling the beep cleanly on the audio clock. It is
+// folded into the audio stimulus reference, so the tap delta still captures the
+// real output latency (the point of the audio pass) without a scheduling glitch.
+const AUDIO_LEAD_SEC = 0.05;
 const MIN_TAPS_TO_APPLY = 8;
 const MAX_CLICK_HISTORY = 256;
 
@@ -65,7 +68,6 @@ export function initAvCalibration(deps: AvCalibrationDeps): AvCalibrationHandle 
 
   let audioCtx: AudioContext | null = null;
   let schedulerTimer: number | null = null;
-  let pulseTimers: number[] = [];
   let running = false;
 
   let phase: Phase = "audio";
@@ -73,62 +75,57 @@ export function initAvCalibration(deps: AvCalibrationDeps): AvCalibrationHandle 
   // skipped pass keeps its existing value.
   let result: AvCalibrationResult = { audioMs: 0, videoMs: 0 };
 
-  // performance.now() timestamps at which each scheduled stimulus is expected
-  // to occur (the user perceives it `latency` later).
+  // performance.now() timestamps at which each stimulus was actually PRESENTED
+  // to the user (they perceive it `latency` later). Recorded from the wall clock
+  // at fire time — NEVER predicted from the audio clock, which can stall when
+  // silent (the video pass) and drag the estimate upward over time.
   let stimulusPerf: number[] = [];
-  let nextClickAudioTime = 0;
-  let ctxAnchor = 0;
-  let perfAnchor = 0;
+  let nextBeatPerf = 0;
   const taps: number[] = [];
 
-  function stimulusPerfFor(audioTime: number): number {
-    return perfAnchor + (audioTime - ctxAnchor) * 1000;
+  function flashPulse(): void {
+    if (!pulseEl) return;
+    pulseEl.classList.remove("pulse");
+    void pulseEl.offsetWidth; // force reflow so rapid pulses restart the animation
+    pulseEl.classList.add("pulse");
   }
 
-  function scheduleClick(audioTime: number): void {
-    if (!audioCtx) return;
-
-    // PASS 1 only: emit the audible beep. PASS 2 (video) is silent.
+  function fireBeat(): void {
+    if (!audioCtx || !running) return;
+    const beatPerf = performance.now();
+    // The visual flash is the video-pass stimulus; it renders ~now, so its
+    // reference is the wall clock directly.
+    let stimulusAt = beatPerf;
     if (phase === "audio") {
+      // Emit the audible beep a small, fixed lead ahead for a clean attack; the
+      // beep (not the flash) is what the user reacts to, so reference its play
+      // time — the tap delta then includes the real audio output latency.
+      const startAt = audioCtx.currentTime + AUDIO_LEAD_SEC;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.frequency.value = 1000;
       osc.type = "square";
-      gain.gain.setValueAtTime(0.0001, audioTime);
-      gain.gain.exponentialRampToValueAtTime(0.5, audioTime + 0.002);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioTime + 0.05);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.5, startAt + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.05);
       osc.connect(gain).connect(audioCtx.destination);
-      osc.start(audioTime);
-      osc.stop(audioTime + 0.06);
+      osc.start(startAt);
+      osc.stop(startAt + 0.06);
+      stimulusAt = beatPerf + AUDIO_LEAD_SEC * 1000;
     }
-
-    const playPerf = stimulusPerfFor(audioTime);
-    stimulusPerf.push(playPerf);
+    stimulusPerf.push(stimulusAt);
     if (stimulusPerf.length > MAX_CLICK_HISTORY) stimulusPerf.shift();
-
-    // Visual pulse at the scheduled stimulus time. This IS the stimulus for the
-    // video pass; in the audio pass it's a secondary by-eye sanity check.
-    const delayMs = Math.max(0, playPerf - performance.now());
-    const timer = window.setTimeout(() => {
-      if (!pulseEl) return;
-      pulseEl.classList.remove("pulse");
-      void pulseEl.offsetWidth; // force reflow so rapid pulses restart the animation
-      pulseEl.classList.add("pulse");
-    }, delayMs);
-    pulseTimers.push(timer);
-    if (pulseTimers.length > MAX_CLICK_HISTORY) {
-      const old = pulseTimers.shift();
-      if (old != null) window.clearTimeout(old);
-    }
+    flashPulse();
   }
 
-  function schedulerTick(): void {
-    if (!audioCtx || !running) return;
-    const horizon = audioCtx.currentTime + LOOKAHEAD_SEC;
-    while (nextClickAudioTime < horizon) {
-      scheduleClick(nextClickAudioTime);
-      nextClickAudioTime += PERIOD_SEC;
-    }
+  // Self-correcting wall-clock beat loop: each beat re-targets the next off a
+  // fixed grid, so setTimeout jitter never accumulates and the reference times
+  // stay independent of the (possibly stalled) audio clock.
+  function tickBeat(): void {
+    if (!running) return;
+    fireBeat();
+    nextBeatPerf += PERIOD_SEC * 1000;
+    schedulerTimer = window.setTimeout(tickBeat, Math.max(0, nextBeatPerf - performance.now()));
   }
 
   function registerTap(tapPerf: number): void {
@@ -173,24 +170,21 @@ export function initAvCalibration(deps: AvCalibrationDeps): AvCalibrationHandle 
     }
     taps.length = 0;
     stimulusPerf = [];
-    ctxAnchor = audioCtx.currentTime;
-    perfAnchor = performance.now();
-    nextClickAudioTime = ctxAnchor + 0.2;
     running = true;
     refreshStats();
     if (startBtn) startBtn.textContent = "Restart";
-    schedulerTick();
-    schedulerTimer = window.setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
+    // Drive beats off the wall clock (first after a short lead), not the audio
+    // clock, so the video pass is immune to an idle/stalled AudioContext.
+    nextBeatPerf = performance.now() + FIRST_BEAT_MS;
+    schedulerTimer = window.setTimeout(tickBeat, FIRST_BEAT_MS);
   }
 
   function stopMetronome(): void {
     running = false;
     if (schedulerTimer != null) {
-      window.clearInterval(schedulerTimer);
+      window.clearTimeout(schedulerTimer);
       schedulerTimer = null;
     }
-    for (const t of pulseTimers) window.clearTimeout(t);
-    pulseTimers = [];
     if (audioCtx) {
       void audioCtx.close().catch(() => undefined);
       audioCtx = null;
@@ -329,7 +323,13 @@ export function initAvCalibration(deps: AvCalibrationDeps): AvCalibrationHandle 
       document.head.appendChild(style);
     }
 
-    startBtn?.addEventListener("click", () => void startMetronome());
+    startBtn?.addEventListener("click", () => {
+      // The button becomes "Restart" once running; restarting must reset the
+      // tap count + re-anchor the clock, but startMetronome() bails while
+      // running, so stop first (a no-op when not yet started).
+      stopMetronome();
+      void startMetronome();
+    });
     pulseEl?.addEventListener("click", () => {
       if (running) registerTap(performance.now());
     });

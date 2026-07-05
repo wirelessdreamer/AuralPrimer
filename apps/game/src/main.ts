@@ -61,6 +61,7 @@ import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
 import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
+import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
 function haveTauri(): boolean {
@@ -454,6 +455,10 @@ function resetTransportController(timebase: TransportTimebase): void {
     timeSignature: [4, 4]
   });
   transportController.setPlaybackRate(currentPlaybackRate);
+  // Re-apply the persisted A/V calibration — a fresh controller starts at
+  // offset 0, so without this a native->HTML fallback silently drops the
+  // user's calibration until they next touch the slider.
+  transportController.setAudioVisualOffsetSec(getEffectiveOffsetSec());
   if (transport.loop) {
     transportController.setLoop(transport.loop);
   }
@@ -596,6 +601,10 @@ const playersPanel: PlayersPanelHandle = initPlayersPanel({
   getSelectedPluginId: () => pluginsPanel.getSelectedPluginId(),
 });
 _playersPanelRef = playersPanel;
+
+// Per-stem mixer (fader + mute/solo). Populated with the loaded stem roles
+// after each song's audio loads; hidden for single-stem/legacy packs.
+const stemMixer = initStemMixerPanel(document.getElementById("stemMixer") as HTMLElement);
 
 // Caps panel — depends on playersPanel (for instrument writeback) and a
 // live getter for selectedMelodicTracks (mutated by readDrumChartSelection).
@@ -789,6 +798,30 @@ async function selectAuralSong(containerPath: string) {
     selectedDrumChartSelection = chartSelection.drumSelection;
     selectedMelodicTracks = chartSelection.melodicTracks;
 
+    // Load the song's real meter (initial tempo + time signature) from
+    // song_timeline.json so the metronome + visualizer bar grid use it instead
+    // of the hardcoded 120 bpm / 4-4. Reset to default per song; a pack without
+    // a timeline (e.g. legacy .auralsong) keeps the default. External MIDI clock
+    // still overrides bpm at tick time.
+    {
+      let songBpm = 120;
+      let songTimeSig: [number, number] = [4, 4];
+      try {
+        const tl = await invoke<{
+          tempos?: Array<{ bpm?: number }>;
+          time_signatures?: Array<{ ts?: number[] }>;
+        }>("read_auralsong_json", { containerPath, relPath: "song_timeline.json" });
+        const b = tl?.tempos?.[0]?.bpm;
+        if (typeof b === "number" && b > 0) songBpm = b;
+        const ts = tl?.time_signatures?.[0]?.ts;
+        if (Array.isArray(ts) && ts.length >= 2) songTimeSig = [Math.round(ts[0]), Math.round(ts[1])];
+      } catch {
+        // no song_timeline (or read blocked) -> keep the default meter
+      }
+      transportController.setSongMeter(songBpm, songTimeSig);
+      transport = transportController.getState();
+    }
+
     // Now that the melodic notes are loaded, refresh the HUD key/mode from the
     // primary melodic track (keys/piano when present) so the header shows the
     // data-driven key instead of the manifest default.
@@ -896,6 +929,9 @@ async function loadAudioFromSelectedAuralSong(containerPath?: string) {
       lastLoadedAuralSongPath = targetAuralSongPath;
       setAudioStatus(`loaded: ${loadResult.mime} (${loadResult.byteLength} bytes)`);
     }
+
+    // Populate the per-stem mixer with the loaded stems (empty -> panel hidden).
+    stemMixer.setRoles(nativeTimebase?.getLoadedStemRoles() ?? []);
 
     audioTransportPanel.playBtn.disabled = false;
     audioTransportPanel.pauseBtn.disabled = false;

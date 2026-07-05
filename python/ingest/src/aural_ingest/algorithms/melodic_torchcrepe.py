@@ -22,9 +22,103 @@ from aural_ingest.transcription import INSTRUMENT_FREQ_RANGES, MelodicNote
 # periodicity rather than an error.
 _TORCHCREPE_MIN_FMIN = 32.70319566
 
+# --- Onset-aware note splitting -------------------------------------------
+# The frame decoder alone merges every contiguous run of same-pitch voiced
+# frames into ONE note. Real bass/guitar lines re-articulate the same pitch
+# (eighth-note pedal tones, re-picked notes) without the periodicity dipping,
+# so those repeats collapse into a single sustained note. We detect audio
+# onsets and split an already-voiced same-pitch run wherever an onset lands
+# inside it. This never fabricates notes in silence — splitting only happens
+# between two voiced frames of an existing note.
+#
+# Gated + robust: if librosa/onset detection is unavailable or errors, we fall
+# back to the un-split behavior so the production path never regresses to empty.
+_SPLIT_ON_ONSETS_DEFAULT = True
+
+# librosa.onset.onset_detect tuning. `wait`/`delta` follow the pattern already
+# used in piano_chord_supplement.py; they favor genuine attacks over decay-tail
+# ripple. Overridable via env for benchmarking.
+_ONSET_HOP_LENGTH_DEFAULT = 512
+_ONSET_DELTA_DEFAULT = 0.06
+_ONSET_WAIT_DEFAULT = 3
+
+# When a split lands too close to a note boundary the leading/trailing fragment
+# would be shorter than the min-note floor. We require both sides of a split to
+# clear `min_note_sec` before accepting the onset as a boundary.
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
 
 def _midi_from_freq(freq: float) -> int:
     return max(0, min(127, int(round(69.0 + 12.0 * math.log2(freq / 440.0)))))
+
+
+def _detect_onset_times(samples: list[float], sr: int) -> list[float] | None:
+    """Return sorted audio-onset times (seconds), or ``None`` if unavailable.
+
+    Uses ``librosa.onset.onset_detect`` with backtracking so each returned time
+    sits on the attack transient. Returns ``None`` (not ``[]``) when the
+    detector can't run, so the caller can distinguish "no onsets found" (an
+    empty list -> keep runs whole) from "detector unavailable" (fall back).
+    """
+    if not samples or sr <= 0:
+        return None
+    try:
+        import numpy as np
+        import librosa
+    except Exception:
+        return None
+
+    hop_length = max(1, _env_int("AURAL_TORCHCREPE_ONSET_HOP", _ONSET_HOP_LENGTH_DEFAULT))
+    delta = _env_float("AURAL_TORCHCREPE_ONSET_DELTA", _ONSET_DELTA_DEFAULT)
+    wait = max(0, _env_int("AURAL_TORCHCREPE_ONSET_WAIT", _ONSET_WAIT_DEFAULT))
+    try:
+        y = np.asarray(samples, dtype=np.float32)
+        onset_times = librosa.onset.onset_detect(
+            y=y,
+            sr=sr,
+            hop_length=hop_length,
+            units="time",
+            backtrack=True,
+            wait=wait,
+            delta=delta,
+        )
+    except Exception:
+        return None
+    try:
+        times = sorted(float(t) for t in onset_times if float(t) >= 0.0)
+    except Exception:
+        return None
+    return times
 
 
 def _as_float_list(values: Any) -> list[float]:
@@ -44,6 +138,83 @@ def _as_float_list(values: Any) -> list[float]:
         return []
 
 
+def _velocity_from_conf(mean_conf: float) -> int:
+    return max(24, min(127, int(round(36.0 + (mean_conf * 88.0)))))
+
+
+def _emit_run_notes(
+    *,
+    pitch: int,
+    frames: list[tuple[float, float]],
+    t_end: float,
+    hop_sec: float,
+    min_note_sec: float,
+    instrument: str,
+    onset_times: list[float] | None,
+    out: list[MelodicNote],
+) -> None:
+    """Emit one or more notes for a single same-pitch voiced run.
+
+    ``frames`` is the list of ``(t, conf)`` samples that make up the run;
+    ``t_end`` is the time the run ends (first non-matching / unvoiced frame, or
+    the end of the signal). When onset splitting is enabled and one or more
+    onset times land strictly inside the run, the run is cut at those onsets
+    into consecutive segments — but only where both the segment being closed and
+    the remainder still clear ``min_note_sec`` (never fabricates a sub-floor
+    sliver, and never splits in silence since the whole run is already voiced).
+    Velocity is re-derived per emitted segment from that segment's mean
+    confidence.
+    """
+    if not frames:
+        return
+
+    run_start = frames[0][0]
+
+    def _emit(seg_start: float, seg_end: float, seg_frames: list[tuple[float, float]]) -> None:
+        if not seg_frames or seg_end - seg_start < min_note_sec:
+            return
+        mean_conf = sum(c for _, c in seg_frames) / float(len(seg_frames))
+        out.append(
+            MelodicNote(
+                t_on=round(max(0.0, seg_start), 6),
+                t_off=round(max(seg_start, seg_end), 6),
+                pitch=int(pitch),
+                velocity=_velocity_from_conf(mean_conf),
+                instrument=instrument,
+            )
+        )
+
+    # Split points: onset times strictly inside (run_start, t_end). We keep a
+    # split only if it leaves >= min_note_sec on both the segment it closes and
+    # the remainder, so short re-articulations below the floor stay merged
+    # rather than producing invalid slivers.
+    splits: list[float] = []
+    if onset_times:
+        seg_start = run_start
+        for onset_t in onset_times:
+            if onset_t <= seg_start + min_note_sec:
+                continue
+            if onset_t >= t_end - min_note_sec:
+                break
+            splits.append(onset_t)
+            seg_start = onset_t
+
+    if not splits:
+        _emit(run_start, t_end, frames)
+        return
+
+    boundaries = [run_start, *splits, t_end]
+    for b_idx in range(len(boundaries) - 1):
+        seg_start = boundaries[b_idx]
+        seg_end = boundaries[b_idx + 1]
+        seg_frames = [fr for fr in frames if seg_start <= fr[0] < seg_end]
+        if not seg_frames:
+            # Guard: keep at least one frame so velocity is well-defined. This
+            # can only happen at a coarse hop; fall back to the enclosing frame.
+            seg_frames = [fr for fr in frames if fr[0] < seg_end] or frames[:1]
+        _emit(seg_start, seg_end, seg_frames)
+
+
 def _iter_notes_from_frames(
     freqs: Iterable[float],
     confidences: Iterable[float],
@@ -54,32 +225,29 @@ def _iter_notes_from_frames(
     min_note_sec: float,
     confidence_threshold: float,
     instrument: str,
+    onset_times: list[float] | None = None,
 ) -> list[MelodicNote]:
     freq_list = [float(freq) for freq in freqs]
     confidence_list = [float(conf) for conf in confidences]
     out: list[MelodicNote] = []
     cur_pitch: int | None = None
-    cur_start = 0.0
-    cur_conf_sum = 0.0
-    cur_count = 0
+    cur_frames: list[tuple[float, float]] = []
 
     def flush(t_end: float) -> None:
-        nonlocal cur_pitch, cur_start, cur_conf_sum, cur_count
-        if cur_pitch is not None and cur_count > 0 and t_end - cur_start >= min_note_sec:
-            conf = cur_conf_sum / float(cur_count)
-            out.append(
-                MelodicNote(
-                    t_on=round(max(0.0, cur_start), 6),
-                    t_off=round(max(cur_start, t_end), 6),
-                    pitch=int(cur_pitch),
-                    velocity=max(24, min(127, int(round(36.0 + (conf * 88.0))))),
-                    instrument=instrument,
-                )
+        nonlocal cur_pitch, cur_frames
+        if cur_pitch is not None and cur_frames:
+            _emit_run_notes(
+                pitch=cur_pitch,
+                frames=cur_frames,
+                t_end=t_end,
+                hop_sec=hop_sec,
+                min_note_sec=min_note_sec,
+                instrument=instrument,
+                onset_times=onset_times,
+                out=out,
             )
         cur_pitch = None
-        cur_start = t_end
-        cur_conf_sum = 0.0
-        cur_count = 0
+        cur_frames = []
 
     for idx, (freq, conf) in enumerate(zip(freq_list, confidence_list)):
         t = float(idx) * hop_sec
@@ -91,21 +259,16 @@ def _iter_notes_from_frames(
         pitch = _midi_from_freq(freq)
         if cur_pitch is None:
             cur_pitch = pitch
-            cur_start = t
-            cur_conf_sum = conf
-            cur_count = 1
+            cur_frames = [(t, conf)]
             continue
 
         if abs(pitch - cur_pitch) <= 1:
-            cur_conf_sum += conf
-            cur_count += 1
+            cur_frames.append((t, conf))
             continue
 
         flush(t)
         cur_pitch = pitch
-        cur_start = t
-        cur_conf_sum = conf
-        cur_count = 1
+        cur_frames = [(t, conf)]
 
     flush(float(len(freq_list)) * hop_sec)
     return sorted(out, key=lambda n: (n.t_on, n.pitch, n.t_off))
@@ -166,6 +329,14 @@ def transcribe(
     if not freqs or not confidences:
         return []
 
+    # Onset-aware splitting: detect audio onsets once and split same-pitch
+    # voiced runs at any onset that lands inside them. Robustly gated — if the
+    # detector is disabled or fails, onset_times stays None and segmentation
+    # behaves exactly as before (no split), so the path never regresses.
+    onset_times: list[float] | None = None
+    if _env_flag("AURAL_TORCHCREPE_SPLIT_ON_ONSETS", _SPLIT_ON_ONSETS_DEFAULT):
+        onset_times = _detect_onset_times(samples, sr)
+
     return _iter_notes_from_frames(
         freqs,
         confidences,
@@ -175,4 +346,5 @@ def transcribe(
         min_note_sec=float(min_note_sec),
         confidence_threshold=float(confidence_threshold),
         instrument=instrument,
+        onset_times=onset_times,
     )

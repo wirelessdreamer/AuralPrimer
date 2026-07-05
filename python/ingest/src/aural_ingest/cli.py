@@ -9,6 +9,7 @@ import io
 import inspect
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -801,6 +802,20 @@ def _analyze_beats_tempo(
 ) -> tuple[float, dict[str, Any], dict[str, Any], dict[str, Any]]:
     bpm_hint = float(config.get("bpm_hint")) if "bpm_hint" in config else None
     if beat_analysis_mode == "high_accuracy":
+        # Real beat+downbeat+meter via Beat This! (modelpack-gated, MIT). Returns
+        # None when the checkpoint/package is absent or on any error -> we keep
+        # the librosa path. Opt out with AURALPRIMER_DISABLE_METER_MODEL=1.
+        if os.getenv("AURALPRIMER_DISABLE_METER_MODEL", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            try:
+                from . import meter_tracker
+
+                model_result = meter_tracker.track_meter(
+                    wav_path, duration_sec=duration_sec, config=config
+                )
+                if model_result is not None:
+                    return model_result
+            except Exception:
+                pass  # any failure -> librosa fallback below
         return _analyze_beats_tempo_high_accuracy(
             wav_path,
             duration_sec=duration_sec,
@@ -3581,6 +3596,11 @@ def cmd_import(args: argparse.Namespace) -> int:
             fallback = lead_stem if lead_stem.is_file() else dst_wav
             if Path(fallback).is_file():
                 spec_sources = {"melodic": fallback}
+        # Drums get an overlay too (8-octave, see spectrogram.n_octaves_for_role)
+        # so the Studio drum-cleanup editor works out of the box on new imports.
+        drums_spec_stem = stems_dir / "drums.wav"
+        if drums_spec_stem.is_file():
+            spec_sources.setdefault("drums", drums_spec_stem)
         for role, stem_path in spec_sources.items():
             if not Path(stem_path).is_file():
                 continue
@@ -3904,11 +3924,14 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
 
     feat_dir = pack_feature_dirname(auralsong)
     stems_dir = auralsong / "audio" / "stems"
-    excluded = {"drums", "vocals"}
+    # Drums are excluded from the melodic default but buildable on explicit
+    # request (`--instrument drums`) for the Studio drum-cleanup overlay;
+    # vocals have no overlay at all.
+    default_excluded = {"drums", "vocals"}
     present: dict[str, Path] = {}
     for stem_path in sorted(stems_dir.glob("*.wav")):
         role = stem_path.stem
-        if role in excluded:
+        if role == "vocals":
             continue
         present[role] = stem_path
 
@@ -3917,7 +3940,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         target_roles = [r for r in requested if r in present]
     else:
         # Default (or explicit "melodic"): all melodic stems present.
-        target_roles = sorted(present.keys())
+        target_roles = sorted(r for r in present if r not in default_excluded)
 
     results: dict[str, dict[str, object]] = {}
     for role in target_roles:
@@ -3979,6 +4002,198 @@ def _load_case_ids(path) -> set[str]:
         if line and not line.startswith("#"):
             ids.add(line)
     return ids
+
+
+def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
+    """Snap the pack's drum-tab hit times onto the drums-stem audio transients.
+
+    Reads ``drum_tab.json`` (pack root) + ``audio/stems/drums.wav``, refines each
+    hit's time to the nearest real transient in its voice's frequency band (see
+    ``drum_onset_align``), writes ``drum_tab.json`` back in place, and prints a
+    JSON status line so the Studio button / import step can report the result.
+    """
+    from aural_ingest.drum_onset_align import align_drum_tab_to_onsets
+
+    pack = Path(args.auralsong_dir)
+    tab_path = pack / "drum_tab.json"
+    drums = pack / "audio" / "stems" / "drums.wav"
+    if not tab_path.is_file():
+        print(json.dumps({"ok": False, "error": f"no drum_tab.json in {pack}"}, sort_keys=True))
+        return 1
+    if not drums.is_file():
+        print(json.dumps({"ok": False, "error": f"no drums stem in {pack}"}, sort_keys=True))
+        return 1
+    try:
+        tab = json.loads(tab_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"failed to read drum_tab.json: {exc}"}, sort_keys=True))
+        return 1
+    aligned, stats = align_drum_tab_to_onsets(tab, drums)
+    tab_path.write_text(json.dumps(aligned, indent=2), encoding="utf-8")
+    print(json.dumps({"ok": True, **stats}, sort_keys=True))
+    return 0
+
+
+def _pack_audio_for_analysis(pack: Path) -> tuple[Path, bool]:
+    """Return an audio file to analyze for a pack, plus whether it is a temp file
+    to clean up. Prefers audio/mix.wav (present during import); for a feedpak
+    (stems-only, no mix) it sums the non-derived stems into a temp wav.
+
+    Stems are loaded at a common sample rate + mono via librosa, so mixed-rate
+    stems can never produce a time-warped sum. The temp file is cleaned up on a
+    write failure here (the caller also unlinks it in its finally block).
+    """
+    mix = pack / "audio" / "mix.wav"
+    if mix.is_file():
+        return mix, False
+    import numpy as np
+    import soundfile as sf
+    import librosa
+
+    roles = ["bass", "drums", "guitar", "keys", "other", "vocals"]
+    stems_dir = pack / "audio" / "stems"
+    target_sr = 44100
+    summed = None
+    for role in roles:
+        p = stems_dir / f"{role}.wav"
+        if not p.is_file():
+            continue
+        # sr=target_sr forces a single rate; mono=True collapses channels.
+        y, _ = librosa.load(str(p), sr=target_sr, mono=True)
+        y = np.asarray(y, dtype="float64")
+        if summed is None:
+            summed = y
+        else:
+            n = min(len(summed), len(y))
+            summed = summed[:n] + y[:n]
+    if summed is None:
+        raise FileNotFoundError(f"no audio/mix.wav or audio/stems/*.wav in {pack}")
+    peak = float(np.max(np.abs(summed))) + 1e-9
+    summed = (summed / peak).astype("float32")
+    fd, tmp_name = tempfile.mkstemp(prefix="auralmeter_", suffix=".wav")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        sf.write(str(tmp), summed, target_sr)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    return tmp, True
+
+
+def cmd_refresh_meter(args: argparse.Namespace) -> int:
+    """Re-run beat/downbeat/meter tracking on an EXISTING pack and rewrite only
+    ``song_timeline.json`` (beats + time_signatures + tempos), in place.
+
+    Uses the neural meter engine (Beat This!, modelpack-gated); if unavailable,
+    reports ``ok:false`` and leaves the pack untouched rather than silently
+    falling back to the old hardcoded 4/4. Never rewrites notes.mid (the game
+    derives note seconds from its tempo events), drum_tab.json (absolute time),
+    or arrangements. ``sections`` in the timeline are preserved.
+    """
+    from aural_ingest import meter_tracker
+    from aural_ingest.feedpak_writer import _build_song_timeline
+
+    pack = Path(args.auralsong_dir)
+    tl_path = pack / "song_timeline.json"
+    if not tl_path.is_file():
+        print(json.dumps({"ok": False, "error": f"no song_timeline.json in {pack}"}, sort_keys=True))
+        return 1
+    try:
+        existing = json.loads(tl_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"failed to read song_timeline.json: {exc}"}, sort_keys=True))
+        return 1
+
+    tmp_audio: Path | None = None
+    backup_name: str | None = None
+    try:
+        audio, is_tmp = _pack_audio_for_analysis(pack)
+        tmp_audio = audio if is_tmp else None
+        # Duration from the audio (soundfile info is cheap).
+        import soundfile as sf
+
+        info = sf.info(str(audio))
+        duration_sec = float(info.frames) / float(info.samplerate) if info.samplerate else 0.0
+
+        result = meter_tracker.track_meter(audio, duration_sec=duration_sec, config={})
+        if result is None:
+            print(json.dumps(
+                {"ok": False, "error": "meter model unavailable (no Beat This! checkpoint) — pack left unchanged"},
+                sort_keys=True,
+            ))
+            return 1
+        _bpm, beats, tempo_map, meta = result
+
+        new_tl = _build_song_timeline(tempo_map, beats, None)
+        # Preserve anything the model doesn't produce (sections, duration, etc.).
+        for k, v in existing.items():
+            if k not in new_tl:
+                new_tl[k] = v
+        # Back up the previous timeline so a bad meter call is recoverable — the
+        # new grid moves beats/downbeats, which desyncs anything anchored to the
+        # OLD grid (quantized cleanup edits, drum_tab snapping, notation measures).
+        backup = tl_path.parent / (tl_path.name + ".bak")
+        backup.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        backup_name = backup.name
+        # Atomic overwrite: write the new timeline to a sibling temp file, then
+        # os.replace() it over song_timeline.json. A truncating write_text() could
+        # leave the primary half-written on a disk-full / I/O error / kill — and
+        # this file is the artifact the editor grid + game timeline depend on.
+        # os.replace is atomic within one volume, so the primary is always either
+        # the old file or the fully-written new one, never a partial. The backup
+        # (written just above) is the belt-and-suspenders second copy.
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(tl_path.parent), prefix=tl_path.name + ".", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(new_tl, indent=2))
+            os.replace(tmp_name, tl_path)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+        print(json.dumps(
+            {
+                "ok": True,
+                "beat_source": meta.get("beat_source"),
+                "bpm": meta.get("estimated_bpm"),
+                "time_signature": meta.get("time_signature"),
+                "beats_per_bar": meta.get("beats_per_bar"),
+                "beats": meta.get("detected_beat_count"),
+                "downbeats": meta.get("detected_downbeat_count"),
+                "meter_denominator_provisional": meta.get("meter_denominator_provisional", False),
+                "backup": backup.name,
+                "warning": (
+                    "grid changed; edits anchored to the old grid (quantized "
+                    "placements, drum-onset snaps, notation measures) may need "
+                    "re-alignment. Previous timeline saved to " + backup.name
+                ),
+            },
+            sort_keys=True,
+        ))
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        err = {"ok": False, "error": f"refresh-meter failed: {exc}"}
+        if backup_name is not None:
+            # The backup was written and the rewrite is atomic, so the original
+            # timeline is intact (either still at song_timeline.json, or in the
+            # backup). Tell the user so recovery isn't a guess.
+            err["backup"] = backup_name
+            err["recovery"] = (
+                f"song_timeline.json is unchanged or restorable from {backup_name}"
+            )
+        print(json.dumps(err, sort_keys=True))
+        return 1
+    finally:
+        if tmp_audio is not None:
+            try:
+                tmp_audio.unlink()
+            except Exception:
+                pass
 
 
 def cmd_gt_benchmark(args: argparse.Namespace) -> int:
@@ -4060,6 +4275,11 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
         from .dataset_adapters.piano_synthetic import yield_cases as _yc
 
         cases = list(_yc(corpus_root, limit=args.limit))
+        family = "melodic"
+    elif dataset == "maestro":
+        from .dataset_adapters.maestro import yield_cases as _yc
+
+        cases = list(_yc(corpus_root, split=args.split, limit=args.limit))
         family = "melodic"
     else:
         print(json.dumps({"ok": False, "error": f"unknown dataset: {dataset}"}))
@@ -4250,10 +4470,33 @@ def build_parser() -> argparse.ArgumentParser:
     s_spectrogram.add_argument(
         "--instrument",
         action="append",
-        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "melodic"]),
-        help="Melodic stem to build. May be repeated. Defaults to all melodic stems present.",
+        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "melodic"]),
+        help=(
+            "Stem to build. May be repeated. Defaults to all melodic stems present; "
+            "'drums' (8-octave overlay for the drum-cleanup editor) is built only on explicit request."
+        ),
     )
     s_spectrogram.set_defaults(func=cmd_build_spectrogram)
+
+    s_align_drums = sub.add_parser(
+        "align-drum-onsets",
+        help="Snap a pack's drum_tab hit times onto the drums-stem audio transients (in place).",
+    )
+    s_align_drums.add_argument(
+        "auralsong_dir",
+        help="Path to an existing pack root (the directory containing drum_tab.json + audio/stems/drums.wav).",
+    )
+    s_align_drums.set_defaults(func=cmd_align_drum_onsets)
+
+    s_refresh_meter = sub.add_parser(
+        "refresh-meter",
+        help="Re-run neural beat/downbeat/meter tracking on an existing pack and rewrite song_timeline.json (in place).",
+    )
+    s_refresh_meter.add_argument(
+        "auralsong_dir",
+        help="Path to an existing pack root (the directory containing song_timeline.json + audio/stems/*.wav).",
+    )
+    s_refresh_meter.set_defaults(func=cmd_refresh_meter)
 
     s_bench_overlay = sub.add_parser(
         "benchmark-transcribers",
@@ -4292,7 +4535,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_gt_benchmark.add_argument(
         "--dataset",
         required=True,
-        choices=sorted(["egmd", "guitarset", "guitarset_bass", "guitar_techs", "piano_synthetic"]),
+        choices=sorted(["egmd", "guitarset", "guitarset_bass", "guitar_techs", "piano_synthetic", "maestro"]),
         help=(
             "Annotated corpus to sweep. ``guitarset_bass`` is the low-string"
             " filter of GuitarSet for bass-pitch benchmarks."
