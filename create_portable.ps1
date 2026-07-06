@@ -515,7 +515,12 @@ foreach ($pianoDirName in $pianoModelDirs) {
   }
 }
 
-$mt3ModelpackIds = @("mr_mt3", "yourmt3")
+# manifest.json-based ONNX modelpacks: the MT3 transcribers plus the in-house
+# drum-CRNN (same layout: assets/models/<id>/<version>/{modelpack.json,files/}).
+# Absent dirs are skipped gracefully, so drum_crnn only ships once a trained
+# modelpack is installed (assets/models/drum_crnn/ is gitignored). HIGH PRIORITY
+# follow-up to actually train + ship it: docs/deferred-work-2026-07-05.md.
+$mt3ModelpackIds = @("mr_mt3", "yourmt3", "drum_crnn")
 $portableMt3Modelpacks = @()
 foreach ($modelpackId in $mt3ModelpackIds) {
   $sourceModelpackDir = Join-Path $repoRootAbs ("assets/models/" + $modelpackId)
