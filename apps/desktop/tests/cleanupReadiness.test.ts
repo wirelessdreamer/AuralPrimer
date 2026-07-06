@@ -17,8 +17,11 @@ import {
   classifySpectroResult,
   classifyCandidateResult,
   parseSidecarStatusLine,
+  needsArrangementPrep,
+  arrangementCount,
   _resetReadinessCachesForTest,
   type SidecarRunResult,
+  type AuralSongDetails,
 } from "../src/cleanupReadiness";
 
 beforeEach(() => {
@@ -49,6 +52,57 @@ describe("featureDir", () => {
   it("maps .feedpak -> aural/ and legacy -> features/", () => {
     expect(featureDir("/songs/x.feedpak")).toBe("aural");
     expect(featureDir("/songs/x.auralsong")).toBe("features");
+  });
+  it("maps .sloppak -> aural/ (a manifest pack, C2)", () => {
+    expect(featureDir("/songs/x.sloppak")).toBe("aural");
+    expect(featureDir("/data/songs/minimal.sloppak")).toBe("aural");
+  });
+});
+
+describe("arrangementCount", () => {
+  it("prefers an explicit numeric arrangement_count field", () => {
+    expect(arrangementCount({ arrangement_count: 3 })).toBe(3);
+  });
+  it("falls back to a top-level arrangements array length", () => {
+    expect(arrangementCount({ arrangements: [{ id: "lead" }, { id: "bass" }] })).toBe(2);
+  });
+  it("falls back to the raw manifest arrangements", () => {
+    expect(arrangementCount({ manifest_raw: { arrangements: [{ id: "lead" }] } })).toBe(1);
+  });
+  it("is 0 when nothing is discoverable", () => {
+    expect(arrangementCount({})).toBe(0);
+    expect(arrangementCount(null)).toBe(0);
+    expect(arrangementCount(undefined)).toBe(0);
+  });
+});
+
+describe("needsArrangementPrep", () => {
+  // Mirrors the minimal.sloppak fixture: manifest has 2 arrangements (lead, bass).
+  const sloppakDetails: AuralSongDetails = {
+    manifest_raw: { arrangements: [{ id: "lead" }, { id: "bass" }] },
+  };
+
+  it("is true for a sloppak with arrangements and no derived notes.mid", () => {
+    expect(needsArrangementPrep("/songs/minimal.sloppak", sloppakDetails)).toBe(true);
+  });
+  it("is false once notes.mid exists", () => {
+    expect(
+      needsArrangementPrep("/songs/minimal.sloppak", { ...sloppakDetails, has_notes_mid: true }),
+    ).toBe(false);
+  });
+  it("is true for a feedpak with arrangements and no notes.mid (same rule)", () => {
+    expect(needsArrangementPrep("/songs/x.feedpak", { arrangement_count: 1 })).toBe(true);
+  });
+  it("is false for a legacy .auralsong (not a manifest pack)", () => {
+    expect(needsArrangementPrep("/songs/x.auralsong", sloppakDetails)).toBe(false);
+  });
+  it("is false when the pack declares no arrangements", () => {
+    expect(needsArrangementPrep("/songs/x.sloppak", { arrangement_count: 0 })).toBe(false);
+    expect(needsArrangementPrep("/songs/x.sloppak", {})).toBe(false);
+  });
+  it("degrades to false on missing/undefined details rather than throwing", () => {
+    expect(needsArrangementPrep("/songs/x.sloppak", null)).toBe(false);
+    expect(needsArrangementPrep("/songs/x.sloppak", undefined)).toBe(false);
   });
 });
 

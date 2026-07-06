@@ -21,6 +21,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { featureDir as packFeatureDir } from "@auralprimer/auralsong/packKind";
 import {
   validateRefineCandidates,
   type RefineCandidatesFile,
@@ -55,7 +56,7 @@ const REFINEMENT_SCHEMA_VERSION = "0.1.0";
  * `features/`. The Tauri read/write commands accept either prefix.
  */
 function refineDir(containerPath: string): "aural" | "features" {
-  return containerPath.endsWith(".feedpak") ? "aural" : "features";
+  return packFeatureDir(containerPath);
 }
 
 /**

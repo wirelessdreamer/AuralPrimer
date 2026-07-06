@@ -120,6 +120,110 @@ describe("notesToTab", () => {
   });
 });
 
+// The g/f/k data-loss fix: hits may carry ghost `g`, flam `f`, choke `k`, and
+// unknown future keys beyond {t,p,v}. The Studio drum-cleanup save (notesToTab
+// ∘ hitsToNotes) must preserve them verbatim instead of dropping them.
+describe("drum-hit extras (g/f/k) preservation", () => {
+  // The fixture drum_tab.json hits (packages/sloppak/fixtures/minimal.sloppak),
+  // whose kit is kick / snare / hihat_closed with three g/f/k extras.
+  const FIXTURE_TAB: DrumTabFile = {
+    version: 1,
+    name: "Drums",
+    kit: [{ id: "kick" }, { id: "snare" }, { id: "hihat_closed" }],
+    hits: [
+      { t: 0.0, p: "kick", v: 120 },
+      { t: 0.5, p: "hihat_closed", v: 90 },
+      { t: 1.0, p: "snare", v: 110, g: 1 }, // GHOST
+      { t: 1.5, p: "hihat_closed", v: 90 },
+      { t: 2.0, p: "kick", v: 120 },
+      { t: 2.5, p: "snare", v: 110, f: 1 }, // FLAM
+      { t: 3.0, p: "kick", v: 120 },
+      { t: 3.5, p: "hihat_closed", v: 90, k: 0.2 }, // CHOKE
+    ],
+  };
+  const fxLanes = laneOrderForTab(FIXTURE_TAB);
+
+  it("stashes non-{t,p,v} fields on note.extra (and only when present)", () => {
+    const notes = hitsToNotes(FIXTURE_TAB, fxLanes);
+    const byKey = (extra?: Record<string, unknown>) => extra;
+    // ghost, flam, choke each land on the right hit; plain hits carry no extra.
+    const ghost = notes.find((n) => n.t_on === 1.0)!;
+    const flam = notes.find((n) => n.t_on === 2.5)!;
+    const choke = notes.find((n) => n.t_on === 3.5)!;
+    const plainKick = notes.find((n) => n.t_on === 0.0)!;
+    expect(byKey(ghost.extra)).toEqual({ g: 1 });
+    expect(byKey(flam.extra)).toEqual({ f: 1 });
+    expect(byKey(choke.extra)).toEqual({ k: 0.2 });
+    expect(plainKick.extra).toBeUndefined();
+  });
+
+  it("round-trips g/f/k verbatim through hitsToNotes → notesToTab", () => {
+    const tab2 = notesToTab(hitsToNotes(FIXTURE_TAB, fxLanes), fxLanes, FIXTURE_TAB);
+    const find = (hits: typeof tab2.hits, t: number, p: string) =>
+      (hits ?? []).find((h) => h.t === t && h.p === p)!;
+    expect(find(tab2.hits, 1.0, "snare")).toMatchObject({ t: 1.0, p: "snare", v: 110, g: 1 });
+    expect(find(tab2.hits, 2.5, "snare")).toMatchObject({ t: 2.5, p: "snare", v: 110, f: 1 });
+    expect(find(tab2.hits, 3.5, "hihat_closed")).toMatchObject({ t: 3.5, p: "hihat_closed", v: 90, k: 0.2 });
+    // Each extra appears exactly once; plain hits gain no spurious keys.
+    const plain = find(tab2.hits, 0.0, "kick");
+    expect(Object.keys(plain).sort()).toEqual(["p", "t", "v"]);
+  });
+
+  it("keeps a hit's extras when its onset (time) is edited", () => {
+    const notes = hitsToNotes(FIXTURE_TAB, fxLanes);
+    const ghost = notes.find((n) => n.t_on === 1.0)!;
+    ghost.t_on = 1.25; // simulate a drag-move in the editor
+    ghost.t_off = 1.25 + DRUM_HIT_DISPLAY_SEC;
+    const tab2 = notesToTab(notes, fxLanes, FIXTURE_TAB);
+    const moved = (tab2.hits ?? []).find((h) => h.t === 1.25 && h.p === "snare")!;
+    expect(moved).toMatchObject({ t: 1.25, p: "snare", g: 1 });
+  });
+
+  it("keeps a hit's extras when it is dragged to another lane", () => {
+    const notes = hitsToNotes(FIXTURE_TAB, fxLanes);
+    const choke = notes.find((n) => n.t_on === 3.5)!;
+    choke.pitch = fxLanes.indexOf("snare"); // drag hihat hit onto the snare lane
+    const tab2 = notesToTab(notes, fxLanes, FIXTURE_TAB);
+    const moved = (tab2.hits ?? []).find((h) => h.t === 3.5 && h.p === "snare")!;
+    expect(moved).toMatchObject({ p: "snare", k: 0.2 });
+  });
+
+  it("gives a newly-added note no extras", () => {
+    // A note created in the editor (no `extra`) serializes to a bare {t,p,v}.
+    const fresh = { t_on: 0.75, t_off: 0.83, pitch: fxLanes.indexOf("kick"), velocity: 127 };
+    const tab2 = notesToTab([fresh], fxLanes, FIXTURE_TAB);
+    expect(tab2.hits).toHaveLength(1);
+    expect(Object.keys(tab2.hits![0]!).sort()).toEqual(["p", "t", "v"]);
+  });
+
+  it("survives an unknown future hit key (forward-compat round-trip)", () => {
+    const tab: DrumTabFile = {
+      kit: [{ id: "kick" }],
+      hits: [{ t: 0, p: "kick", v: 100, futureFlag: "x", nested: { a: 1 } }],
+    };
+    const lanes = laneOrderForTab(tab);
+    const notes = hitsToNotes(tab, lanes);
+    expect(notes[0]!.extra).toEqual({ futureFlag: "x", nested: { a: 1 } });
+    const tab2 = notesToTab(notes, lanes, tab);
+    expect(tab2.hits![0]).toMatchObject({ t: 0, p: "kick", v: 100, futureFlag: "x", nested: { a: 1 } });
+  });
+
+  it("never lets an extra key shadow the structural t/p/v", () => {
+    // Even if a stale/hostile extra somehow carried t/p/v, notesToTab writes
+    // the real values (t/p/v are emitted first; hitsToNotes never routes them
+    // into extra, but this pins the guarantee).
+    const note = {
+      t_on: 5.0,
+      t_off: 5.08,
+      pitch: 0,
+      velocity: 111,
+      extra: { t: 999, p: "wrong", v: -1, g: 1 } as Record<string, unknown>,
+    };
+    const tab2 = notesToTab([note], ["kick"], { hits: [] });
+    expect(tab2.hits![0]).toMatchObject({ t: 5.0, p: "kick", v: 111, g: 1 });
+  });
+});
+
 describe("drumLaneLabel", () => {
   it("labels known lanes and passes unknown ids through", () => {
     expect(drumLaneLabel("hihat_closed")).toBe("Hi-hat");

@@ -11,6 +11,7 @@
     "./version": "./src/version.ts",
     "./refinement": "./src/refinement.ts",
     "./refineCandidates": "./src/refineCandidates.ts",
+    "./packKind": "./src/packKind.ts",
     "./feedpak": "./src/feedpak/index.ts"
   },
   "dependencies": {

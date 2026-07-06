@@ -68,6 +68,15 @@ export interface SpectroNote {
   t_off: number; // seconds
   pitch: number; // MIDI
   velocity?: number; // 0..127 (optional)
+  /**
+   * Opaque passenger for non-{t,p,v} fields carried by a drum-tab hit
+   * (ghost `g`, flam `f`, choke `k`, and any unknown future keys). Lane mode
+   * only: `hitsToNotes` stashes the leftover hit fields here and `notesToTab`
+   * spreads them back so a drum-cleanup save can never silently drop them.
+   * User-added notes omit it. Editor edits (move/drag/duplicate/undo) copy it
+   * through via the note object spread — it is never interpreted here.
+   */
+  extra?: Record<string, unknown>;
 }
 
 export type ColormapName = "inferno" | "viridis" | "grayscale";
