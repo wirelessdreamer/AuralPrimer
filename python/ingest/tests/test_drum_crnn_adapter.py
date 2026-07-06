@@ -13,10 +13,15 @@ Three load-bearing contracts:
 
 Only (2) needs the runtime (onnxruntime + a resolvable model); it is skipped
 when either is absent so the pure-logic contracts still run in lightweight CI.
+
+Also covers the run-3 per-class decode-threshold resolution: the priority
+merge across the ``AURAL_DRUM_CRNN_THRESHOLDS`` env var, a resolved
+modelpack's ``decode_thresholds`` manifest block, and the scalar default.
 """
 from __future__ import annotations
 
 import importlib
+import json
 import wave
 from pathlib import Path
 
@@ -30,6 +35,7 @@ from aural_ingest.transcription import DrumEvent
 # heavy import or model resolution at import time -- the exact thing the registry
 # can't tolerate.
 from aural_ingest.algorithms import drum_crnn
+from aural_ingest.training.drum_crnn.config import CLASSES
 
 CANONICAL_NOTES = {36, 38, 42, 47, 49}  # kick, snare, hi_hat, toms, cymbals
 
@@ -129,3 +135,97 @@ def test_transcribe_returns_events_with_model(tmp_path: Path) -> None:
     # Events are time-sorted by the decoder.
     times = [e.time for e in events]
     assert times == sorted(times)
+
+
+# --------------------------------------------------------------------------- #
+# Per-class decode-threshold resolution (run-3 calibration)
+# --------------------------------------------------------------------------- #
+
+def test_decode_threshold_defaults_to_scalar_for_every_class(monkeypatch) -> None:
+    monkeypatch.delenv("AURAL_DRUM_CRNN_THRESHOLDS", raising=False)
+    monkeypatch.delenv("AURAL_DRUM_CRNN_THRESHOLD", raising=False)
+    resolved = drum_crnn._resolve_decode_threshold(Path("/nonexistent/files/drum_crnn.onnx"))
+    assert resolved == {name: drum_crnn.DEFAULT_THRESHOLD for name in CLASSES}
+
+
+def test_decode_threshold_scalar_env_applies_to_every_class(monkeypatch) -> None:
+    monkeypatch.delenv("AURAL_DRUM_CRNN_THRESHOLDS", raising=False)
+    monkeypatch.setenv("AURAL_DRUM_CRNN_THRESHOLD", "0.33")
+    resolved = drum_crnn._resolve_decode_threshold(Path("/nonexistent/files/drum_crnn.onnx"))
+    assert resolved == {name: 0.33 for name in CLASSES}
+
+
+def test_manifest_decode_thresholds_missing_manifest_returns_none(tmp_path: Path) -> None:
+    onnx_path = tmp_path / "verdir" / "files" / "drum_crnn.onnx"  # no modelpack.json alongside
+    assert drum_crnn._manifest_decode_thresholds(onnx_path) is None
+
+
+def test_manifest_decode_thresholds_malformed_json_returns_none(tmp_path: Path) -> None:
+    verdir = tmp_path / "verdir"
+    verdir.mkdir()
+    (verdir / "modelpack.json").write_text("{not valid json", encoding="utf-8")
+    onnx_path = verdir / "files" / "drum_crnn.onnx"
+    assert drum_crnn._manifest_decode_thresholds(onnx_path) is None
+
+
+def test_manifest_decode_thresholds_no_block_returns_none(tmp_path: Path) -> None:
+    verdir = tmp_path / "verdir"
+    verdir.mkdir()
+    (verdir / "modelpack.json").write_text(json.dumps({"id": "drum_crnn"}), encoding="utf-8")
+    onnx_path = verdir / "files" / "drum_crnn.onnx"
+    assert drum_crnn._manifest_decode_thresholds(onnx_path) is None
+
+
+def test_manifest_decode_thresholds_reads_block(tmp_path: Path) -> None:
+    verdir = tmp_path / "verdir"
+    verdir.mkdir()
+    thresholds = {"kick": 0.2, "cymbals": 0.12}
+    (verdir / "modelpack.json").write_text(
+        json.dumps({"id": "drum_crnn", "decode_thresholds": thresholds}), encoding="utf-8"
+    )
+    onnx_path = verdir / "files" / "drum_crnn.onnx"
+    assert drum_crnn._manifest_decode_thresholds(onnx_path) == thresholds
+
+
+def test_resolve_decode_threshold_manifest_overrides_scalar_default(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("AURAL_DRUM_CRNN_THRESHOLDS", raising=False)
+    monkeypatch.delenv("AURAL_DRUM_CRNN_THRESHOLD", raising=False)
+    verdir = tmp_path / "verdir"
+    verdir.mkdir()
+    (verdir / "modelpack.json").write_text(
+        json.dumps({"decode_thresholds": {"cymbals": 0.12}}), encoding="utf-8"
+    )
+    onnx_path = verdir / "files" / "drum_crnn.onnx"
+
+    resolved = drum_crnn._resolve_decode_threshold(onnx_path)
+    assert resolved["cymbals"] == 0.12
+    # Every other class untouched by the manifest falls back to the scalar default.
+    for name in CLASSES:
+        if name != "cymbals":
+            assert resolved[name] == drum_crnn.DEFAULT_THRESHOLD
+
+
+def test_resolve_decode_threshold_env_overrides_manifest_per_class(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Highest priority wins PER CLASS -- a partial env override doesn't blow
+    away manifest calibration for the classes it doesn't mention."""
+    verdir = tmp_path / "verdir"
+    verdir.mkdir()
+    (verdir / "modelpack.json").write_text(
+        json.dumps({"decode_thresholds": {"kick": 0.2, "cymbals": 0.12}}),
+        encoding="utf-8",
+    )
+    onnx_path = verdir / "files" / "drum_crnn.onnx"
+
+    monkeypatch.setenv("AURAL_DRUM_CRNN_THRESHOLDS", "cymbals:0.08")
+    monkeypatch.delenv("AURAL_DRUM_CRNN_THRESHOLD", raising=False)
+
+    resolved = drum_crnn._resolve_decode_threshold(onnx_path)
+    assert resolved["cymbals"] == 0.08  # env wins over manifest
+    assert resolved["kick"] == 0.2  # manifest value survives (env didn't mention kick)
+    for name in CLASSES:
+        if name not in ("cymbals", "kick"):
+            assert resolved[name] == drum_crnn.DEFAULT_THRESHOLD  # scalar fallback

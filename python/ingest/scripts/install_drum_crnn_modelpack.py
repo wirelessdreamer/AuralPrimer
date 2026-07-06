@@ -63,11 +63,23 @@ def main() -> int:
         default=DEFAULT_VERSION,
         help=f"Modelpack version dir (default: {DEFAULT_VERSION}).",
     )
+    ap.add_argument(
+        "--thresholds",
+        default="",
+        help=(
+            "Per-class decode thresholds calibrated on a held-out set, e.g. "
+            "'kick:0.2,snare:0.25,hi_hat:0.2,toms:0.2,cymbals:0.12'. Written "
+            "into the manifest's decode_thresholds block so calibration ships "
+            "with the model; the drum_crnn adapter reads it automatically. "
+            "Omit to ship without calibration (adapter falls back to its "
+            "scalar default)."
+        ),
+    )
     args = ap.parse_args()
 
     import torch
 
-    from aural_ingest.training.drum_crnn.config import ModelConfig
+    from aural_ingest.training.drum_crnn.config import ModelConfig, parse_class_thresholds
     from aural_ingest.training.drum_crnn.export_onnx import export_to_onnx, verify_onnx
     from aural_ingest.training.drum_crnn.model import DrumCRNN
 
@@ -111,6 +123,10 @@ def main() -> int:
             {"model": MODELPACK_ID, "path": str(ONNX_RELPATH).replace("\\", "/")}
         ],
     }
+    if args.thresholds:
+        thresholds = parse_class_thresholds(args.thresholds)
+        manifest["decode_thresholds"] = thresholds
+        print(f"  decode_thresholds -> {thresholds}")
     (ver_dir / "modelpack.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"  wrote {ver_dir / 'modelpack.json'}")
 

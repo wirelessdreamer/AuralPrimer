@@ -33,6 +33,32 @@ DRUM_5CLASS_TO_MIDI_FALLBACK: dict[str, int] = {
 }
 
 
+def parse_class_thresholds(raw: str) -> dict[str, float]:
+    """Parse a ``"kick:0.2,snare:0.25,..."`` string into a ``{class: float}`` dict.
+
+    Shared by the runtime adapter (``AURAL_DRUM_CRNN_THRESHOLDS`` env var) and
+    the modelpack installer (``--thresholds`` CLI flag) so both parse the same
+    format identically. Unknown class names are kept as-is (callers may filter
+    against ``CLASSES``); blank segments and unparseable values are skipped
+    rather than raising, since this feeds env-var/CLI input where one bad
+    entry shouldn't take down the whole process.
+    """
+    out: dict[str, float] = {}
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+        name, _, val = part.partition(":")
+        name = name.strip()
+        if not name:
+            continue
+        try:
+            out[name] = float(val.strip())
+        except ValueError:
+            continue
+    return out
+
+
 @dataclass(frozen=True)
 class FeatureConfig:
     """Log-mel spectrogram front-end. Deterministic given the same input.

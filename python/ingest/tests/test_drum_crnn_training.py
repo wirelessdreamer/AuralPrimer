@@ -26,6 +26,7 @@ from aural_ingest.training.drum_crnn.config import (
     ModelConfig,
     TargetConfig,
     TrainConfig,
+    parse_class_thresholds,
 )
 from aural_ingest.training.drum_crnn.decode import decode_events
 from aural_ingest.training.drum_crnn.features import (
@@ -222,6 +223,31 @@ def test_decode_recovers_planted_onsets() -> None:
     assert abs(kicks[0].time - 30 * feat.hop_length / feat.sample_rate) < 1e-6
 
 
+def test_decode_events_accepts_per_class_threshold_mapping() -> None:
+    # A peak at 0.3 clears a lax cymbals threshold (0.2) but not a strict
+    # kick threshold (0.5) -- proves per-class values are actually applied,
+    # not just the first one found.
+    feat = FeatureConfig()
+    n_frames = 60
+    probs = np.zeros((n_frames, len(CLASSES)), dtype=np.float32)
+    probs[10, CLASSES.index("kick")] = 0.3
+    probs[20, CLASSES.index("cymbals")] = 0.3
+    thresholds = {name: 0.5 for name in CLASSES}
+    thresholds["cymbals"] = 0.2
+    events = decode_events(probs, feat, threshold=thresholds, min_gap_sec=0.03)
+    notes = {e.note for e in events}
+    assert 49 in notes  # cymbals -- cleared its lax threshold
+    assert 36 not in notes  # kick -- did not clear its strict threshold
+
+
+def test_decode_events_mapping_missing_class_raises() -> None:
+    feat = FeatureConfig()
+    probs = np.zeros((10, len(CLASSES)), dtype=np.float32)
+    incomplete = {name: 0.2 for name in CLASSES if name != "cymbals"}
+    with pytest.raises(KeyError, match="cymbals"):
+        decode_events(probs, feat, threshold=incomplete)
+
+
 # --------------------------------------------------------------------------- #
 # (d) ONNX export round-trip
 # --------------------------------------------------------------------------- #
@@ -356,6 +382,40 @@ def test_resolve_pos_weight_auto_no_usable_rows_returns_none() -> None:
     rows = [{"_midi_path": "x", "duration": "0"}]
     cfg = TrainConfig(pos_weight="auto")
     assert resolve_pos_weight(cfg, rows) is None
+
+
+# --------------------------------------------------------------------------- #
+# (f2) per-class decode-threshold string parsing (shared by env var + CLI)
+# --------------------------------------------------------------------------- #
+
+def test_parse_class_thresholds_parses_all_classes() -> None:
+    raw = "kick:0.2,snare:0.25,hi_hat:0.2,toms:0.2,cymbals:0.12"
+    result = parse_class_thresholds(raw)
+    assert result == {
+        "kick": 0.2,
+        "snare": 0.25,
+        "hi_hat": 0.2,
+        "toms": 0.2,
+        "cymbals": 0.12,
+    }
+
+
+def test_parse_class_thresholds_tolerates_whitespace_and_partial_input() -> None:
+    assert parse_class_thresholds(" kick : 0.3 , cymbals:0.1 ") == {
+        "kick": 0.3,
+        "cymbals": 0.1,
+    }
+
+
+def test_parse_class_thresholds_skips_malformed_segments() -> None:
+    # no colon, empty segment, and an unparseable value are all skipped
+    # rather than raising -- this feeds env-var/CLI input.
+    raw = "kick:0.2,,justaname,snare:notafloat,toms:0.4"
+    assert parse_class_thresholds(raw) == {"kick": 0.2, "toms": 0.4}
+
+
+def test_parse_class_thresholds_empty_string_returns_empty_dict() -> None:
+    assert parse_class_thresholds("") == {}
 
 
 # --------------------------------------------------------------------------- #

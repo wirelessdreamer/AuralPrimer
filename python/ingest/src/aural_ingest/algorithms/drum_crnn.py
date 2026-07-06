@@ -23,11 +23,21 @@ Model resolution order:
   2. an installed ``assets/models/drum_crnn/<version>/`` modelpack, discovered
      with the same search-root logic the MT3 resolver uses.
 
-Decode threshold defaults to **0.20** (the F1-optimal point for the full-corpus
-run-2 weights on the stratified-30 eval: F1 0.546 vs 0.537 at 0.15; at 0.5 the
-precision-heavy model under-triggers and F1 drops to ~0.41). Override with
-``AURAL_DRUM_CRNN_THRESHOLD``. ``min_gap`` defaults to 0.02 s. A proper per-class
-threshold calibration on a guard set is deferred to the promotion-gate phase.
+Decode threshold: a per-class mapping, resolved with this priority (highest
+first), one class at a time so a partial override doesn't lose calibration
+for the classes it doesn't mention:
+
+  1. ``AURAL_DRUM_CRNN_THRESHOLDS`` env var, e.g.
+     ``"kick:0.2,snare:0.25,hi_hat:0.2,toms:0.2,cymbals:0.12"``.
+  2. a ``decode_thresholds`` block in the resolved modelpack's
+     ``modelpack.json`` (written by ``install_drum_crnn_modelpack.py
+     --thresholds ...`` -- calibration ships WITH the model).
+  3. the scalar default (env ``AURAL_DRUM_CRNN_THRESHOLD``, else
+     ``DEFAULT_THRESHOLD`` -- 0.20, the F1-optimal point for the run-2
+     full-corpus weights at a uniform threshold: F1 0.546 vs 0.537 at 0.15;
+     at 0.5 the precision-heavy model under-triggers and F1 drops to ~0.41).
+
+``min_gap`` defaults to 0.02 s.
 """
 from __future__ import annotations
 
@@ -38,7 +48,8 @@ from pathlib import Path
 from aural_ingest.transcription import DrumEvent
 
 _ENV_ONNX = "AURAL_DRUM_CRNN_ONNX"          # explicit path to the .onnx
-_ENV_THRESHOLD = "AURAL_DRUM_CRNN_THRESHOLD"  # decode threshold override
+_ENV_THRESHOLD = "AURAL_DRUM_CRNN_THRESHOLD"  # scalar decode threshold override
+_ENV_THRESHOLDS = "AURAL_DRUM_CRNN_THRESHOLDS"  # per-class override
 
 DEFAULT_THRESHOLD = 0.20  # F1-optimal for run-2 full-corpus weights; NOT 0.5 (under-triggers)
 DEFAULT_MIN_GAP_SEC = 0.02
@@ -123,6 +134,9 @@ def _get_session(onnx_path: Path):
 
 
 def _decode_threshold() -> float:
+    """Scalar fallback threshold (env ``AURAL_DRUM_CRNN_THRESHOLD`` or
+    ``DEFAULT_THRESHOLD``) -- the last-resort layer in :func:`_resolve_decode_threshold`.
+    """
     raw = os.getenv(_ENV_THRESHOLD)
     if not raw:
         return DEFAULT_THRESHOLD
@@ -130,6 +144,60 @@ def _decode_threshold() -> float:
         return float(raw)
     except ValueError:
         return DEFAULT_THRESHOLD
+
+
+def _manifest_decode_thresholds(onnx_path: Path) -> dict[str, float] | None:
+    """Read a ``decode_thresholds`` block from the modelpack.json next to
+    ``onnx_path`` (the installer's ``<id>/<version>/files/drum_crnn.onnx``
+    layout -> ``<id>/<version>/modelpack.json``).
+
+    Returns ``None`` if there is no adjacent manifest, it doesn't parse, or it
+    has no usable ``decode_thresholds`` block -- best-effort, never raises,
+    since an explicit ``AURAL_DRUM_CRNN_ONNX`` override may point at a bare
+    ``.onnx`` with no sibling manifest at all.
+    """
+    manifest_path = onnx_path.parent.parent / "modelpack.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        from aural_ingest.transcription import _read_json_file
+
+        manifest = _read_json_file(manifest_path)
+        thresholds = manifest.get("decode_thresholds")
+        if not isinstance(thresholds, dict) or not thresholds:
+            return None
+        return {str(k): float(v) for k, v in thresholds.items()}
+    except Exception:
+        return None
+
+
+def _resolve_decode_threshold(onnx_path: Path) -> dict[str, float]:
+    """Compose a full per-class decode-threshold mapping.
+
+    Resolved per class (not per source), so a partial override at a higher
+    priority still leaves the other classes calibrated instead of falling all
+    the way back to the scalar default:
+
+      1. ``AURAL_DRUM_CRNN_THRESHOLDS`` env var.
+      2. the resolved modelpack's ``decode_thresholds`` manifest block.
+      3. the scalar default (:func:`_decode_threshold`).
+    """
+    from aural_ingest.training.drum_crnn.config import CLASSES, parse_class_thresholds
+
+    resolved = {name: _decode_threshold() for name in CLASSES}
+
+    manifest_thresholds = _manifest_decode_thresholds(onnx_path) or {}
+    for name, value in manifest_thresholds.items():
+        if name in resolved:
+            resolved[name] = value
+
+    raw_env = os.getenv(_ENV_THRESHOLDS)
+    if raw_env:
+        for name, value in parse_class_thresholds(raw_env).items():
+            if name in resolved:
+                resolved[name] = value
+
+    return resolved
 
 
 def transcribe(stem_path: Path) -> list[DrumEvent]:
@@ -177,6 +245,6 @@ def transcribe(stem_path: Path) -> list[DrumEvent]:
     return decode_events(
         probs.astype(np.float32),
         feat,
-        threshold=_decode_threshold(),
+        threshold=_resolve_decode_threshold(onnx_path),
         min_gap_sec=DEFAULT_MIN_GAP_SEC,
     )
