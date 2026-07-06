@@ -310,6 +310,11 @@ MT3_DRUM_ENGINE_MODEL_INFO: dict[str, dict[str, Any]] = {
 # KNOWN_MT3_DRUM_ENGINES): a compact 5-class CRNN exported to ONNX, run
 # in-process via onnxruntime. Opt-in only -- selectable via --drum-filter
 # drum_crnn; not wired into any profile default.
+#
+# HIGH PRIORITY follow-up (land opt-in now, finish soon): train a converged
+# model, ship the modelpack in the portable, then promote to the gameplay
+# default with per-class threshold calibration. Full plan + resume steps:
+# docs/deferred-work-2026-07-05.md ("finish the in-house drum-CRNN engine").
 DRUM_CRNN_ENGINE_MODEL_INFO: dict[str, dict[str, Any]] = {
     "drum_crnn": {
         "engine": "drum_crnn",
