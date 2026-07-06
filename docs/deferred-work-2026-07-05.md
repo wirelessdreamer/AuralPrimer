@@ -23,6 +23,49 @@ cold.
 
 ---
 
+## ★ HIGH PRIORITY — finish the in-house drum-CRNN engine  — *deferred: land opt-in first*
+
+**What.** The `claude/drums-crnn-engine` work landed the in-house 5-class drum
+CRNN (kick/snare/hi-hat/toms/cymbals) as an **opt-in** engine: a complete ONNX
+inference adapter (`python/ingest/src/aural_ingest/algorithms/drum_crnn.py`,
+graceful DSP fallback when no model), the full E-GMD training harness
+(`python/ingest/src/aural_ingest/training/drum_crnn/`), ONNX export + a
+modelpack installer (`python/ingest/scripts/install_drum_crnn_modelpack.py`),
+and tests. Benchmarks are real E-GMD ground truth: run-2 (341 h corpus,
+10 epochs) **clears the Magenta neural floor** — F1 0.547 vs 0.535 exact-class,
+beating it on kick/hi-hat/toms. Three steps remain and should be finished
+**soon** (this is high priority):
+
+1. **Train a converged production model.** Run-2 was still under-trained
+   (frame-F1 climbing at epoch 10; cymbals under-learned). Run a longer
+   converged pass (+ cymbal class weighting) on the full E-GMD corpus
+   (`E:\AudioSourceOfTruthData\extracted\e_gmd`) → `checkpoint_best.pt`.
+2. **Build + ship the modelpack.** Feed the checkpoint to
+   `install_drum_crnn_modelpack.py` → `assets/models/drum_crnn/<version>/`.
+   The portable already scans that dir (create_portable.ps1's modelpack list
+   now includes `drum_crnn`), so a repack bundles it automatically once present.
+3. **Promote opt-in → default + calibrate (Phase D).** Per-class threshold
+   calibration on a guard set, a gameplay-metric regression check, and an
+   in-game/listening review, THEN flip `DEFAULT_DRUM_ENGINE` / add `drum_crnn`
+   to the `gameplay_default` profile in `transcription.py`.
+
+**Why deferred (this push).** Training is heavy/external (a many-hour corpus
+pass) and its weights ship via the modelpack, not the repo. The opt-in engine
+is complete, green, and license-clean (E-GMD CC-BY 4.0; no ADTOF/NC code), so
+it lands now; production promotion is a gated follow-on.
+
+**Interim state.** `drum_crnn` is registered + selectable
+(`--drum-filter drum_crnn` / the `research_ab` profile) but **not** in any
+default profile; `DEFAULT_DRUM_ENGINE` stays `beat_conditioned_multiband_decoder`.
+With no modelpack installed the adapter raises → the orchestrator falls back to
+DSP, so default imports are unaffected.
+
+**Resume.** Full roadmap + license analysis in
+`docs/research-drums-license-resolution-2026-07-02.md` (§ "Recommended drum
+path"); benchmark numbers in `benchmarks/drums/drum_crnn_training_run2.md`.
+
+---
+
 ## C — Compound-meter denominator (6/8, 12/8, …)  — *deferred: cosmetic + risky*
 
 **What.** Beat This! gives a reliable beats-per-bar count (the numerator) but
