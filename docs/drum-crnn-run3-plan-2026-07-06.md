@@ -5,6 +5,21 @@ finish the in-house drum-CRNN engine" item from
 [`deferred-work-2026-07-05.md`](deferred-work-2026-07-05.md), turned into a
 concrete, ordered implementation plan.
 
+> **Outcome (2026-07-06):** Steps 1–3 executed as planned; the harness
+> upgrades (`pos_weight`, `init_checkpoint`, `EarlyStopper`) and per-class
+> threshold calibration machinery all work correctly and are merged. **The
+> run-3 checkpoint itself did NOT clear the plan's success criteria and is
+> NOT promoted** — on a controlled apples-to-apples comparison, cymbals (the
+> whole point of the `pos_weight` fix) regressed rather than improved
+> (F1 0.518 → 0.464), and the overall 5-class-aggregated F1 is a statistical
+> tie with run-2 (0.695 vs 0.691). Run-2 remains the reigning checkpoint; no
+> default-engine or modelpack changes shipped. Full analysis + follow-up
+> recommendations (lower `pos_weight_cap`, a from-scratch run instead of a
+> fine-tune, or focal loss) in
+> [`benchmarks/drums/drum_crnn_training_run3.md`](../benchmarks/drums/drum_crnn_training_run3.md).
+> Steps 4–5 (ship modelpack, promote to default) are accordingly **not
+> started** — they're blocked on a run that actually beats run-2.
+
 ## Where we are (verified against main @ `1e3034c`)
 
 - The `drum_crnn` **opt-in engine is complete on main**: ONNX adapter
