@@ -10,6 +10,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { featureDir as packFeatureDir, isManifestPack } from "@auralprimer/auralsong/packKind";
 
 // Melodic stem roles we probe for (drums/vocals are never melodic targets).
 // One guitar (the lead/rhythm split was a frequency-tilt, not real separation,
@@ -29,7 +30,19 @@ export const MELODIC_ROLE_LABELS: Record<string, string> = {
 };
 
 export type RoleReadiness = { spectrogram: boolean; candidates: boolean };
-export type RowReady = { spec: boolean; cand: boolean; lyr: boolean };
+export type RowReady = {
+  spec: boolean;
+  cand: boolean;
+  lyr: boolean;
+  /**
+   * True when a manifest pack (sloppak/feedpak) declares arrangements but has
+   * no derived `aural/notes.mid` yet — the row should offer "Prep notes"
+   * before the spectrogram/candidate steps. Optional so legacy consumers
+   * (and the sort-by column keys, which only cover spec/cand/lyr) are
+   * unaffected.
+   */
+  prep?: boolean;
+};
 
 export type SidecarRunResult = {
   ok: boolean;
@@ -41,9 +54,13 @@ export type SidecarRunResult = {
 
 export type SpectroOutcome = "ok" | "nostem" | "error";
 
-/** feedpak relocates feature artifacts under aural/ (legacy: features/). */
+/**
+ * feedpak/sloppak relocate feature artifacts under aural/ (legacy: features/).
+ * Re-exported from the shared @auralprimer/auralsong/packKind helper (C2) so
+ * every studio site agrees on the mapping.
+ */
 export function featureDir(containerPath: string): "aural" | "features" {
-  return containerPath.endsWith(".feedpak") ? "aural" : "features";
+  return packFeatureDir(containerPath);
 }
 
 // Caches keyed by pack (+ role). Invalidated after a build/compute so the
@@ -69,6 +86,74 @@ export function invalidateCleanupCache(pack: string, role?: string): void {
 export function _resetReadinessCachesForTest(): void {
   cleanupReadinessCache.clear();
   stemRolesCache.clear();
+}
+
+/**
+ * Shape of `get_auralsong_details` fields this module reads. The Rust lane
+ * owns the authoritative struct (CONTRACT C6); we consume every field
+ * DEFENSIVELY (all optional, feature-detected) so a rename on the Rust side
+ * degrades to "no prep offered" rather than a crash.
+ *
+ * `has_notes_mid` already exists. For arrangement readiness we accept EITHER
+ * a numeric count field (any of the names below) OR a raw `arrangements`
+ * list, and finally fall back to `manifest_raw.arrangements`.
+ */
+export type AuralSongDetails = {
+  has_notes_mid?: boolean;
+  /** Authoritative field name emitted by the Rust `get_auralsong_details`. */
+  arrangements_count?: number;
+  arrangement_count?: number;
+  arrangements?: unknown;
+  /**
+   * manifest `lyrics` pointer (rel path); sloppak lyrics live at pack root.
+   * `lyrics_rel` is the authoritative Rust field; the others are accepted as
+   * fallbacks so a rename degrades gracefully.
+   */
+  lyrics_rel?: string;
+  lyrics_rel_path?: string;
+  lyrics_path?: string;
+  manifest_raw?: {
+    arrangements?: unknown;
+    lyrics?: unknown;
+    [k: string]: unknown;
+  } | null;
+  [k: string]: unknown;
+};
+
+/**
+ * Count the arrangements a pack's manifest declares, reading whichever field
+ * the Rust `get_auralsong_details` summary exposes (feature-detected): an
+ * explicit `arrangement_count`, a top-level `arrangements` array, else the
+ * raw manifest's `arrangements`. Returns 0 when none are discoverable.
+ */
+export function arrangementCount(details: AuralSongDetails | null | undefined): number {
+  if (!details) return 0;
+  if (typeof details.arrangements_count === "number") return details.arrangements_count;
+  if (typeof details.arrangement_count === "number") return details.arrangement_count;
+  if (Array.isArray(details.arrangements)) return details.arrangements.length;
+  const raw = details.manifest_raw?.arrangements;
+  if (Array.isArray(raw)) return raw.length;
+  return 0;
+}
+
+/**
+ * True when a manifest pack declares arrangements but has no derived
+ * `aural/notes.mid` yet — i.e. the studio should offer to derive melodic
+ * gameplay notes from the arrangement wire JSONs (Phase 5 / the
+ * `ingest_prep_arrangements` sidecar command).
+ *
+ * Only manifest packs (feedpak/sloppak) qualify; legacy `.auralsong` packs
+ * have no arrangement wire format. Consumes `details.has_notes_mid`
+ * defensively (an absent field is treated as "not present" so prep is
+ * offered rather than silently skipped).
+ */
+export function needsArrangementPrep(
+  pack: string,
+  details: AuralSongDetails | null | undefined,
+): boolean {
+  if (!isManifestPack(pack)) return false;
+  if (arrangementCount(details) <= 0) return false;
+  return details?.has_notes_mid !== true;
 }
 
 /** True iff read_auralsong_json resolves for relPath (throws => artifact absent). */

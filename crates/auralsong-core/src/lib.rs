@@ -6,6 +6,10 @@
 //! each `lib.rs`; it now lives here once.
 //!
 //! Modules:
+//! - [`container`] — pack-kind classification ([`PackKind`] / [`is_manifest_pack`]),
+//!   the one place the `.feedpak` / `.sloppak` / `.auralsong` extension strings
+//!   live. Sloppak (Slopsmith's format) is feedpak's sibling and takes the same
+//!   manifest-driven read path.
 //! - [`manifest`] — manifest parsing (with UTF-8 BOM strip), the dir/zip
 //!   readers, and the [`ManifestSummary`] / [`AuralSongScanEntry`] summary types.
 //! - [`feedpak`] — reader for the feedpak container (`manifest.yaml`), the
@@ -14,10 +18,12 @@
 //! - [`songs_watch`] — filesystem watcher that emits a debounced
 //!   `songs_folder_changed` Tauri event when the songs folder changes.
 
+pub mod container;
 pub mod feedpak;
 pub mod manifest;
 pub mod songs_watch;
 
+pub use container::{is_auralsong, is_manifest_pack, is_supported_pack, pack_kind, PackKind};
 pub use feedpak::{
     parse_feedpak_manifest_yaml, read_dir_feedpak_manifest, read_zip_feedpak_manifest,
     scan_feedpak, FeedpakArrangement, FeedpakManifest, FeedpakStem, FeedpakSummary,

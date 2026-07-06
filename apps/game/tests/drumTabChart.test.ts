@@ -64,6 +64,34 @@ describe("drumChartFromTab", () => {
     expect(sel!.events.map((e) => e.lane)).toEqual(["BD", "SD"]);
   });
 
+  it("ignores drum-hit extras (g/f/k/unknown) — charting is unchanged", () => {
+    // The game charter only reads {t,p,v}; ghost/flam/choke and unknown future
+    // keys must not break parsing or alter the lane mapping.
+    const plain = drumChartFromTab(
+      tab([
+        { t: 1.0, p: "snare", v: 110 },
+        { t: 2.5, p: "snare", v: 110 },
+        { t: 3.5, p: "hihat_closed", v: 90 },
+      ]),
+    );
+    const withExtras = drumChartFromTab({
+      version: 1,
+      name: "drums",
+      kit: [],
+      hits: [
+        { t: 1.0, p: "snare", v: 110, g: 1 }, // ghost
+        { t: 2.5, p: "snare", v: 110, f: 1 }, // flam
+        { t: 3.5, p: "hihat_closed", v: 90, k: 0.2, futureFlag: "x" }, // choke + unknown
+      ],
+    });
+    expect(withExtras).not.toBeNull();
+    expect(plain).not.toBeNull();
+    // Same lanes and times as the extra-free version — extras are inert.
+    expect(withExtras!.events.map((e) => e.lane)).toEqual(plain!.events.map((e) => e.lane));
+    expect(withExtras!.events.map((e) => e.t)).toEqual(plain!.events.map((e) => e.t));
+    expect(withExtras!.events).toHaveLength(3);
+  });
+
   it("returns null for unusable documents (no hits / empty hits / not an object)", () => {
     expect(drumChartFromTab(null)).toBeNull();
     expect(drumChartFromTab({})).toBeNull();

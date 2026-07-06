@@ -1,0 +1,44 @@
+{
+  "name": "Lead",
+  "tuning": [0, 0, 0, 0, 0, 0],
+  "capo": 2,
+  "notes": [
+    { "t": 0.0, "s": 0, "f": 0, "sus": 0.0 },
+    { "t": 0.5, "s": 1, "f": 5, "sus": 0.0 },
+    { "t": 1.0, "s": 2, "f": 7, "sus": 0.4 },
+    { "t": 1.5, "s": 3, "f": 3, "sus": 0.0, "pm": 1 },
+    { "t": 1.75, "s": 3, "f": 5, "sus": 0.0, "ho": 1 }
+  ],
+  "chords": [
+    { "t": 2.0, "id": 0, "hd": 0, "notes": [] }
+  ],
+  "anchors": [
+    { "time": 0.0, "fret": 1, "width": 4 }
+  ],
+  "handshapes": [
+    { "chord_id": 0, "start_time": 2.0, "end_time": 2.5, "arp": false }
+  ],
+  "templates": [
+    {
+      "name": "Em",
+      "displayName": "Em",
+      "arp": false,
+      "frets": [0, 2, 2, -1, -1, -1],
+      "fingers": [0, 2, 3, -1, -1, -1]
+    }
+  ],
+  "beats": [
+    { "time": 0.0, "measure": 1 },
+    { "time": 0.5, "measure": -1 },
+    { "time": 1.0, "measure": -1 },
+    { "time": 1.5, "measure": -1 },
+    { "time": 2.0, "measure": 2 },
+    { "time": 2.5, "measure": -1 },
+    { "time": 3.0, "measure": -1 },
+    { "time": 3.5, "measure": -1 }
+  ],
+  "sections": [
+    { "name": "intro", "number": 1, "time": 0.0 },
+    { "name": "verse", "number": 1, "time": 2.0 }
+  ]
+}

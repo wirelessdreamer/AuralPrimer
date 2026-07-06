@@ -4,6 +4,7 @@ export * from "./manifest";
 export * from "./migrations";
 export * from "./readZipManifest";
 export * from "./songsFolder";
+export * from "./packKind";
 export * from "./validateManifest";
 export * from "./validateFeatures";
 export * from "./validateAuralSong";
