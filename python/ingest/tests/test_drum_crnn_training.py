@@ -18,12 +18,14 @@ import struct
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from aural_ingest.training.drum_crnn.config import (
     CLASSES,
     FeatureConfig,
     ModelConfig,
     TargetConfig,
+    TrainConfig,
 )
 from aural_ingest.training.drum_crnn.decode import decode_events
 from aural_ingest.training.drum_crnn.features import (
@@ -33,9 +35,17 @@ from aural_ingest.training.drum_crnn.features import (
 from aural_ingest.training.drum_crnn.model import DrumCRNN, count_parameters
 from aural_ingest.training.drum_crnn.targets import (
     build_targets_from_midi,
+    estimate_class_frame_counts,
     gm_note_to_class_index,
     onsets_to_class_frames,
     parse_drum_onsets,
+    pos_weight_from_counts,
+)
+from aural_ingest.training.drum_crnn.train import (
+    EarlyStopper,
+    load_init_checkpoint,
+    resolve_pos_weight,
+    train,
 )
 
 
@@ -229,3 +239,213 @@ def test_onnx_export_round_trips(tmp_path: Path) -> None:
     # raises if they differ by more than atol; returns the max abs diff.
     max_diff = verify_onnx(model, onnx_path, n_mels=cfg.n_mels, frames=97, atol=1e-4)
     assert max_diff < 1e-4
+
+
+# --------------------------------------------------------------------------- #
+# (e) pos_weight estimation + resolution (run-3 class-imbalance fix)
+# --------------------------------------------------------------------------- #
+
+def test_estimate_class_frame_counts_from_synthetic_rows(tmp_path: Path) -> None:
+    feat = FeatureConfig()
+    tgt = TargetConfig(smoothing_frames=0)  # exact single-frame positives, easy to count
+
+    # File A: one kick onset at 0.5s (qn 1 @ 120 BPM).
+    midi_a = tmp_path / "a.midi"
+    _write_drum_midi(midi_a, [(480, 36)], tpq=480)
+    # File B: one cymbal onset at 1.0s (qn 2) -- crash=49.
+    midi_b = tmp_path / "b.midi"
+    _write_drum_midi(midi_b, [(960, 49)], tpq=480)
+
+    rows = [
+        {"_midi_path": str(midi_a), "duration": "2.0"},
+        {"_midi_path": str(midi_b), "duration": "2.0"},
+    ]
+    pos_counts, total_frames = estimate_class_frame_counts(rows, feat, tgt, max_files=10)
+
+    expected_frames_per_file = n_frames_for_samples(int(2.0 * feat.sample_rate), feat)
+    assert total_frames == 2 * expected_frames_per_file
+    assert pos_counts[CLASSES.index("kick")] == 1
+    assert pos_counts[CLASSES.index("cymbals")] == 1
+    assert pos_counts[CLASSES.index("snare")] == 0
+
+
+def test_estimate_class_frame_counts_skips_missing_duration_and_bad_midi(tmp_path: Path) -> None:
+    feat = FeatureConfig()
+    tgt = TargetConfig()
+    bogus_midi = tmp_path / "not_midi.midi"
+    bogus_midi.write_bytes(b"not a midi file")
+    rows = [
+        {"_midi_path": str(bogus_midi), "duration": "2.0"},  # bad midi -> skipped
+        {"_midi_path": str(bogus_midi), "duration": "0"},  # zero duration -> skipped
+        {"_midi_path": str(bogus_midi), "duration": ""},  # empty duration -> skipped
+        {"duration": "2.0"},  # no _midi_path -> skipped
+    ]
+    pos_counts, total_frames = estimate_class_frame_counts(rows, feat, tgt)
+    assert total_frames == 0
+    assert pos_counts.sum() == 0
+
+
+def test_estimate_class_frame_counts_empty_rows_returns_zeros() -> None:
+    pos_counts, total_frames = estimate_class_frame_counts([], FeatureConfig(), TargetConfig())
+    assert total_frames == 0
+    assert pos_counts.shape == (len(CLASSES),)
+    assert pos_counts.sum() == 0
+
+
+def test_pos_weight_from_counts_is_capped_and_floors_at_one() -> None:
+    # kick: 500/1000 positive -> neg/pos = 1.0 (floor, not < 1 even though
+    # it's the majority class in this synthetic example).
+    # cymbals: 10/1000 positive -> neg/pos = 99, capped at 25.
+    counts = np.array([500, 10], dtype=np.int64)
+    weights = pos_weight_from_counts(counts, total_frames=1000, cap=25.0)
+    assert weights.shape == (2,)
+    assert weights[0] == pytest.approx(1.0)
+    assert weights[1] == pytest.approx(25.0)
+
+
+def test_pos_weight_from_counts_zero_total_returns_ones() -> None:
+    weights = pos_weight_from_counts(np.zeros(len(CLASSES), dtype=np.int64), total_frames=0)
+    assert np.array_equal(weights, np.ones(len(CLASSES), dtype=np.float32))
+
+
+def test_resolve_pos_weight_none_disables_weighting() -> None:
+    cfg = TrainConfig(pos_weight=None)
+    assert resolve_pos_weight(cfg, rows=[]) is None
+
+
+def test_resolve_pos_weight_explicit_tuple_passthrough() -> None:
+    import torch
+
+    weights = (1.0, 2.0, 3.0, 4.0, 5.0)
+    cfg = TrainConfig(pos_weight=weights)
+    result = resolve_pos_weight(cfg, rows=[])
+    assert isinstance(result, torch.Tensor)
+    assert result.tolist() == list(weights)
+
+
+def test_resolve_pos_weight_explicit_tuple_wrong_length_raises() -> None:
+    cfg = TrainConfig(pos_weight=(1.0, 2.0))  # only 2 entries, need 5
+    with pytest.raises(ValueError, match="5 entries"):
+        resolve_pos_weight(cfg, rows=[])
+
+
+def test_resolve_pos_weight_unknown_string_raises() -> None:
+    cfg = TrainConfig(pos_weight="bogus")
+    with pytest.raises(ValueError, match="unknown pos_weight mode"):
+        resolve_pos_weight(cfg, rows=[])
+
+
+def test_resolve_pos_weight_auto_produces_capped_weights(tmp_path: Path) -> None:
+    import torch
+
+    midi_a = tmp_path / "a.midi"
+    _write_drum_midi(midi_a, [(480, 36), (960, 36)], tpq=480)  # 2 kicks, no cymbals
+    rows = [{"_midi_path": str(midi_a), "duration": "2.0"}] * 20
+    cfg = TrainConfig(pos_weight="auto", pos_weight_sample_files=20)
+    result = resolve_pos_weight(cfg, rows)
+    assert isinstance(result, torch.Tensor)
+    assert result.shape == (len(CLASSES),)
+    assert bool((result >= 1.0).all())
+    assert bool((result <= cfg.pos_weight_cap).all())
+    # cymbals never appear in any row -> should sit at the cap.
+    assert result[CLASSES.index("cymbals")].item() == pytest.approx(cfg.pos_weight_cap)
+
+
+def test_resolve_pos_weight_auto_no_usable_rows_returns_none() -> None:
+    # Every row skipped (zero duration) -> total_frames stays 0 -> None.
+    rows = [{"_midi_path": "x", "duration": "0"}]
+    cfg = TrainConfig(pos_weight="auto")
+    assert resolve_pos_weight(cfg, rows) is None
+
+
+# --------------------------------------------------------------------------- #
+# (f) init-checkpoint fine-tune round-trip
+# --------------------------------------------------------------------------- #
+
+def test_load_init_checkpoint_round_trips_weights(tmp_path: Path) -> None:
+    import torch
+
+    torch.manual_seed(0)
+    source = DrumCRNN(ModelConfig())
+    ckpt_path = tmp_path / "checkpoint.pt"
+    torch.save(
+        {
+            "epoch": 7,
+            "model_state": source.state_dict(),
+            "model_config": {},
+            "feature_config": {},
+            "classes": list(CLASSES),
+        },
+        ckpt_path,
+    )
+
+    torch.manual_seed(1)  # different init -- these are real independent weights
+    target = DrumCRNN(ModelConfig())
+    assert not torch.equal(source.head.weight, target.head.weight)
+
+    ckpt = load_init_checkpoint(target, ckpt_path, torch.device("cpu"))
+
+    assert ckpt["epoch"] == 7
+    assert torch.equal(source.head.weight, target.head.weight)
+    assert torch.equal(source.conv[0].conv.weight, target.conv[0].conv.weight)
+
+
+def test_load_init_checkpoint_missing_file_raises(tmp_path: Path) -> None:
+    import torch
+
+    with pytest.raises(FileNotFoundError):
+        load_init_checkpoint(DrumCRNN(ModelConfig()), tmp_path / "nope.pt", torch.device("cpu"))
+
+
+def test_train_raises_on_missing_init_checkpoint(tmp_path: Path) -> None:
+    # Must fail fast (before touching any dataset/corpus) so this is testable
+    # without a real E-GMD corpus on disk.
+    cfg = TrainConfig(
+        output_dir=str(tmp_path / "out"),
+        init_checkpoint=str(tmp_path / "does_not_exist.pt"),
+    )
+    with pytest.raises(FileNotFoundError, match="init_checkpoint"):
+        train(cfg, verbose=False)
+
+
+# --------------------------------------------------------------------------- #
+# (g) early stopping / LR-halving decision logic
+# --------------------------------------------------------------------------- #
+
+def test_early_stopper_improves_resets_counter() -> None:
+    stopper = EarlyStopper(patience=3)
+    improved, halve, stop = stopper.update(0.10)
+    assert improved and not halve and not stop
+    improved, halve, stop = stopper.update(0.20)  # improves again
+    assert improved and not halve and not stop
+    assert stopper.epochs_since_best == 0
+
+
+def test_early_stopper_halves_lr_once_then_stops_at_patience() -> None:
+    stopper = EarlyStopper(patience=3)
+    stopper.update(0.50)  # establishes the best
+    improved, halve, stop = stopper.update(0.40)  # epochs_since_best = 1
+    assert not improved and not halve and not stop
+    improved, halve, stop = stopper.update(0.40)  # epochs_since_best = 2 -> halve
+    assert not improved and halve and not stop
+    improved, halve, stop = stopper.update(0.40)  # epochs_since_best = 3 -> stop
+    assert not improved and not halve and stop  # already halved once, no repeat
+    assert stopper.lr_halved is True
+
+
+def test_early_stopper_patience_zero_never_stops_or_halves() -> None:
+    stopper = EarlyStopper(patience=0)
+    stopper.update(0.5)
+    for _ in range(10):
+        _improved, halve, stop = stopper.update(0.1)  # never improves again
+        assert not halve and not stop
+
+
+def test_early_stopper_low_patience_stops_before_halving_fires() -> None:
+    # patience <= HALVE_AT (2): halving should never fire, only stopping.
+    stopper = EarlyStopper(patience=2)
+    stopper.update(0.5)
+    _improved, halve, stop = stopper.update(0.1)  # epochs_since_best = 1
+    assert not halve and not stop
+    _improved, halve, stop = stopper.update(0.1)  # epochs_since_best = 2 -> stop
+    assert not halve and stop

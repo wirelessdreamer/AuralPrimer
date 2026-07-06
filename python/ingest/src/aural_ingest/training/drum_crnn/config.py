@@ -101,6 +101,27 @@ class TrainConfig:
     device: str = "auto"
     # Frame is counted a positive prediction when sigmoid >= this (for F1).
     frame_threshold: float = 0.5
+    # Positive-class weight for BCEWithLogitsLoss, addressing per-class frame
+    # imbalance (cymbals are the rarest, hardest class -- run-2 left them
+    # under-learned at an unweighted loss). "auto" estimates the neg/pos frame
+    # ratio per class from a stride-sampled subset of the training rows
+    # (MIDI-only, no audio decode, so it stays cheap even at hundreds of
+    # files); an explicit tuple of length ``len(CLASSES)`` is used as-is;
+    # ``None`` disables weighting (plain unweighted BCE, the pre-run-3
+    # behavior).
+    pos_weight: tuple[float, ...] | str | None = "auto"
+    pos_weight_cap: float = 25.0
+    pos_weight_sample_files: int = 500
+    # Fine-tune from an existing checkpoint instead of random init (empty
+    # string = train from scratch). Only the model weights are restored --
+    # the optimizer and epoch counter always start fresh, so this is a
+    # warm-start, not a resume.
+    init_checkpoint: str = ""
+    # Stop after this many consecutive epochs with no val-macro-F1
+    # improvement. The LR is halved once, at the 2nd consecutive
+    # non-improving epoch, before the run is allowed to give up. 0 disables
+    # both early stopping and LR halving (train for the full ``epochs``).
+    early_stop_patience: int = 3
     feature: FeatureConfig = field(default_factory=FeatureConfig)
     target: TargetConfig = field(default_factory=TargetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
