@@ -56,6 +56,7 @@ import {
 } from "./drumTabIo";
 import type { RefinementNote } from "./refineCandidatesIo";
 import { invoke } from "@tauri-apps/api/core";
+import { featureDir as packFeatureDir, packDisplayName } from "@auralprimer/auralsong/packKind";
 import {
   SpectrogramEditor,
   type SpectrogramGeometry,
@@ -564,8 +565,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   async function loadSpectrogramIntoEditor(notes: SpectroNote[]): Promise<boolean> {
     if (!containerPath) return false;
     const role = instrument;
-    // feedpak relocates spectrogram artifacts under aural/ (legacy: features/).
-    const fd = containerPath.endsWith(".feedpak") ? "aural" : "features";
+    // feedpak/sloppak relocate spectrogram artifacts under aural/ (legacy: features/).
+    const fd = packFeatureDir(containerPath);
     try {
       const geom = (await invoke("read_auralsong_json", {
         containerPath,
@@ -1095,14 +1096,10 @@ function escapeHtml(s: string): string {
 
 /**
  * A readable song name for the top bar from a pack path: drop the directory
- * and the `.feedpak`/`.auralsong` extension, strip the `ingest_` prefix, and
- * turn underscores into spaces. The full path is kept as a hover title.
+ * and the `.feedpak`/`.sloppak`/`.auralsong` extension, strip the `ingest_`
+ * prefix, and turn underscores into spaces. Delegates to the shared
+ * `packDisplayName` helper (C2) so the extension list stays in one place.
  */
 function songDisplayName(path: string): string {
-  const base = path.split(/[\\/]/).pop() ?? path;
-  return base
-    .replace(/\.(feedpak|auralsong)$/i, "")
-    .replace(/^ingest_/, "")
-    .replace(/_/g, " ")
-    .trim() || base;
+  return packDisplayName(path);
 }

@@ -10,7 +10,7 @@
  */
 import type { SpectroNote } from "./spectrogramEditor";
 
-export type DrumTabHit = { t: number; p: string; v?: number };
+export type DrumTabHit = { t: number; p: string; v?: number; [k: string]: unknown };
 
 export type DrumTabFile = {
   version?: unknown;
@@ -84,12 +84,21 @@ export function hitsToNotes(tab: DrumTabFile, lanes: string[]): SpectroNote[] {
   for (const h of tab.hits ?? []) {
     const idx = laneIndex.get(h?.p ?? "");
     if (idx === undefined || typeof h.t !== "number" || !Number.isFinite(h.t)) continue;
-    out.push({
+    // Split {t,p,v} (structural) from every other hit field (ghost `g`, flam
+    // `f`, choke `k`, unknown future keys) so the extras survive a round-trip
+    // instead of being silently dropped on save.
+    const { t, p, v, ...rest } = h;
+    void t;
+    void p;
+    void v;
+    const note: SpectroNote = {
       t_on: h.t,
       t_off: h.t + DRUM_HIT_DISPLAY_SEC,
       pitch: idx,
       velocity: typeof h.v === "number" ? h.v : DRUM_HIT_DEFAULT_VELOCITY,
-    });
+    };
+    if (Object.keys(rest).length > 0) note.extra = rest;
+    out.push(note);
   }
   out.sort((a, b) => a.t_on - b.t_on || a.pitch - b.pitch);
   return out;
@@ -105,7 +114,14 @@ export function notesToTab(notes: SpectroNote[], lanes: string[], original: Drum
   for (const n of notes) {
     const lane = lanes[n.pitch];
     if (!lane || !Number.isFinite(n.t_on)) continue;
+    // Spread the carried extras FIRST, then write t/p/v LAST so a stale/hostile
+    // extra key (t/p/v) can never shadow the structural fields — the current
+    // note's time/lane/velocity always win. hitsToNotes never routes t/p/v into
+    // extra, so in practice `rest` is g/f/k/unknowns only; this ordering just
+    // makes the "extras can never shadow t/p/v" guarantee robust. A hit dragged
+    // to another lane keeps its extras (they ride on the note object).
     hits.push({
+      ...(n.extra ?? {}),
       t: n.t_on,
       p: lane,
       v: typeof n.velocity === "number" ? n.velocity : DRUM_HIT_DEFAULT_VELOCITY,

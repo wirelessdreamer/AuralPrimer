@@ -1,0 +1,27 @@
+slopsmith_version: "0.9.0"
+title: Minimal Sloppak
+artist: Slopsmith
+duration: 4.0
+arrangements:
+- id: lead
+  name: Lead
+  file: arrangements/lead.json
+  tuning: [0, 0, 0, 0, 0, 0]
+  capo: 2
+- id: bass
+  name: Bass
+  file: arrangements/bass.json
+  tuning: [0, 0, 0, 0, 0, 0]
+  capo: 0
+stems:
+- id: guitar
+  file: stems/guitar.ogg
+- id: bass
+  file: stems/bass.ogg
+- id: drums
+  file: stems/drums.ogg
+- id: full
+  file: stems/full.ogg
+  default: true
+drum_tab: drum_tab.json
+lyrics: lyrics.json

@@ -383,6 +383,8 @@ def test_pack_feature_dirname_routes_feedpak_to_aural(tmp_path: Path):
     from aural_ingest.refine_precompute import pack_feature_dirname
 
     assert pack_feature_dirname(tmp_path / "song.feedpak") == "aural"
+    # CONTRACT C2: .sloppak also routes to aural (re-exported from pack_paths).
+    assert pack_feature_dirname(tmp_path / "song.sloppak") == "aural"
     assert pack_feature_dirname(tmp_path / "song.auralsong") == "features"
     assert pack_feature_dirname(tmp_path / "song") == "features"
 

@@ -3910,7 +3910,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
     Prints a JSON status line per CLI convention so callers can parse the result.
     """
     from aural_ingest.spectrogram import write_spectrogram_artifact
-    from aural_ingest.refine_precompute import pack_feature_dirname
+    from aural_ingest.pack_paths import pack_feature_dirname, resolve_stem_paths
 
     auralsong = Path(args.auralsong_dir)
     if not auralsong.is_dir():
@@ -3923,14 +3923,14 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         return 1
 
     feat_dir = pack_feature_dirname(auralsong)
-    stems_dir = auralsong / "audio" / "stems"
+    # Manifest-driven stem resolution (feedpak/sloppak stems[] first, then a
+    # glob fallback for legacy .auralsong packs). Handles sloppak stems/*.ogg.
     # Drums are excluded from the melodic default but buildable on explicit
     # request (`--instrument drums`) for the Studio drum-cleanup overlay;
     # vocals have no overlay at all.
     default_excluded = {"drums", "vocals"}
     present: dict[str, Path] = {}
-    for stem_path in sorted(stems_dir.glob("*.wav")):
-        role = stem_path.stem
+    for role, stem_path in resolve_stem_paths(auralsong).items():
         if role == "vocals":
             continue
         present[role] = stem_path
@@ -3965,6 +3965,35 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         payload["instrument"] = list(args.instrument)
     print(json.dumps(payload, sort_keys=True))
     return 0 if overall_ok else 1
+
+
+def cmd_prep_arrangements(args: argparse.Namespace) -> int:
+    """Build aural/notes.mid + song_timeline.json from a pack's arrangement JSONs.
+
+    Reads the manifest's ``arrangements[].file`` Rocksmith-style wire JSONs
+    (sloppak/feedpak) and derives the game's melodic ``aural/notes.mid`` (one
+    named Instrument per role, CONTRACT C3) plus ``song_timeline.json`` from the
+    first arrangement's beats/sections (CONTRACT C4). Stamps the corresponding
+    manifest keys (order-preserving). Drums are NOT charted here — the game
+    charts drums from the pack-root ``drum_tab.json``.
+
+    Existing output files are skipped unless ``--force`` (protects cleanup
+    anchors). A drums-only pack gets no bogus aural_notes_mid key. Prints the
+    standard trailing JSON status line.
+    """
+    from aural_ingest.arrangement_prep import prep_arrangements
+
+    pack = Path(args.auralsong_dir)
+    if not pack.is_dir():
+        print(json.dumps({"ok": False, "error": f"pack not a directory: {pack}"}, sort_keys=True))
+        return 1
+    try:
+        status = prep_arrangements(pack, force=bool(getattr(args, "force", False)))
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"prep-arrangements failed: {exc}"}, sort_keys=True))
+        return 1
+    print(json.dumps(status, sort_keys=True))
+    return 0 if status.get("ok") else 1
 
 
 def _load_case_ids(path) -> set[str]:
@@ -4013,14 +4042,20 @@ def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
     JSON status line so the Studio button / import step can report the result.
     """
     from aural_ingest.drum_onset_align import align_drum_tab_to_onsets
+    from aural_ingest.pack_paths import resolve_stem_paths
 
     pack = Path(args.auralsong_dir)
     tab_path = pack / "drum_tab.json"
-    drums = pack / "audio" / "stems" / "drums.wav"
+    # Manifest-driven so a sloppak's stems/drums.ogg resolves; fall back to the
+    # historical audio/stems/drums.wav for a legacy pack.
+    drums = resolve_stem_paths(pack).get("drums")
+    if drums is None:
+        legacy = pack / "audio" / "stems" / "drums.wav"
+        drums = legacy if legacy.is_file() else None
     if not tab_path.is_file():
         print(json.dumps({"ok": False, "error": f"no drum_tab.json in {pack}"}, sort_keys=True))
         return 1
-    if not drums.is_file():
+    if drums is None or not drums.is_file():
         print(json.dumps({"ok": False, "error": f"no drums stem in {pack}"}, sort_keys=True))
         return 1
     try:
@@ -4036,26 +4071,32 @@ def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
 
 def _pack_audio_for_analysis(pack: Path) -> tuple[Path, bool]:
     """Return an audio file to analyze for a pack, plus whether it is a temp file
-    to clean up. Prefers audio/mix.wav (present during import); for a feedpak
-    (stems-only, no mix) it sums the non-derived stems into a temp wav.
+    to clean up. Prefers a manifest-resolved full mix (feedpak/sloppak
+    default-flagged/full stem, or a legacy audio/mix.*); otherwise sums the
+    non-derived stems into a temp wav. Manifest-driven so a sloppak's OGG stems
+    (stems/*.ogg) resolve just like feedpak WAVs.
 
     Stems are loaded at a common sample rate + mono via librosa, so mixed-rate
     stems can never produce a time-warped sum. The temp file is cleaned up on a
     write failure here (the caller also unlinks it in its finally block).
     """
-    mix = pack / "audio" / "mix.wav"
-    if mix.is_file():
+    from aural_ingest.pack_paths import resolve_mix_path, resolve_stem_paths
+
+    mix = resolve_mix_path(pack)
+    if mix is not None and mix.is_file():
         return mix, False
     import numpy as np
     import soundfile as sf
     import librosa
 
-    roles = ["bass", "drums", "guitar", "keys", "other", "vocals"]
-    stems_dir = pack / "audio" / "stems"
+    # Sum the SOURCE stems (exclude any full/mix stem so we don't double-count).
+    stems = resolve_stem_paths(pack)
     target_sr = 44100
     summed = None
-    for role in roles:
-        p = stems_dir / f"{role}.wav"
+    for role in sorted(stems):
+        if role in {"full", "mix"}:
+            continue
+        p = stems[role]
         if not p.is_file():
             continue
         # sr=target_sr forces a single rate; mono=True collapses channels.
@@ -4067,7 +4108,7 @@ def _pack_audio_for_analysis(pack: Path) -> tuple[Path, bool]:
             n = min(len(summed), len(y))
             summed = summed[:n] + y[:n]
     if summed is None:
-        raise FileNotFoundError(f"no audio/mix.wav or audio/stems/*.wav in {pack}")
+        raise FileNotFoundError(f"no full mix or source stems resolvable in {pack}")
     peak = float(np.max(np.abs(summed))) + 1e-9
     summed = (summed / peak).astype("float32")
     fd, tmp_name = tempfile.mkstemp(prefix="auralmeter_", suffix=".wav")
@@ -4156,6 +4197,19 @@ def cmd_refresh_meter(args: argparse.Namespace) -> int:
             except OSError:
                 pass
             raise
+        # Ensure the manifest points at the timeline we just wrote. A sloppak
+        # (or any manifest pack) whose manifest lacks a song_timeline key gets
+        # it stamped now, order-preserving + unknown-key-safe. Best-effort:
+        # the timeline itself is already written, so a manifest hiccup here must
+        # not fail the command.
+        try:
+            from aural_ingest.pack_paths import load_pack_manifest, update_manifest_keys
+
+            _mf = load_pack_manifest(pack)
+            if _mf is not None and not _mf.get("song_timeline"):
+                update_manifest_keys(pack, {"song_timeline": "song_timeline.json"})
+        except Exception:  # noqa: BLE001 — manifest stamp is non-fatal
+            pass
         print(json.dumps(
             {
                 "ok": True,
@@ -4478,13 +4532,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s_spectrogram.set_defaults(func=cmd_build_spectrogram)
 
+    s_prep_arr = sub.add_parser(
+        "prep-arrangements",
+        help=(
+            "Build aural/notes.mid + song_timeline.json from a pack's "
+            "(sloppak/feedpak) arrangement wire JSONs, in place."
+        ),
+    )
+    s_prep_arr.add_argument(
+        "auralsong_dir",
+        help="Path to an existing pack root (the directory containing manifest.yaml + arrangements/).",
+    )
+    s_prep_arr.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing aural/notes.mid + song_timeline.json (default: skip existing to protect cleanup anchors).",
+    )
+    s_prep_arr.set_defaults(func=cmd_prep_arrangements)
+
     s_align_drums = sub.add_parser(
         "align-drum-onsets",
         help="Snap a pack's drum_tab hit times onto the drums-stem audio transients (in place).",
     )
     s_align_drums.add_argument(
         "auralsong_dir",
-        help="Path to an existing pack root (the directory containing drum_tab.json + audio/stems/drums.wav).",
+        help="Path to an existing pack root (drum_tab.json + a manifest-listed or audio/stems/ drums stem, wav or ogg).",
     )
     s_align_drums.set_defaults(func=cmd_align_drum_onsets)
 
@@ -4494,7 +4566,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s_refresh_meter.add_argument(
         "auralsong_dir",
-        help="Path to an existing pack root (the directory containing song_timeline.json + audio/stems/*.wav).",
+        help="Path to an existing pack root (song_timeline.json + a manifest-listed full mix or source stems, wav or ogg).",
     )
     s_refresh_meter.set_defaults(func=cmd_refresh_meter)
 

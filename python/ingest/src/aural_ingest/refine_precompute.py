@@ -89,6 +89,11 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from .algorithms._common import gate_notes_by_local_energy
+from .pack_paths import (
+    pack_feature_dirname as pack_feature_dirname,  # re-export: keep existing imports working
+    resolve_mix_path,
+    resolve_stem_paths,
+)
 from .transcription import MelodicNote
 
 
@@ -104,14 +109,10 @@ REGION_DURATION_SEC = 4.0
 BEATS_PER_REGION = 4
 
 
-def pack_feature_dirname(pack_root: Path) -> str:
-    """In-pack features directory: ``aural`` for a ``.feedpak`` pack, else
-    ``features`` (legacy ``.auralsong``). Mirrors the frontend's featureDir()
-    (apps/desktop/src/cleanupReadiness.ts) so in-place spectrogram / candidate
-    builds land where the app reads them — the Studio readiness probe and the
-    Refine workspace resolve feedpak artifacts under ``aural/``.
-    """
-    return "aural" if str(pack_root).endswith(".feedpak") else "features"
+# ``pack_feature_dirname`` now lives in ``aural_ingest.pack_paths`` (CONTRACT
+# C2 — it must also route ``.sloppak`` to ``aural``). It is re-exported at the
+# top of this module so existing ``from .refine_precompute import
+# pack_feature_dirname`` imports keep working.
 
 
 # Candidate palette: each entry is a genuinely-different transcription
@@ -787,6 +788,19 @@ def build_payload(
 
 
 def _find_stem(auralsong_root: Path, instrument: str) -> Path | None:
+    """Locate a role's stem, manifest-driven first (feedpak/sloppak), then glob.
+
+    Delegates to ``pack_paths.resolve_stem_paths`` so a manifest-listed stem
+    (any layout / extension, incl. sloppak ``stems/<role>.ogg``) is found; falls
+    back to the historical ``audio/stems/<role>.{wav,mp3,ogg,flac}`` glob for a
+    legacy pack with no usable manifest.
+    """
+    stems = resolve_stem_paths(auralsong_root)
+    hit = stems.get(instrument)
+    if hit is not None and hit.is_file():
+        return hit
+    # Belt-and-suspenders: the historical direct lookup, in case a role's stem
+    # exists on disk but isn't declared in the manifest.
     stem_dir = auralsong_root / "audio" / "stems"
     for ext in ("wav", "mp3", "ogg", "flac"):
         candidate = stem_dir / f"{instrument}.{ext}"
@@ -796,12 +810,8 @@ def _find_stem(auralsong_root: Path, instrument: str) -> Path | None:
 
 
 def _find_mix(auralsong_root: Path) -> Path | None:
-    audio_dir = auralsong_root / "audio"
-    for ext in ("wav", "mp3", "ogg", "flac"):
-        candidate = audio_dir / f"mix.{ext}"
-        if candidate.is_file():
-            return candidate
-    return None
+    """Locate the pack's full mix, manifest-driven first, then legacy glob."""
+    return resolve_mix_path(auralsong_root)
 
 
 def _coerce_to_melodic_notes(

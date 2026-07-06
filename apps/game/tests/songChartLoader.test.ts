@@ -86,7 +86,10 @@ describe("readSongChartSelection", () => {
     loadRefinementsForRoles.mockResolvedValue([]);
   });
 
-  it("returns empty selection without invoking when notes.mid is absent", async () => {
+  it("returns empty selection (no melodic MIDI parse) when notes.mid is absent and no drum_tab.json", async () => {
+    // Absent notes.mid: skips read_auralsong_mid, tries the root drum_tab.json.
+    // Here that read yields nothing, so the selection is empty.
+    invokeMock.mockResolvedValue(null);
     const bridge = makeBridge();
     const out = await readSongChartSelection({
       containerPath: "/c",
@@ -94,11 +97,57 @@ describe("readSongChartSelection", () => {
       consoleBridge: bridge,
     });
     expect(out).toEqual({ drumSelection: null, melodicTracks: [] });
-    expect(invokeMock).not.toHaveBeenCalled();
+    // Never parses melodic MIDI — the only invoke is the drum_tab.json read.
+    expect(invokeMock).not.toHaveBeenCalledWith("read_auralsong_mid", expect.anything());
   });
 
-  it("returns empty selection for an empty MIDI blob", async () => {
-    invokeMock.mockResolvedValueOnce({ bytes: [] });
+  it("charts a drums-only sloppak from drum_tab.json when notes.mid is absent", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_json" && args.relPath === "drum_tab.json") {
+        return { version: 1, name: "drums", kit: [], hits: [
+          { t: 0, p: "kick" }, { t: 0.5, p: "snare" }, { t: 1, p: "hihat_closed" },
+        ] };
+      }
+      return undefined;
+    });
+    const bridge = makeBridge();
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: { has_notes_mid: false },
+      consoleBridge: bridge,
+    });
+    expect(out.melodicTracks).toEqual([]);
+    expect(out.drumSelection).not.toBeNull();
+    expect(out.drumSelection!.reason).toBe("drum_tab");
+    expect(out.drumSelection!.events).toHaveLength(3);
+    // Never touches the melodic MIDI path.
+    expect(invokeMock).not.toHaveBeenCalledWith("read_auralsong_mid", expect.anything());
+    expect(bridge.log).toHaveBeenCalledWith("play", expect.stringContaining("drum_tab.json"));
+  });
+
+  it("charts drums from drum_tab.json when the MIDI blob is empty", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid") return { bytes: [] };
+      if (cmd === "read_auralsong_json" && args.relPath === "drum_tab.json") {
+        return { version: 1, name: "drums", kit: [], hits: [{ t: 0, p: "kick" }] };
+      }
+      return undefined;
+    });
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: { has_notes_mid: true },
+      consoleBridge: makeBridge(),
+    });
+    expect(out.melodicTracks).toEqual([]);
+    expect(out.drumSelection).not.toBeNull();
+    expect(out.drumSelection!.reason).toBe("drum_tab");
+  });
+
+  it("returns empty selection for an empty MIDI blob with no drum_tab.json", async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "read_auralsong_mid") return { bytes: [] };
+      return null; // drum_tab.json read yields nothing
+    });
     const out = await readSongChartSelection({
       containerPath: "/c",
       details: { has_notes_mid: true },

@@ -774,6 +774,29 @@ pub fn run_ingest_refresh_meter(
     run_tauri_sidecar_capture(app, &args)
 }
 
+/// Run the sidecar's `prep-arrangements` subcommand: read the manifest's
+/// `arrangements[].file` wire JSONs, synthesize `aural/notes.mid` (the melodic
+/// gameplay charts source, one instrument per role) and `song_timeline.json`
+/// (beats/measures/sections) in place, and patch the manifest keys. Backs the
+/// Studio Cleanup/Edit "Prep notes" button; needed before a freshly-imported
+/// sloppak (which ships arrangement JSONs but no notes.mid) shows a melodic
+/// highway in the game. Reuses the container-path request shape.
+pub fn run_ingest_prep_arrangements(
+    req: AlignDrumOnsetsRequest,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let container = req.container_path.trim();
+    if container.is_empty() {
+        return Err("missing container_path".to_string());
+    }
+    let args: Vec<String> = vec!["prep-arrangements".to_string(), container.to_string()];
+    let app = app.ok_or_else(|| {
+        "Tauri AppHandle required for sidecar execution; ingest_prep_arrangements can't run headless"
+            .to_string()
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
