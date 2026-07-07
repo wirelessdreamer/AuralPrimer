@@ -229,3 +229,66 @@ def test_resolve_decode_threshold_env_overrides_manifest_per_class(
     for name in CLASSES:
         if name not in ("cymbals", "kick"):
             assert resolved[name] == drum_crnn.DEFAULT_THRESHOLD  # scalar fallback
+
+
+# --------------------------------------------------------------------------- #
+# Tatum-conditioned decode prior (opt-in, off by default)
+# --------------------------------------------------------------------------- #
+
+def test_tatum_prior_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("AURAL_DRUM_CRNN_TATUM_PRIOR", raising=False)
+    assert drum_crnn._tatum_prior_enabled() is False
+
+
+@pytest.mark.parametrize("raw", ["1", "true", "True", "yes", "on"])
+def test_tatum_prior_enabled_by_truthy_values(monkeypatch, raw: str) -> None:
+    monkeypatch.setenv("AURAL_DRUM_CRNN_TATUM_PRIOR", raw)
+    assert drum_crnn._tatum_prior_enabled() is True
+
+
+@pytest.mark.parametrize("raw", ["0", "false", "no", "off", ""])
+def test_tatum_prior_disabled_by_falsy_values(monkeypatch, raw: str) -> None:
+    monkeypatch.setenv("AURAL_DRUM_CRNN_TATUM_PRIOR", raw)
+    assert drum_crnn._tatum_prior_enabled() is False
+
+
+def test_resolve_tatum_grid_returns_empty_when_meter_tracker_unavailable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """track_meter is itself fail-safe (returns None with no Beat This!
+    checkpoint installed, which is the common case in this test env) --
+    _resolve_tatum_grid must degrade to an empty grid, never raise, so
+    transcribe()'s tatum step is a pure no-op when the model is absent."""
+    grid = drum_crnn._resolve_tatum_grid(tmp_path / "does_not_exist.wav", duration_sec=10.0)
+    assert grid == []
+
+
+def test_resolve_tatum_grid_builds_grid_from_a_stubbed_meter_result(monkeypatch) -> None:
+    """With a stubbed track_meter (no real Beat This! model needed), the
+    resolver should turn its beat rows into a tatum grid."""
+
+    def _fake_track_meter(wav_path, *, duration_sec, config=None):
+        beats = {
+            "beats_version": "1.0.0",
+            "beats": [
+                {"t": 0.0, "bar": 0, "beat": 0, "strength": 1.0},
+                {"t": 0.5, "bar": 0, "beat": 1, "strength": 0.5},
+                {"t": 1.0, "bar": 1, "beat": 0, "strength": 1.0},
+            ],
+        }
+        return 120.0, beats, {}, {}
+
+    monkeypatch.setattr("aural_ingest.meter_tracker.track_meter", _fake_track_meter)
+    grid = drum_crnn._resolve_tatum_grid(Path("irrelevant.wav"), duration_sec=1.0)
+    assert grid  # non-empty
+    assert 0.0 in grid and 1.0 in grid
+    # Subdivided under 0.5s beat spacing -> tatums finer than the raw beats.
+    assert len(grid) > 3
+
+
+def test_resolve_tatum_grid_swallows_exceptions(monkeypatch) -> None:
+    def _raising_track_meter(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("aural_ingest.meter_tracker.track_meter", _raising_track_meter)
+    assert drum_crnn._resolve_tatum_grid(Path("x.wav"), duration_sec=5.0) == []

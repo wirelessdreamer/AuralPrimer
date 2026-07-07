@@ -38,6 +38,18 @@ for the classes it doesn't mention:
      at 0.5 the precision-heavy model under-triggers and F1 drops to ~0.41).
 
 ``min_gap`` defaults to 0.02 s.
+
+Tatum-conditioned decode (OPT-IN, off by default -- ``AURAL_DRUM_CRNN_TATUM_PRIOR=1``):
+when enabled, resolves a beat grid via ``meter_tracker.track_meter`` (Beat
+This!, itself fail-safe/modelpack-gated -- returns ``None`` on any failure,
+in which case this is a silent no-op) and nudges per-frame probabilities
+toward the resulting tatum grid before the per-class threshold runs (see
+``training.drum_crnn.tatum``). Targets the observed precision-heavy /
+recall-limited shape (P ~0.7-0.9, R ~0.4-0.5 at calibrated thresholds) by
+recovering onsets that land just under threshold at a metrically-plausible
+position. Off by default because it re-runs Beat This! per drum stem rather
+than reusing a pipeline-level beat grid -- an efficiency follow-up, not a
+correctness blocker.
 """
 from __future__ import annotations
 
@@ -50,9 +62,13 @@ from aural_ingest.transcription import DrumEvent
 _ENV_ONNX = "AURAL_DRUM_CRNN_ONNX"          # explicit path to the .onnx
 _ENV_THRESHOLD = "AURAL_DRUM_CRNN_THRESHOLD"  # scalar decode threshold override
 _ENV_THRESHOLDS = "AURAL_DRUM_CRNN_THRESHOLDS"  # per-class override
+_ENV_TATUM_PRIOR = "AURAL_DRUM_CRNN_TATUM_PRIOR"  # "1" to enable (opt-in, off by default)
 
 DEFAULT_THRESHOLD = 0.20  # F1-optimal for run-2 full-corpus weights; NOT 0.5 (under-triggers)
 DEFAULT_MIN_GAP_SEC = 0.02
+DEFAULT_TATUM_SUBDIVISIONS = 4
+DEFAULT_TATUM_BOOST = 0.12
+DEFAULT_TATUM_SIGMA_SEC = 0.025
 MODELPACK_ID = "drum_crnn"
 
 # One cached onnxruntime session per resolved model path. Guarded by a lock so a
@@ -200,6 +216,35 @@ def _resolve_decode_threshold(onnx_path: Path) -> dict[str, float]:
     return resolved
 
 
+def _tatum_prior_enabled() -> bool:
+    return os.getenv(_ENV_TATUM_PRIOR, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _resolve_tatum_grid(stem_path: Path, duration_sec: float) -> list[float]:
+    """Beat grid for the tatum prior, or ``[]`` on any failure.
+
+    Wraps ``meter_tracker.track_meter`` (Beat This!, itself fail-safe and
+    modelpack-gated) -- a resolution failure here (model absent, inference
+    error, no usable downbeats) is exactly equivalent to the caller not
+    enabling the prior at all: :func:`apply_tatum_prior` no-ops on an empty
+    grid, so there is nothing extra for callers to handle.
+    """
+    try:
+        from aural_ingest.meter_tracker import track_meter
+        from aural_ingest.training.drum_crnn.tatum import build_tatum_grid
+
+        result = track_meter(stem_path, duration_sec=duration_sec)
+        if result is None:
+            return []
+        _bpm, beats_dict, _tempo_map, _meta = result
+        beat_times = [float(row["t"]) for row in beats_dict.get("beats", [])]
+        return build_tatum_grid(
+            beat_times, subdivisions=DEFAULT_TATUM_SUBDIVISIONS, duration_sec=duration_sec
+        )
+    except Exception:
+        return []
+
+
 def transcribe(stem_path: Path) -> list[DrumEvent]:
     """Transcribe one drum stem with the in-house CRNN. -> list[DrumEvent].
 
@@ -241,9 +286,24 @@ def transcribe(stem_path: Path) -> list[DrumEvent]:
     mel = logmel[np.newaxis, :, :].astype(np.float32)  # (1, T, n_mels)
     logits = session.run(["logits"], {"mel": mel})[0]  # (1, T, num_classes)
     probs = 1.0 / (1.0 + np.exp(-logits[0]))  # sigmoid -> (T, num_classes)
+    probs = probs.astype(np.float32)
+
+    if _tatum_prior_enabled():
+        from aural_ingest.training.drum_crnn.tatum import apply_tatum_prior
+
+        duration_sec = len(audio) / float(feat.sample_rate)
+        tatum_grid = _resolve_tatum_grid(stem_path, duration_sec)
+        if tatum_grid:
+            probs = apply_tatum_prior(
+                probs,
+                feat,
+                tatum_grid,
+                boost=DEFAULT_TATUM_BOOST,
+                sigma_sec=DEFAULT_TATUM_SIGMA_SEC,
+            )
 
     return decode_events(
-        probs.astype(np.float32),
+        probs,
         feat,
         threshold=_resolve_decode_threshold(onnx_path),
         min_gap_sec=DEFAULT_MIN_GAP_SEC,
