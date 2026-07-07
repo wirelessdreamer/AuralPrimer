@@ -33,6 +33,32 @@ DRUM_5CLASS_TO_MIDI_FALLBACK: dict[str, int] = {
 }
 
 
+def parse_class_thresholds(raw: str) -> dict[str, float]:
+    """Parse a ``"kick:0.2,snare:0.25,..."`` string into a ``{class: float}`` dict.
+
+    Shared by the runtime adapter (``AURAL_DRUM_CRNN_THRESHOLDS`` env var) and
+    the modelpack installer (``--thresholds`` CLI flag) so both parse the same
+    format identically. Unknown class names are kept as-is (callers may filter
+    against ``CLASSES``); blank segments and unparseable values are skipped
+    rather than raising, since this feeds env-var/CLI input where one bad
+    entry shouldn't take down the whole process.
+    """
+    out: dict[str, float] = {}
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+        name, _, val = part.partition(":")
+        name = name.strip()
+        if not name:
+            continue
+        try:
+            out[name] = float(val.strip())
+        except ValueError:
+            continue
+    return out
+
+
 @dataclass(frozen=True)
 class FeatureConfig:
     """Log-mel spectrogram front-end. Deterministic given the same input.
@@ -73,11 +99,21 @@ class TargetConfig:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """Compact CRNN. Kept small for CPU inference in the sidecar."""
+    """Compact CRNN. Kept small for CPU inference in the sidecar.
+
+    Bumped from the run-1/2/3 defaults (``(32, 32, 64)`` conv / 64 GRU hidden,
+    300K params) to ``(32, 64, 128)`` / 128 (1.18M params, ~4x) after those
+    runs used only ~6% of the ~5M sidecar budget while run-2's frame-macro-F1
+    was still climbing at its epoch limit -- the model likely had headroom to
+    use more capacity, not just more epochs. Still ~49 ms/8s-clip on CPU (well
+    under real-time for a whole song). Existing checkpoints are unaffected:
+    the installer and adapter always reconstruct ``ModelConfig`` from a
+    checkpoint's OWN saved ``model_config``, never from this default.
+    """
 
     n_mels: int = 84  # must equal FeatureConfig.n_mels
-    conv_channels: tuple[int, ...] = (32, 32, 64)
-    gru_hidden: int = 64
+    conv_channels: tuple[int, ...] = (32, 64, 128)
+    gru_hidden: int = 128
     gru_layers: int = 1
     dropout: float = 0.2
     num_classes: int = NUM_CLASSES
@@ -101,6 +137,27 @@ class TrainConfig:
     device: str = "auto"
     # Frame is counted a positive prediction when sigmoid >= this (for F1).
     frame_threshold: float = 0.5
+    # Positive-class weight for BCEWithLogitsLoss, addressing per-class frame
+    # imbalance (cymbals are the rarest, hardest class -- run-2 left them
+    # under-learned at an unweighted loss). "auto" estimates the neg/pos frame
+    # ratio per class from a stride-sampled subset of the training rows
+    # (MIDI-only, no audio decode, so it stays cheap even at hundreds of
+    # files); an explicit tuple of length ``len(CLASSES)`` is used as-is;
+    # ``None`` disables weighting (plain unweighted BCE, the pre-run-3
+    # behavior).
+    pos_weight: tuple[float, ...] | str | None = "auto"
+    pos_weight_cap: float = 25.0
+    pos_weight_sample_files: int = 500
+    # Fine-tune from an existing checkpoint instead of random init (empty
+    # string = train from scratch). Only the model weights are restored --
+    # the optimizer and epoch counter always start fresh, so this is a
+    # warm-start, not a resume.
+    init_checkpoint: str = ""
+    # Stop after this many consecutive epochs with no val-macro-F1
+    # improvement. The LR is halved once, at the 2nd consecutive
+    # non-improving epoch, before the run is allowed to give up. 0 disables
+    # both early stopping and LR halving (train for the full ``epochs``).
+    early_stop_patience: int = 3
     feature: FeatureConfig = field(default_factory=FeatureConfig)
     target: TargetConfig = field(default_factory=TargetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)

@@ -71,16 +71,22 @@ OS-level prerequisites.
 
 ## Third-party components & attribution
 
-AuralPrimer stands on open-source music-ML research and tooling. Because it
-ships commercially, **every component below is commercially licensed — and for
-the neural models we verify the trained *weights* license separately from the
-code license** (an open-code / non-commercial-weights split is exactly what
-disqualifies a model here; see the license gate in the research docs). Current
-stack: permissive throughout (MIT / Apache-2.0 / BSD / ISC / MPL-2.0 / CC0 /
-Unlicense), with LGPL present only as dynamically-linked binaries (`ffmpeg`,
-`libsndfile`) and GPL only in a build-time tool (`PyInstaller`, used under its
-bootloader exception — its output is not GPL-encumbered). No GPL runtime
-dependencies; no non-commercial model weights.
+AuralPrimer is free software ([GPL-3.0-or-later](LICENSE)) with no commercial
+aspirations — the goal is integrating the best open solutions in a
+user-friendly way. It stands on open-source music-ML research and tooling, and
+the attribution list below stays complete both because the licenses require it
+and because credit is owed. **For every neural model we verify the trained
+*weights* license separately from the code license** (they frequently differ —
+open-code / unlicensed-weights splits are common). The license gate for what
+ships:
+
+- **Code dependencies** must be GPLv3-compatible. MIT / Apache-2.0 / BSD /
+  ISC / MPL-2.0 / CC0 / LGPL / GPL all qualify — this is nearly every
+  open-source license in practice.
+- **Model weights & datasets** must carry an *explicit* redistributable
+  license. Non-commercial terms (e.g. CC BY-NC-SA) are acceptable for this
+  project; weights with **no stated license at all** remain excluded — with no
+  grant, nobody has redistribution rights, non-commercial or otherwise.
 
 ### Who makes what we use
 
@@ -163,13 +169,15 @@ below.*
 | [**serde**](https://github.com/serde-rs/serde)(+`json`/`yaml`) | David Tolnay | MIT / Apache-2.0 |
 | [**zip**](https://github.com/zip-rs/zip2), [**sha2**](https://github.com/RustCrypto/hashes), [**hex**](https://github.com/KokaKiwi/rust-hex), [**notify**](https://github.com/notify-rs/notify) | zip-rs · RustCrypto · rust-hex · notify-rs | MIT / Apache-2.0 / CC0 |
 
-> **License-gate note.** Two widely-repeated misconceptions were checked against
-> primary sources and cleared: (1) the *Demucs* `htdemucs_*` weights are **MIT**
-> (the CC-BY-NC claim circulating in third-party repackagings conflates them with
-> the 2019 Conv-TasNet research models); (2) `madmom`'s trained models are
-> CC-BY-NC-SA and were therefore **rejected** for meter tracking in favor of Beat
-> This! Pin exact model revisions (HF/checkpoint) so a future card relicense
-> can't silently breach the gate.
+> **License-gate note.** Checked against primary sources: (1) the *Demucs*
+> `htdemucs_*` weights are **MIT** (the CC-BY-NC claim circulating in
+> third-party repackagings conflates them with the 2019 Conv-TasNet research
+> models); (2) `madmom`'s trained models are CC-BY-NC-SA — that once
+> disqualified them under the project's former commercial gate, but under the
+> current policy (open source, non-commercial acceptable) they are admissible;
+> Beat This! (MIT) remains the meter-tracking choice on quality and
+> maintenance grounds, not licensing. Pin exact model revisions
+> (HF/checkpoint) so a future card relicense can't change terms silently.
 
 ## Research & methodology — first class
 
@@ -344,3 +352,15 @@ install:
 
 See [`docs/packaging-ci.md`](docs/packaging-ci.md) for the full CI build
 matrix.
+
+## License
+
+AuralPrimer is free software: you can redistribute it and/or modify it under
+the terms of the [GNU General Public License](LICENSE) as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY — see the LICENSE file for details.
+
+Third-party components, model weights, and datasets retain their own
+licenses, catalogued in
+[Third-party components & attribution](#third-party-components--attribution).

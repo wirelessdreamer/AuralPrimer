@@ -17,10 +17,12 @@ labels agree with what the benchmark harness scores against.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Mapping, Sequence
 
 import numpy as np
 
 from .config import CLASSES, FeatureConfig, TargetConfig
+from .features import n_frames_for_samples
 
 # Fold the benchmark's finer drum buckets into the 5-class taxonomy.
 _BENCHMARK_CLASS_TO_5CLASS: dict[str, str] = {
@@ -214,3 +216,74 @@ def build_targets_from_midi(
     """End-to-end: parse a MIDI file and return its per-frame class targets."""
     onsets = parse_drum_onsets(midi_path)
     return onsets_to_class_frames(onsets, n_frames, feat, tgt)
+
+
+def estimate_class_frame_counts(
+    rows: Sequence[Mapping[str, str]],
+    feat: FeatureConfig,
+    tgt: TargetConfig,
+    *,
+    max_files: int = 500,
+) -> tuple[np.ndarray, int]:
+    """Sample-estimate per-class positive-frame counts + total frames.
+
+    Uses each row's CSV ``duration`` column (not an audio decode) to size the
+    frame grid, so this only parses MIDI files -- cheap even at hundreds of
+    files, which is what makes an "auto" ``pos_weight`` estimate practical to
+    run before every training pass. Rows are stride-sampled across the input
+    (E-GMD's CSV is ordered by drummer/session, so a plain head-slice would
+    only see one drummer). Rows with a missing/zero duration, no
+    ``_midi_path``, or an unparseable MIDI are skipped.
+
+    Returns ``(pos_frame_counts, total_frames)`` where ``pos_frame_counts`` is
+    a ``(len(CLASSES),)`` int64 array (frames where that class's target is
+    > 0) and ``total_frames`` is the frame count summed across sampled rows.
+    """
+    pos_counts = np.zeros(len(CLASSES), dtype=np.int64)
+    total_frames = 0
+    if not rows or max_files <= 0:
+        return pos_counts, total_frames
+    stride = max(1, len(rows) // max_files)
+    sample = list(rows)[::stride][:max_files]
+    for row in sample:
+        try:
+            duration = float(row.get("duration", "0") or 0.0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        if duration <= 0:
+            continue
+        n_frames = n_frames_for_samples(int(duration * feat.sample_rate), feat)
+        if n_frames <= 0:
+            continue
+        midi_path = row.get("_midi_path")
+        if not midi_path:
+            continue
+        try:
+            onsets = parse_drum_onsets(midi_path)
+        except Exception:
+            continue
+        target = onsets_to_class_frames(onsets, n_frames, feat, tgt)
+        pos_counts += (target > 0.0).sum(axis=0).astype(np.int64)
+        total_frames += n_frames
+    return pos_counts, total_frames
+
+
+def pos_weight_from_counts(
+    pos_counts: np.ndarray,
+    total_frames: int,
+    *,
+    cap: float = 25.0,
+) -> np.ndarray:
+    """Per-class neg/pos frame-count ratio, clipped to ``[1.0, cap]``.
+
+    A ratio of 1.0 (no reweighting) is the floor even for a class with MORE
+    positives than negatives, since ``BCEWithLogitsLoss``'s ``pos_weight`` is
+    only meant to boost rare positives, not discount common ones.
+    """
+    n = len(pos_counts)
+    if total_frames <= 0:
+        return np.ones(n, dtype=np.float32)
+    pos = np.maximum(np.asarray(pos_counts, dtype=np.float64), 1.0)
+    neg = np.maximum(total_frames - np.asarray(pos_counts, dtype=np.float64), 0.0)
+    ratio = neg / pos
+    return np.clip(ratio, 1.0, cap).astype(np.float32)

@@ -9,6 +9,8 @@ in that class.
 """
 from __future__ import annotations
 
+from typing import Mapping
+
 import numpy as np
 
 from aural_ingest.transcription import DrumEvent
@@ -48,7 +50,7 @@ def decode_events(
     probs: np.ndarray,
     feat: FeatureConfig,
     *,
-    threshold: float = 0.5,
+    threshold: float | Mapping[str, float] = 0.5,
     min_gap_sec: float = 0.03,
 ) -> list[DrumEvent]:
     """Decode ``(n_frames, num_classes)`` probabilities to ``DrumEvent``s.
@@ -56,6 +58,14 @@ def decode_events(
     ``probs`` are post-sigmoid (0..1). Frame index -> time via the inverse of
     the target builder's mapping (``frame * hop / sr``). Velocity is a coarse
     map of peak height into 1..127 so downstream MIDI has plausible dynamics.
+
+    ``threshold`` is either a single float applied to every class, or a
+    ``{class_name: float}`` mapping for per-class calibration (the model
+    under-triggers sparse classes like cymbals at a uniform threshold -- see
+    ``benchmarks/drums/drum_crnn_training_run3.md``). A mapping MUST cover
+    every entry in :data:`CLASSES`; raises ``KeyError`` naming the first
+    missing class otherwise, since a silently-defaulted threshold for an
+    uncalibrated class would be a worse failure mode than a loud one.
     """
     if probs.ndim != 2 or probs.shape[1] != len(CLASSES):
         raise ValueError(f"expected (n_frames, {len(CLASSES)}) probs, got {probs.shape}")
@@ -65,8 +75,14 @@ def decode_events(
 
     events: list[DrumEvent] = []
     for cls_idx, cls_name in enumerate(CLASSES):
+        if isinstance(threshold, Mapping):
+            if cls_name not in threshold:
+                raise KeyError(f"decode threshold missing for class {cls_name!r}")
+            cls_threshold = float(threshold[cls_name])
+        else:
+            cls_threshold = float(threshold)
         channel = probs[:, cls_idx]
-        for frame in _peak_pick_channel(channel, threshold, min_gap_frames):
+        for frame in _peak_pick_channel(channel, cls_threshold, min_gap_frames):
             t = frame * hop / sr
             height = float(channel[frame])
             velocity = int(np.clip(round(1 + height * 126), 1, 127))

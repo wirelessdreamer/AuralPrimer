@@ -2,6 +2,7 @@
 name = "auralprimer_game_tauri"
 version = "0.0.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 # Tauri runs `cargo run` under the hood. Since we have multiple binaries
 # (the app plus helper tools like `raw_import`), set an explicit default.

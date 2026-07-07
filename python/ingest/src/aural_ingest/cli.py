@@ -807,7 +807,11 @@ def _analyze_beats_tempo(
         # the librosa path. Opt out with AURALPRIMER_DISABLE_METER_MODEL=1.
         if os.getenv("AURALPRIMER_DISABLE_METER_MODEL", "").strip().lower() not in {"1", "true", "yes", "on"}:
             try:
-                from . import meter_tracker
+                # Absolute import: under PyInstaller, cli runs as a TOP-LEVEL
+                # script (no parent package), so a relative import raises
+                # ImportError -- which this try swallows, silently disabling
+                # Beat This! in every frozen build.
+                from aural_ingest import meter_tracker
 
                 model_result = meter_tracker.track_meter(
                     wav_path, duration_sec=duration_sec, config=config
@@ -4345,7 +4349,7 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
         return 1
 
     if dataset == "egmd":
-        from .dataset_adapters.egmd import yield_cases
+        from aural_ingest.dataset_adapters.egmd import yield_cases
 
         case_ids = None
         case_id_file = getattr(args, "case_id_file", None)
@@ -4370,14 +4374,14 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
         )
         family = "drums"
     elif dataset == "guitarset":
-        from .dataset_adapters.guitarset import yield_cases as _yc
+        from aural_ingest.dataset_adapters.guitarset import yield_cases as _yc
 
         cases = list(
             _yc(corpus_root, variant=args.variant or "mic", limit=args.limit)
         )
         family = "melodic"
     elif dataset == "guitarset_bass":
-        from .dataset_adapters.guitarset import yield_low_string_cases
+        from aural_ingest.dataset_adapters.guitarset import yield_low_string_cases
 
         cases = list(
             yield_low_string_cases(
@@ -4388,19 +4392,19 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
         )
         family = "melodic"
     elif dataset == "guitar_techs":
-        from .dataset_adapters.guitar_techs import yield_cases as _yc
+        from aural_ingest.dataset_adapters.guitar_techs import yield_cases as _yc
 
         cases = list(
             _yc(corpus_root, signal=args.variant or "directinput", limit=args.limit)
         )
         family = "melodic"
     elif dataset == "piano_synthetic":
-        from .dataset_adapters.piano_synthetic import yield_cases as _yc
+        from aural_ingest.dataset_adapters.piano_synthetic import yield_cases as _yc
 
         cases = list(_yc(corpus_root, limit=args.limit))
         family = "melodic"
     elif dataset == "maestro":
-        from .dataset_adapters.maestro import yield_cases as _yc
+        from aural_ingest.dataset_adapters.maestro import yield_cases as _yc
 
         cases = list(_yc(corpus_root, split=args.split, limit=args.limit))
         family = "melodic"
