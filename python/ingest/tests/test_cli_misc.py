@@ -347,6 +347,87 @@ def test_cmd_validate_detects_secondary_piano_verifier_mismatch(
     assert "events.json and piano_benchmark_parser disagree for keys note 0" in payload["error"]
 
 
+def _write_minimal_feedpak(root: Path) -> None:
+    import yaml
+
+    _write_json(
+        root / "arrangements" / "notation_keys.json",
+        {"version": 1, "instrument": "keys", "staves": [], "measures": []},
+    )
+    stems_dir = root / "audio" / "stems"
+    stems_dir.mkdir(parents=True, exist_ok=True)
+    (stems_dir / "drums.wav").write_bytes(b"wav")
+    _write_json(root / "song_timeline.json", {"version": 1})
+    _write_json(root / "drum_tab.json", {"version": 1, "kit": [], "hits": []})
+    (root / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "feedpak_version": "1.11.0",
+                "title": "Fixture",
+                "artist": "Unknown",
+                "duration": 2.0,
+                "arrangements": [
+                    {"id": "keys", "name": "Keys", "type": "piano", "notation": "arrangements/notation_keys.json"}
+                ],
+                "stems": [{"id": "drums", "file": "audio/stems/drums.wav", "default": True}],
+                "song_timeline": "song_timeline.json",
+                "drum_tab": "drum_tab.json",
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_cmd_validate_accepts_minimal_feedpak(tmp_path: Path, capsys) -> None:
+    from aural_ingest import cli
+
+    feedpak = tmp_path / "ok.feedpak"
+    _write_minimal_feedpak(feedpak)
+
+    args = type("Args", (), {})()
+    args.auralsong_dir = str(feedpak)
+    assert cli.cmd_validate(args) == 0
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is True
+    assert payload["pack_type"] == "feedpak"
+
+
+def test_cmd_validate_feedpak_reports_missing_files(tmp_path: Path, capsys) -> None:
+    from aural_ingest import cli
+
+    feedpak = tmp_path / "broken.feedpak"
+    _write_minimal_feedpak(feedpak)
+    (feedpak / "audio" / "stems" / "drums.wav").unlink()
+    (feedpak / "arrangements" / "notation_keys.json").unlink()
+
+    args = type("Args", (), {})()
+    args.auralsong_dir = str(feedpak)
+    assert cli.cmd_validate(args) == 1
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is False
+    assert "audio/stems/drums.wav" in payload["missing"]
+    assert "arrangements/notation_keys.json" in payload["missing"]
+
+
+def test_cmd_validate_feedpak_detects_unparseable_drum_tab(tmp_path: Path, capsys) -> None:
+    from aural_ingest import cli
+
+    feedpak = tmp_path / "bad-json.feedpak"
+    _write_minimal_feedpak(feedpak)
+    (feedpak / "drum_tab.json").write_text("{not json", encoding="utf-8")
+
+    args = type("Args", (), {})()
+    args.auralsong_dir = str(feedpak)
+    assert cli.cmd_validate(args) == 1
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["ok"] is False
+    assert "error" in payload
+
+
 def test_cmd_import_returns_2_for_missing_input(tmp_path: Path) -> None:
     from aural_ingest import cli
 
