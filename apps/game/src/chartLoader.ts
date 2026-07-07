@@ -47,7 +47,14 @@ type DrumEvent = {
 
 export type DrumChartSelection = {
   mode: "strict" | "relaxed";
-  reason: "strict_empty" | "strict_preferred" | "relaxed_richer" | "dedicated_drum_track_guard";
+  reason:
+    | "strict_empty"
+    | "strict_preferred"
+    | "relaxed_richer"
+    | "dedicated_drum_track_guard"
+    // Charted from the pack-root drum_tab.json (Studio drum-cleanup + import-time
+    // onset alignment) rather than from aural/notes.mid.
+    | "drum_tab";
   events: DrumEvent[];
   strictCount: number;
   relaxedCount: number;

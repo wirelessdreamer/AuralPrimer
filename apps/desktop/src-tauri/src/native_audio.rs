@@ -97,6 +97,10 @@ struct EngineSnapshot {
 
     callback_count: AtomicU64,
     callback_overrun_count: AtomicU64,
+    // Actual frames per output callback, observed live. WASAPI's BufferSize::
+    // Default gives no config buffer size, so this is the only real source for
+    // the output-latency estimate the playhead uses.
+    observed_buffer_frames: AtomicU32,
 }
 
 impl EngineSnapshot {
@@ -529,6 +533,41 @@ impl NativeAudioHandle {
         })
     }
 
+    /// Load several stems summed into one buffer (unity gain). Each stem is
+    /// resampled to the engine rate and padded to the longest, so the sum is
+    /// well-defined. Unlike the game's mixer this keeps no per-stem state — the
+    /// Studio refine workspace only needs summed playback, not live gain.
+    pub fn load_stems(&self, stems: Vec<(u32, u16, Vec<i16>)>) -> Result<(), String> {
+        if stems.is_empty() {
+            return Err("load_stems: no stems provided".to_string());
+        }
+        let mut resampled: Vec<Vec<i16>> = Vec::with_capacity(stems.len());
+        for (sr, ch, data) in stems {
+            if ch != self.channels {
+                return Err(format!("stem channels {} != engine channels {}", ch, self.channels));
+            }
+            resampled.push(resample_pcm16_linear_interleaved(&data, ch, sr, self.sample_rate_hz)?);
+        }
+        let max_len = resampled.iter().map(|s| s.len()).max().unwrap_or(0);
+        let mut mixed = vec![0i32; max_len];
+        for s in &resampled {
+            for (i, &v) in s.iter().enumerate() {
+                mixed[i] += v as i32;
+            }
+        }
+        let data: Vec<i16> = mixed
+            .into_iter()
+            .map(|v| v.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+            .collect();
+        self.enqueue(EngineCommand::LoadPcm16 {
+            wav: WavPcm16 {
+                sample_rate: self.sample_rate_hz,
+                channels: self.channels,
+                data,
+            },
+        })
+    }
+
     pub fn play(&self) -> Result<(), String> {
         self.enqueue(EngineCommand::Play)
     }
@@ -567,7 +606,8 @@ impl NativeAudioHandle {
         let playback_rate = f64::from_bits(playback_rate_bits);
         let pos_frames = self.snapshot.position_frames.load(Ordering::Relaxed);
         let loop_frames = self.snapshot.read_loop_frames();
-        let outbuf = self.output_buffer_frames.load(Ordering::Relaxed);
+        let observed = self.snapshot.observed_buffer_frames.load(Ordering::Relaxed);
+        let config = self.output_buffer_frames.load(Ordering::Relaxed);
 
         NativeAudioState {
             output_host: self.output_host.clone(),
@@ -580,7 +620,7 @@ impl NativeAudioHandle {
             loop_t0_sec: loop_frames.map(|(s, _)| s as f64 / self.sample_rate_hz as f64),
             loop_t1_sec: loop_frames.map(|(_, e)| e as f64 / self.sample_rate_hz as f64),
             has_audio: self.snapshot.has_audio.load(Ordering::Relaxed),
-            output_buffer_frames: if outbuf == 0 { None } else { Some(outbuf) },
+            output_buffer_frames: pick_output_buffer_frames(observed, config),
             callback_count: self.snapshot.callback_count.load(Ordering::Relaxed),
             callback_overrun_count: self.snapshot.callback_overrun_count.load(Ordering::Relaxed),
         }
@@ -953,11 +993,39 @@ fn update_callback_telemetry(
     sample_rate_hz: u32,
 ) {
     snapshot.callback_count.fetch_add(1, Ordering::Relaxed);
+    if frame_count > 0 {
+        snapshot
+            .observed_buffer_frames
+            .store(frame_count as u32, Ordering::Relaxed);
+    }
     let callback_budget_sec = (frame_count as f64) / sample_rate_hz as f64;
     if callback_t0.elapsed().as_secs_f64() > callback_budget_sec {
         snapshot
             .callback_overrun_count
             .fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn sync_transport_to_source_cursor(runtime: &mut EngineRuntimeState) {
+    let frame = if runtime.source_frame_cursor.is_finite() && runtime.source_frame_cursor > 0.0 {
+        runtime.source_frame_cursor.floor() as u64
+    } else {
+        0
+    };
+    runtime.transport.seek_frames(frame);
+}
+
+/// The output buffer size to report as latency: the live per-callback count
+/// (the real device buffer) when known, else the config value (only set under
+/// BufferSize::Fixed). `None` disables the auto output-latency compensation.
+/// Observed MUST win, or the WASAPI BufferSize::Default path (config == 0)
+/// silently zeroes the latency term.
+fn pick_output_buffer_frames(observed: u32, config: u32) -> Option<u32> {
+    let frames = if observed > 0 { observed } else { config };
+    if frames == 0 {
+        None
+    } else {
+        Some(frames)
     }
 }
 
@@ -972,8 +1040,12 @@ fn process_audio_callback_f32(
     let callback_t0 = Instant::now();
 
     drain_engine_commands(runtime, commands, engine_channels);
-    let rendered_frames = render_output_block(runtime, out, engine_channels);
-    runtime.transport.advance_frames(rendered_frames);
+    render_output_block(runtime, out, engine_channels);
+    // Report the position from the SOURCE cursor (how much audio was actually
+    // consumed), not the output frame count — at playback_rate != 1 those
+    // differ, and advancing by output frames makes the playhead run at the
+    // wrong speed relative to the audio. Matches the game engine.
+    sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);
 
     update_callback_telemetry(
@@ -1408,6 +1480,89 @@ mod tests {
         approx_eq(out[1], 200.0 / i16::MAX as f32);
         approx_eq(out[2], 300.0 / i16::MAX as f32);
         approx_eq(out[3], 200.0 / i16::MAX as f32);
+    }
+
+    #[test]
+    fn golden_click_track_renders_without_time_drift() {
+        // Impulses at known source frames; at rate 1 they must appear at the
+        // SAME output frames, proving the render cursor never drifts from the
+        // audio it emits (the root property behind "playhead sits on the hit").
+        let clicks = [100usize, 200, 300];
+        let mut samples = vec![0i16; 512];
+        for &f in &clicks {
+            samples[f] = 30_000;
+        }
+        let mut st = mk_runtime(48_000);
+        st.wav = Some(mono(&samples));
+        st.is_playing = true;
+        st.transport.set_playing(true);
+        st.source_frame_cursor = 0.0;
+
+        // Render 6 contiguous 64-frame callbacks (384 frames, inside the clip)
+        // to exercise cross-callback continuity without reaching end-of-audio.
+        let mut rendered = Vec::<f32>::new();
+        for _ in 0..6 {
+            let prev = rendered.len();
+            let mut out = vec![0.0f32; 64];
+            let frames = render_output_block(&mut st, &mut out, 1) as usize;
+            assert_eq!(frames, 64);
+            // Cursor advanced by exactly the frames rendered — no drift.
+            approx_eq(st.source_frame_cursor as f32, (prev + 64) as f32);
+            rendered.extend_from_slice(&out[..frames]);
+        }
+
+        assert_eq!(rendered.len(), 384);
+        for (i, &v) in rendered.iter().enumerate() {
+            let expect = if clicks.contains(&i) { 30_000.0 / i16::MAX as f32 } else { 0.0 };
+            approx_eq(v, expect);
+        }
+    }
+
+    #[test]
+    fn callback_telemetry_reports_real_output_buffer_frames() {
+        // The playhead subtracts (output_buffer_frames*2)/sr as output latency,
+        // so the engine MUST surface its real per-callback buffer size — WASAPI's
+        // BufferSize::Default yields no config value, and regressing this to 0
+        // silently dumps the whole output latency onto the manual calibration.
+        let snap = EngineSnapshot::default();
+        update_callback_telemetry(&snap, Instant::now(), 512, 48_000);
+        assert_eq!(snap.observed_buffer_frames.load(Ordering::Relaxed), 512);
+        // A zero-length callback must not clobber a known-good buffer size.
+        update_callback_telemetry(&snap, Instant::now(), 0, 48_000);
+        assert_eq!(snap.observed_buffer_frames.load(Ordering::Relaxed), 512);
+    }
+
+    #[test]
+    fn pick_output_buffer_frames_prefers_observed_over_config() {
+        // WASAPI BufferSize::Default: config is 0, observed is the only source.
+        assert_eq!(pick_output_buffer_frames(512, 0), Some(512));
+        // Nothing known yet -> no auto latency (falls to manual calibration).
+        assert_eq!(pick_output_buffer_frames(0, 0), None);
+        // Observed (real) wins even when a config value is also present.
+        assert_eq!(pick_output_buffer_frames(512, 256), Some(512));
+        // BufferSize::Fixed with no callback yet -> use the config value.
+        assert_eq!(pick_output_buffer_frames(0, 256), Some(256));
+    }
+
+    #[test]
+    fn process_audio_callback_tracks_source_position_at_playback_rate() {
+        // At 2x, a 2-frame output block consumes 4 SOURCE frames; the reported
+        // position must track source consumption (else the Studio playhead runs
+        // at the wrong speed vs the audio when the refine speed selector != 1x).
+        let mut st = mk_runtime(48_000);
+        st.wav = Some(mono(&[100, 200, 300, 400, 500]));
+        st.is_playing = true;
+        st.transport.set_playing(true);
+        st.playback_rate = 2.0;
+        let snapshot = EngineSnapshot::default();
+        let (_producer, mut consumer) = RingBuffer::<EngineCommand>::new(8);
+        let mut out = vec![0.0f32; 2];
+
+        process_audio_callback_f32(&mut st, &mut consumer, &snapshot, &mut out, 1, 48_000);
+
+        assert_eq!(st.source_frame_cursor, 4.0);
+        assert_eq!(st.transport.position_frames(), 4);
+        assert_eq!(snapshot.position_frames.load(Ordering::Relaxed), 4);
     }
 
     #[test]

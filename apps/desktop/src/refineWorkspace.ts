@@ -14,13 +14,13 @@
  *    notes is replaced by the candidate's transcription.
  *  - The 12+ hot-spot regions are navigation only — a "Jump" dropdown scrolls
  *    the editor view to a section start.
- *  - Transport plays the ISOLATED STEM audio for the current instrument,
- *    streamed off disk via Tauri's asset protocol (convertFileSrc -> an
- *    <audio> element), so the user hears the real recording while editing.
- *    When a stem is loaded, audio.currentTime drives the playhead clock;
- *    when none loads (zip container, missing file, decode error) the
- *    transport falls back to the wall-clock playhead. The "Hear notes"
- *    synth (refineAudition) plays ALONGSIDE the stem when checked, so the
+ *  - Transport plays the ISOLATED STEM audio for the current instrument (or
+ *    the summed "All" mix) through the SAME native engine the game uses
+ *    (NativeAudioTimebase), so the shared A/V calibration is valid and the
+ *    playhead is drawn at the audible position. When audio is loaded the native
+ *    engine position drives the playhead clock; when none loads (missing file,
+ *    decode error) the transport falls back to the wall-clock playhead. The
+ *    "Hear notes" synth (refineAudition) plays ALONGSIDE the stem when checked, so the
  *    user can A/B the transcription against the recording.
  *
  * On save, the edited note set is partitioned back into the candidate regions
@@ -37,10 +37,26 @@ import {
   type RefinementInstrument,
 } from "./refineCandidatesIo";
 import { initRefineAudition, type RefineAuditionHandle } from "./refineAudition";
+import { audiblePlayheadSec } from "@auralprimer/av-sync";
+import {
+  downbeatTimesShifted,
+  beatsPerBarFromTimeSignatures,
+  quantLevelByValue,
+} from "./beatGrid";
 import { getAvOffsetSec } from "./avOffset";
-import { detectMelodicStems } from "./cleanupReadiness";
+import { NativeAudioTimebase } from "./nativeAudioTimebase";
+import { GridMetronome } from "./gridMetronome";
+import { detectMelodicStems, auralsongJsonExists } from "./cleanupReadiness";
+import {
+  laneOrderForTab,
+  hitsToNotes,
+  notesToTab,
+  drumLaneLabel,
+  type DrumTabFile,
+} from "./drumTabIo";
 import type { RefinementNote } from "./refineCandidatesIo";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
+import { featureDir as packFeatureDir, packDisplayName } from "@auralprimer/auralsong/packKind";
 import {
   SpectrogramEditor,
   type SpectrogramGeometry,
@@ -105,6 +121,10 @@ const INSTRUMENT_LABELS: Record<string, string> = {
   guitar: "Guitar",
   lead_guitar: "Lead Guitar",
   rhythm_guitar: "Rhythm Guitar",
+  // Drums are the exception to the candidates flow: the picker offers them
+  // when the pack has a drum_tab.json, and the workspace switches to the lane
+  // editor over the drums spectrogram (see the drumMode branches below).
+  drums: "Drums",
 };
 
 export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceHandle {
@@ -117,6 +137,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const instSelectEl = $<HTMLSelectElement>("refineInstrumentSelect");
   const reloadBtn = $<HTMLButtonElement>("refineReloadBtn");
   const saveBtn = $<HTMLButtonElement>("refineSaveBtn");
+  const snapBtn = document.getElementById("refineSnapBtn") as HTMLButtonElement | null;
+  const refreshMeterBtn = document.getElementById("refineRefreshMeterBtn") as HTMLButtonElement | null;
+  const quantSelect = document.getElementById("refineQuantSelect") as HTMLSelectElement | null;
   const backBtn = $<HTMLElement>("refineBack");
   const transportEl = $<HTMLElement>("refineTransport");
   const playBtn = $<HTMLButtonElement>("refinePlayBtn");
@@ -126,6 +149,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const sectionSelectEl = $<HTMLSelectElement>("refineSectionSelect");
   const auditionToggle = $<HTMLInputElement>("refineAuditionToggle");
   const editAuditionToggle = $<HTMLInputElement>("refineEditAuditionToggle");
+  const metronomeToggle = $<HTMLInputElement>("refineMetronomeToggle");
+  const downbeatMinusBtn = $<HTMLButtonElement>("refineDownbeatMinus");
+  const downbeatPlusBtn = $<HTMLButtonElement>("refineDownbeatPlus");
   const speedSelectEl = $<HTMLSelectElement>("refineSpeedSelect");
   const soloSelectEl = $<HTMLSelectElement>("refineSoloSelect");
   const stageEl = $<HTMLElement>("refineStage");
@@ -140,7 +166,8 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   if (
     !root || !songTitleEl || !instLabelEl || !instSelectEl || !reloadBtn || !saveBtn
     || !backBtn || !transportEl || !playBtn || !stopBtn || !timeReadoutEl || !scrubEl
-    || !sectionSelectEl || !auditionToggle || !editAuditionToggle || !stageEl || !inspectorEl || !selInfoEl
+    || !sectionSelectEl || !auditionToggle || !editAuditionToggle || !metronomeToggle
+    || !downbeatMinusBtn || !downbeatPlusBtn || !stageEl || !inspectorEl || !selInfoEl
     || !candChipsEl || !emptyEl || !emptyCmdEl || !undoBtn || !redoBtn
     || !speedSelectEl || !soloSelectEl
   ) {
@@ -157,11 +184,18 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let isDirty = false;
   let selectedIndex: number | null = null;
   let durationSec = 0;
+  // Drum-cleanup mode: the editor shows kit lanes over the drums spectrogram
+  // and edits the pack's drum_tab.json directly (no candidates/regions).
+  let drumMode = false;
+  let drumLanes: string[] = [];
+  let drumTabOriginal: DrumTabFile | null = null;
 
   // transport
-  //  - When a stem is loaded, `audio` plays the real recording and its
-  //    `currentTime` is the playhead clock (driven via rAF).
-  //  - When no stem loads, we fall back to the wall-clock playhead below.
+  //  - Audio plays through the SAME native engine as the game (via
+  //    NativeAudioTimebase), so the shared A/V calibration is valid here too —
+  //    the playhead is drawn at the audible position (native pos − output
+  //    latency·rate − calibration offset), exactly as the game's transport does.
+  //  - When no audio loads, we fall back to the wall-clock playhead below.
   //  - refineAudition (the "Hear notes" synth) plays alongside either path.
   let isPlaying = false;
   let playStartOffset = 0; // playhead position (sec) when play began (wall-clock path)
@@ -171,18 +205,16 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let playbackRate = 1; // transport speed multiplier
   let soloMode = true; // true = play the current instrument's isolated stem; false = full mix
 
-  // Isolated-stem playback. The element lives outside the DOM template — it
-  // never needs to be visible, just to decode + play the asset:// stream.
-  const audio = new Audio();
-  audio.preload = "auto";
-  let stemLoaded = false; // true once a stem src has loaded (metadata) for the current instrument
-  audio.addEventListener("ended", () => stopTransport());
-  audio.addEventListener("error", () => {
-    // The stem failed to decode/stream: drop back to the wall-clock + synth
-    // path so the editor stays usable, and tell the user why there's no audio.
-    if (stemLoaded) setStatus(`Stem audio failed to load for ${instrument} — playing notes only`);
-    stemLoaded = false;
-  });
+  // Native audio engine (same one the game uses). audioLoaded flips true once a
+  // stem/mix is loaded; a load miss leaves it false -> wall-clock fallback.
+  const nativeAudio = new NativeAudioTimebase();
+  // Optional beat-grid metronome (accent on the one), driven off the audible
+  // playhead — an on-demand audible test of whether the grid aligns to the song.
+  const metronome = new GridMetronome();
+  let audioLoaded = false;
+  // Monotonic token so a rapid instrument/solo switch can't let a slower,
+  // earlier load win the shared engine buffer after a newer one started.
+  let loadGeneration = 0;
 
   const spectroTileUrls: string[] = [];
   function revokeSpectroUrls(): void {
@@ -205,20 +237,23 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       renderInspector(index);
     },
     // Audition a note as it's placed or edited, so the user hears the pitch
-    // they're putting down (gated by the "Audition edits" toggle).
+    // they're putting down (gated by the "Audition edits" toggle). Drum-mode
+    // "pitches" are lane indices — nothing meaningful to synthesize.
     onNoteAuditioned: (note) => {
-      if (editAuditionToggle!.checked) audition.playNote(note.pitch, note.velocity);
+      if (!drumMode && editAuditionToggle!.checked) audition.playNote(note.pitch, note.velocity);
     },
     // Sonic-Visualiser-style cursor readout: show the pitch + time under the
-    // cursor in the inspector whenever no note is actively selected.
+    // cursor in the inspector whenever no note is actively selected. In drum
+    // mode `pitch` is a lane index and reads as the lane name.
     onHover: (info) => {
       if (selectedIndex != null) return;
       if (!info) {
-        selInfoEl!.textContent = "No note selected";
+        selInfoEl!.textContent = drumMode ? "No hit selected" : "No note selected";
         return;
       }
+      const label = drumMode ? drumLaneLabel(drumLanes[info.pitch] ?? "?") : pitchLabel(info.pitch);
       selInfoEl!.innerHTML =
-        `<span class="rfSelPitch">${pitchLabel(info.pitch)}</span> · ${formatTime(info.time)}`
+        `<span class="rfSelPitch">${label}</span> · ${formatTime(info.time)}`
         + ` <span style="color:#64748b;">· cursor</span>`;
     },
   });
@@ -272,6 +307,20 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // -------------------------------------------------------------------------
 
   function renderInspector(index: number | null): void {
+    // Drum mode: lane + time readout only — no candidate chips (drums have no
+    // candidate system; the drum tab is the single source of truth).
+    if (drumMode) {
+      candChipsEl!.innerHTML = "";
+      const hit = index != null ? editor.getNotes()[index] : undefined;
+      if (!hit) {
+        selInfoEl!.textContent = "No hit selected";
+        return;
+      }
+      selInfoEl!.innerHTML =
+        `<span class="rfSelPitch">${drumLaneLabel(drumLanes[hit.pitch] ?? "?")}</span>`
+        + ` · ${formatTime(hit.t_on)}`;
+      return;
+    }
     if (index == null || !session) {
       selInfoEl!.textContent = "No note selected";
       candChipsEl!.innerHTML = "";
@@ -368,22 +417,50 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
   function tick(): void {
     if (!isPlaying) return;
-    // Clock source: the stem's own playback position when a stem is loaded,
-    // otherwise the wall clock. Keeping the playhead on audio.currentTime
-    // keeps the spectrogram glued to what the user actually hears.
-    const raw = stemLoaded
-      ? audio.currentTime
+    // Clock source: the native engine's playback position when audio is loaded,
+    // otherwise the wall clock.
+    const raw = audioLoaded
+      ? nativeAudio.getCurrentTimeSec()
       : playStartOffset + ((performance.now() - playStartWall) / 1000) * playbackRate;
     if (raw >= durationSec) {
       setPlayhead(durationSec, false);
       pauseTransport();
       return;
     }
-    // A/V sync offset: the user hears the output `avOffset` after the clock, so
-    // draw the cursor at the position that's actually audible right now (same
-    // calibration the game applies to its falling notes). End-of-song uses the
-    // raw clock above so a positive offset doesn't cut playback short.
-    setPlayhead(raw - getAvOffsetSec(), true);
+    // Draw the cursor at the position that's actually AUDIBLE right now — the
+    // same math the game's transport uses, so the shared calibration lines up:
+    //   audible = nativePos − outputLatency·rate − avOffset
+    // outputLatency is a wall-clock buffer latency (scaled by rate to song
+    // time); avOffset is the user's perceptual calibration (unscaled, as the
+    // game applies it). Zero on the wall-clock fallback (no native latency).
+    // Only compensate output latency once the engine is actually playing — the
+    // native position is pinned during the start-up window, so subtracting
+    // latency then would nudge the cursor off. (Matches the game.)
+    const outLatency = audioLoaded && nativeAudio.getIsPlaying()
+      ? (nativeAudio.getOutputLatencySec() ?? 0)
+      : 0;
+    // Shared formula (identical to the game's transport) so the playhead lands
+    // on what's audible and the two apps can never drift apart.
+    const audibleSec = audiblePlayheadSec({
+      nativePosSec: raw,
+      outputLatencySec: outLatency,
+      playbackRate,
+      avOffsetSec: getAvOffsetSec(),
+    });
+    setPlayhead(audibleSec, true);
+    // Drive the metronome off the AUDIO-audible position, not the visual playhead.
+    // The click and the stem exit the same output, so the perceptual A/V offset
+    // (audioMs − videoMs) is common to both and cancels — applying it would shove
+    // the click off by the whole calibration. We reuse the SAME av-sync formula
+    // (so the engine's output-buffer latency is handled identically) but with
+    // avOffset 0; GridMetronome then compensates only its own WebAudio buffer.
+    const audibleAudioSec = audiblePlayheadSec({
+      nativePosSec: raw,
+      outputLatencySec: outLatency,
+      playbackRate,
+      avOffsetSec: 0,
+    });
+    metronome.update(audibleAudioSec, true, playbackRate);
     rafId = requestAnimationFrame(tick);
   }
 
@@ -394,32 +471,45 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     playStartWall = performance.now();
     isPlaying = true;
     playBtn!.textContent = "⏸";
-    if (stemLoaded) {
-      // Seek the stem to the playhead and start it; if play() rejects (autoplay
-      // policy, transient decode failure) fall back to the wall-clock path so
-      // the synth + playhead still run.
-      audio.currentTime = playheadSec;
-      audio.playbackRate = playbackRate;
-      audio.play().catch(() => {
-        stemLoaded = false;
-        setStatus(`Stem audio couldn't start for ${instrument} — playing notes only`);
+    if (audioLoaded) {
+      // Seek to the playhead + start; if native start fails, drop to the
+      // wall-clock path so the synth + playhead still run.
+      nativeAudio.seek(playheadSec);
+      nativeAudio.setPlaybackRate(playbackRate);
+      void nativeAudio.play().catch(() => {
+        audioLoaded = false;
+        // The native start-poll can take seconds; re-anchor the wall clock to
+        // NOW (not the stale play-start time) so the playhead resumes smoothly
+        // from where it sits instead of lurching forward by the stall, and
+        // restart the synth from the current playhead so it stays in sync.
+        if (isPlaying) {
+          playStartOffset = playheadSec;
+          playStartWall = performance.now();
+          if (!drumMode && auditionToggle!.checked) {
+            audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+          }
+        }
+        setStatus(`Audio couldn't start for ${instrument} — playing notes only`);
       });
     }
-    if (auditionToggle!.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+    // Drum-mode "pitches" are lane indices — the melodic synth can't audition
+    // them, so drum playback relies on the real drums stem alone.
+    if (!drumMode && auditionToggle!.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
     rafId = requestAnimationFrame(tick);
   }
 
   function pauseTransport(): void {
     if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
-    try { audio.pause(); } catch { /* ignore */ }
+    if (audioLoaded) nativeAudio.pause();
     audition.stop();
+    metronome.stop();
     isPlaying = false;
     playBtn!.textContent = "▶";
   }
 
   function stopTransport(): void {
     pauseTransport();
-    if (stemLoaded) { try { audio.currentTime = 0; } catch { /* ignore */ } }
+    if (audioLoaded) nativeAudio.seek(0);
     setPlayhead(0, false);
   }
 
@@ -432,7 +522,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     const wasPlaying = isPlaying;
     if (wasPlaying) pauseTransport();
     setPlayhead(t, true);
-    if (stemLoaded) { try { audio.currentTime = playheadSec; } catch { /* ignore */ } }
+    if (audioLoaded) nativeAudio.seek(playheadSec);
     if (wasPlaying) playTransport();
   }
 
@@ -446,7 +536,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // Empty / loaded state
   // -------------------------------------------------------------------------
 
-  function showEmpty(empty: boolean, reason?: "candidates" | "spectrogram" | "error", detail?: string): void {
+  function showEmpty(empty: boolean, reason?: "candidates" | "spectrogram" | "drumtab" | "error", detail?: string): void {
     emptyEl!.style.display = empty ? "flex" : "none";
     stageEl!.style.display = empty ? "none" : "block";
     transportEl!.style.display = empty ? "none" : "flex";
@@ -456,6 +546,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (reason === "spectrogram") {
       if (h3) h3.textContent = "No spectrogram for this stem";
       emptyCmdEl!.textContent = `aural_ingest spectrogram "${containerPath ?? "<song>"}" --instrument ${instrument}`;
+    } else if (reason === "drumtab") {
+      if (h3) h3.textContent = "No drum chart in this pack";
+      emptyCmdEl!.textContent = detail ?? "This pack has no drum_tab.json — reimport with a drums stem to chart drums.";
     } else if (reason === "error") {
       if (h3) h3.textContent = "Failed to load";
       emptyCmdEl!.textContent = detail ?? "";
@@ -469,11 +562,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // Spectrogram + notes load
   // -------------------------------------------------------------------------
 
-  async function loadSpectrogramIntoEditor(): Promise<boolean> {
-    if (!containerPath || !session) return false;
+  async function loadSpectrogramIntoEditor(notes: SpectroNote[]): Promise<boolean> {
+    if (!containerPath) return false;
     const role = instrument;
-    // feedpak relocates spectrogram artifacts under aural/ (legacy: features/).
-    const fd = containerPath.endsWith(".feedpak") ? "aural" : "features";
+    // feedpak/sloppak relocate spectrogram artifacts under aural/ (legacy: features/).
+    const fd = packFeatureDir(containerPath);
     try {
       const geom = (await invoke("read_auralsong_json", {
         containerPath,
@@ -491,99 +584,123 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
         urls.push(url);
         spectroTileUrls.push(url);
       }
-      await editor.load(geom, urls, assembleFullNotes(session));
+      await editor.load(geom, urls, notes);
       durationSec = editor.getDurationSec();
+      await applyBeatGrid();
       return true;
     } catch {
       return false;
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Stem audio (asset-protocol stream of the current instrument's stem)
-  // -------------------------------------------------------------------------
-
-  type ManifestStem = { id?: string; file?: string; default?: boolean | string };
-
-  /** Truthy "default" per the manifest schema (boolean or true/on/yes string). */
-  function isDefaultStem(s: ManifestStem): boolean {
-    const d = s.default;
-    if (typeof d === "boolean") return d;
-    if (typeof d === "string") return /^(true|on|yes)$/i.test(d.trim());
-    return false;
+  // Push the current quant-dropdown level into the editor (null = Off).
+  function applyQuant(): void {
+    const level = quantSelect ? quantLevelByValue(quantSelect.value) : undefined;
+    editor.setQuant(level ? level.perBeat : null);
   }
 
-  /** Join the container path with a POSIX-relative stem file (forward slashes). */
-  function joinContainer(container: string, relFile: string): string {
-    const sep = container.includes("\\") ? "\\" : "/";
-    const base = container.replace(/[\\/]+$/, "");
-    return `${base}${sep}${relFile.replace(/\//g, sep)}`;
+  // The loaded beat grid + the current downbeat-phase nudge. We keep the raw
+  // beats so the ◀▶ control can re-derive the accented downbeats without a reload.
+  let loadedBeats: Array<{ time?: number; measure?: number }> = [];
+  let loadedBeatTimes: number[] = [];
+  let beatsPerBar = 4;
+  let downbeatOffset = 0;
+
+  // Push the current beats + phase-shifted downbeats to BOTH the editor overlay
+  // and the metronome, so the bar lines and the accent always agree.
+  function refreshGrid(): void {
+    const downbeats = downbeatTimesShifted(loadedBeats, downbeatOffset);
+    editor.setBeatGrid(loadedBeatTimes, downbeats);
+    metronome.setBeats(loadedBeatTimes, downbeats);
   }
 
-  /**
-   * Resolve the current instrument's stem to a convertFileSrc URL. Reads the
-   * manifest's `stems[]`, matches `id === role`, and falls back to the default
-   * stem (or the first) when the role has none. Returns null when the manifest
-   * has no usable stem (e.g. a zip container the asset protocol can't reach).
-   */
-  async function resolveStemUrl(solo: boolean): Promise<string | null> {
-    if (!containerPath) return null;
+  // Load the pack's beats (song_timeline.json) into the editor's grid, then
+  // apply the current quant level. No timeline -> no grid (snap becomes inert).
+  async function applyBeatGrid(): Promise<void> {
+    if (!containerPath) return;
     try {
-      const details = await invoke<{ manifest_raw?: { stems?: ManifestStem[] } | null }>(
-        "get_auralsong_details",
-        { containerPath },
-      );
-      const stems = details.manifest_raw?.stems ?? [];
-      if (!solo) {
-        // "All (mix)": prefer an explicit mix/full stem, else the conventional
-        // audio/mix.wav. If neither exists the audio element errors and
-        // loadStemAudio falls back to the instrument stem.
-        const mix = stems.find((s) => /^(mix|mixture|mixdown|full|all)$/i.test(s.id ?? ""));
-        if (mix?.file) return convertFileSrc(joinContainer(containerPath, mix.file));
-        return convertFileSrc(joinContainer(containerPath, "audio/mix.wav"));
-      }
-      if (stems.length === 0) return null;
-      const match =
-        stems.find((s) => s.id === instrument)
-        ?? stems.find((s) => isDefaultStem(s))
-        ?? stems[0];
-      if (!match?.file) return null;
-      return convertFileSrc(joinContainer(containerPath, match.file));
+      const tl = (await invoke("read_auralsong_json", {
+        containerPath,
+        relPath: "song_timeline.json",
+      })) as {
+        beats?: Array<{ time?: number; measure?: number }>;
+        time_signatures?: Array<{ ts?: number[] }>;
+      };
+      // Use the DETECTED beats directly: measured against drum onsets they track
+      // the audio to ~12-23 ms, whereas an even/regularized grid drifts 50-80 ms
+      // (and worsens over the song) because real tracks have natural micro-timing
+      // a single tempo can't match. Downbeats are the detected measure-starts,
+      // rotatable by the ◀▶ nudge when the tracker put "the one" on the wrong beat.
+      loadedBeats = Array.isArray(tl?.beats) ? tl.beats : [];
+      loadedBeatTimes = loadedBeats
+        .map((b) => b?.time)
+        .filter((t): t is number => typeof t === "number");
+      beatsPerBar = beatsPerBarFromTimeSignatures(tl?.time_signatures);
+      downbeatOffset = 0;
+      refreshGrid();
     } catch {
-      return null;
+      loadedBeats = [];
+      loadedBeatTimes = [];
+      downbeatOffset = 0;
+      editor.setBeatGrid([], []);
+      metronome.setBeats([], []);
     }
+    applyQuant();
   }
 
+  // Rotate which beat carries the accent + bar line (measure phase) by `delta`
+  // beats, wrapped within a bar. Updates the overlay and metronome immediately.
+  function nudgeDownbeat(delta: number): void {
+    if (loadedBeatTimes.length === 0) return;
+    const n = beatsPerBar > 0 ? beatsPerBar : 4;
+    downbeatOffset = (((downbeatOffset + delta) % n) + n) % n;
+    refreshGrid();
+  }
+
+  // -------------------------------------------------------------------------
+  // Audio — native engine (the SAME one the game uses), so the shared A/V
+  // calibration is valid and drum/melodic auditioning is sample-accurate.
+  // -------------------------------------------------------------------------
+
   /**
-   * Point the <audio> element at the current instrument's stem. Resets the
-   * loaded flag; `stemLoaded` flips true on the first `loadedmetadata` and the
-   * transport then drives the playhead off `audio.currentTime`. A resolve miss
-   * or decode error leaves `stemLoaded` false -> wall-clock fallback.
+   * Load the current instrument's stem (solo) or the summed base stems ("All")
+   * into the native engine. Rust reads + decodes the pack audio directly (no
+   * multi-MB IPC of the old browser path). A miss leaves audioLoaded false ->
+   * wall-clock + synth fallback.
    */
-  async function loadStemAudio(): Promise<void> {
-    const tryLoad = async (url: string | null): Promise<boolean> => {
-      stemLoaded = false;
-      try { audio.pause(); } catch { /* ignore */ }
-      audio.removeAttribute("src");
-      if (!url) return false;
-      return new Promise<boolean>((resolve) => {
-        const onMeta = (): void => { stemLoaded = true; cleanup(); resolve(true); };
-        const onErr = (): void => { stemLoaded = false; cleanup(); resolve(false); };
-        const cleanup = (): void => {
-          audio.removeEventListener("loadedmetadata", onMeta);
-          audio.removeEventListener("error", onErr);
-        };
-        audio.addEventListener("loadedmetadata", onMeta, { once: true });
-        audio.addEventListener("error", onErr, { once: true });
-        audio.src = url;
-        audio.load();
-      });
-    };
-    const ok = await tryLoad(await resolveStemUrl(soloMode));
-    if (!ok && !soloMode) {
-      // "All (mix)" had no usable mix — fall back to the instrument's stem.
-      const ok2 = await tryLoad(await resolveStemUrl(true));
-      if (ok2) setStatus(`No mix for this song — playing the ${instrument} stem`);
+  async function loadAudioForMode(): Promise<void> {
+    const gen = ++loadGeneration;
+    const stale = (): boolean => gen !== loadGeneration;
+    audioLoaded = false;
+    if (!containerPath) return;
+    // Capture the mode/role NOW so an in-flight load isn't corrupted by a
+    // concurrent instrument/solo switch mutating the module state mid-await.
+    const path = containerPath;
+    const wantSolo = soloMode;
+    const inst = instrument;
+    // Drum mode auditions the drums stem; melodic uses the picked role. "All"
+    // sums the base stems Rust-side (derived guitar splits are excluded there).
+    const primaryRole = wantSolo ? inst : "all";
+    // If the primary can't load, try the other: a silent/absent solo stem
+    // (e.g. a band song's empty keys) falls to the full mix; a mix that can't
+    // build falls to the instrument's own stem — so there's always audio.
+    const fallbackRole = wantSolo ? "all" : inst;
+    const fallbackMsg = wantSolo
+      ? `No isolated ${inst} stem — playing the full mix`
+      : `No mix for this song — playing the ${inst} stem`;
+    try {
+      await nativeAudio.loadPackAudio(path, primaryRole);
+      if (!stale()) audioLoaded = true;
+    } catch {
+      if (stale()) return;
+      try {
+        await nativeAudio.loadPackAudio(path, fallbackRole);
+        if (stale()) return;
+        audioLoaded = true;
+        setStatus(fallbackMsg);
+      } catch {
+        if (!stale()) audioLoaded = false;
+      }
     }
   }
 
@@ -591,7 +708,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   async function switchAudioSource(): Promise<void> {
     const wasPlaying = isPlaying;
     if (wasPlaying) pauseTransport();
-    await loadStemAudio();
+    await loadAudioForMode();
     setTransportEnabled(durationSec > 0);
     if (wasPlaying) playTransport();
   }
@@ -601,6 +718,26 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // -------------------------------------------------------------------------
 
   async function save(): Promise<void> {
+    // Drum mode: convert the edited lane hits back into the pack's root
+    // drum_tab.json (preserving version/name/kit) — the game charts straight
+    // from that file, so the edit lands with no further pipeline step.
+    if (drumMode) {
+      if (!containerPath || !drumTabOriginal) return;
+      const tab = notesToTab(editor.getNotes(), drumLanes, drumTabOriginal);
+      try {
+        await invoke<void>("write_auralsong_features_json", {
+          containerPath,
+          relPath: "drum_tab.json",
+          value: tab,
+        });
+        drumTabOriginal = tab;
+        setDirty(false);
+        setStatus(`Saved ${tab.hits?.length ?? 0} drum hits`);
+      } catch (e) {
+        setStatus(`Save failed: ${String(e)}`);
+      }
+      return;
+    }
     if (!session) return;
     if (regionsSorted.length === 0) {
       setStatus("Nothing to save (no regions).");
@@ -659,9 +796,9 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     setTransportEnabled(false);
 
     // The dropdown should offer only this song's editable instruments — the
-    // melodic roles that actually have candidates. That keeps absent / non-
-    // melodic instruments (Drums lives in the drum tab, not candidates) out of
-    // the picker, and defaults to a role that will actually load.
+    // melodic roles that actually have candidates, plus Drums when the pack
+    // carries a drum chart (drum_tab.json), which opens the lane editor
+    // instead of the candidates flow.
     let available: string[] = [];
     let primary = "keys";
     try {
@@ -670,6 +807,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       available = MELODIC_PICK_ORDER.filter((r) => det.readiness.get(r)?.candidates);
     } catch {
       // Detection failed — leave the static option set + current instrument.
+    }
+    try {
+      if (await auralsongJsonExists(path, "drum_tab.json")) available.push("drums");
+    } catch {
+      /* no drum option on probe failure */
     }
     if (available.length) populateInstrumentOptions(available);
 
@@ -681,6 +823,55 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       instrument = available[0] as RefinementInstrument;
     }
     syncInstrumentControl();
+    // "Snap to onsets" only applies to the drum lane editor.
+    if (snapBtn) snapBtn.style.display = instrument === "drums" ? "inline-block" : "none";
+
+    // ---- Drum mode: lane editor over the drums spectrogram --------------
+    if (instrument === "drums") {
+      drumMode = true;
+      session = null;
+      regionsSorted = [];
+      setStatus(`Loading drum chart from ${path}…`);
+      try {
+        const tab = (await invoke("read_auralsong_json", {
+          containerPath: path,
+          relPath: "drum_tab.json",
+        })) as DrumTabFile;
+        if (!tab || !Array.isArray(tab.hits)) {
+          showEmpty(true, "drumtab");
+          setStatus("No drum chart in this pack");
+          return;
+        }
+        drumTabOriginal = tab;
+        drumLanes = laneOrderForTab(tab);
+        editor.setLaneMode(drumLanes);
+        const ok = await loadSpectrogramIntoEditor(hitsToNotes(tab, drumLanes));
+        if (!ok) {
+          showEmpty(true, "spectrogram");
+          setStatus("No drums spectrogram — build it first (Prep all unbuilt, or the command below)");
+          return;
+        }
+        showEmpty(false);
+        updateUndoButtons();
+        buildSections();
+        selectedIndex = null;
+        renderInspector(null);
+        setTransportEnabled(durationSec > 0);
+        setPlayhead(0, false);
+        sectionSelectEl!.value = "";
+        await loadAudioForMode();
+        const audioNote = audioLoaded ? "" : " (no stem audio)";
+        setStatus(`Loaded ${editor.getNotes().length} drum hits across ${drumLanes.length} lanes${audioNote}`);
+      } catch (e) {
+        showEmpty(true, "error", String(e));
+        setStatus(`Failed to load drum chart: ${String(e)}`);
+      }
+      return;
+    }
+    drumMode = false;
+    drumTabOriginal = null;
+    drumLanes = [];
+    editor.setLaneMode(null);
 
     setStatus(`Loading ${path}…`);
     try {
@@ -695,7 +886,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       session = loaded;
       regionsSorted = [...loaded.candidates.regions].sort((a, b) => a.t_start - b.t_start);
 
-      const ok = await loadSpectrogramIntoEditor();
+      const ok = await loadSpectrogramIntoEditor(assembleFullNotes(session));
       if (!ok) {
         showEmpty(true, "spectrogram");
         setStatus(`No spectrogram for ${instrument} — build it first`);
@@ -709,12 +900,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       setTransportEnabled(durationSec > 0);
       setPlayhead(0, false);
       sectionSelectEl!.value = "";
-      // Stream the isolated stem for this instrument (asset protocol). Best
-      // effort: a miss leaves stemLoaded false and the transport runs on the
-      // wall clock + synth.
-      await loadStemAudio();
+      // Load the instrument stem into the native engine. Best effort: a miss
+      // leaves audioLoaded false and the transport runs on the wall clock + synth.
+      await loadAudioForMode();
       const noteCount = editor.getNotes().length;
-      const audioNote = stemLoaded ? "" : " (no stem audio — notes only)";
+      const audioNote = audioLoaded ? "" : " (no stem audio — notes only)";
       setStatus(`Loaded ${noteCount} notes across ${loaded.candidates.regions.length} regions for ${instrument}${audioNote}`);
     } catch (e) {
       session = null;
@@ -737,7 +927,106 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (containerPath) void openForAuralSong(containerPath, { instrument });
   });
   saveBtn.addEventListener("click", () => void save());
+  snapBtn?.addEventListener("click", () => void snapDrumOnsets());
+  refreshMeterBtn?.addEventListener("click", () => void refreshMeter());
+  quantSelect?.addEventListener("change", () => applyQuant());
   backBtn.addEventListener("click", () => { stopTransport(); deps.onBack(); });
+
+  // Refine the drum-hit TIMES onto the real drums-stem transients (mr_mt3's
+  // onsets wobble by tens of ms). Persists current edits, runs the sidecar's
+  // onset alignment, and reloads the result — setNotes snapshots the pre-snap
+  // hits so a single Undo reverts it.
+  async function snapDrumOnsets(): Promise<void> {
+    if (!drumMode || !containerPath || !drumTabOriginal || !snapBtn) return;
+    const label = snapBtn.textContent;
+    snapBtn.disabled = true;
+    snapBtn.textContent = "Snapping…";
+    setStatus("Snapping drum hits onto the audio transients…");
+    try {
+      const cur = notesToTab(editor.getNotes(), drumLanes, drumTabOriginal);
+      await invoke<void>("write_auralsong_features_json", {
+        containerPath, relPath: "drum_tab.json", value: cur,
+      });
+      const res = await invoke<{ stdout?: string }>("ingest_align_drum_onsets", {
+        req: { container_path: containerPath },
+      });
+      const aligned = (await invoke("read_auralsong_json", {
+        containerPath, relPath: "drum_tab.json",
+      })) as DrumTabFile;
+      drumTabOriginal = aligned;
+      editor.setNotes(hitsToNotes(aligned, drumLanes)); // undoable (snapshots current)
+      setDirty(false);
+      updateUndoButtons();
+      let moved: number | undefined;
+      try {
+        moved = JSON.parse((res?.stdout ?? "").trim().split(/\r?\n/).pop() ?? "{}").moved;
+      } catch {
+        /* status line not parseable — still applied */
+      }
+      setStatus(
+        moved != null
+          ? `Snapped ${moved} hit${moved === 1 ? "" : "s"} onto onsets — Undo to revert`
+          : "Snapped hits onto onsets — Undo to revert",
+      );
+    } catch (e) {
+      setStatus(`Snap to onsets failed: ${String(e)}`);
+    } finally {
+      snapBtn.disabled = false;
+      snapBtn.textContent = label ?? "Snap to onsets";
+    }
+  }
+
+  // Re-track beats/downbeats/meter (Beat This!) on this pack and reload the
+  // grid from the rewritten song_timeline.json (the sidecar backs the old one
+  // up to .bak). Instrument-agnostic — unlike Snap it only touches the timeline,
+  // so it's always available. The new grid can move beats, which desyncs edits
+  // anchored to the old grid; the returned warning is surfaced to the user.
+  async function refreshMeter(): Promise<void> {
+    if (!containerPath || !refreshMeterBtn) return;
+    const label = refreshMeterBtn.textContent;
+    refreshMeterBtn.disabled = true;
+    refreshMeterBtn.textContent = "Refreshing…";
+    setStatus("Re-tracking the beat grid + meter…");
+    try {
+      const res = await invoke<{ stdout?: string }>("ingest_refresh_meter", {
+        req: { container_path: containerPath },
+      });
+      let info: {
+        ok?: boolean;
+        bpm?: number;
+        time_signature?: string;
+        error?: string;
+        meter_denominator_provisional?: boolean;
+      } = {};
+      try {
+        info = JSON.parse((res?.stdout ?? "").trim().split(/\r?\n/).pop() ?? "{}");
+      } catch {
+        /* status line not parseable — reload anyway, it may have written */
+      }
+      if (info.ok === false) {
+        // Pack left unchanged (e.g. no checkpoint) — nothing to reload.
+        setStatus(`Refresh meter: ${info.error ?? "meter model unavailable"}`);
+        return;
+      }
+      await applyBeatGrid(); // re-reads the rewritten song_timeline.json
+      // NOTE: do NOT touch the dirty flag here — refresh-meter only re-tracks the
+      // grid (song_timeline.json, written by the sidecar). Any unsaved editor
+      // note/hit edits are untouched, so clearing dirty would hide the "Save *"
+      // indicator and mislead the user into thinking their edits were persisted.
+      const ts = info.time_signature ? ` ${info.time_signature}` : "";
+      const prov = info.meter_denominator_provisional ? " (denominator provisional)" : "";
+      setStatus(
+        info.bpm != null
+          ? `Meter refreshed — ${info.bpm} bpm${ts}${prov} · old grid saved to .bak`
+          : "Meter refreshed · old grid saved to .bak",
+      );
+    } catch (e) {
+      setStatus(`Refresh meter failed: ${String(e)}`);
+    } finally {
+      refreshMeterBtn.disabled = false;
+      refreshMeterBtn.textContent = label ?? "Refresh meter";
+    }
+  }
 
   playBtn.addEventListener("click", () => toggleTransport());
   stopBtn.addEventListener("click", () => stopTransport());
@@ -749,7 +1038,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     // Re-anchor the wall clock so the playhead doesn't jump on a rate change.
     if (isPlaying) { playStartOffset = playheadSec; playStartWall = performance.now(); }
     playbackRate = r;
-    if (stemLoaded) audio.playbackRate = r;
+    if (audioLoaded) nativeAudio.setPlaybackRate(r);
   });
   soloSelectEl.addEventListener("change", () => {
     soloMode = soloSelectEl.value !== "all";
@@ -776,6 +1065,11 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     if (auditionToggle.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
     else audition.stop();
   });
+  metronomeToggle.addEventListener("change", () => {
+    metronome.setEnabled(metronomeToggle.checked);
+  });
+  downbeatMinusBtn.addEventListener("click", () => nudgeDownbeat(-1));
+  downbeatPlusBtn.addEventListener("click", () => nudgeDownbeat(1));
 
   // Space toggles transport when the refine route is active and we're not
   // typing in a field. (Delete/Escape/zoom are handled by the editor stage.)
@@ -802,14 +1096,10 @@ function escapeHtml(s: string): string {
 
 /**
  * A readable song name for the top bar from a pack path: drop the directory
- * and the `.feedpak`/`.auralsong` extension, strip the `ingest_` prefix, and
- * turn underscores into spaces. The full path is kept as a hover title.
+ * and the `.feedpak`/`.sloppak`/`.auralsong` extension, strip the `ingest_`
+ * prefix, and turn underscores into spaces. Delegates to the shared
+ * `packDisplayName` helper (C2) so the extension list stays in one place.
  */
 function songDisplayName(path: string): string {
-  const base = path.split(/[\\/]/).pop() ?? path;
-  return base
-    .replace(/\.(feedpak|auralsong)$/i, "")
-    .replace(/^ingest_/, "")
-    .replace(/_/g, " ")
-    .trim() || base;
+  return packDisplayName(path);
 }

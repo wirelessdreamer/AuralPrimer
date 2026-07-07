@@ -88,10 +88,29 @@ const tapAt = (perf: number) => {
   window.dispatchEvent(ev);
 };
 
-/** Run `count` taps each `delta` ms after consecutive clicks at perf 1200,1800,… */
-const tapPhase = (count: number, delta: number) => {
-  for (let i = 0; i < count; i += 1) tapAt(1200 + i * 600 + delta);
-};
+const PERIOD_MS = 600;
+const AUDIO_LEAD_MS = 50;
+const FIRST_BEAT_MS = 200;
+
+// Drive the wall-clock metronome: advance the mocked performance clock + fake
+// timers to the next beat and return its stimulus time to tap against. Beats
+// fire +200ms after Start, then every 600ms; audio beeps lead the beat by 50ms
+// (folded into the reference), video flashes land on the beat.
+function beatDriver(startPerf: number) {
+  let beatPerf = startPerf + FIRST_BEAT_MS;
+  let fired = 0;
+  return {
+    async next(kind: "audio" | "video"): Promise<number> {
+      perfNow = beatPerf;
+      vi.advanceTimersByTime(fired === 0 ? FIRST_BEAT_MS : PERIOD_MS);
+      await flush();
+      fired += 1;
+      const stim = kind === "audio" ? beatPerf + AUDIO_LEAD_MS : beatPerf;
+      beatPerf += PERIOD_MS;
+      return stim;
+    },
+  };
+}
 
 describe("avCalibration (two-pass)", () => {
   beforeEach(() => {
@@ -130,11 +149,9 @@ describe("avCalibration (two-pass)", () => {
     initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    audioNow = 8.0;
-    vi.advanceTimersByTime(30);
-    await flush();
 
-    tapPhase(10, 30);
+    const beats = beatDriver(perfNow);
+    for (let i = 0; i < 10; i += 1) tapAt((await beats.next("audio")) + 30);
     expect(countEl().textContent).toBe("Taps: 10");
     expect(estimateEl().textContent).toBe("Estimated audio latency: 30 ms");
     expect(nextBtn().disabled).toBe(false);
@@ -146,27 +163,26 @@ describe("avCalibration (two-pass)", () => {
     initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    audioNow = 8.0;
-    vi.advanceTimersByTime(30);
-    await flush();
+    const beats = beatDriver(perfNow);
+    await beats.next("audio"); // one stimulus at ~1250
 
-    tapAt(500); // before the first click ever played
+    tapAt(500); // before the first stimulus ever played
     expect(countEl().textContent).toBe("Taps: 0");
-    tapAt(99999); // far past the last click
+    tapAt(99999); // far past the last stimulus
     expect(countEl().textContent).toBe("Taps: 0");
   });
 
   it("advances audio -> video, and the video pass is silent", async () => {
+    const oscSpy = vi.spyOn(FakeAudioContext.prototype, "createOscillator");
     const { deps } = makeDeps();
     initAvCalibration(deps).open();
 
     // Audio pass.
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    audioNow = 8.0;
-    vi.advanceTimersByTime(30);
-    await flush();
-    tapPhase(8, 30);
+    const audio = beatDriver(perfNow);
+    for (let i = 0; i < 8; i += 1) tapAt((await audio.next("audio")) + 30);
+    expect(oscSpy.mock.calls.length).toBeGreaterThan(0); // audio pass beeps
     nextBtn().dispatchEvent(new MouseEvent("click")); // advance to video
     expect(stepEl().textContent).toContain("Video");
     expect(nextBtn().textContent).toContain("Apply");
@@ -174,16 +190,36 @@ describe("avCalibration (two-pass)", () => {
     expect(countEl().textContent).toBe("Taps: 0");
     expect(estimateEl().textContent).toBe("Estimated video latency: —");
 
-    // Video pass: start a fresh metronome and confirm NO oscillator is created.
-    audioNow = 0;
-    perfNow = 1000;
+    // Video pass: wall-clock flashes, and NO oscillator is ever created.
+    const oscBefore = oscSpy.mock.calls.length;
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    audioNow = 8.0;
-    vi.advanceTimersByTime(30);
-    await flush();
-    tapPhase(8, 45);
+    const video = beatDriver(perfNow);
+    for (let i = 0; i < 8; i += 1) tapAt((await video.next("video")) + 45);
     expect(estimateEl().textContent).toBe("Estimated video latency: 45 ms");
+    expect(oscSpy.mock.calls.length).toBe(oscBefore); // silent
+  });
+
+  it("video estimate stays stable when the audio clock stalls/jumps (no climb)", async () => {
+    // Regression: the old code referenced each flash to the AudioContext clock,
+    // which stalls when silent (the video pass); the estimate then climbed as the
+    // clock fell behind. The wall-clock design must ignore the audio clock here.
+    const { deps } = makeDeps();
+    initAvCalibration(deps).open();
+    skipBtn().dispatchEvent(new MouseEvent("click")); // skip audio -> video
+    expect(stepEl().textContent).toContain("Video");
+
+    startBtn().dispatchEvent(new MouseEvent("click"));
+    await flush();
+    const video = beatDriver(perfNow);
+    for (let i = 0; i < 12; i += 1) {
+      // Hostile audio clock: stalled/jumping. Fed to stimulusPerf by the old
+      // code; must have zero effect now.
+      audioNow = i % 2 === 0 ? 0 : 999;
+      tapAt((await video.next("video")) + 40); // constant 40ms reaction each beat
+    }
+    // No accumulation — the estimate is the true, steady reaction, not a climb.
+    expect(estimateEl().textContent).toBe("Estimated video latency: 40 ms");
   });
 
   it("apply (after both phases) reports both medians and closes", async () => {
@@ -193,21 +229,15 @@ describe("avCalibration (two-pass)", () => {
     // Audio pass -> median 42.
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    audioNow = 8.0;
-    vi.advanceTimersByTime(30);
-    await flush();
-    tapPhase(8, 42);
+    const audio = beatDriver(perfNow);
+    for (let i = 0; i < 8; i += 1) tapAt((await audio.next("audio")) + 42);
     nextBtn().dispatchEvent(new MouseEvent("click"));
 
     // Video pass -> median 16.
-    audioNow = 0;
-    perfNow = 1000;
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    audioNow = 8.0;
-    vi.advanceTimersByTime(30);
-    await flush();
-    tapPhase(8, 16);
+    const video = beatDriver(perfNow);
+    for (let i = 0; i < 8; i += 1) tapAt((await video.next("video")) + 16);
     expect(nextBtn().disabled).toBe(false);
     nextBtn().dispatchEvent(new MouseEvent("click")); // Apply
 
@@ -235,10 +265,9 @@ describe("avCalibration (two-pass)", () => {
     initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
-    audioNow = 8.0;
-    vi.advanceTimersByTime(30);
-    await flush();
-    perfNow = 1230;
+    const beats = beatDriver(perfNow);
+    const stim = await beats.next("audio");
+    perfNow = stim + 30;
     pulseEl().dispatchEvent(new MouseEvent("click"));
     expect(countEl().textContent).toBe("Taps: 1");
     expect(estimateEl().textContent).toBe("Estimated audio latency: 30 ms");
@@ -278,15 +307,28 @@ describe("avCalibration (two-pass)", () => {
     expect(countEl().textContent).toBe("Taps: 0");
   });
 
-  it("starting twice is a no-op (already running guard)", async () => {
+  it("Restart resets the tap count and lets you tap again", async () => {
     const { deps } = makeDeps();
     initAvCalibration(deps).open();
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(startBtn().textContent).toBe("Restart");
+    const beats = beatDriver(perfNow);
+    for (let i = 0; i < 3; i += 1) tapAt((await beats.next("audio")) + 30);
+    expect(countEl().textContent).toBe("Taps: 3");
+
+    // Clicking "Restart" must clear the taps and re-anchor — not be a no-op
+    // (the button bailed here before, so Restart appeared dead).
     startBtn().dispatchEvent(new MouseEvent("click"));
     await flush();
     expect(startBtn().textContent).toBe("Restart");
+    expect(countEl().textContent).toBe("Taps: 0");
+    expect(nextBtn().disabled).toBe(true);
+
+    // …and tapping works again after the restart.
+    const beats2 = beatDriver(perfNow);
+    for (let i = 0; i < 5; i += 1) tapAt((await beats2.next("audio")) + 20);
+    expect(countEl().textContent).toBe("Taps: 5");
   });
 
   it("falls back to webkitAudioContext when AudioContext is undefined", async () => {

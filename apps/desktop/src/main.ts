@@ -1,5 +1,9 @@
 import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  featureDir as packFeatureDir,
+  isManifestPack,
+} from "@auralprimer/auralsong/packKind";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
 import { TransportController } from "./transportController";
 import type { TransportTimebase } from "./audioBackend";
@@ -48,6 +52,8 @@ import {
   detectMelodicStems,
   parseSidecarStatusLine,
   classifySpectroResult,
+  classifyCandidateResult,
+  needsArrangementPrep,
   type RoleReadiness,
   type RowReady,
   type SidecarRunResult,
@@ -127,7 +133,33 @@ async function waitForUiPaint(): Promise<void> {
  * commands accept both prefixes, so callers select by container suffix.
  */
 function featureDir(containerPath: string): "aural" | "features" {
-  return containerPath.endsWith(".feedpak") ? "aural" : "features";
+  return packFeatureDir(containerPath);
+}
+
+/**
+ * The lyrics rel-path to READ for a pack, resolved from the manifest `lyrics`
+ * pointer when known (a sloppak keeps its lyrics at pack ROOT via the manifest
+ * `lyrics` key), else the AuralPrimer default `<featureDir>/lyrics.json`
+ * (Phase 7). The pointer is read from `get_auralsong_details` fields
+ * defensively — pass the already-fetched details when available to avoid an
+ * extra round-trip; otherwise this returns the feature-dir default.
+ */
+function lyricsReadRelPath(containerPath: string, details?: unknown): string {
+  const d = (details ?? null) as
+    | {
+        lyrics_rel?: unknown;
+        lyrics_rel_path?: unknown;
+        lyrics_path?: unknown;
+        manifest_raw?: { lyrics?: unknown } | null;
+      }
+    | null;
+  const pointer =
+    (typeof d?.lyrics_rel === "string" && d.lyrics_rel) ||
+    (typeof d?.lyrics_rel_path === "string" && d.lyrics_rel_path) ||
+    (typeof d?.lyrics_path === "string" && d.lyrics_path) ||
+    (typeof d?.manifest_raw?.lyrics === "string" && d.manifest_raw.lyrics) ||
+    "";
+  return pointer || `${featureDir(containerPath)}/lyrics.json`;
 }
 
 type AuralSongDetails = {
@@ -142,6 +174,13 @@ type AuralSongDetails = {
   has_events: boolean;
   has_lyrics?: boolean;
   has_notes_mid?: boolean;
+  // Arrangement/lyrics readiness fields consumed defensively (owned by the Rust
+  // lane, CONTRACT C6). All optional; the exact names are feature-detected in
+  // needsArrangementPrep / arrangementCount / lyricsReadRelPath.
+  arrangement_count?: number;
+  arrangements?: unknown;
+  lyrics_rel_path?: string;
+  lyrics_path?: string;
   has_mix_mp3: boolean;
   has_mix_ogg: boolean;
   has_mix_wav?: boolean;
@@ -425,11 +464,12 @@ root.innerHTML = `
             </div>
             <div id="stemMidiSummaryMake" class="meta makeSummary"></div>
             <div class="row">
-              <button id="stemMidiImportMake">Import AuralSong</button>
+              <button id="stemMidiImportMake">Import song</button>
             </div>
+            <div class="meta" style="margin-top:4px">Imports an editable draft you clean up in Refine — export a <code>.feedpak</code> when it's finished.</div>
             <pre id="stemMidiStatusMake" class="meta">(not imported)</pre>
             <div id="stemMidiNextStepsMake" class="postImportCard" style="display:none;">
-              <div class="postImportTitle">✓ AuralSong imported</div>
+              <div class="postImportTitle">✓ Song imported</div>
               <div class="postImportHint">Next: clean up the auto-transcription so the gameplay chart matches your intent.</div>
               <div class="row">
                 <button class="postImportPrimary" id="stemMidiOpenRefine">Open in Refine workspace</button>
@@ -489,6 +529,7 @@ root.innerHTML = `
                   <option value="librosa_superflux">librosa_superflux</option>
                   <option value="mr_mt3_drums">mr_mt3_drums (local modelpack required)</option>
                   <option value="yourmt3_drums">yourmt3_drums (local modelpack required)</option>
+                  <option value="drum_crnn">Drum CRNN (neural, 5-class)</option>
                 </select>
                 <label class="meta">Melodic</label>
                 <select id="ingestMelodicMethod">
@@ -1027,10 +1068,19 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
   setStatus("Checking…");
   // Per song, collect the roles missing a spectrogram and the roles missing
   // candidates, so each step only runs where it's actually needed.
-  const todo: { path: string; title: string; specRoles: string[]; candRoles: string[] }[] = [];
+  const todo: {
+    path: string;
+    title: string;
+    specRoles: string[];
+    candRoles: string[];
+    needsPrep: boolean;
+  }[] = [];
   for (const row of rows) {
     const path = row.getAttribute("data-path");
     if (!path) continue;
+    // Step 0: a manifest pack (sloppak/feedpak) whose melodic notes.mid hasn't
+    // been derived from its arrangements yet needs prep BEFORE spectrogram.
+    const needsPrep = await packNeedsArrangementPrep(path);
     const { roles } = await detectMelodicStems(path);
     const specRoles: string[] = [];
     const candRoles: string[] = [];
@@ -1039,9 +1089,21 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       if (!rr.spectrogram) specRoles.push(role);
       if (!rr.candidates) candRoles.push(role);
     }
-    if (specRoles.length || candRoles.length) {
+    // Drums: packs with a drum chart get a drums spectrogram for the Refine
+    // lane editor. Spectrogram only — drums have no candidate system (the
+    // drum tab is the source of truth), so candRoles never includes drums.
+    try {
+      if (await auralsongJsonExists(path, "drum_tab.json")) {
+        const fd = featureDir(path);
+        const hasDrumSpec = await auralsongJsonExists(path, `${fd}/spectrogram/drums/spectrogram.json`);
+        if (!hasDrumSpec) specRoles.push("drums");
+      }
+    } catch {
+      /* skip drums on probe failure */
+    }
+    if (needsPrep || specRoles.length || candRoles.length) {
       const title = row.querySelector(".cleanupSongTitle")?.textContent ?? path;
-      todo.push({ path, title, specRoles, candRoles });
+      todo.push({ path, title, specRoles, candRoles, needsPrep });
     }
   }
   if (todo.length === 0) {
@@ -1049,14 +1111,20 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     return;
   }
   cleanupBuildAllBtn.disabled = true;
+  cleanupBuildAllBtn.textContent = "Prepping…";
+  cleanupBuildAllStatusEl?.classList.add("isBusy");
+  let prepBuilt = 0; // arrangement→notes.mid derivations
   let specBuilt = 0;
   let candBuilt = 0;
+  let candSkipped = 0; // silent stems (no audible content) — benign, not failed
   let noStem = 0;
   let failed = 0;
   const tally = (): string => {
     const parts: string[] = [];
+    if (prepBuilt) parts.push(`${prepBuilt} notes`);
     if (specBuilt) parts.push(`${specBuilt} spec`);
     if (candBuilt) parts.push(`${candBuilt} cand`);
+    if (candSkipped) parts.push(`${candSkipped} silent`);
     if (noStem) parts.push(`${noStem} skipped`);
     if (failed) parts.push(`${failed} failed`);
     return parts.length ? ` · ${parts.join(", ")}` : "";
@@ -1065,6 +1133,14 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     const t = todo[i]!;
     markRowBuilding(t.path);
     let stemless = false;
+    // 0) Derive melodic notes.mid from arrangements (sloppak/feedpak) before
+    //    anything else, so the melodic highway exists in the primer.
+    if (t.needsPrep) {
+      setStatus(`Prepping ${i + 1}/${todo.length}: ${t.title} — deriving notes…${tally()}`);
+      const out = await prepArrangementsForSong(t.path);
+      if (out.ok) prepBuilt += 1;
+      else failed += 1;
+    }
     // 1) Spectrogram (only the roles that lack one).
     if (t.specRoles.length) {
       setStatus(`Building ${i + 1}/${todo.length}: ${t.title} — spectrogram…${tally()}`);
@@ -1086,13 +1162,18 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     // 2) Candidate precompute (only the roles that lack candidates). Skipped
     //    for a stem-less pack, where there's nothing to transcribe.
     if (t.candRoles.length && !stemless) {
-      setStatus(`Building ${i + 1}/${todo.length}: ${t.title} — candidates…${tally()}`);
+      setStatus(`Prepping ${i + 1}/${todo.length}: ${t.title} — candidates (${t.candRoles.join(", ")})…${tally()}`);
       try {
-        const res = await safeInvoke<{ ok: boolean }>("ingest_refine_candidates", {
+        const res = await safeInvoke<SidecarRunResult>("ingest_refine_candidates", {
           req: { container_path: t.path, instruments: t.candRoles },
         });
-        if (res.ok) candBuilt += 1;
-        else failed += 1;
+        // A silent stem ("no audible content" after the silence gate) is a
+        // benign SKIP, not a failure — band songs carry an empty keys stem
+        // with nothing to transcribe. Only real errors count as failed.
+        const outcome = classifyCandidateResult(res, t.candRoles);
+        if (outcome.built.length) candBuilt += 1;
+        candSkipped += outcome.skipped.length;
+        if (outcome.failed.length) failed += 1;
       } catch {
         failed += 1;
       }
@@ -1104,10 +1185,14 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
       ?.classList.remove("isBuilding");
   }
   cleanupBuildAllBtn.disabled = false;
+  cleanupBuildAllBtn.textContent = "Prep all unbuilt";
+  cleanupBuildAllStatusEl?.classList.remove("isBusy");
   const parts = [
     `Built ${specBuilt} spectrogram${specBuilt === 1 ? "" : "s"}`,
     `${candBuilt} candidate set${candBuilt === 1 ? "" : "s"}`,
   ];
+  if (prepBuilt) parts.unshift(`Derived ${prepBuilt} note set${prepBuilt === 1 ? "" : "s"}`);
+  if (candSkipped) parts.push(`${candSkipped} silent stem${candSkipped === 1 ? "" : "s"} skipped`);
   if (noStem) parts.push(`${noStem} with no melodic stem`);
   if (failed) parts.push(`${failed} failed`);
   setStatus(`${parts.join(", ")}.`);
@@ -1411,9 +1496,9 @@ function renderDetails(details: AuralSongDetails) {
 
     <h4>Audio</h4>
     <ul>
-      <li>mix.mp3: ${escapeHtml(yesNo(details.has_mix_mp3))}</li>
-      <li>mix.ogg: ${escapeHtml(yesNo(details.has_mix_ogg))}</li>
-      <li>mix.wav: ${escapeHtml(yesNo(Boolean(details.has_mix_wav)))}</li>
+      <li>stem.mp3: ${escapeHtml(yesNo(details.has_mix_mp3))}</li>
+      <li>stem.ogg: ${escapeHtml(yesNo(details.has_mix_ogg))}</li>
+      <li>stem.wav: ${escapeHtml(yesNo(Boolean(details.has_mix_wav)))}</li>
     </ul>
 
     <h4>Charts</h4>
@@ -1431,7 +1516,7 @@ function renderDetails(details: AuralSongDetails) {
       <span class="meta">DAW-style lyric/syllable timing editor. Generate lyrics first if this song has none.</span>
     </div>
 
-    <h4>${escapeHtml(details.container_path.endsWith(".feedpak") ? "manifest.yaml" : "manifest.json")}</h4>
+    <h4>${escapeHtml(isManifestPack(details.container_path) ? "manifest.yaml" : "manifest.json")}</h4>
     <pre>${escapeHtml(raw)}</pre>
   `;
   // Wire the Refine button after innerHTML replaces it.
@@ -1496,6 +1581,17 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     .join("");
 
   const bothReady = r.spectrogram && r.candidates;
+  // Manifest packs (sloppak/feedpak) derive their melodic gameplay notes from
+  // arrangement wire JSONs — offer that when the pack declares arrangements but
+  // has no aural/notes.mid yet (consumes the Rust details fields defensively).
+  const canPrepNotes = needsArrangementPrep(
+    pack,
+    details as unknown as Parameters<typeof needsArrangementPrep>[1],
+  );
+  // Drums use the pack-root drum_tab (authored at import / in the lane editor),
+  // not the melodic candidate system — so relabel that readout row and drop the
+  // "Compute candidates" action for them.
+  const isDrums = role === "drums";
 
   cleanupActionEl.innerHTML = `
     <div class="cleanupHeader">
@@ -1521,20 +1617,23 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       <div class="cleanupReadoutRow">
         ${statusIcon(r.candidates)}
         <div class="cleanupReadoutText">
-          <div class="cleanupReadoutTitle">Note candidates</div>
-          <div class="meta">the transcription you clean up</div>
+          <div class="cleanupReadoutTitle">${isDrums ? "Drum tab" : "Note candidates"}</div>
+          <div class="meta">${isDrums ? "the kit hits you clean up" : "the transcription you clean up"}</div>
         </div>
-        <div class="cleanupReadoutState ${r.candidates ? "isReady" : ""}">${r.candidates ? "ready" : "not computed yet"}</div>
+        <div class="cleanupReadoutState ${r.candidates ? "isReady" : ""}">${r.candidates ? "ready" : isDrums ? "no drum tab" : "not computed yet"}</div>
       </div>
     </div>
 
     <div class="cleanupActions">
+      ${canPrepNotes ? `<button id="cleanupPrepNotes" class="cleanupPrimary">
+        <i class="ti ti-music" aria-hidden="true"></i> Derive notes from arrangements
+      </button>` : ""}
       <button id="cleanupBuildSpectro" class="${r.spectrogram ? "" : "cleanupPrimary"}">
         <i class="ti ti-photo" aria-hidden="true"></i> ${r.spectrogram ? "Rebuild spectrogram" : "Build spectrogram"}
       </button>
-      <button id="cleanupComputeCandidates" class="${r.candidates ? "" : "cleanupPrimary"}">
+      ${isDrums ? "" : `<button id="cleanupComputeCandidates" class="${r.candidates ? "" : "cleanupPrimary"}">
         <i class="ti ti-wand" aria-hidden="true"></i> Compute candidates
-      </button>
+      </button>`}
       <button id="cleanupOpenEditor" class="${bothReady ? "cleanupPrimary" : ""}" ${bothReady ? "" : "disabled"}>
         <i class="ti ti-edit" aria-hidden="true"></i> Open cleanup editor
       </button>
@@ -1553,10 +1652,11 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
   const runStatusEl = document.getElementById("cleanupRunStatus") as HTMLPreElement;
   const instSelect = document.getElementById("cleanupInstrument") as HTMLSelectElement;
   const buildSpectroBtn = document.getElementById("cleanupBuildSpectro") as HTMLButtonElement;
-  const computeBtn = document.getElementById("cleanupComputeCandidates") as HTMLButtonElement;
+  const computeBtn = document.getElementById("cleanupComputeCandidates") as HTMLButtonElement | null;
   const openEditorBtn = document.getElementById("cleanupOpenEditor") as HTMLButtonElement;
   const reloadBtn = document.getElementById("auralsongRefreshSelection") as HTMLButtonElement;
   const lyricsBtn = document.getElementById("auralsongGenerateLyrics") as HTMLButtonElement;
+  const prepNotesBtn = document.getElementById("cleanupPrepNotes") as HTMLButtonElement | null;
 
   instSelect.addEventListener("change", () => {
     cleanupSelectedRole = instSelect.value || primary;
@@ -1572,6 +1672,20 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     invalidateCleanupCache(pack);
     await renderCleanupAction(details);
   };
+
+  prepNotesBtn?.addEventListener("click", async () => {
+    prepNotesBtn.disabled = true;
+    setRunStatus("Deriving melodic notes from arrangements…");
+    try {
+      const out = await prepArrangementsForSong(pack);
+      setRunStatus(out.msg);
+    } finally {
+      // Re-probe the readiness cache so the row chip + this panel reflect the
+      // freshly written notes.mid (and drop the "Prep notes" action).
+      await refreshRowReadyChip(pack);
+      await reRenderAfterRun();
+    }
+  });
 
   buildSpectroBtn.addEventListener("click", async () => {
     buildSpectroBtn.disabled = true;
@@ -1598,7 +1712,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     }
   });
 
-  computeBtn.addEventListener("click", async () => {
+  computeBtn?.addEventListener("click", async () => {
     computeBtn.disabled = true;
     setRunStatus(`Computing candidates for ${roleLabel(role)}…`);
     try {
@@ -1627,7 +1741,7 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
     if (openEditorBtn.disabled) return;
     cleanupSelectedRole = role;
     setRoute("refine");
-    void refineWorkspace.openForAuralSong(pack);
+    void refineWorkspace.openForAuralSong(pack, { instrument: role });
   });
 
   reloadBtn.addEventListener("click", () => {
@@ -1657,8 +1771,20 @@ const cleanupRowReady = new Map<string, RowReady>();
 async function probeRowReadiness(path: string): Promise<RowReady> {
   const { primary, readiness } = await detectMelodicStems(path);
   const r = readiness.get(primary) ?? (await getRoleReadiness(path, primary));
-  const lyr = await auralsongJsonExists(path, `${featureDir(path)}/lyrics.json`);
-  return { spec: r.spectrogram, cand: r.candidates, lyr };
+  // Fetch details once so both the lyrics-pointer resolution (sloppak lyrics
+  // live at pack root via the manifest key) and the arrangement-prep check
+  // share the same read.
+  let details: AuralSongDetails | null = null;
+  try {
+    details = await safeInvoke<AuralSongDetails>("get_auralsong_details", { containerPath: path });
+  } catch {
+    details = null;
+  }
+  const lyr = await auralsongJsonExists(path, lyricsReadRelPath(path, details));
+  const prep = isManifestPack(path)
+    ? needsArrangementPrep(path, details as unknown as Parameters<typeof needsArrangementPrep>[1])
+    : false;
+  return { spec: r.spectrogram, cand: r.candidates, lyr, prep };
 }
 
 function ctStatCell(state: "yes" | "no" | "pending"): string {
@@ -1684,7 +1810,13 @@ function applyRowReadiness(path: string, r: RowReady): void {
   set("lyr", r.lyr);
   const btn = row.querySelector<HTMLButtonElement>("button[data-act]");
   if (btn) {
-    if (r.spec && r.cand) {
+    if (r.prep) {
+      // A sloppak/feedpak whose melodic notes haven't been derived yet — offer
+      // "Prep notes" (ingest_prep_arrangements) before spectrogram/candidates.
+      btn.dataset.act = "prep";
+      btn.className = "ctBtn ctBuild";
+      btn.textContent = "Prep notes";
+    } else if (r.spec && r.cand) {
       btn.dataset.act = "open";
       btn.className = "ctBtn ctOpen";
       btn.innerHTML = `Open <i class="ti ti-chevron-right" aria-hidden="true"></i>`;
@@ -1740,6 +1872,54 @@ async function buildSpectrogramForSong(
   } catch (e) {
     invalidateCleanupCache(path);
     return { kind: "error", msg: `Build failed: ${String(e)}` };
+  }
+}
+
+// Whether a pack needs melodic-notes derivation from its arrangements, probed
+// from `get_auralsong_details`. A manifest pack (feedpak/sloppak) that declares
+// arrangements but has no `aural/notes.mid` yet qualifies (CONTRACT: consumes
+// the Rust details fields defensively via needsArrangementPrep). Best-effort —
+// a details failure reports "no prep needed" rather than throwing.
+async function packNeedsArrangementPrep(path: string): Promise<boolean> {
+  if (!isManifestPack(path)) return false;
+  try {
+    const details = await safeInvoke<AuralSongDetails>("get_auralsong_details", {
+      containerPath: path,
+    });
+    return needsArrangementPrep(path, details as unknown as Parameters<typeof needsArrangementPrep>[1]);
+  } catch {
+    return false;
+  }
+}
+
+// Derive melodic gameplay notes (aural/notes.mid) + song_timeline.json from a
+// sloppak/feedpak's arrangement wire JSONs via the sidecar's prep-arrangements
+// command (CONTRACT C1: Tauri command `ingest_prep_arrangements`, arg
+// `{ container }`). Returns the outcome + a short status message. Invalidates
+// the readiness cache so a subsequent probe re-reads the freshly written files.
+async function prepArrangementsForSong(
+  path: string,
+): Promise<{ ok: boolean; msg: string }> {
+  try {
+    const res = await safeInvoke<SidecarRunResult>("ingest_prep_arrangements", {
+      req: { container_path: path },
+    });
+    invalidateCleanupCache(path);
+    if (res.ok) {
+      const parsed = parseSidecarStatusLine(res.stdout);
+      // The sidecar always emits a `notes_mid` key; only "written" means a
+      // notes.mid was actually produced (others are "skipped_*").
+      const wrote =
+        !!parsed &&
+        typeof parsed === "object" &&
+        (parsed as { notes_mid?: unknown }).notes_mid === "written";
+      return { ok: true, msg: wrote ? "Derived notes from arrangements" : "Prep complete" };
+    }
+    const tail = res.stderr.trim().split(/\r?\n/).slice(-2).join(" ");
+    return { ok: false, msg: `Prep failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
+  } catch (e) {
+    invalidateCleanupCache(path);
+    return { ok: false, msg: `Prep failed: ${String(e)}` };
   }
 }
 
@@ -1903,9 +2083,9 @@ function renderCaps(details: AuralSongDetails | null, drumSelection: DrumChartSe
     .join("\n");
 
   const audioPills = [
-    pill("mix.wav", caps.audio.wav),
-    pill("mix.mp3", caps.audio.mp3),
-    pill("mix.ogg", caps.audio.ogg),
+    pill("stem.wav", caps.audio.wav),
+    pill("stem.mp3", caps.audio.mp3),
+    pill("stem.ogg", caps.audio.ogg),
   ].join("\n");
 
   capsEl.innerHTML = `
@@ -2227,7 +2407,17 @@ async function generateLyricsForSelectedAuralSong(): Promise<void> {
       jobId: "auralprimer_mvp"
     });
 
-    await safeInvoke("write_auralsong_lyrics_json", { containerPath: selectedAuralSongPath, lyricsJson });
+    // Write to the manifest lyrics pointer (pack-root lyrics.json for a
+    // sloppak) so generated lyrics land where the game + Studio actually read
+    // them; feedpak/legacy fall back to <featureDir>/lyrics.json as before.
+    const lyricsDetails = await safeInvoke("get_auralsong_details", {
+      containerPath: selectedAuralSongPath,
+    }).catch(() => null);
+    await safeInvoke("write_auralsong_features_json", {
+      containerPath: selectedAuralSongPath,
+      relPath: lyricsReadRelPath(selectedAuralSongPath, lyricsDetails),
+      value: lyricsJson,
+    });
 
     // Update local state so viz init sees it without requiring the user to click Details again.
     currentLyrics = lyricsJson as unknown as LyricsFile;
@@ -3021,7 +3211,7 @@ function renderStemMidiAuditTable(inspection: RawSongFolderInspection): string {
 
 function renderStemMidiSelection() {
   stemMidiPickFolderBtn.textContent = "Choose Suno folder...";
-  stemMidiImportBtn.textContent = "Import AuralSong";
+  stemMidiImportBtn.textContent = "Import song";
   stemMidiFolderLabel.textContent = stemMidiFolderPath ?? "(no folder selected)";
   stemMidiImportBtn.disabled = !stemMidiInspection;
   if (!stemMidiInspection) {
@@ -3671,7 +3861,7 @@ async function selectAuralSong(containerPath: string, opts?: { autoLoadAudio?: b
     try {
       const lyr = await invoke<unknown>("read_auralsong_json", {
         containerPath,
-        relPath: `${featureDir(containerPath)}/lyrics.json`,
+        relPath: lyricsReadRelPath(containerPath, details),
       });
       currentLyrics = (lyr ?? null) as LyricsFile | null;
     } catch {
@@ -4229,7 +4419,8 @@ async function refresh() {
       let actCls = "ctBtn";
       let actLabel = `Open <i class="ti ti-chevron-right" aria-hidden="true"></i>`;
       if (known) {
-        if (known.spec && known.cand) { act = "open"; actCls = "ctBtn ctOpen"; }
+        if (known.prep) { act = "prep"; actCls = "ctBtn ctBuild"; actLabel = "Prep notes"; }
+        else if (known.spec && known.cand) { act = "open"; actCls = "ctBtn ctOpen"; }
         else if (!known.spec) { act = "build"; actCls = "ctBtn ctBuild"; actLabel = "Build"; }
         else { actLabel = `Prep <i class="ti ti-chevron-right" aria-hidden="true"></i>`; }
       }
@@ -4273,6 +4464,21 @@ async function refresh() {
       }
     };
 
+    const inlinePrep = async (path: string, btn: HTMLButtonElement): Promise<void> => {
+      btn.disabled = true;
+      btn.textContent = "Prepping…";
+      const res = await prepArrangementsForSong(path);
+      statusEl.textContent = res.msg;
+      try {
+        applyRowReadiness(path, await probeRowReadiness(path));
+      } catch {
+        /* leave the row's cells as-is */
+      }
+      if (path === selectedAuralSongPath && selectedAuralSongDetails) {
+        void renderCleanupAction(selectedAuralSongDetails);
+      }
+    };
+
     const wireRows = (): void => {
       for (const row of Array.from(listEl.querySelectorAll<HTMLTableRowElement>("tr.cleanupSongRow"))) {
         if (row.classList.contains("isInvalid")) continue;
@@ -4290,6 +4496,7 @@ async function refresh() {
             ev.stopPropagation();
             const act = btn.dataset.act;
             if (act === "open") { openCleanupEditorForSong(path); return; }
+            if (act === "prep") { void inlinePrep(path, btn); return; }
             if (act === "build") { void inlineBuild(path, btn); return; }
             select();
             return;

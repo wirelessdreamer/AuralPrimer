@@ -83,6 +83,7 @@ assets/models/mr_mt3/
 assets/models/yourmt3/
 assets/models/piano_pti/
 assets/models/piano_d3rm/
+assets/models/drum_crnn/
 
 # Local agent/worktree scratch state
 .claude/
@@ -132,3 +133,6 @@ python/ingest/src/aural_ingest/training/**/*.onnx
 # intentionally committed fixtures under subdirs are untouched).
 /*.wav
 /*.pdf
+
+# Local idea/scratch material dropped at the repo root (not for VCS for now).
+/00_Ideas_for_nashville_number_stuff/

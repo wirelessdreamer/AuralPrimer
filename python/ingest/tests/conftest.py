@@ -21,11 +21,27 @@ running and skips the rest.
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
 
 _HERE = Path(__file__).parent
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _disable_meter_model():
+    """Keep beat/tempo tests on the deterministic librosa path. The neural meter
+    engine (Beat This!) is optional + gated on a cached/modelpack checkpoint that
+    may or may not be present on a given machine; tests must not depend on it or
+    run the heavy model. Its own logic is unit-tested via the pure helpers."""
+    prev = os.environ.get("AURALPRIMER_DISABLE_METER_MODEL")
+    os.environ["AURALPRIMER_DISABLE_METER_MODEL"] = "1"
+    yield
+    if prev is None:
+        os.environ.pop("AURALPRIMER_DISABLE_METER_MODEL", None)
+    else:
+        os.environ["AURALPRIMER_DISABLE_METER_MODEL"] = prev
 
 
 def _module_imports(path: Path) -> bool:

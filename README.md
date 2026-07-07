@@ -69,6 +69,108 @@ OS-level prerequisites.
 - **Rights-neutral importer scope.** PRs for source-specific proprietary
   game/DLC archive importers are out of scope.
 
+## Third-party components & attribution
+
+AuralPrimer stands on open-source music-ML research and tooling. Because it
+ships commercially, **every component below is commercially licensed — and for
+the neural models we verify the trained *weights* license separately from the
+code license** (an open-code / non-commercial-weights split is exactly what
+disqualifies a model here; see the license gate in the research docs). Current
+stack: permissive throughout (MIT / Apache-2.0 / BSD / ISC / MPL-2.0 / CC0 /
+Unlicense), with LGPL present only as dynamically-linked binaries (`ffmpeg`,
+`libsndfile`) and GPL only in a build-time tool (`PyInstaller`, used under its
+bootloader exception — its output is not GPL-encumbered). No GPL runtime
+dependencies; no non-commercial model weights.
+
+### Who makes what we use
+
+One row per maker, ordered by layer — models first, then ML runtime, app
+shell, and native audio/MIDI:
+
+| Layer | Organization / maintainer | What AuralPrimer uses from them | License |
+|---|---|---|---|
+| Model | **Meta AI · FAIR** — Défossez et al. | [**Demucs**](https://github.com/facebookresearch/demucs) — stem separation | MIT (code + weights) |
+| Model | **Sony AI** — Tan · Cheuk · Mitsufuji | [**MR-MT3**](https://github.com/gudgud96/MR-MT3) — neural drum transcription (+ [`mt3-infer`](https://github.com/openmirlab/mt3-infer) wrapper) | MIT (code + weights) |
+| Model | **Google Research · Magenta** | [**MT3**](https://github.com/magenta/mt3) — the architecture MR-MT3 is fine-tuned from | Apache-2.0 |
+| Model | **Spotify · Audio Intelligence Lab** | [**Basic Pitch**](https://github.com/spotify/basic-pitch) — piano / polyphonic melodic transcription | Apache-2.0 |
+| Model | **CPJKU · JKU Linz** — Foscarin · Schlüter · Widmer | [**Beat This!**](https://github.com/CPJKU/beat_this) — beat / downbeat / meter (drives the editor grid) | MIT (code + weights) |
+| Model | **NYU MARL · Northwestern** — Kim · Salamon · Bello · Morrison | [**CREPE**](https://github.com/marl/crepe) + [**torchcrepe**](https://github.com/maxrmorrison/torchcrepe) — bass / guitar pitch | MIT |
+| Runtime | **Meta Platforms** — PyTorch project | [**PyTorch**](https://github.com/pytorch/pytorch) (`torch` · `torchaudio` · `torchvision`) — ML runtime | BSD |
+| Runtime | **Hugging Face** | [**transformers**](https://github.com/huggingface/transformers) — model architectures | Apache-2.0 |
+| Runtime | **Lightning AI** — William Falcon | [**PyTorch Lightning**](https://github.com/Lightning-AI/pytorch-lightning) — inference scaffolding | Apache-2.0 |
+| Runtime | **Phil Wang** (lucidrains) | [**x-transformers**](https://github.com/lucidrains/x-transformers) · [**rotary-embedding-torch**](https://github.com/lucidrains/rotary-embedding-torch) | MIT |
+| Runtime | **NumFOCUS community** — Brian McFee et al. | [**NumPy**](https://github.com/numpy/numpy) · [**SciPy**](https://github.com/scipy/scipy) · [**scikit-learn**](https://github.com/scikit-learn/scikit-learn) · [**librosa**](https://github.com/librosa/librosa) (onset / CQT / tempo) | BSD · ISC |
+| Runtime | **Bastian Bechtold** · libsndfile team | [**soundfile**](https://github.com/bastibe/python-soundfile) — audio I/O | BSD (LGPL backend, dynamic) |
+| Runtime | **The FFmpeg project** | [**ffmpeg**](https://ffmpeg.org) — decode binary | LGPL-2.1+ (dynamic) |
+| Runtime | **Microsoft** · **ONNX / LF AI & Data** | [**onnxruntime**](https://github.com/microsoft/onnxruntime) + [**onnx**](https://github.com/onnx/onnx) — opt-in drum-CRNN inference / export | MIT · Apache-2.0 |
+| App | **Tauri WG · Commons Conservancy** | [**Tauri v2**](https://github.com/tauri-apps/tauri) — desktop shell + dialog/shell plugins | MIT / Apache-2.0 |
+| App | **VoidZero** — Evan You · Anthony Fu | [**Vite**](https://github.com/vitejs/vite) · [**Vitest**](https://github.com/vitest-dev/vitest) — build & test | MIT |
+| App | **Microsoft** | [**TypeScript**](https://github.com/microsoft/TypeScript) · [**Playwright**](https://github.com/microsoft/playwright) | Apache-2.0 |
+| Native | **RustAudio + independent Rust** | [**cpal**](https://github.com/RustAudio/cpal) · [**rtrb**](https://github.com/mgeier/rtrb) · [**symphonia**](https://github.com/pdeljanov/Symphonia) · [**midir**](https://github.com/Boddlnagg/midir) · [**midly**](https://github.com/kovaxis/midly) — native audio/MIDI | Apache / MIT / MPL-2.0 |
+
+*Lineage: Google/Magenta's **MT3** → Sony's **MR-MT3** (fine-tuned for drums).
+Full per-component detail — including build/test-only deps — is in the tables
+below.*
+
+### Music-ML models & audio analysis (the differentiating stack)
+
+| Component | Role in AuralPrimer | Made by | License (code / weights) |
+|---|---|---|---|
+| [**Demucs**](https://github.com/facebookresearch/demucs) (`htdemucs_6s`) | Stem separation (vocals/drums/bass/guitar/keys/other) | Meta AI / FAIR — Alexandre Défossez | MIT / **MIT** |
+| [**MR-MT3**](https://github.com/gudgud96/MR-MT3) (`mr_mt3` ckpt) + [**mt3-infer**](https://github.com/openmirlab/mt3-infer) | Neural drum transcription (which drum + velocity) | Sony AI — Hao Hao Tan, Kin Wai Cheuk, Yuki Mitsufuji et al.; wrapper by *openmirlab* | MIT / **MIT** |
+| [**MT3**](https://github.com/magenta/mt3) (lineage) | Base multi-track transcription architecture MR-MT3 derives from | Google Research · Magenta | Apache-2.0 / Apache-2.0 |
+| [**Basic Pitch**](https://github.com/spotify/basic-pitch) | Piano / polyphonic melodic transcription | Spotify — Audio Intelligence Lab | Apache-2.0 / Apache-2.0 |
+| [**Beat This!**](https://github.com/CPJKU/beat_this) | Beat / downbeat / **meter** tracking (drives the editor grid) | CPJKU, JKU Linz — Foscarin, Schlüter, Widmer | MIT / **MIT** |
+| [**torchcrepe**](https://github.com/maxrmorrison/torchcrepe) + [**CREPE**](https://github.com/marl/crepe) | Monophonic bass / guitar pitch tracking | Max Morrison (Northwestern) · CREPE by NYU MARL (Kim, Salamon, Bello) | MIT / **MIT** |
+| [**librosa**](https://github.com/librosa/librosa) | DSP: onset detection, CQT/spectrogram, tempo analysis | librosa dev team (Brian McFee, NYU) | ISC |
+
+### ML runtime & Python libraries
+
+| Component | Made by | License |
+|---|---|---|
+| [**PyTorch**](https://github.com/pytorch/pytorch) (`torch`, `torchaudio`, `torchvision`) | Meta Platforms (PyTorch project) | BSD-2/3-Clause |
+| [**PyTorch Lightning**](https://github.com/Lightning-AI/pytorch-lightning) | Lightning AI (William Falcon) | Apache-2.0 |
+| [**transformers**](https://github.com/huggingface/transformers) | Hugging Face, Inc. | Apache-2.0 |
+| [**onnxruntime**](https://github.com/microsoft/onnxruntime) (opt-in drum-CRNN inference) | Microsoft | MIT |
+| [**onnx**](https://github.com/onnx/onnx) (drum-CRNN ONNX export; pinned 1.18.0 for ml-dtypes compat) | ONNX community (LF AI & Data Foundation) | Apache-2.0 |
+| [**x-transformers**](https://github.com/lucidrains/x-transformers), [**rotary-embedding-torch**](https://github.com/lucidrains/rotary-embedding-torch) | Phil Wang (lucidrains) | MIT |
+| [**NumPy**](https://github.com/numpy/numpy), [**SciPy**](https://github.com/scipy/scipy), [**scikit-learn**](https://github.com/scikit-learn/scikit-learn) | NumFOCUS-sponsored communities | BSD-3-Clause |
+| [**soundfile**](https://github.com/bastibe/python-soundfile) (+ [**libsndfile**](https://github.com/libsndfile/libsndfile)) | Bastian Bechtold · libsndfile team | BSD-3-Clause (LGPL backend, dynamic) |
+| [**beartype**](https://github.com/beartype/beartype) | Cecil Curry | MIT |
+| [**ffmpeg**](https://ffmpeg.org) (bundled binary) | The FFmpeg project | LGPL-2.1+ (dynamic) |
+| [**PyInstaller**](https://github.com/pyinstaller/pyinstaller) (build tool) | PyInstaller Development Team | GPL-2.0+ w/ bootloader exception |
+
+### Desktop app, frontend & build
+
+| Component | Made by | License |
+|---|---|---|
+| [**Tauri v2**](https://github.com/tauri-apps/tauri) (+ `@tauri-apps/api`, dialog/shell plugins) | Tauri Working Group / Commons Conservancy | MIT / Apache-2.0 |
+| [**Vite**](https://github.com/vitejs/vite), [**Vitest**](https://github.com/vitest-dev/vitest) | VoidZero (Evan You / Anthony Fu) | MIT |
+| [**TypeScript**](https://github.com/microsoft/TypeScript), [**Playwright**](https://github.com/microsoft/playwright) | Microsoft | Apache-2.0 |
+| [**ajv**](https://github.com/ajv-validator/ajv) (JSON Schema) | Evgeny Poberezkin | MIT |
+| [**fflate**](https://github.com/101arrowz/fflate) (in-browser zip) | Arjun Barrett | MIT |
+| [**jsdom**](https://github.com/jsdom/jsdom) (test DOM) | jsdom project (Domenic Denicola et al.) | MIT |
+
+### Native (Rust) crates
+
+| Component | Made by | License |
+|---|---|---|
+| [**cpal**](https://github.com/RustAudio/cpal) (native audio out) | RustAudio | Apache-2.0 |
+| [**rtrb**](https://github.com/mgeier/rtrb) (realtime ring buffer) | Matthias Geier | MIT / Apache-2.0 |
+| [**symphonia**](https://github.com/pdeljanov/Symphonia) (pure-Rust decode) | Philip Deljanov | MPL-2.0 |
+| [**midir**](https://github.com/Boddlnagg/midir) / [**midly**](https://github.com/kovaxis/midly) (MIDI I/O + `.mid` parse) | Patrick Reisert · Martín Andrighetti | MIT · Unlicense |
+| [**tokio**](https://github.com/tokio-rs/tokio) (async runtime) | tokio-rs | MIT |
+| [**serde**](https://github.com/serde-rs/serde)(+`json`/`yaml`) | David Tolnay | MIT / Apache-2.0 |
+| [**zip**](https://github.com/zip-rs/zip2), [**sha2**](https://github.com/RustCrypto/hashes), [**hex**](https://github.com/KokaKiwi/rust-hex), [**notify**](https://github.com/notify-rs/notify) | zip-rs · RustCrypto · rust-hex · notify-rs | MIT / Apache-2.0 / CC0 |
+
+> **License-gate note.** Two widely-repeated misconceptions were checked against
+> primary sources and cleared: (1) the *Demucs* `htdemucs_*` weights are **MIT**
+> (the CC-BY-NC claim circulating in third-party repackagings conflates them with
+> the 2019 Conv-TasNet research models); (2) `madmom`'s trained models are
+> CC-BY-NC-SA and were therefore **rejected** for meter tracking in favor of Beat
+> This! Pin exact model revisions (HF/checkpoint) so a future card relicense
+> can't silently breach the gate.
+
 ## Research & methodology — first class
 
 We treat transcription quality as a research problem and publish the
@@ -77,17 +179,29 @@ alongside the code. The work directly informs production defaults —
 nothing in the ingest pipeline is shipped without head-to-head benchmark
 evidence captured in a document below.
 
-### Headline results (synth + annotated corpora, June 2026 round)
+### Top-tier transcription stack (per instrument)
 
-| Instrument | Production default                       | Corpus                                | F1     | Precision | Recall | Δ vs prior |
-|------------|------------------------------------------|---------------------------------------|-------:|----------:|-------:|-----------|
-| **Drums**  | `librosa_superflux_dense`                | E-GMD test (20 cases)                 | 0.153  |  —        | —      | **+50%** vs base `librosa_superflux`; +5.5% vs prior leader `adaptive_beat_grid` |
-| **Bass**   | `melodic_pyin_bass_strict`               | GuitarSet low strings (8 cases)       | 0.270  |  0.271    | 0.268  | **+13%** vs `melodic_pyin`; MAE 20 ms → 13 ms |
-| **Guitar** | `melodic_combined` (unchanged) + new `melodic_combined_guitar` workspace candidate | GuitarSet mic (12 cases) | 0.261 → 0.248 | trade   | trade  | precision/recall trade — variant ships as high-recall option only |
-| **Keys**   | `piano_chord_supplement` (PTI + cleanup + echo dedup + low-pitch pyin supplement + analytical chord-onset fallback) | Synthetic piano corpus (4 cases, 117 notes) | **0.928** | **0.981** | **0.880** | +0.222 absolute over raw `piano_pti` (0.706); precision +18 pts; recall +27 pts |
+Ingest auto-selects a **primary transcriber per instrument** — the
+`gameplay_default` profile (`transcription.py`) — backed by a fail-safe
+fallback chain so machines without the neural checkpoints still import.
+The current production picks:
+
+| Instrument | Top-tier transcriber | Why it leads | Fallback chain |
+|------------|----------------------|--------------|----------------|
+| **Drums** | **`mr_mt3_drums`** — neural MT3 ADT (GPU/CPU auto) | catches the dense hi-hats / ghost notes the DSP engines miss (their E-GMD recall collapses to F1 ≈ 0.13) | beat-conditioned multiband → spectral-flux multiband → adaptive-beat-grid → DSP bandpass — used when the MT3 checkpoint/runtime is absent |
+| **Bass** | **`torchcrepe`** — neural monophonic pitch (MIT) | octave-clean (~0.3% octave jumps vs ~45% for Basic Pitch), tighter low register, ~9× faster | YIN octave+HPS fix → adaptive → YIN-bass80 → octave-fix |
+| **Guitar — lead** | **`torchcrepe`** — monophonic | octave-clean, ~6–8× faster than the DSP chain | melodic-adaptive → octave-fix → combined → Basic Pitch |
+| **Guitar — rhythm** | **`melodic_hpss_combined`** — HPSS + onset (polyphonic) | keeps the chord voices a monophonic tracker drops | melodic-adaptive → octave-fix → combined |
+| **Keys / piano** | **`piano_auto`** — scored gate: Basic Pitch → PTI (Edwards/Kong) cleanup | picks the best-scoring engine per stem; the tuned `piano_chord_supplement` path benchmarks **F1 0.928 / precision 0.981** on the synthetic piano corpus | PTI-consensus-clean → PTI-clean → polyphonic-clean |
+| **Vocals** | *(no pitch transcription)* | vocals drive lyric alignment, not a note chart | — |
+
+Alternate profiles are selectable per import: `fidelity_midi` (denser
+symbolic output for A/B review) and `research_ab` (every local candidate,
+defaults unchanged). Distorted/electric guitar is a known frontier
+(rendered-tone onset-F1 ceiling ~0.78–0.84) — see the amp-tone research doc.
 
 Per-case breakdowns, JSON reports, reproducibility commands, and the
-"what didn't work and why" notes live in the doc below.
+"what didn't work and why" notes live in the docs below.
 
 ### Research docs (start here)
 
@@ -113,6 +227,12 @@ Per-case breakdowns, JSON reports, reproducibility commands, and the
   architectural assumptions baked into the original pipeline. Each
   assumption is checked against published work, the resulting paths-
   forward list is the source of the current production-default trail.
+
+- [**Electric-guitar amp-tone transcription — 2026-06-27**](docs/research-guitar-amptone-2026-06-27.md)
+  Adversarially-verified research on the distorted/electric-guitar
+  frontier: why general models collapse on real amp tone, the amp-tone
+  augmentation lever (the dominant fix), license-clean datasets/assets,
+  and a ranked plan. Sets the ~0.78–0.84 onset-F1 ceiling cited above.
 
 - [**Research decision gates**](docs/research-decision-gates.md)
   The locked-in production defaults the rest of the codebase reads from

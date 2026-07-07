@@ -157,12 +157,49 @@ def estimate_duration_sec(stem_path: Path) -> float:
     return 1.0 + float(size % 40_000) / 10_000.0
 
 
+def _read_pcm_sample(raw: bytes, offset: int, width: int) -> int:
+    """Read one little-endian signed PCM sample of width bytes."""
+    if width == 1:
+        return struct.unpack_from("b", raw, offset)[0]
+    if width == 2:
+        return struct.unpack_from("<h", raw, offset)[0]
+    if width == 3:
+        val = raw[offset] | (raw[offset + 1] << 8) | (raw[offset + 2] << 16)
+        if val & 0x800000:
+            val -= 0x1000000
+        return val
+    if width == 4:
+        return struct.unpack_from("<i", raw, offset)[0]
+    raise ValueError(f"unsupported sample width: {width}")
+
+
+def _write_pcm_sample(out: bytearray, offset: int, width: int, val: int) -> None:
+    """Write one little-endian signed PCM sample of width bytes (clamped)."""
+    if width == 1:
+        val = max(-128, min(127, val))
+        struct.pack_into("b", out, offset, val)
+    elif width == 2:
+        val = max(-32768, min(32767, val))
+        struct.pack_into("<h", out, offset, val)
+    elif width == 3:
+        val = max(-0x800000, min(0x7FFFFF, val))
+        if val < 0:
+            val += 0x1000000
+        out[offset] = val & 0xFF
+        out[offset + 1] = (val >> 8) & 0xFF
+        out[offset + 2] = (val >> 16) & 0xFF
+    elif width == 4:
+        val = max(-0x80000000, min(0x7FFFFFFF, val))
+        struct.pack_into("<i", out, offset, val)
+    else:
+        raise ValueError(f"unsupported sample width: {width}")
+
+
 def _tomono(raw: bytes, sampwidth: int, channels: int) -> bytes:
     """Mix multi-channel PCM to mono by averaging channels (replaces audioop.tomono)."""
     if channels <= 1:
         return raw
-    fmt = {1: "b", 2: "<h", 4: "<i"}.get(sampwidth)
-    if fmt is None:
+    if sampwidth not in (1, 2, 3, 4):
         raise ValueError(f"unsupported sample width: {sampwidth}")
     frame_count = len(raw) // (sampwidth * channels)
     out = bytearray(frame_count * sampwidth)
@@ -170,10 +207,8 @@ def _tomono(raw: bytes, sampwidth: int, channels: int) -> bytes:
         total = 0
         for ch in range(channels):
             offset = (i * channels + ch) * sampwidth
-            (val,) = struct.unpack_from(fmt, raw, offset)
-            total += val
-        mono_val = total // channels
-        struct.pack_into(fmt, out, i * sampwidth, mono_val)
+            total += _read_pcm_sample(raw, offset, sampwidth)
+        _write_pcm_sample(out, i * sampwidth, sampwidth, total // channels)
     return bytes(out)
 
 
@@ -181,18 +216,16 @@ def _lin2lin(raw: bytes, src_width: int, dst_width: int) -> bytes:
     """Convert sample width (replaces audioop.lin2lin)."""
     if src_width == dst_width:
         return raw
-    src_fmt = {1: "b", 2: "<h", 4: "<i"}.get(src_width)
-    dst_fmt = {1: "b", 2: "<h", 4: "<i"}.get(dst_width)
-    if src_fmt is None or dst_fmt is None:
+    if src_width not in (1, 2, 3, 4) or dst_width not in (1, 2, 3, 4):
         raise ValueError(f"unsupported sample widths: {src_width} -> {dst_width}")
     src_max = (1 << (src_width * 8 - 1)) - 1
     dst_max = (1 << (dst_width * 8 - 1)) - 1
     count = len(raw) // src_width
     out = bytearray(count * dst_width)
     for i in range(count):
-        (val,) = struct.unpack_from(src_fmt, raw, i * src_width)
+        val = _read_pcm_sample(raw, i * src_width, src_width)
         converted = int(val * dst_max / src_max) if src_max != dst_max else val
-        struct.pack_into(dst_fmt, out, i * dst_width, max(-(dst_max + 1), min(dst_max, converted)))
+        _write_pcm_sample(out, i * dst_width, dst_width, converted)
     return bytes(out)
 
 

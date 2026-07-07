@@ -1,0 +1,642 @@
+{
+  "dataset": "egmd",
+  "family": "drums",
+  "extra": {
+    "split": "test",
+    "sample": "stratified_sample_test_30",
+    "tolerance_ms": 50.0,
+    "engine": "magenta_egmd_drums",
+    "note": "RESEARCH-ONLY Magenta E-GMD checkpoint (unstated license)"
+  },
+  "case_count": 30,
+  "summary": {
+    "overall": {
+      "tp": 1936,
+      "fp": 1394,
+      "fn": 1968,
+      "precision": 0.581381,
+      "recall": 0.495902,
+      "f1": 0.53525,
+      "mean_runtime_sec": 3.7828,
+      "per_class": {
+        "kick": {
+          "tp": 523,
+          "fp": 140,
+          "fn": 228,
+          "precision": 0.788839,
+          "recall": 0.696405,
+          "f1": 0.739745,
+          "support": 751
+        },
+        "snare": {
+          "tp": 583,
+          "fp": 203,
+          "fn": 500,
+          "precision": 0.74173,
+          "recall": 0.538319,
+          "f1": 0.623863,
+          "support": 1083
+        },
+        "hi_hat": {
+          "tp": 579,
+          "fp": 782,
+          "fn": 272,
+          "precision": 0.425422,
+          "recall": 0.680376,
+          "f1": 0.523508,
+          "support": 851
+        },
+        "toms": {
+          "tp": 150,
+          "fp": 19,
+          "fn": 40,
+          "precision": 0.887574,
+          "recall": 0.789474,
+          "f1": 0.835655,
+          "support": 190
+        },
+        "cymbals": {
+          "tp": 196,
+          "fp": 155,
+          "fn": 171,
+          "precision": 0.558405,
+          "recall": 0.53406,
+          "f1": 0.545961,
+          "support": 367
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "egmd:drummer1/eval_session/10::10_soul-groove10_102_beat_4-4_43",
+      "n_pred": 229,
+      "n_ref": 247,
+      "exact": {
+        "tp": 196,
+        "fp": 33,
+        "fn": 51,
+        "f1": 0.8235
+      },
+      "metadata": {
+        "split": "test",
+        "style": "soul/groove10",
+        "kit_name": "Funk Rock",
+        "bpm": "102",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/eval_session/2::2_funk-groove2_105_beat_4-4_41",
+      "n_pred": 233,
+      "n_ref": 323,
+      "exact": {
+        "tp": 179,
+        "fp": 54,
+        "fn": 144,
+        "f1": 0.6439
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove2",
+        "kit_name": "Cassette (Lo-Fi Compress)",
+        "bpm": "105",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/141::141_funk-fast_125_fill_4-4_1",
+      "n_pred": 15,
+      "n_ref": 17,
+      "exact": {
+        "tp": 11,
+        "fp": 4,
+        "fn": 6,
+        "f1": 0.6875
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/fast",
+        "kit_name": "Acoustic Kit",
+        "bpm": "125",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/153::153_latin-brazilian-baiao_95_fill_4-4_34",
+      "n_pred": 17,
+      "n_ref": 22,
+      "exact": {
+        "tp": 14,
+        "fp": 3,
+        "fn": 8,
+        "f1": 0.7179
+      },
+      "metadata": {
+        "split": "test",
+        "style": "latin/brazilian-baiao",
+        "kit_name": "Alternative (METAL)",
+        "bpm": "95",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/189::189_reggae_78_fill_4-4_22",
+      "n_pred": 7,
+      "n_ref": 10,
+      "exact": {
+        "tp": 6,
+        "fp": 1,
+        "fn": 4,
+        "f1": 0.7059
+      },
+      "metadata": {
+        "split": "test",
+        "style": "reggae",
+        "kit_name": "Dry & Heavy (Folk Rock)",
+        "bpm": "78",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/207::207_rock-halftime_140_fill_4-4_55",
+      "n_pred": 16,
+      "n_ref": 30,
+      "exact": {
+        "tp": 6,
+        "fp": 10,
+        "fn": 24,
+        "f1": 0.2609
+      },
+      "metadata": {
+        "split": "test",
+        "style": "rock/halftime",
+        "kit_name": "Ele-Drum",
+        "bpm": "140",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/54::54_jazz_125_fill_4-4_17",
+      "n_pred": 22,
+      "n_ref": 26,
+      "exact": {
+        "tp": 7,
+        "fp": 15,
+        "fn": 19,
+        "f1": 0.2917
+      },
+      "metadata": {
+        "split": "test",
+        "style": "jazz",
+        "kit_name": "Dark Hybrid",
+        "bpm": "125",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session1/93::93_neworleans-funk_84_fill_4-4_8",
+      "n_pred": 14,
+      "n_ref": 15,
+      "exact": {
+        "tp": 11,
+        "fp": 3,
+        "fn": 4,
+        "f1": 0.7586
+      },
+      "metadata": {
+        "split": "test",
+        "style": "neworleans/funk",
+        "kit_name": "Deep Daft",
+        "bpm": "84",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/116::116_afrocuban-bembe_122_fill_4-4_42",
+      "n_pred": 11,
+      "n_ref": 12,
+      "exact": {
+        "tp": 9,
+        "fp": 2,
+        "fn": 3,
+        "f1": 0.7826
+      },
+      "metadata": {
+        "split": "test",
+        "style": "afrocuban/bembe",
+        "kit_name": "Bigga Bop (Jazz)",
+        "bpm": "122",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/16::16_country_114_fill_4-4_52",
+      "n_pred": 14,
+      "n_ref": 16,
+      "exact": {
+        "tp": 14,
+        "fp": 0,
+        "fn": 2,
+        "f1": 0.9333
+      },
+      "metadata": {
+        "split": "test",
+        "style": "country",
+        "kit_name": "909 Simple",
+        "bpm": "114",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/167::167_afrocuban-rhumba_110_fill_4-4_13",
+      "n_pred": 11,
+      "n_ref": 11,
+      "exact": {
+        "tp": 10,
+        "fp": 1,
+        "fn": 1,
+        "f1": 0.9091
+      },
+      "metadata": {
+        "split": "test",
+        "style": "afrocuban/rhumba",
+        "kit_name": "Jazz Funk",
+        "bpm": "110",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer1/session2/47::47_punk_128_fill_4-4_51",
+      "n_pred": 13,
+      "n_ref": 20,
+      "exact": {
+        "tp": 6,
+        "fp": 7,
+        "fn": 14,
+        "f1": 0.3636
+      },
+      "metadata": {
+        "split": "test",
+        "style": "punk",
+        "kit_name": "808 Simple",
+        "bpm": "128",
+        "time_signature": "4-4",
+        "drummer": "drummer1"
+      }
+    },
+    {
+      "case_id": "egmd:drummer3/session1/11::11_rock_120_beat_4-4_25",
+      "n_pred": 163,
+      "n_ref": 161,
+      "exact": {
+        "tp": 161,
+        "fp": 2,
+        "fn": 0,
+        "f1": 0.9938
+      },
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Arena Stage",
+        "bpm": "120",
+        "time_signature": "4-4",
+        "drummer": "drummer3"
+      }
+    },
+    {
+      "case_id": "egmd:drummer3/session2/10::10_rock_100_beat_4-4_6",
+      "n_pred": 113,
+      "n_ref": 113,
+      "exact": {
+        "tp": 35,
+        "fp": 78,
+        "fn": 78,
+        "f1": 0.3097
+      },
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Compact Lite (w/ Tambourine HH)",
+        "bpm": "100",
+        "time_signature": "4-4",
+        "drummer": "drummer3"
+      }
+    },
+    {
+      "case_id": "egmd:drummer5/eval_session/1::1_funk-groove1_138_beat_4-4_37",
+      "n_pred": 327,
+      "n_ref": 372,
+      "exact": {
+        "tp": 93,
+        "fp": 234,
+        "fn": 279,
+        "f1": 0.2661
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Live Fusion",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer5"
+      }
+    },
+    {
+      "case_id": "egmd:drummer5/eval_session/10::10_soul-groove10_102_beat_4-4_24",
+      "n_pred": 205,
+      "n_ref": 284,
+      "exact": {
+        "tp": 98,
+        "fp": 107,
+        "fn": 186,
+        "f1": 0.4008
+      },
+      "metadata": {
+        "split": "test",
+        "style": "soul/groove10",
+        "kit_name": "Heavy Metal",
+        "bpm": "102",
+        "time_signature": "4-4",
+        "drummer": "drummer5"
+      }
+    },
+    {
+      "case_id": "egmd:drummer5/eval_session/2::2_funk-groove2_105_beat_4-4_32",
+      "n_pred": 257,
+      "n_ref": 334,
+      "exact": {
+        "tp": 149,
+        "fp": 108,
+        "fn": 185,
+        "f1": 0.5042
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove2",
+        "kit_name": "Live Rock",
+        "bpm": "105",
+        "time_signature": "4-4",
+        "drummer": "drummer5"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/eval_session/1::1_funk-groove1_138_beat_4-4_16",
+      "n_pred": 247,
+      "n_ref": 257,
+      "exact": {
+        "tp": 68,
+        "fp": 179,
+        "fn": 189,
+        "f1": 0.2698
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "Modern Funk",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session1/16::16_hiphop_100_beat_4-4_12",
+      "n_pred": 325,
+      "n_ref": 381,
+      "exact": {
+        "tp": 199,
+        "fp": 126,
+        "fn": 182,
+        "f1": 0.5637
+      },
+      "metadata": {
+        "split": "test",
+        "style": "hiphop",
+        "kit_name": "Classic Rock",
+        "bpm": "100",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/112::112_jazz-fusion_96_beat_4-4_14",
+      "n_pred": 226,
+      "n_ref": 268,
+      "exact": {
+        "tp": 164,
+        "fp": 62,
+        "fn": 104,
+        "f1": 0.664
+      },
+      "metadata": {
+        "split": "test",
+        "style": "jazz/fusion",
+        "kit_name": "ClassicMetal (80s-90s)",
+        "bpm": "96",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/18::18_rock_118_fill_4-4_15",
+      "n_pred": 30,
+      "n_ref": 36,
+      "exact": {
+        "tp": 20,
+        "fp": 10,
+        "fn": 16,
+        "f1": 0.6061
+      },
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "60s Rock",
+        "bpm": "118",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/2::2_rock_120_beat_4-4_2",
+      "n_pred": 49,
+      "n_ref": 57,
+      "exact": {
+        "tp": 29,
+        "fp": 20,
+        "fn": 28,
+        "f1": 0.5472
+      },
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Fat Rock (Power Toms)",
+        "bpm": "120",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/35::35_rock_75_fill_4-4_18",
+      "n_pred": 8,
+      "n_ref": 8,
+      "exact": {
+        "tp": 3,
+        "fp": 5,
+        "fn": 5,
+        "f1": 0.375
+      },
+      "metadata": {
+        "split": "test",
+        "style": "rock",
+        "kit_name": "Big Room (Layered)",
+        "bpm": "75",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/83::83_country_78_fill_4-4_10",
+      "n_pred": 9,
+      "n_ref": 9,
+      "exact": {
+        "tp": 5,
+        "fp": 4,
+        "fn": 4,
+        "f1": 0.5556
+      },
+      "metadata": {
+        "split": "test",
+        "style": "country",
+        "kit_name": "JingleStacks (2nd Hi-Hat)",
+        "bpm": "78",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session2/93::93_hiphop_75_beat_4-4_58",
+      "n_pred": 219,
+      "n_ref": 217,
+      "exact": {
+        "tp": 123,
+        "fp": 96,
+        "fn": 94,
+        "f1": 0.5642
+      },
+      "metadata": {
+        "split": "test",
+        "style": "hiphop",
+        "kit_name": "Custom3",
+        "bpm": "75",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session3/138::138_soul_105_fill_4-4_56",
+      "n_pred": 12,
+      "n_ref": 19,
+      "exact": {
+        "tp": 0,
+        "fp": 12,
+        "fn": 19,
+        "f1": 0.0
+      },
+      "metadata": {
+        "split": "test",
+        "style": "soul",
+        "kit_name": "Custom1",
+        "bpm": "105",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session3/53::53_funk_112_fill_4-4_57",
+      "n_pred": 14,
+      "n_ref": 17,
+      "exact": {
+        "tp": 0,
+        "fp": 14,
+        "fn": 17,
+        "f1": 0.0
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk",
+        "kit_name": "Custom2",
+        "bpm": "112",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer7/session3/73::73_neworleans-funk_93_fill_4-4_44",
+      "n_pred": 49,
+      "n_ref": 51,
+      "exact": {
+        "tp": 26,
+        "fp": 23,
+        "fn": 25,
+        "f1": 0.52
+      },
+      "metadata": {
+        "split": "test",
+        "style": "neworleans/funk",
+        "kit_name": "Alternative (Rock)",
+        "bpm": "93",
+        "time_signature": "4-4",
+        "drummer": "drummer7"
+      }
+    },
+    {
+      "case_id": "egmd:drummer8/eval_session/1::1_funk-groove1_138_beat_4-4_31",
+      "n_pred": 245,
+      "n_ref": 297,
+      "exact": {
+        "tp": 66,
+        "fp": 179,
+        "fn": 231,
+        "f1": 0.2435
+      },
+      "metadata": {
+        "split": "test",
+        "style": "funk/groove1",
+        "kit_name": "More Cowbell (Pop-Rock)",
+        "bpm": "138",
+        "time_signature": "4-4",
+        "drummer": "drummer8"
+      }
+    },
+    {
+      "case_id": "egmd:drummer8/eval_session/10::10_soul-groove10_102_beat_4-4_3",
+      "n_pred": 230,
+      "n_ref": 274,
+      "exact": {
+        "tp": 228,
+        "fp": 2,
+        "fn": 46,
+        "f1": 0.9048
+      },
+      "metadata": {
+        "split": "test",
+        "style": "soul/groove10",
+        "kit_name": "Jazz",
+        "bpm": "102",
+        "time_signature": "4-4",
+        "drummer": "drummer8"
+      }
+    }
+  ]
+}

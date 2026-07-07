@@ -1,0 +1,1420 @@
+{
+  "dataset": "guitarset_bass",
+  "family": "melodic",
+  "extra": {
+    "split": "test",
+    "variant": null,
+    "limit": 20,
+    "tolerance_ms": 50.0,
+    "pitch_tolerance_semitones": 0
+  },
+  "case_count": 20,
+  "summary": {
+    "overall": {
+      "cases": 60,
+      "cases_ok": 60,
+      "cases_err": 0,
+      "tp": 622,
+      "fp": 2787,
+      "fn": 2744,
+      "precision": 0.182458,
+      "recall": 0.184789,
+      "f1": 0.183616,
+      "onset_mae_sec": 0.016697,
+      "mean_runtime_sec": 6.6635
+    },
+    "per_algorithm": {
+      "melodic_torchcrepe": {
+        "cases": 20,
+        "cases_ok": 20,
+        "cases_err": 0,
+        "tp": 212,
+        "fp": 830,
+        "fn": 910,
+        "precision": 0.203455,
+        "recall": 0.188948,
+        "f1": 0.195933,
+        "onset_mae_sec": 0.013232,
+        "mean_runtime_sec": 2.357,
+        "buckets": {
+          "style": {
+            "comp": {
+              "cases": 11,
+              "cases_ok": 11,
+              "cases_err": 0,
+              "tp": 34,
+              "fp": 415,
+              "fn": 810,
+              "precision": 0.075724,
+              "recall": 0.040284,
+              "f1": 0.052591,
+              "onset_mae_sec": 0.017349,
+              "mean_runtime_sec": 2.6296
+            },
+            "solo": {
+              "cases": 9,
+              "cases_ok": 9,
+              "cases_err": 0,
+              "tp": 178,
+              "fp": 415,
+              "fn": 100,
+              "precision": 0.300169,
+              "recall": 0.640288,
+              "f1": 0.408726,
+              "onset_mae_sec": 0.009114,
+              "mean_runtime_sec": 2.0238
+            }
+          }
+        }
+      },
+      "melodic_pyin_bass_strict": {
+        "cases": 20,
+        "cases_ok": 20,
+        "cases_err": 0,
+        "tp": 167,
+        "fp": 514,
+        "fn": 955,
+        "precision": 0.245228,
+        "recall": 0.148841,
+        "f1": 0.185247,
+        "onset_mae_sec": 0.016681,
+        "mean_runtime_sec": 3.7094,
+        "buckets": {
+          "style": {
+            "comp": {
+              "cases": 11,
+              "cases_ok": 11,
+              "cases_err": 0,
+              "tp": 39,
+              "fp": 148,
+              "fn": 805,
+              "precision": 0.208556,
+              "recall": 0.046209,
+              "f1": 0.075655,
+              "onset_mae_sec": 0.018055,
+              "mean_runtime_sec": 4.0248
+            },
+            "solo": {
+              "cases": 9,
+              "cases_ok": 9,
+              "cases_err": 0,
+              "tp": 128,
+              "fp": 366,
+              "fn": 150,
+              "precision": 0.259109,
+              "recall": 0.460432,
+              "f1": 0.331606,
+              "onset_mae_sec": 0.01546,
+              "mean_runtime_sec": 3.324
+            }
+          }
+        }
+      },
+      "melodic_combined": {
+        "cases": 20,
+        "cases_ok": 20,
+        "cases_err": 0,
+        "tp": 243,
+        "fp": 1443,
+        "fn": 879,
+        "precision": 0.144128,
+        "recall": 0.216578,
+        "f1": 0.173077,
+        "onset_mae_sec": 0.019829,
+        "mean_runtime_sec": 13.924,
+        "buckets": {
+          "style": {
+            "comp": {
+              "cases": 11,
+              "cases_ok": 11,
+              "cases_err": 0,
+              "tp": 113,
+              "fp": 954,
+              "fn": 731,
+              "precision": 0.105904,
+              "recall": 0.133886,
+              "f1": 0.118263,
+              "onset_mae_sec": 0.015402,
+              "mean_runtime_sec": 14.2445
+            },
+            "solo": {
+              "cases": 9,
+              "cases_ok": 9,
+              "cases_err": 0,
+              "tp": 130,
+              "fp": 489,
+              "fn": 148,
+              "precision": 0.210016,
+              "recall": 0.467626,
+              "f1": 0.289855,
+              "onset_mae_sec": 0.02524,
+              "mean_runtime_sec": 13.5323
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 6.6821,
+      "tp": 3,
+      "fp": 37,
+      "fn": 27,
+      "precision": 0.075,
+      "recall": 0.1,
+      "f1": 0.085714,
+      "onset_mae_sec": 0.013675,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.1811,
+      "tp": 4,
+      "fp": 20,
+      "fn": 26,
+      "precision": 0.166667,
+      "recall": 0.133333,
+      "f1": 0.148148,
+      "onset_mae_sec": 0.012317,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 12.1435,
+      "tp": 6,
+      "fp": 79,
+      "fn": 24,
+      "precision": 0.070588,
+      "recall": 0.2,
+      "f1": 0.104348,
+      "onset_mae_sec": 0.011916,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 1.6555,
+      "tp": 2,
+      "fp": 44,
+      "fn": 6,
+      "precision": 0.043478,
+      "recall": 0.25,
+      "f1": 0.074074,
+      "onset_mae_sec": 0.009637,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 2.8659,
+      "tp": 2,
+      "fp": 48,
+      "fn": 6,
+      "precision": 0.04,
+      "recall": 0.25,
+      "f1": 0.068966,
+      "onset_mae_sec": 0.009603,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 12.7339,
+      "tp": 2,
+      "fp": 50,
+      "fn": 6,
+      "precision": 0.038462,
+      "recall": 0.25,
+      "f1": 0.066667,
+      "onset_mae_sec": 0.032728,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 1.7075,
+      "tp": 0,
+      "fp": 1,
+      "fn": 32,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 7.7624,
+      "tp": 3,
+      "fp": 9,
+      "fn": 29,
+      "precision": 0.25,
+      "recall": 0.09375,
+      "f1": 0.136364,
+      "onset_mae_sec": 0.010702,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 12.993,
+      "tp": 5,
+      "fp": 59,
+      "fn": 27,
+      "precision": 0.078125,
+      "recall": 0.15625,
+      "f1": 0.104167,
+      "onset_mae_sec": 0.007542,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 1.8961,
+      "tp": 63,
+      "fp": 15,
+      "fn": 17,
+      "precision": 0.807692,
+      "recall": 0.7875,
+      "f1": 0.797468,
+      "onset_mae_sec": 0.012094,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 2.9238,
+      "tp": 48,
+      "fp": 14,
+      "fn": 32,
+      "precision": 0.774194,
+      "recall": 0.6,
+      "f1": 0.676056,
+      "onset_mae_sec": 0.0162,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 10.113,
+      "tp": 39,
+      "fp": 33,
+      "fn": 41,
+      "precision": 0.541667,
+      "recall": 0.4875,
+      "f1": 0.513158,
+      "onset_mae_sec": 0.032286,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-131-B_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.3511,
+      "tp": 2,
+      "fp": 74,
+      "fn": 57,
+      "precision": 0.026316,
+      "recall": 0.033898,
+      "f1": 0.02963,
+      "onset_mae_sec": 0.005862,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "131",
+        "key": "B",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-131-B_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.6992,
+      "tp": 4,
+      "fp": 21,
+      "fn": 55,
+      "precision": 0.16,
+      "recall": 0.067797,
+      "f1": 0.095238,
+      "onset_mae_sec": 0.010315,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "131",
+        "key": "B",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-131-B_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 16.2432,
+      "tp": 5,
+      "fp": 79,
+      "fn": 54,
+      "precision": 0.059524,
+      "recall": 0.084746,
+      "f1": 0.06993,
+      "onset_mae_sec": 0.006146,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "131",
+        "key": "B",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.1332,
+      "tp": 4,
+      "fp": 33,
+      "fn": 42,
+      "precision": 0.108108,
+      "recall": 0.086957,
+      "f1": 0.096386,
+      "onset_mae_sec": 0.015026,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.2692,
+      "tp": 6,
+      "fp": 10,
+      "fn": 40,
+      "precision": 0.375,
+      "recall": 0.130435,
+      "f1": 0.193548,
+      "onset_mae_sec": 0.020564,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 12.3805,
+      "tp": 8,
+      "fp": 64,
+      "fn": 38,
+      "precision": 0.111111,
+      "recall": 0.173913,
+      "f1": 0.135593,
+      "onset_mae_sec": 0.020711,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.027,
+      "tp": 7,
+      "fp": 51,
+      "fn": 4,
+      "precision": 0.12069,
+      "recall": 0.636364,
+      "f1": 0.202899,
+      "onset_mae_sec": 0.003552,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 2.7551,
+      "tp": 9,
+      "fp": 68,
+      "fn": 2,
+      "precision": 0.116883,
+      "recall": 0.818182,
+      "f1": 0.204545,
+      "onset_mae_sec": 0.014986,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 13.4112,
+      "tp": 8,
+      "fp": 64,
+      "fn": 3,
+      "precision": 0.111111,
+      "recall": 0.727273,
+      "f1": 0.192771,
+      "onset_mae_sec": 0.007454,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.4112,
+      "tp": 4,
+      "fp": 37,
+      "fn": 28,
+      "precision": 0.097561,
+      "recall": 0.125,
+      "f1": 0.109589,
+      "onset_mae_sec": 0.003824,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.7039,
+      "tp": 4,
+      "fp": 25,
+      "fn": 28,
+      "precision": 0.137931,
+      "recall": 0.125,
+      "f1": 0.131148,
+      "onset_mae_sec": 0.011762,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 16.3822,
+      "tp": 15,
+      "fp": 88,
+      "fn": 17,
+      "precision": 0.145631,
+      "recall": 0.46875,
+      "f1": 0.222222,
+      "onset_mae_sec": 0.014262,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.2492,
+      "tp": 12,
+      "fp": 64,
+      "fn": 4,
+      "precision": 0.157895,
+      "recall": 0.75,
+      "f1": 0.26087,
+      "onset_mae_sec": 0.011972,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.7156,
+      "tp": 9,
+      "fp": 35,
+      "fn": 7,
+      "precision": 0.204545,
+      "recall": 0.5625,
+      "f1": 0.3,
+      "onset_mae_sec": 0.017148,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 15.0355,
+      "tp": 7,
+      "fp": 72,
+      "fn": 9,
+      "precision": 0.088608,
+      "recall": 0.4375,
+      "f1": 0.147368,
+      "onset_mae_sec": 0.027028,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 1.7524,
+      "tp": 10,
+      "fp": 23,
+      "fn": 35,
+      "precision": 0.30303,
+      "recall": 0.222222,
+      "f1": 0.25641,
+      "onset_mae_sec": 0.016078,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 2.826,
+      "tp": 15,
+      "fp": 11,
+      "fn": 30,
+      "precision": 0.576923,
+      "recall": 0.333333,
+      "f1": 0.422535,
+      "onset_mae_sec": 0.020876,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 12.0849,
+      "tp": 18,
+      "fp": 68,
+      "fn": 27,
+      "precision": 0.209302,
+      "recall": 0.4,
+      "f1": 0.274809,
+      "onset_mae_sec": 0.013454,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 1.7363,
+      "tp": 19,
+      "fp": 57,
+      "fn": 23,
+      "precision": 0.25,
+      "recall": 0.452381,
+      "f1": 0.322034,
+      "onset_mae_sec": 0.006337,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 2.8981,
+      "tp": 3,
+      "fp": 45,
+      "fn": 39,
+      "precision": 0.0625,
+      "recall": 0.071429,
+      "f1": 0.066667,
+      "onset_mae_sec": 0.011165,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 11.3454,
+      "tp": 18,
+      "fp": 77,
+      "fn": 24,
+      "precision": 0.189474,
+      "recall": 0.428571,
+      "f1": 0.262774,
+      "onset_mae_sec": 0.026946,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 1.7527,
+      "tp": 3,
+      "fp": 51,
+      "fn": 48,
+      "precision": 0.055556,
+      "recall": 0.058824,
+      "f1": 0.057143,
+      "onset_mae_sec": 0.014141,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.5467,
+      "tp": 0,
+      "fp": 12,
+      "fn": 51,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 12.3748,
+      "tp": 3,
+      "fp": 95,
+      "fn": 48,
+      "precision": 0.030612,
+      "recall": 0.058824,
+      "f1": 0.040268,
+      "onset_mae_sec": 0.023831,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 1.8424,
+      "tp": 22,
+      "fp": 35,
+      "fn": 17,
+      "precision": 0.385965,
+      "recall": 0.564103,
+      "f1": 0.458333,
+      "onset_mae_sec": 0.006633,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 2.9894,
+      "tp": 23,
+      "fp": 22,
+      "fn": 16,
+      "precision": 0.511111,
+      "recall": 0.589744,
+      "f1": 0.547619,
+      "onset_mae_sec": 0.01682,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 12.3837,
+      "tp": 17,
+      "fp": 37,
+      "fn": 22,
+      "precision": 0.314815,
+      "recall": 0.435897,
+      "f1": 0.365591,
+      "onset_mae_sec": 0.026078,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.4064,
+      "tp": 1,
+      "fp": 14,
+      "fn": 110,
+      "precision": 0.066667,
+      "recall": 0.009009,
+      "f1": 0.015873,
+      "onset_mae_sec": 0.030795,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.769,
+      "tp": 2,
+      "fp": 7,
+      "fn": 109,
+      "precision": 0.222222,
+      "recall": 0.018018,
+      "f1": 0.033333,
+      "onset_mae_sec": 0.034843,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 16.7594,
+      "tp": 12,
+      "fp": 83,
+      "fn": 99,
+      "precision": 0.126316,
+      "recall": 0.108108,
+      "f1": 0.116505,
+      "onset_mae_sec": 0.017499,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.156,
+      "tp": 12,
+      "fp": 43,
+      "fn": 7,
+      "precision": 0.218182,
+      "recall": 0.631579,
+      "f1": 0.324324,
+      "onset_mae_sec": 0.012241,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.7578,
+      "tp": 6,
+      "fp": 24,
+      "fn": 13,
+      "precision": 0.2,
+      "recall": 0.315789,
+      "f1": 0.244898,
+      "onset_mae_sec": 0.016539,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 14.3246,
+      "tp": 9,
+      "fp": 39,
+      "fn": 10,
+      "precision": 0.1875,
+      "recall": 0.473684,
+      "f1": 0.268657,
+      "onset_mae_sec": 0.016941,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.6436,
+      "tp": 1,
+      "fp": 62,
+      "fn": 128,
+      "precision": 0.015873,
+      "recall": 0.007752,
+      "f1": 0.010417,
+      "onset_mae_sec": 0.030693,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 4.4965,
+      "tp": 0,
+      "fp": 16,
+      "fn": 129,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 15.9346,
+      "tp": 8,
+      "fp": 132,
+      "fn": 121,
+      "precision": 0.057143,
+      "recall": 0.062016,
+      "f1": 0.05948,
+      "onset_mae_sec": 0.017658,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.4071,
+      "tp": 26,
+      "fp": 80,
+      "fn": 16,
+      "precision": 0.245283,
+      "recall": 0.619048,
+      "f1": 0.351351,
+      "onset_mae_sec": 0.008342,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 4.1426,
+      "tp": 17,
+      "fp": 66,
+      "fn": 25,
+      "precision": 0.204819,
+      "recall": 0.404762,
+      "f1": 0.272,
+      "onset_mae_sec": 0.017906,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 16.6774,
+      "tp": 20,
+      "fp": 67,
+      "fn": 22,
+      "precision": 0.229885,
+      "recall": 0.47619,
+      "f1": 0.310078,
+      "onset_mae_sec": 0.030098,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.2474,
+      "tp": 0,
+      "fp": 29,
+      "fn": 148,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.9326,
+      "tp": 1,
+      "fp": 2,
+      "fn": 147,
+      "precision": 0.333333,
+      "recall": 0.006757,
+      "f1": 0.013245,
+      "onset_mae_sec": 0.023059,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 14.1507,
+      "tp": 15,
+      "fp": 108,
+      "fn": 133,
+      "precision": 0.121951,
+      "recall": 0.101351,
+      "f1": 0.110701,
+      "onset_mae_sec": 0.02296,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_solo:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.2447,
+      "tp": 15,
+      "fp": 26,
+      "fn": 6,
+      "precision": 0.365854,
+      "recall": 0.714286,
+      "f1": 0.483871,
+      "onset_mae_sec": 0.011217,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_solo:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 3.8674,
+      "tp": 11,
+      "fp": 44,
+      "fn": 10,
+      "precision": 0.2,
+      "recall": 0.52381,
+      "f1": 0.289474,
+      "onset_mae_sec": 0.018771,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_solo:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 15.7663,
+      "tp": 10,
+      "fp": 50,
+      "fn": 11,
+      "precision": 0.166667,
+      "recall": 0.47619,
+      "f1": 0.246914,
+      "onset_mae_sec": 0.0276,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk3-112-C#_comp:hex_debleeded",
+      "algorithm_id": "melodic_torchcrepe",
+      "runtime_sec": 2.8377,
+      "tp": 6,
+      "fp": 54,
+      "fn": 155,
+      "precision": 0.1,
+      "recall": 0.037267,
+      "f1": 0.054299,
+      "onset_mae_sec": 0.02605,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk3",
+        "bpm": "112",
+        "key": "C#",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk3-112-C#_comp:hex_debleeded",
+      "algorithm_id": "melodic_pyin_bass_strict",
+      "runtime_sec": 4.0858,
+      "tp": 0,
+      "fp": 15,
+      "fn": 161,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk3",
+        "bpm": "112",
+        "key": "C#",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk3-112-C#_comp:hex_debleeded",
+      "algorithm_id": "melodic_combined",
+      "runtime_sec": 15.2427,
+      "tp": 18,
+      "fp": 99,
+      "fn": 143,
+      "precision": 0.153846,
+      "recall": 0.111801,
+      "f1": 0.129496,
+      "onset_mae_sec": 0.013447,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk3",
+        "bpm": "112",
+        "key": "C#",
+        "style": "comp",
+        "variant": "hex_debleeded",
+        "string_filter": "0,1"
+      }
+    }
+  ]
+}

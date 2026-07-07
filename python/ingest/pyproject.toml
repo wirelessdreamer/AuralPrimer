@@ -4,11 +4,19 @@ version = "0.0.0"
 requires-python = ">=3.11"
 dependencies = [
   "basic-pitch>=0.4.0",
+  "beat-this>=1.1.0",
   "beartype>=0.22.9",
   "demucs==4.0.1",
   "librosa>=0.11.0",
   "mt3-infer[torch]==0.1.3",
   "numpy>=2.0.0",
+  # ONNX drum-CRNN engine (opt-in): onnxruntime runs inference in-process,
+  # onnx is needed by the torch.onnx export path. onnx is pinned to 1.18.0 --
+  # onnx>=1.19 requires ml-dtypes>=0.5, which conflicts with tensorflow-intel
+  # 2.14 (a basic-pitch dep) hard-pinning ml-dtypes==0.2.0; 1.18.0 is the newest
+  # onnx that imports cleanly against ml-dtypes 0.2.0.
+  "onnx==1.18.0",
+  "onnxruntime>=1.20",
   "pytorch-lightning==2.6.1",
   "scikit-learn>=1.8.0",
   "scipy>=1.17.0",

@@ -1,5 +1,5 @@
-"""Driver to import every Piano Psalm folder using the new piano cleanup
-pipeline (piano_chord_supplement / piano_pti_clean_dedup_pyin family).
+"""Driver to import every Piano Psalm folder using the production piano
+meta-router (piano_auto).
 
 Each Piano Psalm folder has Suno-exported stems named like:
   "<Title> - Piano (<Role>).wav"
@@ -11,10 +11,11 @@ with corresponding .mid files (weak Suno reference). This script:
   3. Builds a config JSON with input_stem_paths so aural_ingest's
      import-dir flow uses the existing stems directly instead of
      running Demucs.
-  4. Invokes aural_ingest import-dir with --melodic-method=
-     piano_chord_supplement (production = piano_pti_clean +
-     same-pitch echo dedup + low-pitch pyin supplement +
-     analytical chord-onset fallback when PTI returns empty).
+  4. Invokes aural_ingest import-dir with --melodic-method=piano_auto
+     (the same score-gated meta-router the app uses for gameplay_default
+     keys: Basic Pitch first, then the learned models, with the Kong PTI
+     producers inert by default because they are numerically broken under
+     torch 2.x -- see transcription.piano_pti_enabled).
 
 Output: one SongPack per Psalm folder under the configured songs
 directory (default: portable's data/songs/).
@@ -60,7 +61,18 @@ SUNO_ROLE_PRIORITY: dict[str, list[str]] = {
     "other": ["Synth", "FX"],
 }
 
-DEFAULT_MELODIC_METHOD = "piano_chord_supplement"
+# Was "piano_chord_supplement", whose gate ("run the analytical FFT-peak
+# chord detector only when base PTI returns nothing") now MISFIRES: the Kong
+# PTI backend is numerically broken under the sidecar's torch 2.x and returns
+# [] on every real stem, so the FFT fallback the doc says "should essentially
+# never trigger" fires on every import. Use "piano_auto" instead -- the same
+# production meta-router the app uses for gameplay_default keys. It is
+# score-gated over Basic Pitch (bundled, sound) with the PTI producers now
+# inert-by-default (see transcription.piano_pti_enabled), so it neither depends
+# on PTI being alive nor triggers the chord-supplement misfire. If PTI is ever
+# fixed on a torch-1.x pin, setting AURAL_ENABLE_PIANO_PTI=1 restores it to the
+# meta-router automatically -- no change to this script needed.
+DEFAULT_MELODIC_METHOD = "piano_auto"
 
 
 def parse_role_from_stem_name(stem_name: str) -> tuple[str, str | None]:

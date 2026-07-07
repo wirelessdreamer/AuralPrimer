@@ -1,4 +1,5 @@
 import type { TransportState } from "@auralprimer/viz-sdk";
+import { audiblePlayheadSec } from "@auralprimer/av-sync";
 import type { TransportTimebase } from "./audioBackend";
 import { clampLoop, clampToLoop } from "./audioBackend";
 
@@ -55,6 +56,25 @@ export class TransportController {
 
   getState(): TransportState {
     return this.state;
+  }
+
+  /**
+   * Apply the song's initial tempo + time signature (read from song_timeline
+   * at load). These drive the metronome click grid and the visualizer bar
+   * lines, replacing the hardcoded 120 bpm / 4-4 default so 6/8 (etc.) songs
+   * and real tempos are respected. Anything missing/invalid keeps the current
+   * value; external MIDI clock still overrides bpm at tick time when enabled.
+   */
+  setSongMeter(bpm: number, timeSignature: [number, number]): void {
+    const nextBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : this.state.bpm;
+    const ts: [number, number] =
+      Array.isArray(timeSignature) &&
+      timeSignature.length >= 2 &&
+      Number.isFinite(timeSignature[0]) && timeSignature[0] >= 1 &&
+      Number.isFinite(timeSignature[1]) && timeSignature[1] >= 1
+        ? [Math.round(timeSignature[0]), Math.round(timeSignature[1])]
+        : this.state.timeSignature;
+    this.state = { ...this.state, bpm: nextBpm, timeSignature: ts };
   }
 
   /**
@@ -253,7 +273,14 @@ export class TransportController {
       const outputLatencySec = isPlaying ? Math.max(0, this.timebase.getOutputLatencySec?.() ?? 0) : 0;
       // Subtract the backend's auto latency estimate AND the user's manual
       // calibration offset so `t` tracks what is actually audible right now.
-      const audibleT = Math.max(0, audioT - outputLatencySec * playbackRate - this.avOffsetSec);
+      // Shared formula (also used by the Studio refine playhead) so the two
+      // apps can never drift apart.
+      const audibleT = audiblePlayheadSec({
+        nativePosSec: audioT,
+        outputLatencySec,
+        playbackRate,
+        avOffsetSec: this.avOffsetSec,
+      });
 
       let t = clampToLoop(audibleT, this.state.loop);
 

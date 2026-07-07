@@ -15,9 +15,13 @@ import {
   melodicStemRoles,
   detectMelodicStems,
   classifySpectroResult,
+  classifyCandidateResult,
   parseSidecarStatusLine,
+  needsArrangementPrep,
+  arrangementCount,
   _resetReadinessCachesForTest,
   type SidecarRunResult,
+  type AuralSongDetails,
 } from "../src/cleanupReadiness";
 
 beforeEach(() => {
@@ -49,6 +53,57 @@ describe("featureDir", () => {
     expect(featureDir("/songs/x.feedpak")).toBe("aural");
     expect(featureDir("/songs/x.auralsong")).toBe("features");
   });
+  it("maps .sloppak -> aural/ (a manifest pack, C2)", () => {
+    expect(featureDir("/songs/x.sloppak")).toBe("aural");
+    expect(featureDir("/data/songs/minimal.sloppak")).toBe("aural");
+  });
+});
+
+describe("arrangementCount", () => {
+  it("prefers an explicit numeric arrangement_count field", () => {
+    expect(arrangementCount({ arrangement_count: 3 })).toBe(3);
+  });
+  it("falls back to a top-level arrangements array length", () => {
+    expect(arrangementCount({ arrangements: [{ id: "lead" }, { id: "bass" }] })).toBe(2);
+  });
+  it("falls back to the raw manifest arrangements", () => {
+    expect(arrangementCount({ manifest_raw: { arrangements: [{ id: "lead" }] } })).toBe(1);
+  });
+  it("is 0 when nothing is discoverable", () => {
+    expect(arrangementCount({})).toBe(0);
+    expect(arrangementCount(null)).toBe(0);
+    expect(arrangementCount(undefined)).toBe(0);
+  });
+});
+
+describe("needsArrangementPrep", () => {
+  // Mirrors the minimal.sloppak fixture: manifest has 2 arrangements (lead, bass).
+  const sloppakDetails: AuralSongDetails = {
+    manifest_raw: { arrangements: [{ id: "lead" }, { id: "bass" }] },
+  };
+
+  it("is true for a sloppak with arrangements and no derived notes.mid", () => {
+    expect(needsArrangementPrep("/songs/minimal.sloppak", sloppakDetails)).toBe(true);
+  });
+  it("is false once notes.mid exists", () => {
+    expect(
+      needsArrangementPrep("/songs/minimal.sloppak", { ...sloppakDetails, has_notes_mid: true }),
+    ).toBe(false);
+  });
+  it("is true for a feedpak with arrangements and no notes.mid (same rule)", () => {
+    expect(needsArrangementPrep("/songs/x.feedpak", { arrangement_count: 1 })).toBe(true);
+  });
+  it("is false for a legacy .auralsong (not a manifest pack)", () => {
+    expect(needsArrangementPrep("/songs/x.auralsong", sloppakDetails)).toBe(false);
+  });
+  it("is false when the pack declares no arrangements", () => {
+    expect(needsArrangementPrep("/songs/x.sloppak", { arrangement_count: 0 })).toBe(false);
+    expect(needsArrangementPrep("/songs/x.sloppak", {})).toBe(false);
+  });
+  it("degrades to false on missing/undefined details rather than throwing", () => {
+    expect(needsArrangementPrep("/songs/x.sloppak", null)).toBe(false);
+    expect(needsArrangementPrep("/songs/x.sloppak", undefined)).toBe(false);
+  });
 });
 
 describe("classifySpectroResult", () => {
@@ -63,6 +118,45 @@ describe("classifySpectroResult", () => {
   });
   it("error when ok:false but some roles actually built", () => {
     expect(classifySpectroResult(res({ ok: false, stdout: '{"roles":{"keys":{"ok":true}}}' }))).toBe("error");
+  });
+});
+
+describe("classifyCandidateResult", () => {
+  it("counts every requested instrument as built when all succeed", () => {
+    const r = res({ ok: true, stdout: '{"instruments":{"bass":{"ok":true},"guitar":{"ok":true}},"ok":true}' });
+    expect(classifyCandidateResult(r, ["bass", "guitar"])).toEqual({
+      built: ["bass", "guitar"],
+      skipped: [],
+      failed: [],
+    });
+  });
+
+  it("treats a silent stem ('no audible content') as a skip, not a failure", () => {
+    // The band-song case: keys stem is silent, bass built fine. Top-level ok
+    // is false, but that must NOT count keys as a failure.
+    const r = res({
+      ok: false,
+      stdout:
+        '{"instruments":{"keys":{"ok":false,"error":"no audible content for instrument=\'keys\' after the silence gate; skipping candidates for this stem"},"bass":{"ok":true}},"ok":false}',
+    });
+    expect(classifyCandidateResult(r, ["keys", "bass"])).toEqual({
+      built: ["bass"],
+      skipped: ["keys"],
+      failed: [],
+    });
+  });
+
+  it("counts a real per-instrument error as failed", () => {
+    const r = res({ ok: false, stdout: '{"instruments":{"keys":{"ok":false,"error":"model crashed"}},"ok":false}' });
+    expect(classifyCandidateResult(r, ["keys"])).toEqual({ built: [], skipped: [], failed: ["keys"] });
+  });
+
+  it("falls back to built on top-level ok with no per-instrument detail", () => {
+    expect(classifyCandidateResult(res({ ok: true, stdout: "{}" }), ["keys"])).toEqual({
+      built: ["keys"],
+      skipped: [],
+      failed: [],
+    });
   });
 });
 
@@ -89,6 +183,21 @@ describe("getRoleReadiness", () => {
     expect(r.candidates).toBe(false);
     expect(seen).toContain("aural/spectrogram/keys/spectrogram.json");
     expect(seen).toContain("aural/refine_candidates.keys.json");
+  });
+
+  it("for drums, the drum_tab.json plays the 'candidates' role (no refine_candidates file)", async () => {
+    const seen: string[] = [];
+    invokeMock.mockImplementation((_cmd: string, args: { relPath?: string }) => {
+      const rel = args.relPath ?? "";
+      seen.push(rel);
+      return rel === "drum_tab.json" || rel.includes("spectrogram/drums/")
+        ? Promise.resolve({})
+        : Promise.reject(new Error("nf"));
+    });
+    const r = await getRoleReadiness("/x.feedpak", "drums");
+    expect(r).toEqual({ spectrogram: true, candidates: true });
+    expect(seen).toContain("drum_tab.json");
+    expect(seen).not.toContain("aural/refine_candidates.drums.json");
   });
 
   it("caches results, re-probing only when forced", async () => {
@@ -138,5 +247,28 @@ describe("detectMelodicStems", () => {
     const { roles, primary } = await detectMelodicStems("/x.feedpak");
     expect(roles).toEqual(["keys"]);
     expect(primary).toBe("keys");
+  });
+
+  it("REGRESSION: a drums-only pack opens without any melodic stem (no bogus 'keys')", async () => {
+    mockBackend({
+      exists: (rel) => rel === "drum_tab.json" || rel.includes("spectrogram/drums/"),
+      stems: ["drums"],
+    });
+    const { roles, primary, readiness } = await detectMelodicStems("/drumsonly.feedpak");
+    expect(roles).toEqual(["drums"]);
+    expect(primary).toBe("drums");
+    expect(readiness.get("drums")).toEqual({ spectrogram: true, candidates: true });
+  });
+
+  it("offers drums alongside melodic instruments when the pack has both", async () => {
+    mockBackend({
+      exists: (rel) =>
+        rel.includes("/keys/") || rel.includes(".keys.") || rel === "drum_tab.json" || rel.includes("spectrogram/drums/"),
+      stems: ["keys", "drums"],
+    });
+    const { roles, primary } = await detectMelodicStems("/both.feedpak");
+    expect(roles).toContain("keys");
+    expect(roles).toContain("drums");
+    expect(primary).toBe("keys"); // melodic stays the default; drums is a switch in the editor
   });
 });

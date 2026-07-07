@@ -18,6 +18,7 @@ import {
   type MelodicTrackSelection,
 } from "./chartLoader";
 import { loadRefinementsForRoles } from "./refinementLoader";
+import { loadDrumChartFromTab } from "./drumTabChart";
 import type { ConsoleBridge, ConsoleLogCategory } from "./consoleBridge";
 
 type MidiBlob = { bytes: number[] };
@@ -39,17 +40,42 @@ export type ReadSongChartSelectionArgs = {
 };
 
 /**
+ * Drums-only path: no melodic notes.mid, so chart drums from the pack-root
+ * drum_tab.json alone (a drums-only sloppak). Returns an empty melodic list
+ * plus whatever drum_tab.json yields (null when absent/empty/invalid). Never
+ * throws — loadDrumChartFromTab is fully defensive.
+ */
+async function drumsOnlySelection(
+  containerPath: string,
+  consoleBridge: ConsoleBridge,
+): Promise<SongChartSelection> {
+  const tabDrumSelection = await loadDrumChartFromTab(containerPath);
+  if (tabDrumSelection) {
+    consoleBridge.log(
+      "play",
+      `no notes.mid; charting drums from drum_tab.json (${tabDrumSelection.events.length} hit(s))`,
+    );
+  }
+  return { drumSelection: tabDrumSelection, melodicTracks: [] };
+}
+
+/**
  * Reads aural/notes.mid from a feedpak, extracts drum + melodic
  * tracks, and applies refinement overlays if present.
  *
- *  - No notes.mid → returns `{ drumSelection: null, melodicTracks: [] }`.
- *  - Parse failure or empty blob → same, plus a warn-level log.
+ *  - No notes.mid / empty blob → drums-only fallback: still tries the pack-root
+ *    drum_tab.json (a drums-only sloppak has no melodic arrangements, so prep
+ *    writes no notes.mid) and returns that drumSelection with no melodic tracks.
+ *  - Unexpected read/parse failure → `{ drumSelection: null, melodicTracks: [] }`
+ *    plus a warn log (unchanged).
  *  - Refinement overlay missing/invalid → logged, base tracks rendered.
  */
 export async function readSongChartSelection(args: ReadSongChartSelectionArgs): Promise<SongChartSelection> {
   const { containerPath, details, consoleBridge } = args;
   if (!details.has_notes_mid) {
-    return { drumSelection: null, melodicTracks: [] };
+    // No melodic MIDI (e.g. a drums-only sloppak). Chart drums straight from
+    // the root drum_tab.json rather than returning empty.
+    return await drumsOnlySelection(containerPath, consoleBridge);
   }
 
   try {
@@ -58,15 +84,16 @@ export async function readSongChartSelection(args: ReadSongChartSelectionArgs): 
       relPath: "aural/notes.mid",
     });
     if (!midi.bytes.length) {
-      return { drumSelection: null, melodicTracks: [] };
+      return await drumsOnlySelection(containerPath, consoleBridge);
     }
     const midiBytes = new Uint8Array(midi.bytes);
 
     // Extract melodic instrument tracks alongside drums.
     const baseMelodicTracks = selectMelodicTracksFromMidiBytes(midiBytes);
-    // Apply per-instrument refinement overlays from aural/refine_candidates.<role>.json
-    // if present. Best-effort: missing or invalid refinement files are
-    // logged and skipped; the base notes.mid track is rendered unchanged.
+    // Apply per-instrument refinement overlays from aural/refinement.<role>.json
+    // (the file the Studio writes user picks to) if present. Best-effort:
+    // missing or invalid refinement files are logged and skipped; the base
+    // notes.mid track is rendered unchanged.
     const refinements = await loadRefinementsForRoles(
       containerPath,
       baseMelodicTracks.map((t) => t.role),
@@ -82,8 +109,22 @@ export async function readSongChartSelection(args: ReadSongChartSelectionArgs): 
       );
     }
 
+    // Prefer the pack-root drum_tab.json when present: it carries the Studio
+    // drum-cleanup edits AND the import-time onset-aligned hit times, neither
+    // of which are written back into notes.mid. Fall back to the notes.mid
+    // drum selection when drum_tab.json is absent / empty / invalid.
+    const midiDrumSelection = selectDrumChartFromMidiBytes(midiBytes);
+    const tabDrumSelection = await loadDrumChartFromTab(containerPath);
+    const drumSelection = tabDrumSelection ?? midiDrumSelection;
+    if (tabDrumSelection) {
+      consoleBridge.log(
+        "play",
+        `charting drums from drum_tab.json (${tabDrumSelection.events.length} hit(s))`,
+      );
+    }
+
     return {
-      drumSelection: selectDrumChartFromMidiBytes(midiBytes),
+      drumSelection,
       melodicTracks,
     };
   } catch (e) {

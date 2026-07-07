@@ -25,6 +25,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { featureDir as packFeatureDir } from "@auralprimer/auralsong/packKind";
 import {
   SpectrogramEditor,
   type SpectrogramGeometry,
@@ -57,9 +58,40 @@ type DragState = {
   origD: number;
 };
 
-/** feedpak relocates feature artifacts under aural/ (legacy: features/). */
+/** feedpak/sloppak relocate feature artifacts under aural/ (legacy: features/). */
 function featureDir(containerPath: string): "aural" | "features" {
-  return containerPath.endsWith(".feedpak") ? "aural" : "features";
+  return packFeatureDir(containerPath);
+}
+
+/**
+ * Ordered lyrics read-path candidates for a pack (Phase 7). A sloppak keeps
+ * its lyrics at pack ROOT (`lyrics.json`) via the manifest `lyrics` pointer,
+ * whereas AuralPrimer's own edited lyrics live under the feature dir. We try
+ * the manifest pointer FIRST (feature-detected from `get_auralsong_details`,
+ * consumed defensively), then fall back to `<featureDir>/lyrics.json`.
+ */
+async function resolveLyricsReadPaths(containerPath: string): Promise<string[]> {
+  const fallback = `${featureDir(containerPath)}/lyrics.json`;
+  const paths: string[] = [];
+  try {
+    const details = await invoke<{
+      lyrics_rel?: unknown;
+      lyrics_rel_path?: unknown;
+      lyrics_path?: unknown;
+      manifest_raw?: { lyrics?: unknown } | null;
+    }>("get_auralsong_details", { containerPath });
+    const pointer =
+      (typeof details?.lyrics_rel === "string" && details.lyrics_rel) ||
+      (typeof details?.lyrics_rel_path === "string" && details.lyrics_rel_path) ||
+      (typeof details?.lyrics_path === "string" && details.lyrics_path) ||
+      (typeof details?.manifest_raw?.lyrics === "string" && details.manifest_raw.lyrics) ||
+      "";
+    if (pointer) paths.push(pointer);
+  } catch {
+    // details unavailable — fall through to the feature-dir default
+  }
+  if (!paths.includes(fallback)) paths.push(fallback);
+  return paths;
 }
 
 function roundTime(v: number): number {
@@ -783,28 +815,34 @@ export function initLyricTimingWorkspace(deps: LyricTimingDeps): LyricTimingHand
 
   async function loadLyrics(): Promise<boolean> {
     if (!containerPath) return false;
-    const fd = featureDir(containerPath);
-    try {
-      const raw = await invoke("read_auralsong_json", {
-        containerPath,
-        relPath: `${fd}/lyrics.json`,
-      });
-      clips = normalizeLyrics(raw);
-      return clips.length > 0;
-    } catch {
-      clips = [];
-      return false;
+    const relPaths = await resolveLyricsReadPaths(containerPath);
+    for (const relPath of relPaths) {
+      try {
+        const raw = await invoke("read_auralsong_json", { containerPath, relPath });
+        clips = normalizeLyrics(raw);
+        return clips.length > 0;
+      } catch {
+        // try the next candidate path
+      }
     }
+    clips = [];
+    return false;
   }
 
   async function save(): Promise<void> {
     if (!containerPath) return;
-    const fd = featureDir(containerPath);
+    // Write to the SAME path loadLyrics resolves first, so reads and writes stay
+    // symmetric. resolveLyricsReadPaths returns [manifest lyrics pointer, then
+    // <featureDir>/lyrics.json]; for a sloppak the pointer is the pack-root
+    // lyrics.json the game + Studio reload actually read — writing to the
+    // feature dir instead would leave edits shadowed by the original root file.
+    const relPaths = await resolveLyricsReadPaths(containerPath);
+    const writeRel = relPaths[0] ?? `${featureDir(containerPath)}/lyrics.json`;
     const payload = toLyricsJson(clips);
     try {
       await invoke("write_auralsong_features_json", {
         containerPath,
-        relPath: `${fd}/lyrics.json`,
+        relPath: writeRel,
         value: payload,
       });
       setDirty(false);

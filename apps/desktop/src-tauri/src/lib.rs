@@ -34,6 +34,7 @@ pub mod wav_mix;
 // Shared AuralSong contract logic (manifest parsing + songs-folder watcher).
 // The watcher is re-exported under the `songs_watch` path so the wiring mirrors
 // the game shell.
+use auralsong_core::container;
 use auralsong_core::feedpak::{
     read_dir_feedpak_manifest, read_zip_feedpak_manifest, scan_feedpak, FeedpakManifest,
 };
@@ -115,6 +116,20 @@ pub struct AuralSongDetails {
 
     /// List of chart json paths (relative in zip/dir).
     pub charts: Vec<String>,
+
+    /// Number of `arrangements[]` entries in the manifest (manifest packs
+    /// only; 0 for legacy `.auralsong`). The frontend gates "needs arrangement
+    /// prep" on `arrangements_count > 0 && !has_notes_mid`.
+    #[serde(default)]
+    pub arrangements_count: usize,
+
+    /// Manifest `lyrics` rel-path, if the pack declares one. Sloppak lyrics
+    /// live at the pack ROOT (`lyrics.json`) rather than under a feature dir,
+    /// so the frontend must resolve them from this pointer rather than
+    /// assuming `${featureDir}/lyrics.json`. `None` when the manifest has no
+    /// `lyrics` key (or for legacy `.auralsong`).
+    #[serde(default)]
+    pub lyrics_rel: Option<String>,
 
     pub error: Option<String>,
 }
@@ -411,19 +426,22 @@ fn read_zip_text(auralsong_zip: &Path, rel: &str) -> Result<String, String> {
 // passes the new in-container paths (`aural/...`) for feedpak containers.
 // -----------------
 
-/// True when the container path is a feedpak (directory or zip).
+/// True when the container path is a manifest-driven pack (feedpak OR sloppak,
+/// directory or zip). Both use `manifest.yaml` and stash AuralPrimer artifacts
+/// under `aural/`, so they share every read/write path. Delegates to
+/// [`auralsong_core::container`] — the one place the extension strings live.
 fn is_feedpak_path(container_path: &str) -> bool {
-    container_path.ends_with(".feedpak")
+    container::is_manifest_pack(container_path)
 }
 
 /// True when the container path is a legacy `.auralsong`.
 fn is_auralsong_path(container_path: &str) -> bool {
-    container_path.ends_with(".auralsong")
+    container::is_auralsong(container_path)
 }
 
-/// Accept either native container suffix.
+/// Accept any supported native container suffix (manifest pack OR `.auralsong`).
 fn is_supported_container(container_path: &str) -> bool {
-    is_feedpak_path(container_path) || is_auralsong_path(container_path)
+    container::is_supported_pack(container_path)
 }
 
 /// Whether a frontend-supplied `rel_path` is an allowed feature/asset path.
@@ -439,6 +457,18 @@ fn is_allowed_feature_rel(rel_path: &str) -> bool {
     rel_path.starts_with("features/")
         || rel_path.starts_with("aural/")
         || rel_path.starts_with("arrangements/")
+        // The drum chart is a root-level, manifest-referenced artifact
+        // (`drum_tab: drum_tab.json`); the Studio drum-cleanup editor writes
+        // edited hits back to it so the game picks them up directly.
+        || rel_path == "drum_tab.json"
+        // The beat/measure timeline is a root-level, manifest-referenced
+        // artifact (`song_timeline.json`); the Cleanup/Edit editor reads it to
+        // build the beat grid (bars/beats/subdivisions) and quantized placement.
+        || rel_path == "song_timeline.json"
+        // Sloppak lyrics + vocal pitch live at the pack ROOT (manifest
+        // `lyrics: lyrics.json`), not under a feature dir — allow reading them.
+        || rel_path == "lyrics.json"
+        || rel_path == "vocal_pitch.json"
 }
 
 /// Read+parse a feedpak `manifest.yaml` from a directory or zip container.
@@ -1269,6 +1299,39 @@ async fn ingest_spectrogram(
 }
 
 #[tauri::command]
+async fn ingest_align_drum_onsets(
+    app: AppHandle,
+    req: ingest_sidecar::AlignDrumOnsetsRequest,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("align drum onsets", move || {
+        ingest_sidecar::run_ingest_align_drum_onsets(req, Some(&app))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn ingest_refresh_meter(
+    app: AppHandle,
+    req: ingest_sidecar::AlignDrumOnsetsRequest,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("refresh meter", move || {
+        ingest_sidecar::run_ingest_refresh_meter(req, Some(&app))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn ingest_prep_arrangements(
+    app: AppHandle,
+    req: ingest_sidecar::AlignDrumOnsetsRequest,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("prep arrangements", move || {
+        ingest_sidecar::run_ingest_prep_arrangements(req, Some(&app))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn inspect_raw_song_folder(
     folder_path: String,
 ) -> Result<raw_song::RawSongFolderInspection, String> {
@@ -1332,10 +1395,10 @@ fn scan_auralsongs(app: AppHandle) -> Result<Vec<AuralSongScanEntry>, String> {
         let path_str = p.to_string_lossy().to_string();
         let kind = if p.is_dir() { "directory" } else { "zip" };
 
-        // feedpak is the active native format; scan it via the feedpak reader
-        // and map its summary onto the shared ManifestSummary shape the library
-        // panel renders.
-        if file_name.ends_with(".feedpak") {
+        // feedpak / sloppak are the active manifest-driven formats; scan them
+        // via the feedpak reader and map the summary onto the shared
+        // ManifestSummary shape the library panel renders.
+        if is_feedpak_path(file_name) {
             match scan_feedpak(&p) {
                 Ok(summary) => out.push(AuralSongScanEntry {
                     container_path: path_str,
@@ -1355,7 +1418,7 @@ fn scan_auralsongs(app: AppHandle) -> Result<Vec<AuralSongScanEntry>, String> {
             continue;
         }
 
-        if !file_name.ends_with(".auralsong") {
+        if !is_auralsong_path(file_name) {
             continue;
         }
 
@@ -1405,7 +1468,7 @@ fn read_auralsong_audio(container_path: String) -> Result<AudioBlob, String> {
     let p = PathBuf::from(&container_path);
 
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
 
     // feedpak: read the default stem named in manifest.yaml.
@@ -1464,7 +1527,7 @@ fn native_audio_load_auralsong_audio(
     let p = PathBuf::from(&container_path);
 
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
 
     // Resolve the playable audio: feedpak default stem, else legacy mix.*.
@@ -1521,6 +1584,107 @@ fn native_audio_load_auralsong_audio(
     })
 }
 
+/// Base stems the refine "All" playback sums (mirrors the game's mixer set).
+const MIXER_BASE_STEMS: &[&str] = &["bass", "drums", "vocals", "guitar", "keys", "other"];
+
+fn audio_mime_for_path(rel: &str) -> &'static str {
+    let lower = rel.to_ascii_lowercase();
+    if lower.ends_with(".ogg") {
+        "audio/ogg"
+    } else if lower.ends_with(".mp3") {
+        "audio/mpeg"
+    } else if lower.ends_with(".flac") {
+        "audio/flac"
+    } else {
+        "audio/wav"
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct LoadedPackAudioInfo {
+    pub mime: String,
+    pub duration_sec: f64,
+    pub roles: Vec<String>,
+}
+
+/// Load a feedpak's audio into the native engine for the refine workspace, so
+/// Studio auditioning runs through the SAME engine as the game — which is what
+/// makes the shared A/V calibration valid. `role`:
+///   - None / "all" -> the base stems summed at unity gain
+///   - "<role>"      -> that single stem, solo
+/// Stems are read + decoded Rust-side (no multi-MB IPC of the browser path).
+#[tauri::command]
+fn native_audio_load_pack_audio(
+    state: tauri::State<NativeAudioState>,
+    container_path: String,
+    role: Option<String>,
+) -> Result<LoadedPackAudioInfo, String> {
+    let p = PathBuf::from(&container_path);
+    if !is_feedpak_path(&container_path) {
+        return Err(
+            "native_audio_load_pack_audio requires a .feedpak or .sloppak container".to_string(),
+        );
+    }
+    let manifest = read_feedpak_manifest(&p)?;
+    let solo = role
+        .as_deref()
+        .filter(|r| !r.is_empty() && *r != "all")
+        .map(|r| r.to_string());
+
+    let mut roles: Vec<String> = Vec::new();
+    let mut decoded_stems: Vec<(u32, u16, Vec<i16>)> = Vec::new();
+    let mut fmt: Option<(u32, u16)> = None;
+    let mut max_frames: usize = 0;
+    let mut mime_out = "audio/wav";
+    for stem in &manifest.stems {
+        let take = match &solo {
+            Some(r) => stem.id.as_str() == r.as_str(),
+            None => MIXER_BASE_STEMS.contains(&stem.id.as_str()),
+        };
+        if !take {
+            continue;
+        }
+        let mime = audio_mime_for_path(&stem.file);
+        mime_out = mime;
+        let bytes = if p.is_dir() {
+            read_dir_audio(&p, &stem.file)?
+        } else {
+            read_zip_audio(&p, &stem.file)?
+        };
+        let d = audio_decode::decode_to_pcm16(&bytes, mime)?;
+        if d.channels == 0 || d.sample_rate_hz == 0 {
+            continue;
+        }
+        if fmt.is_none() {
+            fmt = Some((d.sample_rate_hz, d.channels));
+        }
+        let frames = d.data.len() / (d.channels as usize).max(1);
+        max_frames = max_frames.max(frames);
+        roles.push(stem.id.clone());
+        decoded_stems.push((d.sample_rate_hz, d.channels, d.data));
+    }
+
+    let Some((sr, channels)) = fmt else {
+        return Err(format!("no decodable stem for role {role:?}"));
+    };
+    let duration_sec = if sr > 0 { max_frames as f64 / sr as f64 } else { 0.0 };
+
+    let target_sr = preferred_native_audio_sample_rate_hz(&state, sr)?;
+    ensure_native_audio_engine_format(&state, target_sr, channels)?;
+    if decoded_stems.len() == 1 {
+        let (s_sr, s_ch, s_data) = decoded_stems.pop().unwrap();
+        with_native_engine(&state, move |e| e.load_pcm16(s_sr, s_ch, s_data))?;
+    } else {
+        with_native_engine(&state, move |e| e.load_stems(decoded_stems))?;
+    }
+
+    Ok(LoadedPackAudioInfo {
+        mime: mime_out.to_string(),
+        duration_sec,
+        roles,
+    })
+}
+
 #[tauri::command]
 fn read_auralsong_json(
     container_path: String,
@@ -1528,7 +1692,7 @@ fn read_auralsong_json(
 ) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
     if !is_allowed_feature_rel(&rel_path) {
         return Err("only features/* or aural/* json is allowed".to_string());
@@ -1549,7 +1713,7 @@ fn read_auralsong_json(
 fn read_auralsong_mid(container_path: String, rel_path: String) -> Result<MidiBlob, String> {
     let p = PathBuf::from(&container_path);
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
     if !is_allowed_feature_rel(&rel_path) {
         return Err("only features/* or aural/* is allowed".to_string());
@@ -1574,7 +1738,7 @@ fn read_auralsong_mid(container_path: String, rel_path: String) -> Result<MidiBl
 fn read_auralsong_bytes(container_path: String, rel_path: String) -> Result<Vec<u8>, String> {
     let p = PathBuf::from(&container_path);
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
     if !is_allowed_feature_rel(&rel_path) {
         return Err("only features/* or aural/* is allowed".to_string());
@@ -1591,7 +1755,7 @@ fn read_auralsong_bytes(container_path: String, rel_path: String) -> Result<Vec<
 fn read_auralsong_charts(container_path: String) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
 
     let chart_paths = if p.is_dir() {
@@ -1622,7 +1786,7 @@ fn write_auralsong_lyrics_json(
 ) -> Result<(), String> {
     let p = PathBuf::from(&container_path);
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
     if !p.is_dir() {
         return Err(
@@ -1669,7 +1833,7 @@ fn write_auralsong_features_json(
 ) -> Result<(), String> {
     let p = PathBuf::from(&container_path);
     if !is_supported_container(&container_path) {
-        return Err("path does not end with .feedpak or .auralsong".to_string());
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
     if !p.is_dir() {
         return Err(
@@ -1721,6 +1885,8 @@ fn feedpak_details(container_path: String, p: &Path) -> AuralSongDetails {
                 has_mix_ogg: false,
                 has_mix_wav: false,
                 charts: vec![],
+                arrangements_count: 0,
+                lyrics_rel: None,
                 error: Some(e),
             };
         }
@@ -1766,6 +1932,8 @@ fn feedpak_details(container_path: String, p: &Path) -> AuralSongDetails {
         // feedpak notation lives under arrangements/, surfaced separately; the
         // legacy charts/ list is empty for feedpak.
         charts: vec![],
+        arrangements_count: manifest.arrangements.len(),
+        lyrics_rel: manifest.lyrics.clone(),
         error: None,
     }
 }
@@ -1791,7 +1959,9 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
             has_mix_ogg: false,
             has_mix_wav: false,
             charts: vec![],
-            error: Some("path does not end with .feedpak or .auralsong".to_string()),
+            arrangements_count: 0,
+            lyrics_rel: None,
+            error: Some("path does not end with .feedpak, .sloppak, or .auralsong".to_string()),
         });
     }
 
@@ -1826,6 +1996,8 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
                     has_mix_ogg: dir_has_file(&p, "audio/mix.ogg"),
                     has_mix_wav: dir_has_file(&p, "audio/mix.wav"),
                     charts: dir_list_charts(&p),
+                    arrangements_count: 0,
+                    lyrics_rel: None,
                     error: Some(e),
                 });
             }
@@ -1856,6 +2028,8 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
             has_mix_ogg: dir_has_file(&p, "audio/mix.ogg"),
             has_mix_wav: dir_has_file(&p, "audio/mix.wav"),
             charts: dir_list_charts(&p),
+            arrangements_count: 0,
+            lyrics_rel: None,
             error: None,
         })
     } else {
@@ -1883,6 +2057,8 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
                     has_mix_ogg: zip_has_file(&p, "audio/mix.ogg").unwrap_or(false),
                     has_mix_wav: zip_has_file(&p, "audio/mix.wav").unwrap_or(false),
                     charts: zip_list_charts(&p).unwrap_or_default(),
+                    arrangements_count: 0,
+                    lyrics_rel: None,
                     error: Some(e),
                 });
             }
@@ -1917,6 +2093,8 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
             has_mix_ogg: zip_has_file(&p, "audio/mix.ogg").unwrap_or(false),
             has_mix_wav: zip_has_file(&p, "audio/mix.wav").unwrap_or(false),
             charts: zip_list_charts(&p).unwrap_or_default(),
+            arrangements_count: 0,
+            lyrics_rel: None,
             error: None,
         })
     }
@@ -2201,6 +2379,7 @@ pub fn run() {
             native_audio_load_wav_bytes,
             native_audio_load_audio_bytes,
             native_audio_load_auralsong_audio,
+            native_audio_load_pack_audio,
             native_audio_play,
             native_audio_pause,
             native_audio_stop,
@@ -2216,6 +2395,9 @@ pub fn run() {
             ingest_runtime_check,
             ingest_refine_candidates,
             ingest_spectrogram,
+            ingest_align_drum_onsets,
+            ingest_refresh_meter,
+            ingest_prep_arrangements,
             inspect_raw_song_folder,
             import_raw_song_folder,
             scan_auralsongs,
@@ -2790,10 +2972,14 @@ mod feedpak_read_tests {
 
     #[test]
     fn container_suffix_guards() {
+        // Manifest packs (feedpak OR sloppak) share the same read/write path.
         assert!(is_feedpak_path("x.feedpak"));
+        assert!(is_feedpak_path("x.sloppak"));
         assert!(!is_feedpak_path("x.auralsong"));
         assert!(is_auralsong_path("x.auralsong"));
+        assert!(!is_auralsong_path("x.sloppak"));
         assert!(is_supported_container("x.feedpak"));
+        assert!(is_supported_container("x.sloppak"));
         assert!(is_supported_container("x.auralsong"));
         assert!(!is_supported_container("x.zip"));
     }
@@ -2806,8 +2992,46 @@ mod feedpak_read_tests {
         assert!(is_allowed_feature_rel("aural/refine_candidates.keys.json"));
         assert!(is_allowed_feature_rel("features/notes.mid"));
         assert!(is_allowed_feature_rel("arrangements/notation_keys.json"));
+        // Sloppak lyrics + vocal pitch live at the pack root.
+        assert!(is_allowed_feature_rel("lyrics.json"));
+        assert!(is_allowed_feature_rel("vocal_pitch.json"));
+        assert!(is_allowed_feature_rel("drum_tab.json"));
+        assert!(is_allowed_feature_rel("song_timeline.json"));
         assert!(!is_allowed_feature_rel("audio/stems/keys.wav"));
         assert!(!is_allowed_feature_rel("aural/../../escape.json"));
+    }
+
+    fn minimal_sloppak_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../packages/sloppak/fixtures/minimal.sloppak")
+    }
+
+    /// The sloppak fixture must read through the SAME feedpak details path and
+    /// expose the C6 readiness fields: arrangements_count (2 arrangements) and
+    /// lyrics_rel (root `lyrics.json`). notes.mid is absent (prep not yet run),
+    /// so `needs arrangement prep` = arrangements_count > 0 && !has_notes_mid.
+    #[test]
+    fn details_for_minimal_sloppak_exposes_readiness_fields() {
+        let dir = minimal_sloppak_dir();
+        assert!(
+            dir.join("manifest.yaml").is_file(),
+            "sloppak fixture missing: {}",
+            dir.display()
+        );
+        let d = feedpak_details(dir.to_string_lossy().to_string(), &dir);
+        assert!(d.ok, "{:?}", d.error);
+        assert_eq!(
+            d.manifest_summary.as_ref().unwrap().title.as_deref(),
+            Some("Minimal Sloppak")
+        );
+        // Two arrangements (lead, bass) and no prep-generated notes.mid yet.
+        assert_eq!(d.arrangements_count, 2);
+        assert!(!d.has_notes_mid, "prep-arrangements has not run on fixture");
+        // Sloppak lyrics live at the pack root, pointed to by the manifest.
+        assert_eq!(d.lyrics_rel.as_deref(), Some("lyrics.json"));
+        assert!(d.has_lyrics);
+        // The gate the frontend uses.
+        assert!(d.arrangements_count > 0 && !d.has_notes_mid);
     }
 
     #[test]

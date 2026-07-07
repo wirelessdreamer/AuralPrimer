@@ -8,20 +8,86 @@ in-house drum-model training investment is justified.
 The Magenta *code* is Apache-2.0, but the *checkpoint's own license is
 unstated* (see [License](#license)); the weights are **not** committed here.
 
-**Bottom line (go/no-go).** It ran. On the same 20 E-GMD test WAVs and the
-same scorer used for the DSP baseline (50 ms tolerance), the pretrained
-Magenta E-GMD checkpoint lifts **exact-class F1 from 0.145 → 0.269** (≈1.85×)
-and **onset-only F1 from 0.377 → 0.485**, driven almost entirely by recall
-(exact-class recall 0.100 → 0.245, ≈2.45×). Recall was the DSP killer and the
-neural model is where the recovery comes from — most of it from the **ride**
-class, which the DSP misses entirely (F1 0.000 on 2 540 ride hits) and the
-neural model recovers (F1 0.318). This is meaningful headroom, but note the
-neural anchor is still a **mediocre absolute score** (F1 0.27 exact) on this
-funk/groove1 slice — see [Caveats](#caveats-and-honest-reading).
+**Bottom line (go/no-go).** It ran. On the **representative stratified 30-case
+sample** (11 style families, 5 drummers, 3 BPM buckets — the sample the DSP
+engines were re-benchmarked on, where they tie at F1 ≈ 0.284), the pretrained
+Magenta E-GMD checkpoint scores **exact-class F1 0.535 vs DSP 0.284**
+(**+0.251, ≈1.88×**) and **onset-only F1 0.776 vs 0.505** (+0.271), winning on
+**both precision and recall** (P 0.58/0.37, R 0.50/0.23). It **recovers the two
+classes every DSP engine drops entirely**: **toms 0.000 → 0.836** and **cymbals
+0.000/0.061 → 0.546**. **This 0.535 exact / 0.776 onset is the real floor our
+in-house CRNN must clear** — see [Stratified 30-case re-score](#stratified-30-case-re-score-authoritative)
+below. (An earlier run on a *biased* funk/groove1-only 20-file slice gave a
+narrower and misleading 0.269 vs 0.145 — kept below for provenance.)
+
+> ⚠️ The original 20-file head-to-head that follows is **superseded** — it was a
+> single-style/single-drummer slice. Use the stratified-30 numbers for any
+> decision. The funk-20 section is retained only to show the sampling bias.
 
 ---
 
-## Head-to-head (same 20 files, same scorer, 50 ms tolerance)
+## Stratified 30-case re-score (AUTHORITATIVE)
+
+The funk-20 slice below is one style / one drummer / one tempo — the DSP scores
+0.145 there partly *because* funk/groove1 is DSP-hostile (ride-heavy). To make
+the neural-vs-DSP comparison meaningful, both sides were re-run on the
+**stratified 30-case sample** (`gt_runs/stratified_sample_test_30.json`:
+deterministic round-robin over 30 distinct (style_family, drummer, bpm_bucket)
+strata — 11 style families, 5 drummers, 3 BPM buckets, ≤45 s clips). All three
+engines are scored by the **identical** `ground_truth_benchmark.score_drum_case`
+path at 50 ms tolerance on the **same 30 case IDs** (verified set-equal to the
+DSP baseline's case list).
+
+### Overall (stratified 30, 50 ms tol)
+
+| Metric            | DSP `adaptive_beat_grid` | DSP `beat_cond_multiband_dec` | **Neural Magenta E-GMD** | Δ (neural − best DSP) |
+|-------------------|:------------------------:|:-----------------------------:|:------------------------:|:---------------------:|
+| **Exact-class F1**| 0.284                    | 0.284                         | **0.535**                | **+0.251 (≈1.88×)**   |
+| Exact-class P     | 0.367                    | 0.392                         | **0.581**                | +0.19                 |
+| Exact-class R     | 0.232                    | 0.222                         | **0.496**                | +0.26 (≈2.1×)         |
+| **Onset-only F1** | —                        | 0.505                         | **0.776**                | **+0.271**            |
+| Onset-only P      | —                        | 0.699                         | **0.843**                | +0.14                 |
+| Onset-only R      | —                        | 0.396                         | **0.719**                | +0.32 (≈1.8×)         |
+| mean runtime/file | ~1.8 s                   | ~6.4 s                        | ~3.8 s (CPU)             |                       |
+
+Unlike the funk slice (where neural traded precision for recall), on the
+stratified sample **neural wins on both axes** — it is simultaneously more
+precise *and* higher-recall than either DSP engine.
+
+### Per-class exact F1 (5-class ADT taxonomy)
+
+| Class    | DSP `adaptive_beat_grid` | DSP `beat_cond_mb_dec` | **Neural** | support |
+|----------|:------------------------:|:----------------------:|:----------:|:-------:|
+| kick     | 0.509                    | 0.400                  | **0.740**  | 751     |
+| snare    | 0.310                    | 0.376                  | **0.624**  | 1083    |
+| hi_hat   | 0.267                    | 0.305                  | **0.524**  | 851     |
+| **toms** | **0.000**                | **0.000**              | **0.836**  | 190     |
+| **cymbals** | **0.061**             | **0.000**              | **0.546**  | 367     |
+
+**Toms and cymbals are recovered** — the headline finding. *Every* DSP engine
+scores 0.000 on toms and ~0.000 on cymbals (they have no reliable way to
+separate a tom from a snare, or a cymbal wash from a hat). The neural model
+handles both cleanly (toms F1 0.836, cymbals 0.546), and is also materially
+better on the three classes the DSP *can* do (kick +0.23, snare +0.25–0.31,
+hi_hat +0.22–0.26). This generalises the funk-slice ride-recovery finding to
+the whole cymbal/tom family across genres.
+
+Machine-readable: `gt_runs/per_engine/egmd_stratified_30_magenta_egmd.json`
+(overall + per-class, same shape as the DSP `per_engine/*.json`) and
+`gt_runs/egmd_stratified_30_magenta_onset_vs_class.json` (exact vs onset-only).
+
+### Revised headroom / floor
+The pretrained E-GMD model clears the DSP tie (0.284) by **+0.25 exact-class
+F1** and recovers two whole drum classes the DSP cannot touch. **The floor an
+in-house drum model must beat is F1 ≈ 0.535 exact-class / 0.776 onset-only** on
+this stratified sample (not the 0.269 the biased funk slice implied). Because
+E-GMD is CC-BY (shippable) but this *checkpoint* is licence-blocked, the
+in-house model should target **materially above 0.535 exact** to be worth
+productionising — this is the number that justifies the training spend.
+
+---
+
+## Head-to-head (SUPERSEDED — biased funk/groove1-only 20-file slice, same scorer, 50 ms tol)
 
 | Metric              | DSP `adaptive_beat_grid` | Neural Magenta E-GMD | Δ (neural − DSP) |
 |---------------------|:------------------------:|:--------------------:|:----------------:|
@@ -181,10 +247,22 @@ and is only used here as a benchmark corpus.
   modest — a *published pretrained* model, not a ceiling.
 
 ## Decision framing
-A pretrained E-GMD neural model already **roughly doubles** our exact-class F1
-and recovers the ride class the DSP can't touch — so there is real headroom
-above the DSP stack. But the pretrained checkpoint tops out at F1 ≈ 0.27
-exact-class on this slice and is licensing-blocked for shipping. That argues
-for: (a) using this as the **floor** an in-house model must clear, and (b) if
-we train our own on E-GMD (CC-BY, shippable), targeting materially above 0.27
-exact / 0.49 onset before it's worth productionizing.
+On the **representative stratified 30-case sample** (the authoritative number),
+a pretrained E-GMD neural model beats the tied DSP engines by **+0.25
+exact-class F1 (0.284 → 0.535)** and **+0.27 onset-only F1 (0.505 → 0.776)**,
+wins on both precision and recall, and **recovers the entire tom and cymbal
+families** (toms 0.000 → 0.836, cymbals ~0.00 → 0.546) that the DSP stack
+structurally cannot. There is large, unambiguous headroom above DSP.
+
+The pretrained checkpoint is licensing-blocked for shipping (unstated weights
+licence), so it can't be productionised — but E-GMD itself is CC-BY and
+shippable. Conclusion:
+- **Floor for the in-house CRNN: F1 ≈ 0.535 exact-class / 0.776 onset-only** on
+  the stratified 30 (using this exact scorer). Anything below that is not worth
+  productionising over the DSP-plus-nothing baseline.
+- The gap between DSP (0.284) and this pretrained model (0.535) is the headroom
+  that **justifies the in-house training investment** — the DSP genuinely
+  cannot see toms/cymbals, and a trained model demonstrably can.
+
+_(The earlier "F1 ≈ 0.27 exact" figure came from the biased funk-20 slice and
+should not be used; the stratified 0.535 is the true anchor.)_
