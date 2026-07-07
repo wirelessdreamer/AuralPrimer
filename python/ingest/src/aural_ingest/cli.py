@@ -2604,8 +2604,77 @@ def _validate_events_json_matches_notes_mid(root: Path) -> dict[str, Any] | None
     return summary
 
 
+def _validate_feedpak(root: Path) -> int:
+    """Validate a ``.feedpak`` pack (manifest.yaml layout).
+
+    Checks the layout emitted by ``feedpak_writer.write_feedpak``: the manifest
+    parses, every ``stems[].file`` and ``arrangements[].notation`` exists, and
+    the referenced ``song_timeline`` / ``drum_tab`` JSON documents parse.
+    Feedpaks are stems-only — there is intentionally no ``audio/mix.wav``
+    requirement.
+    """
+    import yaml
+
+    try:
+        manifest = yaml.safe_load((root / "manifest.yaml").read_text("utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest.yaml must be a YAML mapping")
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": f"manifest.yaml: {e}"}, sort_keys=True))
+        return 1
+
+    referenced: list[str] = []
+    for list_key, path_key in (("stems", "file"), ("arrangements", "notation")):
+        entries = manifest.get(list_key)
+        if not isinstance(entries, list) or not entries:
+            print(
+                json.dumps(
+                    {"ok": False, "error": f"manifest.yaml {list_key} must be a non-empty list"},
+                    sort_keys=True,
+                )
+            )
+            return 1
+        for entry in entries:
+            rel = entry.get(path_key) if isinstance(entry, dict) else None
+            if not isinstance(rel, str) or not rel:
+                print(
+                    json.dumps(
+                        {"ok": False, "error": f"manifest.yaml {list_key}[] entries must set {path_key}"},
+                        sort_keys=True,
+                    )
+                )
+                return 1
+            referenced.append(rel)
+
+    json_refs: list[str] = []
+    for key in ("song_timeline", "drum_tab"):
+        rel = manifest.get(key)
+        if isinstance(rel, str) and rel:
+            referenced.append(rel)
+            json_refs.append(rel)
+
+    missing = [rel for rel in referenced if not (root / rel).is_file()]
+    if missing:
+        print(json.dumps({"ok": False, "missing": missing}, sort_keys=True))
+        return 1
+
+    try:
+        for rel in json_refs:
+            json.loads((root / rel).read_text("utf-8"))
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)}, sort_keys=True))
+        return 1
+
+    print(json.dumps({"ok": True, "pack_type": "feedpak"}, sort_keys=True))
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     root = Path(args.auralsong_dir)
+    # Pack layout is detected by manifest flavor: feedpaks carry manifest.yaml,
+    # .auralsong packs carry manifest.json.
+    if (root / "manifest.yaml").is_file():
+        return _validate_feedpak(root)
     required = [
         "manifest.json",
         "audio/mix.wav",
