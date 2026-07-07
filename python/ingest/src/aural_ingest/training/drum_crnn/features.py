@@ -22,6 +22,34 @@ def load_audio_mono(path: str | Path, sample_rate: int) -> np.ndarray:
     return np.asarray(y, dtype=np.float32)
 
 
+def load_audio_mono_window(
+    path: str | Path,
+    sample_rate: int,
+    offset_sec: float,
+    duration_sec: float,
+) -> np.ndarray:
+    """Load only ``[offset_sec, offset_sec + duration_sec)`` of ``path``.
+
+    A genuine partial read, not a full-file decode-then-slice: librosa's
+    ``offset``/``duration`` args seek directly into the soundfile backend, so
+    decode + resample cost scales with ``duration_sec``, not the file's total
+    length. This is the dataset's main training-throughput lever -- E-GMD
+    clips average ~35 s but a training example only needs an 8 s window.
+    ``offset_sec`` is clamped to non-negative; requesting past end-of-file
+    just yields fewer samples (the caller's crop/pad step handles that).
+    """
+    import librosa
+
+    y, _ = librosa.load(
+        str(path),
+        sr=sample_rate,
+        mono=True,
+        offset=max(0.0, offset_sec),
+        duration=duration_sec,
+    )
+    return np.asarray(y, dtype=np.float32)
+
+
 def logmel_from_audio(audio: np.ndarray, cfg: FeatureConfig) -> np.ndarray:
     """Compute log-mel frames from a mono waveform.
 

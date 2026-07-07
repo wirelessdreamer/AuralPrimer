@@ -28,6 +28,12 @@ from aural_ingest.training.drum_crnn.config import (
     TrainConfig,
     parse_class_thresholds,
 )
+from aural_ingest.training.drum_crnn.dataset import (
+    EGMDDrumDataset,
+    _crop_or_pad,
+    _pick_window_start_sec,
+    _row_duration_sec,
+)
 from aural_ingest.training.drum_crnn.decode import decode_events
 from aural_ingest.training.drum_crnn.features import (
     logmel_from_audio,
@@ -509,3 +515,156 @@ def test_early_stopper_low_patience_stops_before_halving_fires() -> None:
     assert not halve and not stop
     _improved, halve, stop = stopper.update(0.1)  # epochs_since_best = 2 -> stop
     assert not halve and stop
+
+
+# --------------------------------------------------------------------------- #
+# (h) windowed dataset loading (partial-read training-throughput lever)
+# --------------------------------------------------------------------------- #
+
+def test_pick_window_start_sec_short_file_returns_zero() -> None:
+    rng = np.random.default_rng(0)
+    # File shorter than the requested clip -> no room to choose, start at 0.
+    assert _pick_window_start_sec([1.0], file_duration_sec=5.0, clip_seconds=8.0, rng=rng) == 0.0
+
+
+def test_pick_window_start_sec_anchors_on_an_onset() -> None:
+    rng = np.random.default_rng(0)
+    onsets = [12.0]
+    start = _pick_window_start_sec(onsets, file_duration_sec=30.0, clip_seconds=8.0, rng=rng)
+    # The chosen window must actually contain the onset it anchored on.
+    assert start <= 12.0 <= start + 8.0
+    assert 0.0 <= start <= 30.0 - 8.0
+
+
+def test_pick_window_start_sec_no_onsets_stays_in_bounds() -> None:
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        start = _pick_window_start_sec([], file_duration_sec=30.0, clip_seconds=8.0, rng=rng)
+        assert 0.0 <= start <= 30.0 - 8.0
+
+
+def test_pick_window_start_sec_ignores_onsets_outside_file() -> None:
+    # An onset time beyond the file's own duration (shouldn't happen, but
+    # guards against a corrupt/mismatched MIDI) must not be used as an anchor.
+    rng = np.random.default_rng(0)
+    start = _pick_window_start_sec([999.0], file_duration_sec=30.0, clip_seconds=8.0, rng=rng)
+    assert 0.0 <= start <= 30.0 - 8.0
+
+
+def test_pick_window_start_sec_is_deterministic_per_seed() -> None:
+    onsets = [3.0, 10.0, 20.0]
+    a = _pick_window_start_sec(onsets, 30.0, 8.0, np.random.default_rng(42))
+    b = _pick_window_start_sec(onsets, 30.0, 8.0, np.random.default_rng(42))
+    assert a == b
+
+
+def test_row_duration_sec_prefers_csv_column() -> None:
+    # Valid CSV duration -> used directly, no file I/O (path doesn't need to exist).
+    row = {"duration": "12.5"}
+    assert _row_duration_sec(row, "/nonexistent/path.wav") == 12.5
+
+
+def test_row_duration_sec_falls_back_to_soundfile_probe(tmp_path: Path) -> None:
+    import soundfile as sf
+
+    wav = tmp_path / "probe.wav"
+    sf.write(str(wav), np.zeros(22050 * 3, dtype=np.float32), 22050)  # 3.0 s
+
+    for bad_row in ({"duration": "0"}, {"duration": ""}, {"duration": "notanumber"}, {}):
+        assert _row_duration_sec(bad_row, str(wav)) == pytest.approx(3.0, abs=1e-2)
+
+
+def test_crop_or_pad_pads_short_clips() -> None:
+    features = np.ones((5, 4), dtype=np.float32)
+    targets = np.ones((5, 2), dtype=np.float32)
+    rng = np.random.default_rng(0)
+    f, t = _crop_or_pad(features, targets, clip_frames=8, rng=rng)
+    assert f.shape == (8, 4) and t.shape == (8, 2)
+    assert np.array_equal(f[:5], features) and np.array_equal(f[5:], np.zeros((3, 4)))
+
+
+def test_crop_or_pad_trims_slightly_long_clips() -> None:
+    # The off-by-one-frame safety net (librosa's partial-read frame count can
+    # be +/-1 vs clip_frames) -- trims from the start, keeps alignment.
+    features = np.arange(10 * 4, dtype=np.float32).reshape(10, 4)
+    targets = np.arange(10 * 2, dtype=np.float32).reshape(10, 2)
+    rng = np.random.default_rng(0)
+    f, t = _crop_or_pad(features, targets, clip_frames=8, rng=rng)
+    assert f.shape == (8, 4) and t.shape == (8, 2)
+    assert np.array_equal(f, features[:8]) and np.array_equal(t, targets[:8])
+
+
+def test_crop_or_pad_exact_length_is_noop() -> None:
+    features = np.ones((8, 4), dtype=np.float32)
+    targets = np.ones((8, 2), dtype=np.float32)
+    rng = np.random.default_rng(0)
+    f, t = _crop_or_pad(features, targets, clip_frames=8, rng=rng)
+    assert f is features and t is targets
+
+
+def _write_minimal_egmd_corpus(
+    root: Path, *, audio_seconds: float, notes_at_ticks: list[tuple[int, int]], tpq: int = 480
+) -> None:
+    """Build a tiny on-disk corpus matching E-GMD's real directory shape
+    (``e_gmd_metadata/e-gmd-v1.0.0.csv`` + ``e_gmd_full/e-gmd-v1.0.0/``) so
+    ``EGMDDrumDataset`` can be exercised end-to-end (its real ``__init__`` +
+    ``__getitem__``, not a hand-built instance)."""
+    import csv as csv_mod
+
+    import soundfile as sf
+
+    audio_root = root / "e_gmd_full" / "e-gmd-v1.0.0"
+    audio_root.mkdir(parents=True)
+    (root / "e_gmd_metadata").mkdir(parents=True)
+
+    sr = 22050
+    sf.write(str(audio_root / "x.wav"), np.zeros(int(audio_seconds * sr), dtype=np.float32), sr)
+    _write_drum_midi(audio_root / "x.midi", notes_at_ticks, tpq=tpq)
+
+    fields = [
+        "drummer", "session", "id", "style", "bpm", "beat_type", "time_signature",
+        "duration", "split", "midi_filename", "audio_filename", "kit_name",
+    ]
+    with (root / "e_gmd_metadata" / "e-gmd-v1.0.0.csv").open("w", newline="", encoding="utf-8") as f:
+        w = csv_mod.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerow(
+            {
+                "drummer": "drummer1", "session": "s1", "id": "drummer1/s1/1",
+                "style": "funk/groove1", "bpm": "120", "beat_type": "beat",
+                "time_signature": "4-4", "duration": str(audio_seconds), "split": "train",
+                "midi_filename": "x.midi", "audio_filename": "x.wav", "kit_name": "Test Kit",
+            }
+        )
+
+
+def test_dataset_getitem_pads_a_file_shorter_than_clip_seconds(tmp_path: Path) -> None:
+    """Regression test: a file shorter than ``clip_seconds`` used to crash
+    with a shape mismatch in ``_crop_or_pad`` (targets were rasterised at the
+    fixed ``clip_frames`` length while features reflected the shorter ACTUAL
+    loaded-audio length)."""
+    _write_minimal_egmd_corpus(tmp_path, audio_seconds=2.0, notes_at_ticks=[(480, 36)])
+    cfg = TrainConfig(corpus_root=str(tmp_path), clip_seconds=8.0)
+    ds = EGMDDrumDataset(cfg, "train")
+    assert len(ds) == 1
+
+    features, targets = ds[0]
+    assert features.shape == (ds.clip_frames, cfg.feature.n_mels)
+    assert targets.shape == (ds.clip_frames, len(CLASSES))
+    # The planted kick onset (at 0.5s, well inside the 2s file) must survive
+    # into the padded target.
+    assert targets[:, CLASSES.index("kick")].sum() > 0.0
+
+
+def test_dataset_getitem_windows_a_file_longer_than_clip_seconds(tmp_path: Path) -> None:
+    """A file longer than clip_seconds must be windowed down to exactly
+    clip_frames, not the whole (long) file."""
+    _write_minimal_egmd_corpus(
+        tmp_path, audio_seconds=30.0, notes_at_ticks=[(480, 36), (20 * 480, 38)]
+    )
+    cfg = TrainConfig(corpus_root=str(tmp_path), clip_seconds=8.0)
+    ds = EGMDDrumDataset(cfg, "train")
+
+    features, targets = ds[0]
+    assert features.shape == (ds.clip_frames, cfg.feature.n_mels)
+    assert targets.shape == (ds.clip_frames, len(CLASSES))

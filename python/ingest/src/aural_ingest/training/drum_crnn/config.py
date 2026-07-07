@@ -99,11 +99,21 @@ class TargetConfig:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """Compact CRNN. Kept small for CPU inference in the sidecar."""
+    """Compact CRNN. Kept small for CPU inference in the sidecar.
+
+    Bumped from the run-1/2/3 defaults (``(32, 32, 64)`` conv / 64 GRU hidden,
+    300K params) to ``(32, 64, 128)`` / 128 (1.18M params, ~4x) after those
+    runs used only ~6% of the ~5M sidecar budget while run-2's frame-macro-F1
+    was still climbing at its epoch limit -- the model likely had headroom to
+    use more capacity, not just more epochs. Still ~49 ms/8s-clip on CPU (well
+    under real-time for a whole song). Existing checkpoints are unaffected:
+    the installer and adapter always reconstruct ``ModelConfig`` from a
+    checkpoint's OWN saved ``model_config``, never from this default.
+    """
 
     n_mels: int = 84  # must equal FeatureConfig.n_mels
-    conv_channels: tuple[int, ...] = (32, 32, 64)
-    gru_hidden: int = 64
+    conv_channels: tuple[int, ...] = (32, 64, 128)
+    gru_hidden: int = 128
     gru_layers: int = 1
     dropout: float = 0.2
     num_classes: int = NUM_CLASSES
