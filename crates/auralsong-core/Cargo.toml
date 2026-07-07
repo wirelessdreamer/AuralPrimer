@@ -2,6 +2,7 @@
 name = "auralsong-core"
 version = "0.0.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 # Shared AuralSong contract logic used by both Tauri shells (apps/game and
 # apps/desktop). Holds the manifest scan/parse, the AuralSong summary types, and

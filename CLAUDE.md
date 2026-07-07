@@ -26,10 +26,14 @@ verify a UI/behavior change without first producing a fresh portable.
 ## Attribution — keep it current (before every commit)
 
 **Any commit that adds or removes a third-party dependency MUST update the
-attribution in `README.md` in the same commit.** The project ships commercially
-under a strict license gate (permissive code only; no GPL runtime deps; no
-non-commercial model weights), so the dependency list must stay complete and
-accurate — attribution is a shipping requirement here, not optional metadata.
+attribution in `README.md` in the same commit.** The project is free software
+(GPL-3.0-or-later, see `LICENSE`) with no commercial aspirations. The license
+gate: code dependencies must be GPLv3-compatible (nearly every open-source
+license qualifies); model weights & datasets must carry an *explicit*
+redistributable license — non-commercial terms (CC BY-NC-SA etc.) are
+acceptable, but weights with NO stated license never ship. The dependency list
+must stay complete and accurate — attribution is a license obligation (GPL +
+CC attribution clauses), not optional metadata.
 
 Watch these dependency manifests: `python/ingest/pyproject.toml` (+ its
 `.egg-info` regen), any `package.json`, and the `src-tauri/Cargo.toml` files.
