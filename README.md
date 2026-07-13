@@ -211,6 +211,28 @@ defaults unchanged). Distorted/electric guitar is a known frontier
 Per-case breakdowns, JSON reports, reproducibility commands, and the
 "what didn't work and why" notes live in the docs below.
 
+### Benchmark corpora (what the numbers above are measured against)
+
+Every shipped pick is scored against annotated ground truth, not vibes.
+The corpora below back the head-to-head numbers; all are freely
+redistributable and every link resolves. Adapters that turn each into the
+canonical event list the `gt-benchmark` runner consumes live under
+[`python/ingest/src/aural_ingest/dataset_adapters/`](python/ingest/src/aural_ingest/dataset_adapters/).
+
+| Instrument | Benchmark corpus | License | What it validates |
+|------------|------------------|---------|-------------------|
+| **Drums** | [**E-GMD v1.0.0**](https://magenta.withgoogle.com/datasets/e-gmd) — Expanded Groove MIDI Dataset (Google Magenta; 444.5 h, 45k sequences, 43 kits) | CC BY 4.0 | per-class onset F1 (kick / snare / hi-hat / toms / cymbals), stratified across style · drummer · tempo |
+| **Bass** | [**GuitarSet**](https://zenodo.org/records/3371780) — low strings (hex-debleeded E/A), used as a bass proxy | CC BY 4.0 | monophonic low-register pitch F1 |
+| **Guitar** | [**GuitarSet**](https://zenodo.org/records/3371780) (mic) + [**Guitar-TECHS**](https://zenodo.org/records/14963133) (direct-input + amp-mic electric) | CC BY 4.0 | acoustic + electric note F1, lead vs rhythm |
+| **Keys / piano** | in-house synthetic corpus (authored MIDI → rendered WAV) · optional [**MAESTRO v3.0.0**](https://magenta.tensorflow.org/datasets/maestro) for real grand-piano timbre | project-owned · CC BY-NC-SA 4.0 | isolated-note lower bound (synthetic) → realistic-timbre ceiling (MAESTRO, gated on `AURAL_MAESTRO_ROOT`) |
+
+Datasets carry attribution obligations (the CC BY family) — this table
+is that attribution; keep it in sync when a benchmark round adds a corpus.
+**Vocals** and **stem separation** currently ship without an in-house
+benchmark; the intended corpora (MIR-ST500 for vocal pitch, MUSDB18-HQ for
+separation SDR) and the harness to run them are specced in the
+[model-upgrades plan](docs/model-upgrades-plan-2026-07-07.md).
+
 ### Research docs (start here)
 
 - [**Piano transcription cleanup deep-dive — 2026-06-20**](docs/research-piano-cleanup-deep-dive-2026-06-20.md)
@@ -224,7 +246,9 @@ Per-case breakdowns, JSON reports, reproducibility commands, and the
 - [**Ground-truth benchmarks — 2026-06-14**](docs/research-ground-truth-benchmarks-2026-06-14.md)
   Full per-instrument deep dive across all four instruments. Builds
   the annotated-corpus benchmark harness, ships dataset adapters for
-  E-GMD / GuitarSet / Guitar-TECHS, documents every tuned variant we
+  [E-GMD](https://magenta.withgoogle.com/datasets/e-gmd) /
+  [GuitarSet](https://zenodo.org/records/3371780) /
+  [Guitar-TECHS](https://zenodo.org/records/14963133), documents every tuned variant we
   tried (the wins AND the failures), and pins reproducibility commands
   so anyone can re-run a sweep with one `aural_ingest gt-benchmark`
   invocation. Covers drums, bass, guitar, and the round summary for
