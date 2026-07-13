@@ -9,6 +9,7 @@
     "visualizers/*"
   ],
   "scripts": {
+    "ci:verify:model-upgrade-gates": "node ./scripts/verify-model-upgrade-gates.mjs",
     "ci:verify:transcription-recovery": "node ./scripts/verify-transcription-recovery.mjs",
     "lint": "echo 'lint not configured yet'",
     "test": "vitest run",
@@ -40,6 +41,7 @@
     "desktop:build:frontend": "npm run studio:build:frontend",
     "portable:sidecar": "node ./scripts/run-powershell.mjs ./build_sidecar.ps1",
     "portable:build": "node ./scripts/run-powershell.mjs ./create_portable.ps1",
+    "portable:verify-sidecar": "node ./scripts/verify-sidecar-artifacts.mjs",
     "portable:smoke": "node ./scripts/smoke-portable.mjs"
   },
   "devDependencies": {

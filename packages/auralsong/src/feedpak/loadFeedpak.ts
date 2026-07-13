@@ -47,12 +47,19 @@ export interface LoadedFeedpak {
   arrangements: FeedpakLoadedArrangement[];
   stems: FeedpakLoadedStem[];
   songTimeline: FeedpakPointer | null;
+  drumTab: FeedpakPointer | null;
+  vocalPitch: FeedpakPointer | null;
+  vocalPitchContour: FeedpakPointer | null;
+  keys: FeedpakPointer | null;
+  harmony: FeedpakPointer | null;
 
   // AuralPrimer extension pointers (null when the key is absent).
   auralNotesMid: FeedpakPointer | null;
   auralSpectrogram: FeedpakPointer | null;
   /** Map of refine role -> pointer, preserving the manifest's role keys. */
   auralRefineCandidates: Record<string, FeedpakPointer> | null;
+  /** Map of fretted role -> pointer, preserving the manifest's role keys. */
+  auralFingering: Record<string, FeedpakPointer> | null;
   auralBenchmark: FeedpakPointer | null;
 
   /** All file paths present in the container (POSIX separators, sorted). */
@@ -67,6 +74,13 @@ export interface LoadedFeedpak {
 function normalizeRelPath(relPath: string): string {
   // Ensure POSIX separators to match zip path conventions.
   return relPath.split(path.sep).join(path.posix.sep);
+}
+
+function isSafeFeedpakRelPath(relPath: string): boolean {
+  if (relPath.trim().length === 0) return false;
+  if (relPath.includes("\\") || relPath.includes(":")) return false;
+  if (relPath.startsWith("/") || relPath.includes("//")) return false;
+  return !relPath.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..");
 }
 
 function listZipFiles(files: Record<string, Uint8Array>): string[] {
@@ -112,10 +126,18 @@ function buildLoadedFeedpak(opts: {
 
   const pointer = (relPath: string): FeedpakPointer => {
     const norm = normalizeRelPath(relPath);
-    return { path: relPath, exists: fileSet.has(norm) };
+    return { path: relPath, exists: isSafeFeedpakRelPath(relPath) && fileSet.has(norm) };
   };
   const pointerOrNull = (relPath: string | undefined | null): FeedpakPointer | null =>
     typeof relPath === "string" && relPath.length > 0 ? pointer(relPath) : null;
+  const pointerMapOrNull = (raw: unknown): Record<string, FeedpakPointer> | null => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const out: Record<string, FeedpakPointer> = {};
+    for (const [role, p] of Object.entries(raw)) {
+      if (typeof p === "string") out[role] = pointer(p);
+    }
+    return out;
+  };
 
   const arrangements: FeedpakLoadedArrangement[] = (manifest.arrangements ?? []).map((entry) => ({
     entry,
@@ -128,14 +150,8 @@ function buildLoadedFeedpak(opts: {
     file: pointer(entry.file)
   }));
 
-  let auralRefineCandidates: Record<string, FeedpakPointer> | null = null;
-  const rawCandidates = manifest.aural_refine_candidates;
-  if (rawCandidates && typeof rawCandidates === "object" && !Array.isArray(rawCandidates)) {
-    auralRefineCandidates = {};
-    for (const [role, p] of Object.entries(rawCandidates)) {
-      if (typeof p === "string") auralRefineCandidates[role] = pointer(p);
-    }
-  }
+  const auralRefineCandidates = pointerMapOrNull(manifest.aural_refine_candidates);
+  const auralFingering = pointerMapOrNull(manifest.aural_fingering);
 
   return {
     feedpakPath: opts.feedpakPath,
@@ -144,9 +160,15 @@ function buildLoadedFeedpak(opts: {
     arrangements,
     stems,
     songTimeline: pointerOrNull(manifest.song_timeline),
+    drumTab: pointerOrNull(manifest.drum_tab),
+    vocalPitch: pointerOrNull(manifest.vocal_pitch),
+    vocalPitchContour: pointerOrNull(manifest.vocal_pitch_contour),
+    keys: pointerOrNull(manifest.keys),
+    harmony: pointerOrNull(manifest.harmony),
     auralNotesMid: pointerOrNull(manifest.aural_notes_mid),
     auralSpectrogram: pointerOrNull(manifest.aural_spectrogram),
     auralRefineCandidates,
+    auralFingering,
     auralBenchmark: pointerOrNull(manifest.aural_benchmark),
     listFiles() {
       return [...opts.fileList];
@@ -180,6 +202,7 @@ export async function loadFeedpakFromDirectory(feedpakDir: string): Promise<Load
   const fileSet = new Set(fileList);
 
   const readBytes = async (relPath: string): Promise<Uint8Array | null> => {
+    if (!isSafeFeedpakRelPath(relPath)) return null;
     const rel = normalizeRelPath(relPath);
     const abs = path.join(feedpakDir, rel.split(path.posix.sep).join(path.sep));
     try {
@@ -191,6 +214,7 @@ export async function loadFeedpakFromDirectory(feedpakDir: string): Promise<Load
   };
 
   const readText = async (relPath: string): Promise<string | null> => {
+    if (!isSafeFeedpakRelPath(relPath)) return null;
     const rel = normalizeRelPath(relPath);
     const abs = path.join(feedpakDir, rel.split(path.posix.sep).join(path.sep));
     try {
@@ -237,6 +261,7 @@ export async function loadFeedpakFromZipBytes(
   const fileSet = new Set(fileList);
 
   const readBytes = async (relPath: string): Promise<Uint8Array | null> => {
+    if (!isSafeFeedpakRelPath(relPath)) return null;
     const rel = normalizeRelPath(relPath);
     return files[rel] ?? null;
   };

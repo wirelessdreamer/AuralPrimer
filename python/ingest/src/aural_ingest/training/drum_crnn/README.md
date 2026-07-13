@@ -2,7 +2,8 @@
 
 Trains **our own** 5-class drum-onset transcription model on the **Expanded
 Groove MIDI Dataset (E-GMD)** so the product can ship its own weights instead
-of depending on license-blocked models (ADTOF is CC BY-NC-SA; the Magenta drum
+of depending on external research checkpoints with unsuitable default-shipping
+terms (ADTOF is CC BY-NC-SA; the Magenta drum
 checkpoint has no stated license). This directory is the **harness** — feature
 extraction, target building, the model, the training loop, decoding, and an
 ONNX export path — proven to run end to end on a tiny smoke sample.

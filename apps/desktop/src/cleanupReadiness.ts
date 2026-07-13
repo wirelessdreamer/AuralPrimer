@@ -12,11 +12,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { featureDir as packFeatureDir, isManifestPack } from "@auralprimer/auralsong/packKind";
 
-// Melodic stem roles we probe for (drums/vocals are never melodic targets).
+// Melodic stem roles we probe for (drums use the lane editor instead).
 // One guitar (the lead/rhythm split was a frequency-tilt, not real separation,
 // so the two were ~95% identical). Lead/rhythm labels are kept for any legacy
 // packs not yet migrated.
-export const MELODIC_ROLES = ["keys", "bass", "guitar"] as const;
+export const MELODIC_ROLES = ["keys", "bass", "guitar", "vocals"] as const;
 export type MelodicRole = (typeof MELODIC_ROLES)[number];
 
 export const MELODIC_ROLE_LABELS: Record<string, string> = {
@@ -67,12 +67,14 @@ export function featureDir(containerPath: string): "aural" | "features" {
 // readout re-checks freshly written artifacts.
 const cleanupReadinessCache = new Map<string, RoleReadiness>();
 const stemRolesCache = new Map<string, string[]>();
+const drumTabRelPathCache = new Map<string, string>();
 
 function cleanupCacheKey(pack: string, role: string): string {
   return `${pack}|${role}`;
 }
 
 export function invalidateCleanupCache(pack: string, role?: string): void {
+  if (!role) drumTabRelPathCache.delete(pack);
   if (role) {
     cleanupReadinessCache.delete(cleanupCacheKey(pack, role));
     return;
@@ -86,6 +88,7 @@ export function invalidateCleanupCache(pack: string, role?: string): void {
 export function _resetReadinessCachesForTest(): void {
   cleanupReadinessCache.clear();
   stemRolesCache.clear();
+  drumTabRelPathCache.clear();
 }
 
 /**
@@ -114,6 +117,8 @@ export type AuralSongDetails = {
   lyrics_path?: string;
   manifest_raw?: {
     arrangements?: unknown;
+    drum_tab?: unknown;
+    artifacts?: unknown;
     lyrics?: unknown;
     [k: string]: unknown;
   } | null;
@@ -166,6 +171,39 @@ export async function auralsongJsonExists(pack: string, relPath: string): Promis
   }
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringRelPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+export async function drumTabRelPath(pack: string): Promise<string> {
+  const cached = drumTabRelPathCache.get(pack);
+  if (cached) return cached;
+  let relPath = "drum_tab.json";
+  if (isManifestPack(pack)) {
+    try {
+      const details = await invoke<AuralSongDetails>("get_auralsong_details", {
+        containerPath: pack,
+      });
+      const raw = details.manifest_raw;
+      const artifacts = isObject(raw?.artifacts) ? raw.artifacts : null;
+      relPath =
+        stringRelPath(raw?.drum_tab) ??
+        stringRelPath(artifacts?.drum_tab) ??
+        relPath;
+    } catch {
+      relPath = "drum_tab.json";
+    }
+  }
+  drumTabRelPathCache.set(pack, relPath);
+  return relPath;
+}
+
 export async function getRoleReadiness(
   pack: string,
   role: string,
@@ -178,12 +216,14 @@ export async function getRoleReadiness(
   }
   // feedpak relocates these artifacts under aural/ (legacy: features/).
   const fd = featureDir(pack);
+  const drumTabRel = role === "drums" ? await drumTabRelPath(pack) : "drum_tab.json";
   const [spectrogram, candidates] = await Promise.all([
     auralsongJsonExists(pack, `${fd}/spectrogram/${role}/spectrogram.json`),
-    // Drums have no candidate system — the pack-root drum_tab.json is the source
-    // of truth the lane editor edits, so it plays the "candidates" role here.
+    // Drums have no candidate system; the manifest-declared drum_tab artifact is
+    // the source of truth the lane editor edits, so it plays the "candidates"
+    // role here.
     role === "drums"
-      ? auralsongJsonExists(pack, "drum_tab.json")
+      ? auralsongJsonExists(pack, drumTabRel)
       : auralsongJsonExists(pack, `${fd}/refine_candidates.${role}.json`),
   ]);
   const readiness: RoleReadiness = { spectrogram, candidates };
@@ -242,7 +282,7 @@ export async function detectMelodicStems(
   // spectrogram) whenever the pack carries a drum tab — no melodic stem needed.
   const drums = await getRoleReadiness(pack, "drums");
   readiness.set("drums", drums);
-  const hasDrums = drums.candidates; // drum_tab.json present
+  const hasDrums = drums.candidates; // manifest drum_tab present
   if (roles.length === 0 && !hasDrums) {
     // No melodic artifacts AND no drums — offer the melodic stems the pack has
     // (or "keys" as a last resort) so a build targets real audio.

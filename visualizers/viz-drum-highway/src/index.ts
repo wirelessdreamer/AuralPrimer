@@ -79,6 +79,11 @@ function midiToLane(pitch: number): LaneId | null {
   return null;
 }
 
+function isDrumSongNote(note: SongNote): boolean {
+  if (note.channel === 9) return true;
+  return typeof note.trackName === "string" && /\b(drum|drums|kit|percussion|perc)\b/i.test(note.trackName);
+}
+
 function parseSongNotes(raw: unknown): SongNote[] {
   if (!Array.isArray(raw)) return [];
   const out: SongNote[] = [];
@@ -108,6 +113,7 @@ class DrumHighwayVisualizer implements Visualizer {
   async init(ctx: VizInitContext): Promise<void> {
     const parsed = parseSongNotes(ctx.song?.notes);
     this.notes = parsed
+      .filter(isDrumSongNote)
       .map((n) => {
         const lane = midiToLane(n.pitch);
         if (!lane) return null;

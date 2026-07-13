@@ -66,16 +66,26 @@ pub struct NativeAudioDeviceInfo {
 
 #[derive(Debug)]
 enum EngineCommand {
-    LoadPcm16 { wav: WavPcm16 },
+    LoadPcm16 {
+        wav: WavPcm16,
+    },
     /// Swap the active buffer (a re-mixed stem sum) WITHOUT resetting the play
     /// position — used when a per-track gain changes during playback.
-    ReplacePcm16 { wav: WavPcm16 },
+    ReplacePcm16 {
+        wav: WavPcm16,
+    },
     Play,
     Pause,
     Stop,
-    SeekFrames { frame: u64 },
-    SetLoop { loop_region: Option<LoopRegion> },
-    SetPlaybackRate { rate: f64 },
+    SeekFrames {
+        frame: u64,
+    },
+    SetLoop {
+        loop_region: Option<LoopRegion>,
+    },
+    SetPlaybackRate {
+        rate: f64,
+    },
 }
 
 struct EngineRuntimeState {
@@ -1783,7 +1793,11 @@ mod tests {
 
         assert_eq!(rendered.len(), 384);
         for (i, &v) in rendered.iter().enumerate() {
-            let expect = if clicks.contains(&i) { 30_000.0 / i16::MAX as f32 } else { 0.0 };
+            let expect = if clicks.contains(&i) {
+                30_000.0 / i16::MAX as f32
+            } else {
+                0.0
+            };
             approx_eq(v, expect);
         }
     }

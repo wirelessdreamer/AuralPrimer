@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "method": "fixture",
+  "events": [
+    {
+      "t": 0,
+      "key": "C",
+      "scale": "major",
+      "confidence": 1
+    }
+  ]
+}

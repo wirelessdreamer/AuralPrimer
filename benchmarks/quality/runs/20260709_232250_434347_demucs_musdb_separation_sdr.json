@@ -1,0 +1,731 @@
+{
+  "config": {
+    "stem_separation_provider": "demucs"
+  },
+  "dataset": "musdb18_or_musdb18_hq",
+  "limit": 10,
+  "musdb_root": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq",
+  "ok": true,
+  "promotion_min_tracks": 10,
+  "promotion_usable": true,
+  "provider": "demucs",
+  "provider_path": null,
+  "split": "test",
+  "summary": {
+    "median_sdr_mean": 7.323795,
+    "role_summary": {
+      "bass": {
+        "median_sdr_mean": 7.11714,
+        "track_count": 10
+      },
+      "drums": {
+        "median_sdr_mean": 8.958933,
+        "track_count": 10
+      },
+      "other": {
+        "median_sdr_mean": 4.727116,
+        "track_count": 10
+      },
+      "vocals": {
+        "median_sdr_mean": 8.49199,
+        "track_count": 10
+      }
+    },
+    "tracks": 10,
+    "tracks_failed": 0,
+    "tracks_ok": 10,
+    "tracks_skipped": 0
+  },
+  "tracks": [
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 189,
+            "role": "vocals",
+            "sdr_mean": 8.661608,
+            "sdr_median": 9.03989
+          },
+          {
+            "frame_count": 189,
+            "role": "drums",
+            "sdr_mean": 6.853787,
+            "sdr_median": 6.65995
+          },
+          {
+            "frame_count": 189,
+            "role": "bass",
+            "sdr_mean": 11.189753,
+            "sdr_median": 12.028024
+          },
+          {
+            "frame_count": 189,
+            "role": "other",
+            "sdr_mean": 4.091224,
+            "sdr_median": 4.256237
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Al James - Schoolboy Facination\\mixture.wav",
+      "name": "Al James - Schoolboy Facination",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/Al James - Schoolboy Facination"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 210,
+            "role": "vocals",
+            "sdr_mean": 4.761528,
+            "sdr_median": 10.449621
+          },
+          {
+            "frame_count": 210,
+            "role": "drums",
+            "sdr_mean": 7.064852,
+            "sdr_median": 7.933309
+          },
+          {
+            "frame_count": 210,
+            "role": "bass",
+            "sdr_mean": -28.272972,
+            "sdr_median": -9.641158
+          },
+          {
+            "frame_count": 210,
+            "role": "other",
+            "sdr_mean": -0.09268,
+            "sdr_median": 0.417743
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\AM Contra - Heart Peripheral\\mixture.wav",
+      "name": "AM Contra - Heart Peripheral",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/AM Contra - Heart Peripheral"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 179,
+            "role": "vocals",
+            "sdr_mean": 4.272673,
+            "sdr_median": 9.735171
+          },
+          {
+            "frame_count": 179,
+            "role": "drums",
+            "sdr_mean": 7.332743,
+            "sdr_median": 7.409027
+          },
+          {
+            "frame_count": 179,
+            "role": "bass",
+            "sdr_mean": 10.367894,
+            "sdr_median": 10.868369
+          },
+          {
+            "frame_count": 179,
+            "role": "other",
+            "sdr_mean": 6.972618,
+            "sdr_median": 7.03923
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Angels In Amplifiers - I'm Alright\\mixture.wav",
+      "name": "Angels In Amplifiers - I'm Alright",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/Angels In Amplifiers - I'm Alright"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 193,
+            "role": "vocals",
+            "sdr_mean": 8.708707,
+            "sdr_median": 10.546219
+          },
+          {
+            "frame_count": 193,
+            "role": "drums",
+            "sdr_mean": 8.227706,
+            "sdr_median": 9.03431
+          },
+          {
+            "frame_count": 193,
+            "role": "bass",
+            "sdr_mean": 0.714536,
+            "sdr_median": 0.2564
+          },
+          {
+            "frame_count": 193,
+            "role": "other",
+            "sdr_mean": 0.823778,
+            "sdr_median": 0.786702
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Arise - Run Run Run\\mixture.wav",
+      "name": "Arise - Run Run Run",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/Arise - Run Run Run"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 119,
+            "role": "vocals",
+            "sdr_mean": 4.885011,
+            "sdr_median": 4.631714
+          },
+          {
+            "frame_count": 119,
+            "role": "drums",
+            "sdr_mean": 10.153853,
+            "sdr_median": 9.947235
+          },
+          {
+            "frame_count": 119,
+            "role": "bass",
+            "sdr_mean": 13.247388,
+            "sdr_median": 12.951697
+          },
+          {
+            "frame_count": 119,
+            "role": "other",
+            "sdr_mean": 6.050795,
+            "sdr_median": 5.632177
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Ben Carrigan - We'll Talk About It All Tonight\\mixture.wav",
+      "name": "Ben Carrigan - We'll Talk About It All Tonight",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/Ben Carrigan - We'll Talk About It All Tonight"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 337,
+            "role": "vocals",
+            "sdr_mean": 0.649482,
+            "sdr_median": 4.730451
+          },
+          {
+            "frame_count": 337,
+            "role": "drums",
+            "sdr_mean": 11.732088,
+            "sdr_median": 12.058623
+          },
+          {
+            "frame_count": 337,
+            "role": "bass",
+            "sdr_mean": 6.757159,
+            "sdr_median": 9.036803
+          },
+          {
+            "frame_count": 337,
+            "role": "other",
+            "sdr_mean": 5.504566,
+            "sdr_median": 5.855584
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\BKS - Bulldozer\\mixture.wav",
+      "name": "BKS - Bulldozer",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/BKS - Bulldozer"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 148,
+            "role": "vocals",
+            "sdr_mean": 11.298019,
+            "sdr_median": 11.938278
+          },
+          {
+            "frame_count": 148,
+            "role": "drums",
+            "sdr_mean": 9.907578,
+            "sdr_median": 9.64681
+          },
+          {
+            "frame_count": 148,
+            "role": "bass",
+            "sdr_mean": 12.584386,
+            "sdr_median": 13.341323
+          },
+          {
+            "frame_count": 148,
+            "role": "other",
+            "sdr_mean": 5.797337,
+            "sdr_median": 5.765753
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\BKS - Too Much\\mixture.wav",
+      "name": "BKS - Too Much",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/BKS - Too Much"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 168,
+            "role": "vocals",
+            "sdr_mean": 9.682613,
+            "sdr_median": 10.07121
+          },
+          {
+            "frame_count": 168,
+            "role": "drums",
+            "sdr_mean": 7.088486,
+            "sdr_median": 7.183934
+          },
+          {
+            "frame_count": 168,
+            "role": "bass",
+            "sdr_mean": 9.650639,
+            "sdr_median": 11.175403
+          },
+          {
+            "frame_count": 168,
+            "role": "other",
+            "sdr_mean": 6.09673,
+            "sdr_median": 5.691243
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Bobby Nobody - Stitch Up\\mixture.wav",
+      "name": "Bobby Nobody - Stitch Up",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/Bobby Nobody - Stitch Up"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 202,
+            "role": "vocals",
+            "sdr_mean": 6.277122,
+            "sdr_median": 6.31445
+          },
+          {
+            "frame_count": 202,
+            "role": "drums",
+            "sdr_mean": 13.692521,
+            "sdr_median": 13.848548
+          },
+          {
+            "frame_count": 202,
+            "role": "bass",
+            "sdr_mean": 11.36992,
+            "sdr_median": 11.296131
+          },
+          {
+            "frame_count": 202,
+            "role": "other",
+            "sdr_mean": 6.048601,
+            "sdr_median": 6.094355
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Buitraker - Revo X\\mixture.wav",
+      "name": "Buitraker - Revo X",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/Buitraker - Revo X"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 250,
+            "role": "vocals",
+            "sdr_mean": 0.026139,
+            "sdr_median": 7.462896
+          },
+          {
+            "frame_count": 250,
+            "role": "drums",
+            "sdr_mean": -6.238358,
+            "sdr_median": 5.867585
+          },
+          {
+            "frame_count": 250,
+            "role": "bass",
+            "sdr_mean": -17.623235,
+            "sdr_median": -0.141592
+          },
+          {
+            "frame_count": 250,
+            "role": "other",
+            "sdr_mean": 2.11905,
+            "sdr_median": 5.732133
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Carlos Gonzalez - A Place For Us\\mixture.wav",
+      "name": "Carlos Gonzalez - A Place For Us",
+      "separation": {
+        "architecture": "htdemucs_6s",
+        "cache_hit": false,
+        "device": "cuda",
+        "modelpack_id": "demucs_6",
+        "modelpack_path": "D:\\AuralPrimer\\AuralPrimerPortable\\modelpacks\\demucs_6.zip",
+        "modelpack_version": "htdemucs_6s-5c90dfd2",
+        "ok": true,
+        "provider": "demucs",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "guitar": "audio/stems/guitar.wav",
+          "keys": "audio/stems/keys.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        },
+        "weight_path": "C:\\Users\\dreamer\\AppData\\Local\\Temp\\auralprimer_demucs_modelpacks\\demucs_6_htdemucs_6s_5c90dfd2_34c22ccb381c6f9f\\5c90dfd2-34c22ccb.th"
+      },
+      "split": "test",
+      "track_id": "test/Carlos Gonzalez - A Place For Us"
+    }
+  ]
+}

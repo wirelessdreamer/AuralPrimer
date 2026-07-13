@@ -1,3 +1,4 @@
+import { clampScrollSpeedMultiplier, scrollWindow } from "@auralprimer/viz-sdk";
 import type { FrameContext, Visualizer, VisualizerModule, VizInitContext, TransportState } from "@auralprimer/viz-sdk";
 
 type LyricsFile = {
@@ -18,8 +19,63 @@ function isLyricsFile(v: unknown): v is LyricsFile {
   return typeof o.format === "string" && Array.isArray(o.lines);
 }
 
+export type VocalPitchNote = {
+  t: number;
+  d: number;
+  midi: number;
+};
+
+export type VocalPitchSample = {
+  t: number;
+  hz: number;
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export function parseVocalPitchNotes(value: unknown): VocalPitchNote[] {
+  if (!isObject(value) || !Array.isArray(value.notes)) return [];
+  return value.notes
+    .filter((note): note is VocalPitchNote => {
+      return (
+        isObject(note) &&
+        typeof note.t === "number" &&
+        Number.isFinite(note.t) &&
+        typeof note.d === "number" &&
+        Number.isFinite(note.d) &&
+        note.d > 0 &&
+        typeof note.midi === "number" &&
+        Number.isFinite(note.midi)
+      );
+    })
+    .map((note) => ({ t: note.t, d: note.d, midi: note.midi }))
+    .sort((a, b) => a.t - b.t);
+}
+
+export function parseVocalPitchSamples(value: unknown): VocalPitchSample[] {
+  if (!isObject(value) || !Array.isArray(value.samples)) return [];
+  return value.samples
+    .filter((sample): sample is VocalPitchSample => {
+      return (
+        isObject(sample) &&
+        typeof sample.t === "number" &&
+        Number.isFinite(sample.t) &&
+        typeof sample.hz === "number" &&
+        Number.isFinite(sample.hz) &&
+        sample.hz > 0
+      );
+    })
+    .map((sample) => ({ t: sample.t, hz: sample.hz }))
+    .sort((a, b) => a.t - b.t);
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+function hzToMidi(hz: number): number {
+  return 69 + 12 * Math.log2(hz / 440);
 }
 
 function findActiveLineIndex(lines: LyricsFile["lines"], t: number): number {
@@ -71,6 +127,8 @@ class LyricsVisualizer implements Visualizer {
   private lastState: TransportState | null = null;
 
   private lyrics: LyricsFile | null = null;
+  private vocalPitchNotes: VocalPitchNote[] = [];
+  private vocalPitchSamples: VocalPitchSample[] = [];
 
   async init(ctx: VizInitContext): Promise<void> {
     this.ctx2d = ctx.ctx2d;
@@ -79,6 +137,8 @@ class LyricsVisualizer implements Visualizer {
     } else {
       this.lyrics = null;
     }
+    this.vocalPitchNotes = parseVocalPitchNotes(ctx.song?.vocalPitch);
+    this.vocalPitchSamples = parseVocalPitchSamples(ctx.song?.vocalPitchContour);
   }
 
   onResize(width: number, height: number, dpr: number): void {
@@ -107,6 +167,8 @@ class LyricsVisualizer implements Visualizer {
     g.fillStyle = "rgba(255,255,255,0.7)";
     g.font = "12px system-ui";
     g.fillText(`viz-lyrics · t=${t.toFixed(2)}s`, 12, 18);
+
+    this.drawVocalPitchLane(frame);
 
     if (!this.lyrics || !this.lyrics.lines.length) {
       g.fillStyle = "rgba(255,255,255,0.8)";
@@ -167,6 +229,75 @@ class LyricsVisualizer implements Visualizer {
     }
   }
 
+  private drawVocalPitchLane(frame: FrameContext): void {
+    if (!this.vocalPitchNotes.length && !this.vocalPitchSamples.length) return;
+    const g = frame.ctx2d;
+    const t = frame.state.t;
+    const scrollMul = clampScrollSpeedMultiplier(frame.state.scrollSpeedMultiplier);
+    const originX = 24;
+    const laneW = Math.max(1, frame.width - originX * 2);
+    const { windowSec } = scrollWindow({
+      heightPx: laneW,
+      basePxPerSec: 120,
+      scrollMul,
+    });
+    const end = t + windowSec;
+    const top = 34;
+    const bottom = Math.max(top + 40, Math.floor(frame.height * 0.34));
+
+    const visibleNoteMidis = this.vocalPitchNotes
+      .filter((note) => note.t + note.d >= t && note.t <= end)
+      .map((note) => note.midi);
+    const visibleSampleMidis = this.vocalPitchSamples
+      .filter((sample) => sample.t >= t && sample.t <= end)
+      .map((sample) => hzToMidi(sample.hz));
+    const visibleMidis = [...visibleNoteMidis, ...visibleSampleMidis].filter(Number.isFinite);
+    const minMidi = visibleMidis.length ? Math.min(...visibleMidis) - 2 : 48;
+    const maxMidi = visibleMidis.length ? Math.max(...visibleMidis) + 2 : 84;
+    const midiSpan = Math.max(1, maxMidi - minMidi);
+    const toX = (sec: number) => originX + ((sec - t) / windowSec) * laneW;
+    const toY = (midi: number) => bottom - ((midi - minMidi) / midiSpan) * (bottom - top);
+
+    g.save();
+    g.fillStyle = "rgba(255,255,255,0.045)";
+    g.fillRect(originX, top, laneW, bottom - top);
+
+    g.strokeStyle = "rgba(255,255,255,0.10)";
+    g.lineWidth = 1;
+    for (let i = 0; i <= 2; i += 1) {
+      const y = top + ((bottom - top) * i) / 2;
+      g.beginPath();
+      g.moveTo(originX, y);
+      g.lineTo(originX + laneW, y);
+      g.stroke();
+    }
+
+    for (const note of this.vocalPitchNotes) {
+      if (note.t + note.d < t || note.t > end) continue;
+      const x0 = clamp(toX(note.t), originX, originX + laneW);
+      const x1 = clamp(toX(note.t + note.d), originX, originX + laneW);
+      const y = toY(note.midi);
+      g.fillStyle = "rgba(255, 210, 0, 0.55)";
+      g.fillRect(x0, y - 3, Math.max(2, x1 - x0), 6);
+    }
+
+    const visibleSamples = this.vocalPitchSamples.filter((sample) => sample.t >= t && sample.t <= end);
+    if (visibleSamples.length >= 2) {
+      g.strokeStyle = "rgba(62, 230, 168, 0.9)";
+      g.lineWidth = 2;
+      g.beginPath();
+      visibleSamples.forEach((sample, index) => {
+        const x = toX(sample.t);
+        const y = toY(hzToMidi(sample.hz));
+        if (index === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      });
+      g.stroke();
+    }
+
+    g.restore();
+  }
+
   dispose(): void {
     // nothing
   }
@@ -178,4 +309,3 @@ export function createVisualizer(): Visualizer {
 
 const mod: VisualizerModule = { createVisualizer };
 export default mod;
-

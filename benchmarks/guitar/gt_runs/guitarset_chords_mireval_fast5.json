@@ -1,0 +1,767 @@
+{
+  "summary": {
+    "cases": 5,
+    "events": 30,
+    "events_scored": 30,
+    "events_no_prediction": 0,
+    "correct": 10,
+    "root_correct": 23,
+    "quality_correct": 10,
+    "accuracy": 0.333333,
+    "root_accuracy": 0.766667,
+    "quality_accuracy": 0.333333
+  },
+  "cases": [
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_comp:mic",
+      "source": "mireval",
+      "reference_events": 6,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "events": [
+        {
+          "t": 0.0,
+          "duration": 4.8,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "7",
+            "pitch_class": 11,
+            "label": "B:7",
+            "confidence": 0.870759,
+            "score": 0.823909
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 4.8,
+          "duration": 2.4,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "7",
+            "pitch_class": 4,
+            "label": "E:7",
+            "confidence": 0.805871,
+            "score": 0.679713
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 7.2,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj",
+            "confidence": 0.938241,
+            "score": 0.973868
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 9.6,
+          "duration": 1.2,
+          "reference": {
+            "root": "F#",
+            "quality": "maj",
+            "pitch_class": 6,
+            "label": "F#:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "F#",
+            "quality": "7",
+            "pitch_class": 6,
+            "label": "F#:7",
+            "confidence": 0.819276,
+            "score": 0.709501
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 10.8,
+          "duration": 1.2,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "G#",
+            "quality": "hdim7",
+            "pitch_class": 8,
+            "label": "G#:hdim7",
+            "confidence": 0.830911,
+            "score": 0.735358
+          },
+          "root_match": false,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 12.0,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj7",
+            "pitch_class": 11,
+            "label": "B:maj7",
+            "confidence": 0.905698,
+            "score": 0.901551
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_solo:mic",
+      "source": "mireval",
+      "reference_events": 6,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "events": [
+        {
+          "t": 0.0,
+          "duration": 4.8,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "7",
+            "pitch_class": 11,
+            "label": "B:7",
+            "confidence": 0.829302,
+            "score": 0.731783
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 4.8,
+          "duration": 2.4,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "sus4",
+            "pitch_class": 4,
+            "label": "E:sus4",
+            "confidence": 0.828427,
+            "score": 0.729839
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 7.2,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "min7",
+            "pitch_class": 11,
+            "label": "B:min7",
+            "confidence": 0.873221,
+            "score": 0.82938
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 9.6,
+          "duration": 1.2,
+          "reference": {
+            "root": "F#",
+            "quality": "maj",
+            "pitch_class": 6,
+            "label": "F#:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "F#",
+            "quality": "sus4",
+            "pitch_class": 6,
+            "label": "F#:sus4",
+            "confidence": 0.760634,
+            "score": 0.579186
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 10.8,
+          "duration": 1.2,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "F#",
+            "quality": "sus4",
+            "pitch_class": 6,
+            "label": "F#:sus4",
+            "confidence": 0.810932,
+            "score": 0.69096
+          },
+          "root_match": false,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 12.0,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "F#",
+            "quality": "sus4",
+            "pitch_class": 6,
+            "label": "F#:sus4",
+            "confidence": 0.90713,
+            "score": 0.904734
+          },
+          "root_match": false,
+          "quality_match": false,
+          "correct": false
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "case_id": "guitarset:01_Jazz1-200-B_comp:mic",
+      "source": "mireval",
+      "reference_events": 6,
+      "metadata": {
+        "player": "01",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "events": [
+        {
+          "t": 0.0,
+          "duration": 4.8,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj",
+            "confidence": 0.939888,
+            "score": 0.977529
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 4.8,
+          "duration": 2.4,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj",
+            "confidence": 0.95,
+            "score": 1.0
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 7.2,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj",
+            "confidence": 0.926313,
+            "score": 0.947362
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 9.6,
+          "duration": 1.2,
+          "reference": {
+            "root": "F#",
+            "quality": "maj",
+            "pitch_class": 6,
+            "label": "F#:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "F#",
+            "quality": "maj",
+            "pitch_class": 6,
+            "label": "F#:maj",
+            "confidence": 0.948186,
+            "score": 0.995969
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 10.8,
+          "duration": 1.2,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj",
+            "confidence": 0.95,
+            "score": 1.0
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 12.0,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj7",
+            "pitch_class": 11,
+            "label": "B:maj7",
+            "confidence": 0.95,
+            "score": 1.0
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "case_id": "guitarset:01_Jazz1-200-B_solo:mic",
+      "source": "mireval",
+      "reference_events": 6,
+      "metadata": {
+        "player": "01",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "events": [
+        {
+          "t": 0.0,
+          "duration": 4.8,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "7",
+            "pitch_class": 4,
+            "label": "E:7",
+            "confidence": 0.844229,
+            "score": 0.764953
+          },
+          "root_match": false,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 4.8,
+          "duration": 2.4,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "F#",
+            "quality": "hdim7",
+            "pitch_class": 6,
+            "label": "F#:hdim7",
+            "confidence": 0.750164,
+            "score": 0.555921
+          },
+          "root_match": false,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 7.2,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "hdim7",
+            "pitch_class": 11,
+            "label": "B:hdim7",
+            "confidence": 0.839201,
+            "score": 0.75378
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 9.6,
+          "duration": 1.2,
+          "reference": {
+            "root": "F#",
+            "quality": "maj",
+            "pitch_class": 6,
+            "label": "F#:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "sus4",
+            "pitch_class": 4,
+            "label": "E:sus4",
+            "confidence": 0.714435,
+            "score": 0.476522
+          },
+          "root_match": false,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 10.8,
+          "duration": 1.2,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "hdim7",
+            "pitch_class": 11,
+            "label": "B:hdim7",
+            "confidence": 0.765254,
+            "score": 0.589453
+          },
+          "root_match": false,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 12.0,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "min7",
+            "pitch_class": 11,
+            "label": "B:min7",
+            "confidence": 0.95,
+            "score": 1.0
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "case_id": "guitarset:02_Jazz1-200-B_comp:mic",
+      "source": "mireval",
+      "reference_events": 6,
+      "metadata": {
+        "player": "02",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "events": [
+        {
+          "t": 0.0,
+          "duration": 4.8,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj",
+            "confidence": 0.937358,
+            "score": 0.971906
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 4.8,
+          "duration": 2.4,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj",
+            "confidence": 0.859102,
+            "score": 0.798005
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 7.2,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj",
+            "confidence": 0.873862,
+            "score": 0.830803
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        },
+        {
+          "t": 9.6,
+          "duration": 1.2,
+          "reference": {
+            "root": "F#",
+            "quality": "maj",
+            "pitch_class": 6,
+            "label": "F#:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "F#",
+            "quality": "sus4",
+            "pitch_class": 6,
+            "label": "F#:sus4",
+            "confidence": 0.858116,
+            "score": 0.795813
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 10.8,
+          "duration": 1.2,
+          "reference": {
+            "root": "E",
+            "quality": "maj",
+            "pitch_class": 4,
+            "label": "E:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "E",
+            "quality": "sus4",
+            "pitch_class": 4,
+            "label": "E:sus4",
+            "confidence": 0.91564,
+            "score": 0.923643
+          },
+          "root_match": true,
+          "quality_match": false,
+          "correct": false
+        },
+        {
+          "t": 12.0,
+          "duration": 2.4,
+          "reference": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj"
+          },
+          "status": "ok",
+          "prediction": {
+            "root": "B",
+            "quality": "maj",
+            "pitch_class": 11,
+            "label": "B:maj",
+            "confidence": 0.9399,
+            "score": 0.977557
+          },
+          "root_match": true,
+          "quality_match": true,
+          "correct": true
+        }
+      ],
+      "status": "ok"
+    }
+  ],
+  "dataset": "guitarset",
+  "task": "chord_detection",
+  "variant": "mic",
+  "source": "mireval",
+  "case_count": 5,
+  "generated_at": "2026-07-08T00:15:38.381101+00:00"
+}

@@ -12,4 +12,15 @@ stems:
   file: audio/stems/keys.wav
   default: true
 song_timeline: song_timeline.json
+drum_tab: drum_tab.json
+vocal_pitch: vocal_pitch.json
+vocal_pitch_contour: vocal_pitch_contour.json
+pitch_extraction:
+  engine: aural_ingest
+  model: melodic_rmvpe
+  version: 1.0.0
+keys: keys.json
+harmony: harmony.json
 aural_notes_mid: aural/notes.mid
+aural_fingering:
+  lead_guitar: aural/fingering.lead_guitar.json

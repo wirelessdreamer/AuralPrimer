@@ -111,8 +111,7 @@ describe("song-library auto-refresh on show", () => {
     // watcher unwired). See the matching dist-bundle runtime test.
     const src = loadMain();
     expect(src).toMatch(
-      /queueMicrotask\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?showSongLibraryStep\s*\(\s*\)\s*;[\s\S]*?\}\s*\)\s*;/,
-      "boot-time showSongLibraryStep() call must be wrapped in queueMicrotask to avoid TDZ"
+      /queueMicrotask\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?showSongLibraryStep\s*\(\s*\)\s*;[\s\S]*?\}\s*\)\s*;/
     );
   });
 

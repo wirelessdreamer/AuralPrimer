@@ -1,0 +1,60 @@
+{
+  "missing_roles": [],
+  "mix_wav": "D:\\AuralPrimer\\tmp\\roformer-smoke\\short_mix.wav",
+  "ok": true,
+  "provider": "roformer",
+  "raw_result": {
+    "cache_hit": false,
+    "ok": true,
+    "provider": "roformer",
+    "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+    "shifts": 1,
+    "status": "fresh",
+    "stem_paths": {
+      "bass": "audio/stems/bass.wav",
+      "drums": "audio/stems/drums.wav",
+      "other": "audio/stems/other.wav",
+      "vocals": "audio/stems/vocals.wav"
+    }
+  },
+  "reason": null,
+  "require_roles": [
+    "bass",
+    "drums",
+    "other",
+    "vocals"
+  ],
+  "roles": [
+    "bass",
+    "drums",
+    "other",
+    "vocals"
+  ],
+  "runtime": {
+    "command": "{python_q} D:\\AuralPrimer\\.external\\msst\\run_roformer_msst.py --repo {repo_path_q} --mix-wav {mix_wav_q} --out-dir {out_dir_q} --config-path D:\\AuralPrimer\\.external\\msst\\models\\bs_roformer_musdb18hq\\config_bs_roformer_384_8_2_485100.yaml --model-path D:\\AuralPrimer\\.external\\msst\\models\\bs_roformer_musdb18hq\\model_bs_roformer_ep_17_sdr_9.6568.ckpt --shifts {shifts} --force-cpu",
+    "configured": true,
+    "env": {
+      "AURAL_ROFORMER_COMMAND": "{python_q} D:\\AuralPrimer\\.external\\msst\\run_roformer_msst.py --repo {repo_path_q} --mix-wav {mix_wav_q} --out-dir {out_dir_q} --config-path D:\\AuralPrimer\\.external\\msst\\models\\bs_roformer_musdb18hq\\config_bs_roformer_384_8_2_485100.yaml --model-path D:\\AuralPrimer\\.external\\msst\\models\\bs_roformer_musdb18hq\\model_bs_roformer_ep_17_sdr_9.6568.ckpt --shifts {shifts} --force-cpu",
+      "AURAL_ROFORMER_PYTHON": "D:\\AuralPrimer\\python\\ingest\\.venv\\Scripts\\python.exe",
+      "AURAL_ROFORMER_REPO": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+      "AURAL_ROFORMER_TIMEOUT_SEC": "900"
+    },
+    "missing": [],
+    "provider": "roformer",
+    "python": "D:\\AuralPrimer\\python\\ingest\\.venv\\Scripts\\python.exe",
+    "python_exists": true,
+    "python_is_file": true,
+    "repo": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+    "repo_exists": true,
+    "repo_is_dir": true,
+    "timeout_sec": 900.0
+  },
+  "status": "fresh",
+  "stem_paths": {
+    "bass": "audio/stems/bass.wav",
+    "drums": "audio/stems/drums.wav",
+    "other": "audio/stems/other.wav",
+    "vocals": "audio/stems/vocals.wav"
+  },
+  "stems_dir": "D:\\AuralPrimer\\tmp\\roformer-smoke\\stems"
+}

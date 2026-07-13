@@ -143,6 +143,7 @@ CANDIDATE_DISPLAY: list[tuple[str, str, str, str]] = [
 #   drums                        -> librosa_superflux_dense
 #   bass                         -> melodic_pyin_bass_strict
 #   guitar / *_guitar / rhythm   -> melodic_combined_guitar
+#   vocals                       -> melodic_rmvpe
 # Any candidate whose algorithm module errors / is missing is dropped, the
 # same omit-on-failure behavior as d3rm / pti in the keys palette.
 PALETTES: dict[str, list[tuple[str, str, str, str]]] = {
@@ -163,6 +164,9 @@ PALETTES: dict[str, list[tuple[str, str, str, str]]] = {
     "rhythm_guitar": [
         ("combined_guitar", "Combined Guitar", "#21c089", "melodic_combined_guitar"),
     ],
+    "vocals": [
+        ("rmvpe", "RMVPE", "#d06bc1", "melodic_rmvpe"),
+    ],
 }
 
 
@@ -182,7 +186,7 @@ CANDIDATE_IDS: list[str] = [cid for cid, _, _, _ in CANDIDATE_DISPLAY]
 CANDIDATE_ALGOS: dict[str, str] = {cid: algo for cid, _, _, algo in CANDIDATE_DISPLAY}
 
 VALID_INSTRUMENTS: frozenset[str] = frozenset(
-    {"keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "melodic"}
+    {"keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "vocals", "melodic"}
 )
 
 # Roles whose transcription is bass-register content; used by the bass_gap
@@ -252,12 +256,21 @@ def serialize_note(n: MelodicNote) -> dict[str, object]:
     pathological zero-duration emissions don't break schema validation.
     """
     t_off = max(n.t_off, n.t_on + 1e-3)
-    return {
+    out: dict[str, object] = {
         "t_on": float(n.t_on),
         "t_off": float(t_off),
         "pitch": int(n.pitch),
         "velocity": int(max(1, min(127, n.velocity))),
     }
+    if n.string is not None and 0 <= int(n.string) <= 8:
+        string_idx = int(n.string)
+        out["string"] = string_idx
+        out["s"] = string_idx
+    if n.fret is not None and 0 <= int(n.fret) <= 36:
+        fret = int(n.fret)
+        out["fret"] = fret
+        out["f"] = fret
+    return out
 
 
 def jaccard_overlap(

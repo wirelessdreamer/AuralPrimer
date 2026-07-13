@@ -2,7 +2,9 @@ export type DrumLane = "BD" | "SD" | "HH" | "CY" | "RD" | "HT" | "LT" | "FT";
 
 export type MidiNoteLike = {
   t: number;
+  t_off?: number;
   midi: number;
+  velocity?: number;
   channel?: number;
 };
 
@@ -12,11 +14,32 @@ export type MidiTrackLike = {
   notes: MidiNoteLike[];
 };
 
+type TempoEvent = {
+  tick: number;
+  usPerQuarter: number;
+  order: number;
+};
+
+type ParsedMidiNote = {
+  tick: number;
+  tickOff?: number;
+  midi: number;
+  channel?: number;
+  velocity?: number;
+};
+
+type ParsedMidiTrack = {
+  index: number;
+  name?: string;
+  notes: ParsedMidiNote[];
+};
+
 type StrictSource = "named" | "channel9";
 
 type DrumEvent = {
   t: number;
   midi: number;
+  velocity?: number;
   lane: DrumLane;
   trackIndex: number;
   trackName?: string;
@@ -25,7 +48,12 @@ type DrumEvent = {
 
 export type DrumChartSelection = {
   mode: "strict" | "relaxed";
-  reason: "strict_empty" | "strict_preferred" | "relaxed_richer" | "dedicated_drum_track_guard";
+  reason:
+    | "strict_empty"
+    | "strict_preferred"
+    | "relaxed_richer"
+    | "dedicated_drum_track_guard"
+    | "drum_tab";
   events: DrumEvent[];
   strictCount: number;
   relaxedCount: number;
@@ -66,6 +94,7 @@ function collectStrictEvents(tracks: MidiTrackLike[]): DrumEvent[] {
       out.push({
         t: note.t,
         midi: note.midi,
+        velocity: note.velocity,
         lane,
         trackIndex: track.index,
         trackName: track.name,
@@ -86,6 +115,7 @@ function collectRelaxedEvents(tracks: MidiTrackLike[]): DrumEvent[] {
       out.push({
         t: note.t,
         midi: note.midi,
+        velocity: note.velocity,
         lane,
         trackIndex: track.index,
         trackName: track.name
@@ -135,6 +165,71 @@ function decodeText(bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
+function ppqnTicksToSeconds(ticks: number, usPerQuarter: number, ppqn: number): number {
+  if (!Number.isFinite(ticks) || !Number.isFinite(usPerQuarter) || !Number.isFinite(ppqn) || ppqn <= 0) {
+    return 0;
+  }
+  return (ticks * usPerQuarter) / (ppqn * 1_000_000);
+}
+
+function buildTickToSecondsConverter(division: number, tempoEvents: TempoEvent[]): (tick: number) => number {
+  if ((division & 0x8000) !== 0) {
+    const rawFps = ((division >>> 8) & 0xff) - 256;
+    const ticksPerFrame = division & 0xff;
+    const fpsAbs = Math.abs(rawFps);
+    const fps = fpsAbs === 29 ? 29.97 : fpsAbs;
+    const secPerTick = fps > 0 && ticksPerFrame > 0 ? 1 / (fps * ticksPerFrame) : 0;
+    return (tick) => Math.max(0, tick) * secPerTick;
+  }
+
+  const ppqn = division & 0x7fff;
+  const ordered = [...tempoEvents].sort((a, b) => a.tick - b.tick || a.order - b.order);
+  const segments: Array<{ tick: number; sec: number; usPerQuarter: number }> = [
+    { tick: 0, sec: 0, usPerQuarter: 500_000 }
+  ];
+
+  let currentTick = 0;
+  let currentSec = 0;
+  let currentTempo = 500_000;
+
+  for (const event of ordered) {
+    if (!Number.isFinite(event.tick) || !Number.isFinite(event.usPerQuarter) || event.usPerQuarter <= 0) continue;
+
+    if (event.tick > currentTick) {
+      currentSec += ppqnTicksToSeconds(event.tick - currentTick, currentTempo, ppqn);
+      currentTick = event.tick;
+      currentTempo = event.usPerQuarter;
+      segments.push({ tick: currentTick, sec: currentSec, usPerQuarter: currentTempo });
+      continue;
+    }
+
+    currentTempo = event.usPerQuarter;
+    segments[segments.length - 1] = {
+      tick: currentTick,
+      sec: currentSec,
+      usPerQuarter: currentTempo
+    };
+  }
+
+  return (tick) => {
+    const targetTick = Math.max(0, tick);
+    let lo = 0;
+    let hi = segments.length - 1;
+
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi + 1) / 2);
+      if (segments[mid].tick <= targetTick) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    const seg = segments[lo];
+    return seg.sec + ppqnTicksToSeconds(targetTick - seg.tick, seg.usPerQuarter, ppqn);
+  };
+}
+
 export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
   if (bytes.length < 14) return [];
   if (
@@ -149,9 +244,11 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
   const headerLen = readU32BE(bytes, 4);
   if (headerLen < 6 || 8 + headerLen > bytes.length) return [];
   const trackCount = readU16BE(bytes, 10);
+  const division = readU16BE(bytes, 12);
 
   let off = 8 + headerLen;
-  const tracks: MidiTrackLike[] = [];
+  const tracks: ParsedMidiTrack[] = [];
+  const tempoEvents: TempoEvent[] = [];
 
   for (let ti = 0; ti < trackCount; ti += 1) {
     if (off + 8 > bytes.length) break;
@@ -168,7 +265,8 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
     off += 8;
     const end = Math.min(bytes.length, off + trkLen);
 
-    const notes: MidiNoteLike[] = [];
+    const notes: ParsedMidiNote[] = [];
+    const active = new Map<string, ParsedMidiNote>();
     let name = "";
     let absTicks = 0;
     let runningStatus = 0;
@@ -199,6 +297,12 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
         const data = bytes.slice(off, off + lv.value);
         if (metaType === 0x03 && !name) {
           name = decodeText(data);
+        } else if (metaType === 0x51 && data.length >= 3) {
+          tempoEvents.push({
+            tick: absTicks,
+            usPerQuarter: (data[0] << 16) | (data[1] << 8) | data[2],
+            order: tempoEvents.length,
+          });
         }
         off += lv.value;
         if (metaType === 0x2f) break;
@@ -219,12 +323,24 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
 
       const channel = status & 0x0f;
       const msg = status & 0xf0;
+      const key = `${channel}:${d1}`;
       if (msg === 0x90 && d2 > 0) {
-        notes.push({
-          t: absTicks,
+        const prior = active.get(key);
+        if (prior) {
+          prior.tickOff = absTicks;
+        }
+        const note: ParsedMidiNote = {
+          tick: absTicks,
           midi: d1,
+          velocity: d2,
           channel
-        });
+        };
+        notes.push(note);
+        active.set(key, note);
+      } else if (msg === 0x80 || (msg === 0x90 && d2 === 0)) {
+        const note = active.get(key);
+        if (note) note.tickOff = absTicks;
+        active.delete(key);
       }
     }
 
@@ -237,7 +353,18 @@ export function parseMidiTracksFromBytes(bytes: Uint8Array): MidiTrackLike[] {
     off = end;
   }
 
-  return tracks;
+  const toSeconds = buildTickToSecondsConverter(division, tempoEvents);
+  return tracks.map((track) => ({
+    index: track.index,
+    name: track.name,
+    notes: track.notes.map((note) => ({
+      t: toSeconds(note.tick),
+      t_off: typeof note.tickOff === "number" ? toSeconds(note.tickOff) : undefined,
+      midi: note.midi,
+      velocity: note.velocity,
+      channel: note.channel,
+    })),
+  }));
 }
 
 export function selectDrumChartFromMidiBytes(bytes: Uint8Array): DrumChartSelection {
@@ -301,4 +428,98 @@ export function selectDrumChart(tracks: MidiTrackLike[]): DrumChartSelection {
     strictUniqueLanes: strictLanes,
     relaxedUniqueLanes: relaxedLanes
   };
+}
+
+export type InstrumentRole = "bass" | "rhythm_guitar" | "lead_guitar" | "keys" | "vocals" | "melodic";
+
+export type MelodicNote = {
+  t_on: number;
+  t_off: number;
+  pitch: number;
+  velocity: number;
+  string?: number;
+  fret?: number;
+  s?: number;
+  f?: number;
+};
+
+export type MelodicTrackSelection = {
+  role: InstrumentRole;
+  trackName: string;
+  channel: number;
+  notes: MelodicNote[];
+};
+
+const CHANNEL_TO_ROLE: Record<number, InstrumentRole> = {
+  0: "bass",
+  1: "rhythm_guitar",
+  2: "lead_guitar",
+  3: "keys",
+  4: "melodic",
+  5: "vocals",
+};
+
+const MELODIC_TRACK_NAME_RE: Record<InstrumentRole, RegExp> = {
+  bass: /\bbass\b/i,
+  rhythm_guitar: /\brhythm\s*guitar\b/i,
+  lead_guitar: /\blead\s*guitar\b/i,
+  keys: /\bkeys?\b|\bsynth\b|\bpiano\b/i,
+  vocals: /\b(vocals?|vox|voice|lead\s*vocal)\b/i,
+  melodic: /\bmelodic\b/i,
+};
+
+function inferRoleFromTrackName(name: string): InstrumentRole | null {
+  for (const [role, re] of Object.entries(MELODIC_TRACK_NAME_RE) as Array<[InstrumentRole, RegExp]>) {
+    if (re.test(name)) return role;
+  }
+  return null;
+}
+
+export function selectMelodicTracks(tracks: MidiTrackLike[]): MelodicTrackSelection[] {
+  const out: MelodicTrackSelection[] = [];
+  const seenRoles = new Set<InstrumentRole>();
+
+  for (const track of tracks) {
+    if (isDrumNamedTrack(track.name)) continue;
+    if (track.name === "Conductor" || track.name === "Structure") continue;
+
+    let role: InstrumentRole | null = track.name ? inferRoleFromTrackName(track.name) : null;
+    let channel = -1;
+    if (!role && track.notes.length > 0) {
+      const ch = track.notes[0].channel;
+      if (ch !== undefined && ch !== 9 && ch !== 15) {
+        role = CHANNEL_TO_ROLE[ch] ?? null;
+        channel = ch;
+      }
+    }
+
+    if (!role || seenRoles.has(role)) continue;
+    seenRoles.add(role);
+
+    const melodicNotes: MelodicNote[] = track.notes
+      .filter((n) => n.channel !== 9 && n.channel !== 15)
+      .map((n) => ({
+        t_on: n.t,
+        t_off: Math.max(n.t + 0.06, typeof n.t_off === "number" ? n.t_off : n.t + 0.15),
+        pitch: n.midi,
+        velocity: Math.max(0, Math.min(1, (n.velocity ?? 100) / 127)),
+      }));
+
+    if (melodicNotes.length === 0) continue;
+
+    out.push({
+      role,
+      trackName: track.name ?? role,
+      channel: channel >= 0 ? channel : (track.notes[0]?.channel ?? -1),
+      notes: melodicNotes,
+    });
+  }
+
+  const order: InstrumentRole[] = ["bass", "rhythm_guitar", "lead_guitar", "keys", "melodic", "vocals"];
+  out.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
+  return out;
+}
+
+export function selectMelodicTracksFromMidiBytes(bytes: Uint8Array): MelodicTrackSelection[] {
+  return selectMelodicTracks(parseMidiTracksFromBytes(bytes));
 }

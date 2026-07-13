@@ -12,7 +12,7 @@
  */
 
 import type { AuralSongDetails } from "./auralsong";
-import { extractKeyModeFromManifest } from "./hud";
+import { extractKeyModeFromManifest, hasExplicitKeyModeInManifest, type KeyModeArtifacts } from "./hud";
 import { inferKeySignature, type MelodicNote } from "./tabRenderer";
 import type { SongLibraryPanelHandle } from "./songLibraryPanel";
 import type { ConsoleBridge } from "./consoleBridge";
@@ -25,12 +25,15 @@ export type SongDetailsViewDeps = {
 
 export type SongDetailsViewHandle = {
   /**
-   * Update the HUD key/mode chip. Prefers a data-driven key inferred from the
-   * primary melodic track's notes (the same `inferKeySignature` the tab view
-   * uses), so the header matches the on-screen key signature. Falls back to the
-   * manifest, then to the default, when no notes are available.
+   * Update the HUD key/mode chip. Prefers model-produced manifest metadata
+   * when present, then falls back to note inference for legacy packs, then to
+   * the stable manifest/default path.
    */
-  setHudKeyMode: (manifestRaw: unknown, melodicNotes?: MelodicNote[] | null) => void;
+  setHudKeyMode: (
+    manifestRaw: unknown,
+    melodicNotes?: MelodicNote[] | null,
+    keyModeArtifacts?: KeyModeArtifacts | null,
+  ) => void;
   /** Replace the right-rail details slot with the given AuralSong details. */
   renderDetails: (details: AuralSongDetails) => void;
   /** Update the band-setup widget's title/artist/path + playStart gate. */
@@ -57,7 +60,16 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
 
   const esc = deps.escapeHtml;
 
-  function setHudKeyMode(manifestRaw: unknown, melodicNotes?: MelodicNote[] | null): void {
+  function setHudKeyMode(
+    manifestRaw: unknown,
+    melodicNotes?: MelodicNote[] | null,
+    keyModeArtifacts?: KeyModeArtifacts | null,
+  ): void {
+    if (hasExplicitKeyModeInManifest(manifestRaw, keyModeArtifacts)) {
+      const km = extractKeyModeFromManifest(manifestRaw, keyModeArtifacts);
+      hudKeyModeEl!.textContent = `${km.key} ${km.mode}`;
+      return;
+    }
     if (melodicNotes && melodicNotes.length > 0) {
       const ks = inferKeySignature(melodicNotes);
       if (ks) {
@@ -65,7 +77,7 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
         return;
       }
     }
-    const km = extractKeyModeFromManifest(manifestRaw);
+    const km = extractKeyModeFromManifest(manifestRaw, keyModeArtifacts);
     hudKeyModeEl!.textContent = `${km.key} ${km.mode}`;
   }
 
@@ -90,6 +102,13 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
         <li>sections: ${esc(yesNo(details.has_sections))}</li>
         <li>events: ${esc(yesNo(details.has_events))}</li>
         <li>lyrics: ${esc(yesNo(Boolean(details.has_lyrics)))}</li>
+        <li>song_timeline: ${esc(yesNo(Boolean(details.has_song_timeline)))}</li>
+        <li>drum_tab: ${esc(yesNo(Boolean(details.has_drum_tab)))}</li>
+        <li>keys: ${esc(yesNo(Boolean(details.has_keys)))}</li>
+        <li>harmony: ${esc(yesNo(Boolean(details.has_harmony)))}</li>
+        <li>vocal_pitch: ${esc(yesNo(Boolean(details.has_vocal_pitch)))}</li>
+        <li>vocal_pitch_contour: ${esc(yesNo(Boolean(details.has_vocal_pitch_contour)))}</li>
+        <li>aural_fingering: ${esc(yesNo(Boolean(details.has_aural_fingering)))}</li>
       </ul>
 
       <h4>Audio</h4>
@@ -100,7 +119,7 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
       </ul>
 
       <h4>Charts</h4>
-      ${details.charts.length ? `<ul>${details.charts.map((c) => `<li>${esc(c)}</li>`).join("\n")}</ul>` : "(derived from aural/notes.mid)"}
+      ${details.charts.length ? `<ul>${details.charts.map((c) => `<li>${esc(c)}</li>`).join("\n")}</ul>` : "(from manifest model artifacts when available)"}
 
       <h4>manifest.yaml</h4>
       <pre>${esc(raw)}</pre>

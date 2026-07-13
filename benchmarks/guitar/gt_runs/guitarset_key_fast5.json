@@ -1,0 +1,193 @@
+{
+  "summary": {
+    "cases": 5,
+    "cases_with_reference": 5,
+    "cases_scored": 5,
+    "cases_no_prediction": 0,
+    "correct": 4,
+    "pitch_class_correct": 5,
+    "mode_correct": 4,
+    "spelling_correct": 4,
+    "accuracy": 0.8,
+    "pitch_class_accuracy": 1.0,
+    "mode_accuracy": 0.8,
+    "spelling_accuracy": 0.8
+  },
+  "cases": [
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_comp:mic",
+      "note_count": 164,
+      "status": "ok",
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "reference": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 1.0
+      },
+      "prediction": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 0.60188,
+        "score": 0.869379,
+        "method": "krumhansl_schmuckler_notes_v1"
+      },
+      "pitch_class_match": true,
+      "mode_match": true,
+      "correct": true,
+      "spelling_match": true
+    },
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_solo:mic",
+      "note_count": 53,
+      "status": "ok",
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "reference": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 1.0
+      },
+      "prediction": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 0.563989,
+        "score": 0.820113,
+        "method": "krumhansl_schmuckler_notes_v1"
+      },
+      "pitch_class_match": true,
+      "mode_match": true,
+      "correct": true,
+      "spelling_match": true
+    },
+    {
+      "case_id": "guitarset:01_Jazz1-200-B_comp:mic",
+      "note_count": 120,
+      "status": "ok",
+      "metadata": {
+        "player": "01",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "reference": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 1.0
+      },
+      "prediction": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 0.71231,
+        "score": 0.822134,
+        "method": "krumhansl_schmuckler_notes_v1"
+      },
+      "pitch_class_match": true,
+      "mode_match": true,
+      "correct": true,
+      "spelling_match": true
+    },
+    {
+      "case_id": "guitarset:01_Jazz1-200-B_solo:mic",
+      "note_count": 84,
+      "status": "ok",
+      "metadata": {
+        "player": "01",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "reference": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 1.0
+      },
+      "prediction": {
+        "key": "B",
+        "mode": "minor",
+        "pitch_class": 11,
+        "label": "B:minor",
+        "confidence": 0.593069,
+        "score": 0.85287,
+        "method": "krumhansl_schmuckler_notes_v1"
+      },
+      "pitch_class_match": true,
+      "mode_match": false,
+      "correct": false,
+      "spelling_match": false
+    },
+    {
+      "case_id": "guitarset:02_Jazz1-200-B_comp:mic",
+      "note_count": 190,
+      "status": "ok",
+      "metadata": {
+        "player": "02",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      },
+      "reference": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 1.0
+      },
+      "prediction": {
+        "key": "B",
+        "mode": "major",
+        "pitch_class": 11,
+        "label": "B:major",
+        "confidence": 0.6839,
+        "score": 0.777601,
+        "method": "krumhansl_schmuckler_notes_v1"
+      },
+      "pitch_class_match": true,
+      "mode_match": true,
+      "correct": true,
+      "spelling_match": true
+    }
+  ],
+  "dataset": "guitarset",
+  "task": "key_detection",
+  "variant": "mic",
+  "case_count": 5,
+  "generated_at": "2026-07-08T00:08:19.066972+00:00"
+}

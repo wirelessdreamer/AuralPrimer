@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 import yaml
@@ -66,6 +67,35 @@ def load_pack_manifest(pack_root: Path | str) -> dict[str, Any] | None:
     except Exception:  # noqa: BLE001 — a bad manifest degrades to glob fallback
         return None
     return doc if isinstance(doc, dict) else None
+
+
+def _is_safe_manifest_rel_path(rel_path: str) -> bool:
+    value = rel_path.strip()
+    if not value or "\\" in value or ":" in value or value.startswith("/") or "//" in value:
+        return False
+    return not any(part in {"", ".", ".."} for part in PurePosixPath(value).parts)
+
+
+def _manifest_rel_path(manifest: dict[str, Any] | None, key: str) -> str | None:
+    if manifest is None:
+        return None
+    raw = manifest.get(key)
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value if _is_safe_manifest_rel_path(value) else None
+
+
+def resolve_drum_tab_path(pack_root: Path | str) -> Path:
+    """Path to the pack's drum-tab artifact.
+
+    Manifest packs may declare a non-default ``drum_tab`` pointer; legacy packs
+    and older feedpaks fall back to the historical root ``drum_tab.json``.
+    """
+
+    root = Path(pack_root)
+    rel = _manifest_rel_path(load_pack_manifest(root), "drum_tab") or "drum_tab.json"
+    return root / rel
 
 
 def _iter_manifest_stems(manifest: dict[str, Any]) -> list[dict[str, Any]]:

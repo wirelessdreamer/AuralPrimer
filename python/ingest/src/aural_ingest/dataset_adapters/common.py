@@ -16,7 +16,27 @@ from typing import Literal
 from aural_ingest.transcription import DrumEvent, MelodicNote
 
 
-GroundTruthInstrument = Literal["drums", "guitar", "bass", "keys", "melodic"]
+GroundTruthInstrument = Literal["drums", "guitar", "bass", "keys", "vocals", "melodic"]
+GroundTruthScalar = str | int | float | bool | None
+
+
+@dataclass(frozen=True)
+class GroundTruthChordEvent:
+    t_on: float
+    t_off: float
+    label: str
+    source: str = ""
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class GroundTruthKeyEvent:
+    t_on: float
+    t_off: float
+    key: str
+    mode: str
+    label: str
+    confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +58,15 @@ class GroundTruthCase:
 
     drum_events: tuple[DrumEvent, ...] = ()
     melodic_notes: tuple[MelodicNote, ...] = ()
+    melodic_note_metadata: tuple[dict[str, GroundTruthScalar], ...] = ()
+    """Optional per-note GT metadata aligned 1:1 with ``melodic_notes``.
+
+    GuitarSet uses this to expose string/fret labels without changing the
+    pitch/onset scorer's canonical ``MelodicNote`` contract.
+    """
+
+    chord_events: tuple[GroundTruthChordEvent, ...] = ()
+    key_events: tuple[GroundTruthKeyEvent, ...] = ()
 
     metadata: dict[str, str] = field(default_factory=dict)
     """Free-form bucketing keys -- ``split``, ``style``, ``kit``, ``tempo``,

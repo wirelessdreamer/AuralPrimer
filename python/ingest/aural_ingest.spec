@@ -17,13 +17,18 @@ COLLECT_PACKAGES = [
     "demucs",
     "ema_pytorch",
     "einx",
+    "jsonschema",
     "librosa",
     "lightning_fabric",
     "lightning_utilities",
+    "madmom",
     "mir_eval",
     "mido",
     "mt3_infer",
+    "museval",
     "numpy",
+    "onnx",
+    "onnxruntime",
     "pretty_midi",
     "pytorch_lightning",
     "rotary_embedding_torch",
@@ -37,6 +42,7 @@ COLLECT_PACKAGES = [
     "torchvision",
     "transformers",
     "x_transformers",
+    "yaml",
 ]
 
 SUBMODULE_PACKAGES = [
@@ -47,7 +53,13 @@ SUBMODULE_PACKAGES = [
     "demucs",
     "ema_pytorch",
     "einx",
+    "jsonschema",
+    "madmom",
+    "mir_eval",
     "mt3_infer",
+    "museval",
+    "onnx",
+    "onnxruntime",
     "pytorch_lightning",
     "torch",
     "torchcrepe",
@@ -56,6 +68,7 @@ SUBMODULE_PACKAGES = [
     "torchvision",
     "transformers",
     "x_transformers",
+    "yaml",
 ]
 
 datas = []

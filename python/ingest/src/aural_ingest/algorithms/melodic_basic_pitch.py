@@ -162,8 +162,10 @@ def transcribe(
     if resolved_model_path is not None:
         try:
             model = Model(str(resolved_model_path))
-        except Exception:
-            model = None
+        except Exception as exc:
+            if not allow_fallback:
+                raise RuntimeError("basic_pitch model load failed") from exc
+            return _fallback_transcribe(stem_path, instrument=instrument)
 
     try:
         if model is not None:

@@ -1,0 +1,6 @@
+# Short GuitarSet mic cases for the first YourMT3 guitar smoke benchmark.
+guitarset:00_Jazz1-200-B_comp:mic
+guitarset:00_Jazz1-200-B_solo:mic
+guitarset:01_Jazz1-200-B_comp:mic
+guitarset:01_Jazz1-200-B_solo:mic
+guitarset:02_Jazz1-200-B_comp:mic

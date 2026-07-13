@@ -2,12 +2,46 @@
 
 from __future__ import annotations
 
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+from aural_ingest import meter_tracker
 from aural_ingest.meter_tracker import (
+    _time_signature_string,
     assign_bars_from_downbeats,
     derive_beats_per_bar,
     derive_bpm,
-    _time_signature_string,
 )
+
+
+def _install_fake_file2beats(monkeypatch: pytest.MonkeyPatch, fake_cls: type) -> None:
+    beat_this = types.ModuleType("beat_this")
+    inference = types.ModuleType("beat_this.inference")
+    inference.File2Beats = fake_cls
+    beat_this.inference = inference
+    monkeypatch.setitem(sys.modules, "beat_this", beat_this)
+    monkeypatch.setitem(sys.modules, "beat_this.inference", inference)
+
+
+def _track_with_fake_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    config: dict | None = None,
+):
+    monkeypatch.setattr(
+        meter_tracker,
+        "resolve_checkpoint",
+        lambda _config=None: tmp_path / "beat_this-final0.ckpt",
+    )
+    return meter_tracker.track_meter(
+        tmp_path / "song.wav",
+        duration_sec=3.0,
+        config=config,
+    )
 
 
 def test_assign_bars_clean_4_4():
@@ -83,3 +117,88 @@ def test_time_signature_string():
 
 def test_empty_beats():
     assert assign_bars_from_downbeats([], [0.0]) == []
+
+
+def test_track_meter_defaults_to_dbn_postprocessor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    calls: list[bool] = []
+
+    class FakeFile2Beats:
+        def __init__(self, *, checkpoint_path: str, device: str, dbn: bool) -> None:
+            calls.append(dbn)
+            assert checkpoint_path.endswith("beat_this-final0.ckpt")
+            assert device == "cpu"
+
+        def __call__(self, _wav_path: str):
+            return [0.0, 0.5, 1.0, 1.5, 2.0, 2.5], [0.0, 2.0]
+
+    _install_fake_file2beats(monkeypatch, FakeFile2Beats)
+
+    result = _track_with_fake_checkpoint(tmp_path, monkeypatch)
+
+    assert result is not None
+    _bpm, _beats, _tempo_map, meta = result
+    assert calls == [True]
+    assert meta["beat_source"] == "beat_this"
+    assert meta["postprocessor"] == "dbn"
+
+
+@pytest.mark.parametrize(
+    ("config", "env_value", "expected_dbn"),
+    [
+        ({}, "0", False),
+        ({"meter_dbn": False}, None, False),
+        ({"meter_dbn": True}, "0", True),
+        ({"meter_dbn": "minimal"}, None, False),
+    ],
+)
+def test_track_meter_dbn_overrides(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    config: dict,
+    env_value: str | None,
+    expected_dbn: bool,
+):
+    calls: list[bool] = []
+
+    class FakeFile2Beats:
+        def __init__(self, *, checkpoint_path: str, device: str, dbn: bool) -> None:
+            calls.append(dbn)
+
+        def __call__(self, _wav_path: str):
+            return [0.0, 0.5, 1.0, 1.5, 2.0], [0.0]
+
+    if env_value is not None:
+        monkeypatch.setenv(meter_tracker.METER_DBN_ENV, env_value)
+    else:
+        monkeypatch.delenv(meter_tracker.METER_DBN_ENV, raising=False)
+    _install_fake_file2beats(monkeypatch, FakeFile2Beats)
+
+    result = _track_with_fake_checkpoint(tmp_path, monkeypatch, config=config)
+
+    assert result is not None
+    assert calls == [expected_dbn]
+    assert result[3]["postprocessor"] == ("dbn" if expected_dbn else "minimal")
+
+
+def test_track_meter_madmom_import_error_retries_without_dbn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[bool] = []
+
+    class FakeFile2Beats:
+        def __init__(self, *, checkpoint_path: str, device: str, dbn: bool) -> None:
+            calls.append(dbn)
+            if dbn:
+                raise ImportError("madmom unavailable")
+
+        def __call__(self, _wav_path: str):
+            return [0.0, 0.5, 1.0, 1.5, 2.0], [0.0]
+
+    _install_fake_file2beats(monkeypatch, FakeFile2Beats)
+
+    result = _track_with_fake_checkpoint(tmp_path, monkeypatch)
+
+    assert result is not None
+    assert calls == [True, False]
+    assert result[3]["postprocessor"] == "minimal"

@@ -39,6 +39,14 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     expect(src).toMatch(/scrollPxPerSec\s*=\s*[^;]*\*\s*scrollMul/);
   });
 
+  it("viz-drum-highway only maps drum-channel or drum-named song notes", () => {
+    const src = read("visualizers/viz-drum-highway/src/index.ts");
+    expect(src).toMatch(/function\s+isDrumSongNote/);
+    expect(src).toMatch(/note\.channel\s*===\s*9/);
+    expect(src).toMatch(/trackName[\s\S]*drum\|drums\|kit\|percussion\|perc/);
+    expect(src).toMatch(/\.filter\(isDrumSongNote\)[\s\S]*?\.map/);
+  });
+
   it("viz-beats multiplies its pxPerSecond by the multiplier", () => {
     const src = read("visualizers/viz-beats/src/index.ts");
     expect(src).toMatch(/clampScrollSpeedMultiplier\(frame\.state\.scrollSpeedMultiplier\)/);

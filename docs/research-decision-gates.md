@@ -64,12 +64,14 @@ Decisions:
    2026-05-07. Production wiring (downstream consumers — events.json schema,
    gameplay metrics, charts, frontend mapping) is deferred until path 2
    below lands so the taxonomy + algorithm switch ship together.
-2. **Production drum default migrates to a CRNN trained on ADTOF or to
-   YourMT3+** once model-pack flow is validated for the larger weights.
-   `combined_filter` remains shippable as `--drum-engine combined_filter`
-   for research A/B but is no longer the production default. The 2026-05-07
-   Phase 1 fix (low-band-energy guard + unanimous-detector boost) keeps
-   the legacy path safe in the meantime — see test_quality_02 in
+2. **Production drum default stays on the safe local path until a neural
+   candidate clears benchmark, gameplay, and listening gates.** CRNN,
+   YourMT3+, and related modelpack-backed engines remain explicit research/A-B
+   choices until model-pack flow and review are validated. `combined_filter`
+   remains shippable as `--drum-engine combined_filter`, while
+   `beat_conditioned_multiband_decoder` is the current safe gameplay default.
+   The 2026-05-07 Phase 1 fix (low-band-energy guard + unanimous-detector
+   boost) keeps the legacy path safe in the meantime — see test_quality_02 in
    `python/ingest/tests/test_ingest_quality_improvements.py`.
 3. **Demucs preprocessing is required for the production drum path** once
    path 2 lands. The Stem Separation Policy section above keeps Demucs
@@ -109,9 +111,9 @@ Phase 1 + 2 landings:
 - **Path 2 (production drum default)** — orchestration plumbing for MT3
   is in place via `transcribe_drums_with_profile()`, which walks the
   profile's `drum_engines` list and silently falls back from MT3 to DSP
-  when MT3 weights/runtime are absent. Actual flip from `combined_filter`
-  to ADTOF / YourMT3+ as the global production default still requires
-  model weights and a model-pack-flow validation pass.
+  when MT3 weights/runtime are absent. Actual flip from the safe local
+  default to CRNN / YourMT3+ still requires benchmark evidence, gameplay and
+  listening review, and model-pack-flow validation.
 - **Path 3 (Demucs required-with-warn)** — `auto` separator provider
   selection in `cli.py` now appends a structured warning to the
   transcription warnings list when the `demucs_6` modelpack is absent,
@@ -124,26 +126,32 @@ Phase 1 + 2 landings:
   precursor landed in Phase 2 as the multi-label emitter in
   `combined_filter`. A real multi-label CRNN remains held with path 2.
 
-## ADT training-source correction (2026-07-02)
+## ADT training-source correction (2026-07-02; updated 2026-07-08)
 
 **Supersedes Path 2's "CRNN trained on ADTOF or to YourMT3+"
-recommendation.** Both proposed training sources are license-blocked for a
-commercial product, verified 2026-07-02 against the actual repo LICENSE
-files (not README badges); see
+recommendation.** The 2026-07-02 review found important code/weights/data
+license differences, verified against the actual repo LICENSE files (not
+README badges); see
 [`research-drums-license-resolution-2026-07-02.md`](research-drums-license-resolution-2026-07-02.md):
 
 - **ADTOF is CC BY-NC-SA 4.0** — the README applies it to the entire repo
-  content: code, pretrained CRNN weights, **and the dataset builds**. So we
-  can neither ship ADTOF weights nor even *retrain on the ADTOF dataset* for
-  shippable weights. The Path 2 fallback ("retrain the CRNN on the ADTOF
-  dataset") does not survive this reading.
-- **YourMT3 / YourMT3+ is GPL-3.0** — code and, by conservative default,
-  checkpoints. Research reference / distillation teacher only.
+  content: code, pretrained CRNN weights, **and the dataset builds**. It can
+  remain an explicitly licensed optional research/benchmark adapter, but it is
+  not the clean default-training source for a redistributable production drum
+  model unless a separate license is obtained or the resulting modelpack is
+  deliberately shipped as CC BY-NC-SA with ShareAlike obligations documented.
+- **YourMT3 / YourMT3+ splits code and weights** — the upstream code path is
+  GPL-3.0, while the local checkpoint metadata records Apache-2.0 weights. It
+  is no longer treated as weights-license-blocked, but it remains an explicit
+  research/A-B engine until gameplay and listening gates pass; any staged
+  checkpoint must record id/version/hash/license metadata.
 
 **Revised Path 2 (production drum default):** train an in-house 5-class CRNN
 on **E-GMD (CC BY 4.0, commercial retrain permitted with attribution)**,
 optionally augmented with our own Ableton-MCP-rendered corpus, and ship those
-weights under `assets/models/…` per the no-bundled-weights policy. The
+weights under `assets/models/...`; normal installs obtain weights post-install,
+while portable/release artifacts may stage reviewed, pinned
+modelpacks/checkpoints only with id/version/hash/license metadata. The
 training harness exists at
 `python/ingest/src/aural_ingest/training/drum_crnn/` (compact CRNN
 reimplemented from public Vogl/Southall papers, ONNX-exportable).

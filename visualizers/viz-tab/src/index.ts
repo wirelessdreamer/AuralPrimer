@@ -11,9 +11,23 @@ import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 // host's chartLoader types. The host's setTrack() callsite supplies a
 // MelodicTrackSelection from chartLoader; TypeScript's structural typing
 // makes that interchangeable.
-export type InstrumentRole = "bass" | "rhythm_guitar" | "lead_guitar" | "keys" | "melodic";
-export type MelodicNote = { t_on: number; t_off: number; pitch: number; velocity: number };
+export type InstrumentRole = "bass" | "rhythm_guitar" | "lead_guitar" | "keys" | "vocals" | "melodic";
+export type MelodicNote = {
+  t_on: number;
+  t_off: number;
+  pitch: number;
+  velocity: number;
+  /** Zero-based string index, lowest/thickest string first. */
+  string?: number;
+  /** Fret number on `string`. */
+  fret?: number;
+  /** Compact alias for `string`, matching arrangement wire JSON. */
+  s?: number;
+  /** Compact alias for `fret`, matching arrangement wire JSON. */
+  f?: number;
+};
 export type MelodicTrackSelection = { role: InstrumentRole; trackName: string; channel: number; notes: MelodicNote[] };
+export type FretPosition = { string: number; fret: number };
 
 export type Tuning = {
   name: string;
@@ -104,6 +118,7 @@ const ROLE_COLORS: Record<InstrumentRole, string> = {
   rhythm_guitar: "#20c997",
   lead_guitar: "#ff5f7a",
   keys: "#ffd166",
+  vocals: "#c084fc",
   melodic: "#9dd7ff",
 };
 
@@ -112,6 +127,7 @@ const ROLE_GLOW_COLORS: Record<InstrumentRole, string> = {
   rhythm_guitar: "rgba(32, 201, 151, 0.40)",
   lead_guitar: "rgba(255, 95, 122, 0.40)",
   keys: "rgba(255, 209, 102, 0.36)",
+  vocals: "rgba(192, 132, 252, 0.34)",
   melodic: "rgba(157, 215, 255, 0.34)",
 };
 
@@ -157,8 +173,8 @@ function mod(n: number, m: number): number {
   return ((n % m) + m) % m;
 }
 
-function pitchToFret(pitch: number, tuning: Tuning): { string: number; fret: number } | null {
-  let best: { string: number; fret: number } | null = null;
+function pitchToFret(pitch: number, tuning: Tuning): FretPosition | null {
+  let best: FretPosition | null = null;
 
   for (let s = 0; s < tuning.strings.length; s += 1) {
     const fret = pitch - tuning.strings[s];
@@ -169,6 +185,23 @@ function pitchToFret(pitch: number, tuning: Tuning): { string: number; fret: num
   }
 
   return best;
+}
+
+function integerOrNull(value: number | undefined): number | null {
+  return Number.isInteger(value) ? (value as number) : null;
+}
+
+function explicitFretPosition(note: MelodicNote, tuning: Tuning): FretPosition | null {
+  const stringIndex = integerOrNull(note.string) ?? integerOrNull(note.s);
+  const fret = integerOrNull(note.fret) ?? integerOrNull(note.f);
+  if (stringIndex === null || fret === null) return null;
+  if (stringIndex < 0 || stringIndex >= tuning.strings.length) return null;
+  if (fret < 0 || fret > 36) return null;
+  return { string: stringIndex, fret };
+}
+
+export function noteToFretPosition(note: MelodicNote, tuning: Tuning): FretPosition | null {
+  return explicitFretPosition(note, tuning) ?? pitchToFret(note.pitch, tuning);
 }
 
 function isBlackKey(pitch: number): boolean {
@@ -538,7 +571,7 @@ export class TabRenderer {
 
     for (const note of track.notes) {
       if (note.t_on > tEnd || note.t_off < tStart) continue;
-      const fretInfo = pitchToFret(note.pitch, tuning);
+      const fretInfo = noteToFretPosition(note, tuning);
       if (!fretInfo) continue;
 
       const x = hitX + ((note.t_on - t) / windowSec) * (w - hitX);

@@ -151,7 +151,7 @@ export function initPlayersPanel(deps: PlayersPanelDeps): PlayersPanelHandle {
       case "keys":
         return "keys";
       case "vocals":
-        return "melodic";
+        return "vocals";
       default:
         return null;
     }

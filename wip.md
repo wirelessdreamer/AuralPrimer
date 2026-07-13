@@ -197,8 +197,9 @@ algorithm, separate fix.
 
 Deferred (require model weights or wide refactor — not in this session):
 adopt 5-class as production default (touches schemas / charts / gameplay
-metrics / frontend), replace drum default with ADTOF or YourMT3+ in the
-orchestration, make Demucs required at runtime, real Basic Pitch
+metrics / frontend), evaluate modelpack-backed drum engines behind benchmark /
+gameplay / listening gates before any default promotion, make Demucs required
+at runtime, real Basic Pitch
 inference, real Psalm-12 fixture, multi-label CRNN for overlapping hits.
 
 ---
@@ -243,13 +244,14 @@ Headline findings:
   separation.
 
 The deep-dive replaces the previous top-10 paths-forward list with a
-revised order driven by the literature: adopt 5-class output, integrate
-ADTOF or YourMT3+ as the production drum default, make Demucs required for
-the production drum path, and only then layer in the smaller DSP fixes
+revised order driven by the literature: adopt 5-class output, keep
+neural/modelpack-backed drum engines behind benchmark, gameplay, and listening
+gates before any production-default promotion, make Demucs required for the
+future production drum path, and only then layer in the smaller DSP fixes
 (centroid rule, fusion re-weighting). The smallest concrete next change
 remains: drop the centroid → tom_floor rule and add a low-band-energy
 guard against kick→crash misclassification, in parallel with scoping
-ADTOF integration.
+external ADTOF research validation.
 
 **Top-10 ingest quality battery + iteration findings (2026-05-07)**
 

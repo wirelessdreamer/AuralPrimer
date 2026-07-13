@@ -22,7 +22,10 @@ to 7 classes. The license story is the cleanest of any neural ADT model:
 - **Training data:** E-GMD is **CC BY 4.0** (commercial OK).
 
 So a checkpoint trained on E-GMD is shippable by both code and data license.
-(Contrast: ADTOF is CC BY-NC-SA — its weights cannot ship.)
+By contrast, ADTOF is CC BY-NC-SA across repo, weights, and dataset builds: it
+can remain an explicitly licensed optional research adapter, but its
+non-commercial and ShareAlike obligations make it a poor production-default
+training source.
 
 ---
 

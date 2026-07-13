@@ -1,0 +1,22 @@
+# Shortest 20 Guitar-TECHS directinput cases by MIDI duration, used to widen
+# post-24-bit validation without restarting the long full-corpus sweep.
+guitar_techs:P3_music:midi_11:directinput
+guitar_techs:P3_music:midi_08:directinput
+guitar_techs:P3_music:midi_03:directinput
+guitar_techs:P3_music:midi_06:directinput
+guitar_techs:P3_music:midi_07:directinput
+guitar_techs:P3_music:midi_04:directinput
+guitar_techs:P3_music:midi_02:directinput
+guitar_techs:P3_music:midi_09:directinput
+guitar_techs:P1_chords:midi_Set1_aug:directinput
+guitar_techs:P1_chords:midi_Set2_aug:directinput
+guitar_techs:P1_chords:midi_Set3_aug:directinput
+guitar_techs:P1_chords:midi_Set4_aug:directinput
+guitar_techs:P3_music:midi_12:directinput
+guitar_techs:P2_chords:midi_Set1_aug:directinput
+guitar_techs:P2_chords:midi_Set3_aug:directinput
+guitar_techs:P2_chords:midi_Set4_aug:directinput
+guitar_techs:P3_music:midi_10:directinput
+guitar_techs:P2_chords:midi_Set2_aug:directinput
+guitar_techs:P3_music:midi_05:directinput
+guitar_techs:P3_music:midi_01:directinput

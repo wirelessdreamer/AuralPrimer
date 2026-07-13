@@ -2,6 +2,8 @@ from pathlib import Path
 import math
 import random
 import struct
+import sys
+import types
 import wave
 
 import pytest
@@ -389,6 +391,44 @@ def test_melodic_basic_pitch_strict_mode_rejects_fallback(
     assert melodic_basic_pitch.transcribe(stem, allow_fallback=True) == fallback
     with pytest.raises(RuntimeError, match="optional 'basic_pitch' package"):
         melodic_basic_pitch.transcribe(stem, allow_fallback=False)
+
+
+def test_melodic_basic_pitch_strict_mode_rejects_configured_model_load_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from aural_ingest.algorithms import melodic_basic_pitch
+    from aural_ingest.transcription import MelodicNote
+
+    stem = tmp_path / "tone.wav"
+    stem.write_bytes(b"audio")
+    model_path = tmp_path / "nmp.onnx"
+    model_path.write_bytes(b"model")
+    fallback = [MelodicNote(t_on=0.0, t_off=0.25, pitch=60, velocity=80)]
+
+    basic_pitch_module = types.ModuleType("basic_pitch")
+    basic_pitch_module.ICASSP_2022_MODEL_PATH = str(model_path)
+    inference_module = types.ModuleType("basic_pitch.inference")
+
+    class FailingModel:
+        def __init__(self, _path: str) -> None:
+            raise ValueError("bad model")
+
+    def predict_should_not_run(*_args, **_kwargs):
+        raise AssertionError("predict should not run when the configured model fails to load")
+
+    inference_module.Model = FailingModel
+    inference_module.predict = predict_should_not_run
+    monkeypatch.setitem(sys.modules, "basic_pitch", basic_pitch_module)
+    monkeypatch.setitem(sys.modules, "basic_pitch.inference", inference_module)
+    monkeypatch.setattr(
+        melodic_basic_pitch,
+        "_fallback_transcribe",
+        lambda _path, *, instrument="melodic": fallback,
+    )
+
+    assert melodic_basic_pitch.transcribe(stem, model_path=model_path, allow_fallback=True) == fallback
+    with pytest.raises(RuntimeError, match="basic_pitch model load failed"):
+        melodic_basic_pitch.transcribe(stem, model_path=model_path, allow_fallback=False)
 
 
 def test_spectral_flux_multiband_emits_simultaneous_hits(tmp_path: Path) -> None:

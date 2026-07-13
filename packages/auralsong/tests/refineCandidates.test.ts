@@ -20,6 +20,10 @@ describe("validateRefineCandidates", () => {
     expect(validateRefineCandidates(MIN).ok).toBe(true);
   });
 
+  it("accepts vocals as a candidate instrument", () => {
+    expect(validateRefineCandidates({ ...MIN, instrument: "vocals" }).ok).toBe(true);
+  });
+
   it("rejects bad version", () => {
     const r = validateRefineCandidates({ ...MIN, version: "1.0" });
     expect(r.ok).toBe(false);
@@ -157,5 +161,49 @@ describe("validateRefineCandidates", () => {
       ],
     });
     expect(r.ok).toBe(true);
+  });
+
+  it("accepts candidate notes with string/fret metadata", () => {
+    const r = validateRefineCandidates({
+      ...MIN,
+      regions: [
+        {
+          id: "riff1",
+          t_start: 1,
+          t_end: 2,
+          hot_spot_type: "clean",
+          confidence: 0.9,
+          auto_picked: "stem_only",
+          candidate_scores: { stem_only: 0.9 },
+          candidate_notes: {
+            stem_only: [{ t_on: 1.1, t_off: 1.5, pitch: 64, velocity: 90, string: 2, fret: 7, s: 2, f: 7 }],
+          },
+        },
+      ],
+    });
+
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects candidate note string/fret metadata outside the supported range", () => {
+    const r = validateRefineCandidates({
+      ...MIN,
+      regions: [
+        {
+          id: "riff1",
+          t_start: 1,
+          t_end: 2,
+          hot_spot_type: "clean",
+          confidence: 0.9,
+          auto_picked: "stem_only",
+          candidate_scores: { stem_only: 0.9 },
+          candidate_notes: {
+            stem_only: [{ t_on: 1.1, t_off: 1.5, pitch: 64, velocity: 90, string: 9, fret: 37 }],
+          },
+        },
+      ],
+    });
+
+    expect(r.ok).toBe(false);
   });
 });

@@ -48,6 +48,8 @@ KNOWN_MT3_DRUM_ENGINES: tuple[str, ...] = (
 # selectable, but deliberately NOT added to any profile's `drum_engines` list
 # until benchmarked (see docs/research-drum-data-2026-06-23.md for drums_oaf).
 KNOWN_NEURAL_DRUM_ENGINES: tuple[str, ...] = (
+    "adtof_drums",
+    "drum_stemsep",
     "drums_oaf",
 )
 
@@ -83,6 +85,8 @@ KNOWN_MELODIC_METHODS: tuple[str, ...] = (
     "melodic_combined_guitar",
     "guitar_basic_pitch_playable",
     "guitar_auto",
+    "yourmt3_guitar",
+    "qmul_hr_guitar",
     "melodic_octave_fix",
     "melodic_yin_octave_hps_fix",
     "melodic_adaptive",
@@ -90,6 +94,7 @@ KNOWN_MELODIC_METHODS: tuple[str, ...] = (
     "melodic_pyin_bass_strict",
     "melodic_hpss_combined",
     "melodic_template_multipass",
+    "melodic_rmvpe",
     "torchcrepe",
 )
 
@@ -103,13 +108,11 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
     "gameplay_default": {
         "description": "Prefer in-game recognizability, stable density, and fail-safe local defaults.",
         "drum_engines": [
-            # Neural ADT (MT3) leads when its checkpoint is installed: it
-            # catches the dense hi-hats / ghost notes the DSP engines miss
-            # (their E-GMD recall collapse, F1 ~0.13). transcribe_drums_with_profile
-            # falls through to the DSP chain when the checkpoint or runtime
-            # is absent, so checkpoint-less machines still import. Device is
-            # auto-detected (GPU if present, else CPU) -- never hardcoded.
-            "mr_mt3_drums",
+            # Keep gameplay on the stable local chain until a neural/modelpack
+            # candidate clears the standing promotion gate: gameplay-metric
+            # regression check plus human in-game listening review. Current
+            # test-30 evidence keeps MR-MT3 manual/research-only and keeps
+            # YourMT3/drum-CRNN run-4 review-gated.
             "beat_conditioned_multiband_decoder",
             "spectral_flux_multiband",
             "adaptive_beat_grid",
@@ -158,6 +161,11 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "melodic_octave_fix",
                 "melodic_combined",
             ],
+            "vocals": [
+                "melodic_rmvpe",
+                "torchcrepe",
+                "pyin",
+            ],
         },
     },
     "fidelity_midi": {
@@ -183,6 +191,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
             ],
             "lead_guitar": ["basic_pitch", "melodic_hpss_combined", "melodic_octave_fix"],
             "rhythm_guitar": ["basic_pitch", "melodic_hpss_combined", "melodic_octave_fix"],
+            "vocals": ["melodic_rmvpe", "torchcrepe", "pyin"],
         },
     },
     "research_ab": {
@@ -225,6 +234,7 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "melodic_hpss_combined",
                 "melodic_combined",
                 "melodic_combined_guitar",
+                "yourmt3_guitar",
                 "basic_pitch",
                 "torchcrepe",
                 "pyin",
@@ -235,7 +245,13 @@ TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
                 "melodic_octave_fix",
                 "melodic_combined",
                 "melodic_combined_guitar",
+                "yourmt3_guitar",
                 "basic_pitch",
+                "torchcrepe",
+                "pyin",
+            ],
+            "vocals": [
+                "melodic_rmvpe",
                 "torchcrepe",
                 "pyin",
             ],
@@ -248,6 +264,7 @@ INSTRUMENT_ROLES: tuple[str, ...] = (
     "rhythm_guitar",
     "lead_guitar",
     "keys",
+    "vocals",
 )
 
 # Instrument-specific frequency ranges for melodic transcription.
@@ -258,6 +275,7 @@ INSTRUMENT_FREQ_RANGES: dict[str, tuple[float, float]] = {
     "rhythm_guitar": (75.0, 1400.0), # legacy split (kept for old packs)
     "lead_guitar": (75.0, 1400.0),   # legacy split (kept for old packs)
     "keys": (27.0, 4200.0),          # ~A0 (27.5 Hz) to ~C8 (4186 Hz)
+    "vocals": (80.0, 1100.0),        # ~E2 to ~C#6, broad singing range
     "melodic": (45.0, 1700.0),       # legacy default
 }
 
@@ -395,6 +413,8 @@ class MelodicNote:
     pitch: int
     velocity: int
     instrument: str = "melodic"
+    string: int | None = None
+    fret: int | None = None
 
 
 @dataclass(frozen=True)
@@ -405,6 +425,7 @@ class MelodicTranscriptionResult:
     warnings: list[str]
     used_score: float | None = None
     attempt_scores: dict[str, float] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 MelodicTranscriber = Callable[[Path], list[MelodicNote]]
@@ -421,6 +442,7 @@ class InstrumentTranscriptionResult:
     stem_path: str | None = None
     used_score: float | None = None
     attempt_scores: dict[str, float] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 # Minimum plausibility score a producer's output must clear to be accepted
@@ -1299,6 +1321,26 @@ def build_default_drum_algorithm_registry() -> dict[str, DrumTranscriber]:
     # guarded so a sidecar build that predates the module simply leaves the
     # engine unavailable rather than failing the whole registry build.
     try:
+        from aural_ingest.algorithms import adtof_drums
+
+        def _wrap_adtof_drums(stem_path: Path) -> list[DrumEvent]:
+            return adtof_drums.transcribe(stem_path)
+
+        registry["adtof_drums"] = _wrap_adtof_drums
+    except ImportError:
+        pass
+
+    try:
+        from aural_ingest.algorithms import drum_stemsep
+
+        def _wrap_drum_stemsep(stem_path: Path) -> list[DrumEvent]:
+            return drum_stemsep.transcribe(stem_path)
+
+        registry["drum_stemsep"] = _wrap_drum_stemsep
+    except ImportError:
+        pass
+
+    try:
         from aural_ingest.algorithms import drums_oaf
 
         def _wrap_drums_oaf(stem_path: Path) -> list[DrumEvent]:
@@ -1487,6 +1529,37 @@ def resolve_piano_pti_checkpoint_path(search_roots: Iterable[Path | str]) -> Pat
     return fallback_match
 
 
+RMVPE_CHECKPOINT_ENV = "AURAL_RMVPE_CHECKPOINT"
+RMVPE_CHECKPOINT_FILENAMES: tuple[str, ...] = (
+    "rmvpe.pt",
+    "rmvpe.pth",
+    "model.pt",
+    "checkpoint.pt",
+)
+
+
+def resolve_rmvpe_checkpoint_path(search_roots: Iterable[Path | str]) -> Path | None:
+    explicit = os.getenv(RMVPE_CHECKPOINT_ENV, "").strip()
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        return candidate if candidate.is_file() else None
+
+    for root in search_roots:
+        if root is None:
+            continue
+        for expanded in _expanded_model_roots(Path(root)):
+            rmvpe_dir = expanded / "rmvpe"
+            if not rmvpe_dir.is_dir():
+                continue
+            for filename in RMVPE_CHECKPOINT_FILENAMES:
+                candidate = rmvpe_dir / filename
+                if candidate.is_file():
+                    return candidate
+            for checkpoint in sorted([*rmvpe_dir.glob("*.pt"), *rmvpe_dir.glob("*.pth")]):
+                return checkpoint
+    return None
+
+
 def _piano_d3rm_model_subdir() -> Path:
     return Path("piano_d3rm")
 
@@ -1519,6 +1592,7 @@ def build_default_melodic_algorithm_registry(
     from aural_ingest.algorithms import (
         guitar_auto,
         guitar_basic_pitch_playable,
+        yourmt3_guitar,
         melodic_adaptive,
         melodic_basic_pitch,
         melodic_combined_guitar,
@@ -1527,6 +1601,7 @@ def build_default_melodic_algorithm_registry(
         melodic_combined,
         melodic_hpss_combined,
         melodic_octave_fix,
+        melodic_rmvpe,
         melodic_template_multipass,
         melodic_torchcrepe,
         melodic_yin_bass80,
@@ -1541,6 +1616,7 @@ def build_default_melodic_algorithm_registry(
         piano_pti_clean_dedup,
         piano_pti_clean_dedup_pyin,
         piano_transkun,
+        qmul_hr_guitar,
     )
 
     roots = list(model_search_roots) if model_search_roots is not None else _default_basic_pitch_model_roots()
@@ -1692,6 +1768,11 @@ def build_default_melodic_algorithm_registry(
     def _torchcrepe(stem_path: Path) -> list[MelodicNote]:
         return melodic_torchcrepe.transcribe(stem_path, instrument=_inst)
 
+    def _rmvpe(stem_path: Path) -> list[MelodicNote]:
+        notes = melodic_rmvpe.transcribe(stem_path, instrument=_inst)
+        _rmvpe.last_run = getattr(melodic_rmvpe.transcribe, "last_run", {})
+        return notes
+
     def _pyin(stem_path: Path) -> list[MelodicNote]:
         return melodic_pyin.transcribe(stem_path, instrument=_inst)
 
@@ -1706,6 +1787,12 @@ def build_default_melodic_algorithm_registry(
 
     def _guitar_auto(stem_path: Path) -> list[MelodicNote]:
         return guitar_auto.transcribe(stem_path, instrument=_inst)
+
+    def _yourmt3_guitar(stem_path: Path) -> list[MelodicNote]:
+        return yourmt3_guitar.transcribe(stem_path, instrument=_inst)
+
+    def _qmul_hr_guitar(stem_path: Path) -> list[MelodicNote]:
+        return qmul_hr_guitar.transcribe(stem_path, instrument=_inst)
 
     def _pyin_bass_strict(stem_path: Path) -> list[MelodicNote]:
         return melodic_pyin_bass_strict.transcribe(stem_path, instrument=_inst)
@@ -1905,6 +1992,8 @@ def build_default_melodic_algorithm_registry(
         "melodic_combined_guitar": _combined_guitar,
         "guitar_basic_pitch_playable": _guitar_basic_pitch_playable,
         "guitar_auto": _guitar_auto,
+        "yourmt3_guitar": _yourmt3_guitar,
+        "qmul_hr_guitar": _qmul_hr_guitar,
         "melodic_octave_fix": _octave_fix,
         "melodic_yin_octave_hps_fix": _yin_octave_hps_fix,
         "melodic_adaptive": _adaptive,
@@ -1912,6 +2001,7 @@ def build_default_melodic_algorithm_registry(
         "melodic_pyin_bass_strict": _pyin_bass_strict,
         "melodic_hpss_combined": _hpss_combined,
         "melodic_template_multipass": _template_multipass,
+        "melodic_rmvpe": _rmvpe,
         "torchcrepe": _torchcrepe,
     }
 
@@ -2147,6 +2237,12 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
                 "basic_pitch",
                 "pyin",
             ]
+        elif instrument == "vocals":
+            chain = [
+                "melodic_rmvpe",
+                "torchcrepe",
+                "pyin",
+            ]
         elif instrument == "guitar":
             chain = [
                 # One guitar stem (chords + lead together) is polyphonic, so use
@@ -2271,6 +2367,8 @@ def melodic_fallback_chain(requested_method: str | None, instrument: str = "melo
             "melodic_octave_fix",
             "pyin",
         ]
+    elif normalized == "melodic_rmvpe":
+        chain = ["melodic_rmvpe", "torchcrepe", "pyin"]
     else:
         chain = [
             normalized,
@@ -2688,14 +2786,11 @@ def transcribe_drums_with_profile(
     and DSP engines use their normal fallback chains.
 
     Implements path 4 of `docs/research-deep-dive-adt-2026-05-07.md`.
-    Since the June 2026 promotion, the `gameplay_default` profile lists
-    `mr_mt3_drums` first: on any machine that has the MR-MT3 checkpoint
-    installed, neural ADT now leads (it recovers the dense hi-hats and
-    ghost notes the DSP engines miss). When the checkpoint or MT3 runtime
-    is absent, `mr_mt3_drums` yields no events and the chain falls through
-    to `beat_conditioned_multiband_decoder` and the rest of the DSP
-    fallbacks, so checkpoint-less machines still import identically to the
-    old DSP-only behavior.
+    `gameplay_default` stays on the stable local heuristic chain until a
+    neural/modelpack candidate clears the standing promotion gate. MT3 and
+    other neural engines are still selectable explicitly, and the
+    `fidelity_midi` / `research_ab` profiles keep them available for A/B
+    review.
 
     `DEFAULT_DRUM_ENGINE` (the explicit-engine / no-profile default) is
     still `beat_conditioned_multiband_decoder`; only the profile-driven
@@ -2770,7 +2865,8 @@ def transcribe_melodic(
 
     attempted: list[str] = []
     scores: dict[str, float] = {}
-    best: tuple[float, str, list[MelodicNote]] | None = None
+    best: tuple[float, str, list[MelodicNote], dict[str, Any]] | None = None
+    carried_meta: dict[str, Any] = {}
     for method in melodic_fallback_chain(normalized, instrument=instrument):
         attempted.append(method)
         fn = algorithm_registry.get(method)
@@ -2781,6 +2877,7 @@ def transcribe_melodic(
                 logger(msg)
             continue
 
+        method_meta: dict[str, Any] = {}
         try:
             notes = fn(stem_path)
         except Exception as e:
@@ -2796,14 +2893,24 @@ def transcribe_melodic(
             warnings.extend(last_run.get("warnings", []))
             for inner_name, inner_score in last_run.get("scores", {}).items():
                 scores[f"{method}.{inner_name}"] = inner_score
+            raw_meta = last_run.get("meta")
+            if isinstance(raw_meta, Mapping):
+                method_meta = dict(raw_meta)
+                if (
+                    "vocal_pitch_contour" in method_meta
+                    and "vocal_pitch_contour" not in carried_meta
+                ):
+                    carried_meta["vocal_pitch_contour"] = method_meta["vocal_pitch_contour"]
 
         if not notes:
             continue
 
         score = score_transcription(notes, stem_path)
         scores[method] = round(score, 4)
+        if carried_meta:
+            method_meta = {**carried_meta, **method_meta}
         if best is None or score > best[0]:
-            best = (score, method, notes)
+            best = (score, method, notes, method_meta)
         if score >= MIN_TRANSCRIPTION_SCORE:
             return MelodicTranscriptionResult(
                 notes=notes,
@@ -2812,6 +2919,7 @@ def transcribe_melodic(
                 warnings=warnings,
                 used_score=round(score, 4),
                 attempt_scores=scores,
+                meta=method_meta,
             )
 
     if best is not None:
@@ -2822,6 +2930,7 @@ def transcribe_melodic(
             warnings=warnings,
             used_score=round(best[0], 4),
             attempt_scores=scores,
+            meta=best[3],
         )
 
     return MelodicTranscriptionResult(
@@ -2831,6 +2940,7 @@ def transcribe_melodic(
         warnings=warnings,
         used_score=None,
         attempt_scores=scores,
+        meta=carried_meta,
     )
 
 
@@ -5040,6 +5150,8 @@ def transcribe_all_melodic_stems(
                 pitch=n.pitch,
                 velocity=n.velocity,
                 instrument=instrument,
+                string=n.string,
+                fret=n.fret,
             )
             for n in result.notes
         ]
@@ -5055,6 +5167,7 @@ def transcribe_all_melodic_stems(
                 stem_path=str(stem_path),
                 used_score=result.used_score,
                 attempt_scores=result.attempt_scores,
+                meta=result.meta,
             )
         )
 

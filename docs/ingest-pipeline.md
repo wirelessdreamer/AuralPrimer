@@ -218,5 +218,8 @@ All new pipeline stages and importers must be developed TDD-first:
 
 ### v1
 - add instrument-specific transcription stages as *optional*, replaceable modules
-- models are obtained post-install (in-app download or manual import) and stored under `assets/models/`
+- models are normally obtained post-install (in-app download or manual import)
+  and stored under `assets/models/`; reviewed, pinned modelpacks/checkpoints
+  may also be staged into portable/release artifacts with packaging-manifest
+  id/version/hash/license metadata
 - transcription features remain “optional/experimental” until compatible model packs are present

@@ -19,6 +19,7 @@ export type RefinementInstrument =
   | "lead_guitar"
   | "rhythm_guitar"
   | "drums"
+  | "vocals"
   | "melodic";
 
 export type RefinementHotSpotType =
@@ -34,6 +35,14 @@ export type RefinementNote = {
   t_off: number;
   pitch: number;
   velocity: number;
+  /** Zero-based string index, lowest/thickest string first. */
+  string?: number;
+  /** Fret number on `string`. */
+  fret?: number;
+  /** Compact alias for `string`, matching arrangement wire JSON. */
+  s?: number;
+  /** Compact alias for `fret`, matching arrangement wire JSON. */
+  f?: number;
 };
 
 export type RefinementRegion = {
@@ -85,6 +94,7 @@ const VALID_INSTRUMENTS: ReadonlySet<RefinementInstrument> = new Set([
   "lead_guitar",
   "rhythm_guitar",
   "drums",
+  "vocals",
   "melodic",
 ]);
 const VALID_HOTSPOTS: ReadonlySet<RefinementHotSpotType> = new Set([
@@ -105,6 +115,7 @@ function validateNote(x: unknown, path: string, errors: ValidationError[]): bool
     errors.push({ path, message: "expected object" });
     return false;
   }
+  const startErrors = errors.length;
   let ok = true;
   for (const k of ["t_on", "t_off", "pitch", "velocity"] as const) {
     if (typeof x[k] !== "number") {
@@ -121,7 +132,23 @@ function validateNote(x: unknown, path: string, errors: ValidationError[]): bool
     if (!Number.isInteger(n.velocity) || n.velocity < 1 || n.velocity > 127)
       errors.push({ path: `${path}.velocity`, message: "must be integer in 1..127" });
   }
-  return ok && errors.length === 0;
+  for (const k of ["string", "s"] as const) {
+    if (
+      x[k] !== undefined &&
+      (!Number.isInteger(x[k]) || (x[k] as number) < 0 || (x[k] as number) > 8)
+    ) {
+      errors.push({ path: `${path}.${k}`, message: "must be integer in 0..8" });
+    }
+  }
+  for (const k of ["fret", "f"] as const) {
+    if (
+      x[k] !== undefined &&
+      (!Number.isInteger(x[k]) || (x[k] as number) < 0 || (x[k] as number) > 36)
+    ) {
+      errors.push({ path: `${path}.${k}`, message: "must be integer in 0..36" });
+    }
+  }
+  return ok && errors.length === startErrors;
 }
 
 function validateRegion(x: unknown, path: string, errors: ValidationError[]): boolean {

@@ -3,6 +3,11 @@ export type KeyMode = {
   mode: string;
 };
 
+export type KeyModeArtifacts = {
+  keys?: unknown | null;
+  harmony?: unknown | null;
+};
+
 const DEFAULT_KEY_MODE: KeyMode = { key: "C", mode: "major" };
 
 function normalizeKey(key: unknown): string | null {
@@ -24,24 +29,76 @@ function normalizeMode(mode: unknown): string | null {
   return m;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveCandidate(key: unknown, mode: unknown): KeyMode | null {
+  const normalizedKey = normalizeKey(key);
+  const normalizedMode = normalizeMode(mode);
+  if (!normalizedKey && !normalizedMode) return null;
+  return {
+    key: normalizedKey ?? DEFAULT_KEY_MODE.key,
+    mode: normalizedMode ?? DEFAULT_KEY_MODE.mode,
+  };
+}
+
+function keyModeFromManifestObject(manifestRaw: unknown): KeyMode | null {
+  if (!isObject(manifestRaw)) return null;
+  const harmony = isObject(manifestRaw.harmony) ? manifestRaw.harmony : null;
+  const scale = isObject(manifestRaw.scale) ? manifestRaw.scale : null;
+  return (
+    resolveCandidate(manifestRaw.key ?? manifestRaw.tonic, manifestRaw.mode) ??
+    resolveCandidate(harmony?.key ?? harmony?.tonic, harmony?.mode) ??
+    resolveCandidate(undefined, scale?.mode)
+  );
+}
+
+function keyModeFromHarmonyDoc(harmonyDoc: unknown): KeyMode | null {
+  if (!isObject(harmonyDoc)) return null;
+  return resolveCandidate(
+    harmonyDoc.key ?? harmonyDoc.tonic,
+    harmonyDoc.mode ?? harmonyDoc.scale,
+  );
+}
+
+function keyModeFromKeysDoc(keysDoc: unknown): KeyMode | null {
+  if (!isObject(keysDoc) || !Array.isArray(keysDoc.events)) return null;
+  for (const event of keysDoc.events) {
+    if (!isObject(event)) continue;
+    const km = resolveCandidate(event.key ?? event.tonic, event.scale ?? event.mode);
+    if (km) return km;
+  }
+  return null;
+}
+
 /**
  * Extract key/mode from an AuralSong manifest (best-effort).
  *
- * For now our fixtures don’t include harmonic metadata, so this intentionally
- * falls back to a stable placeholder.
+ * Prefers explicit key/harmony artifacts when loaded, then falls back to a
+ * stable default for legacy packs with no harmonic metadata.
  */
-export function extractKeyModeFromManifest(manifestRaw: unknown): KeyMode {
-  if (!manifestRaw || typeof manifestRaw !== "object") return DEFAULT_KEY_MODE;
-  const m = manifestRaw as any;
+export function extractKeyModeFromManifest(
+  manifestRaw: unknown,
+  artifacts?: KeyModeArtifacts | null,
+): KeyMode {
+  return (
+    keyModeFromManifestObject(manifestRaw) ??
+    keyModeFromHarmonyDoc(artifacts?.harmony) ??
+    keyModeFromKeysDoc(artifacts?.keys) ??
+    DEFAULT_KEY_MODE
+  );
+}
 
-  // Future-proof: support a few likely locations.
-  const key = normalizeKey(m.key) ?? normalizeKey(m.tonic) ?? normalizeKey(m.harmony?.key) ?? normalizeKey(m.harmony?.tonic);
-  const mode = normalizeMode(m.mode) ?? normalizeMode(m.harmony?.mode) ?? normalizeMode(m.scale?.mode);
-
-  return {
-    key: key ?? DEFAULT_KEY_MODE.key,
-    mode: mode ?? DEFAULT_KEY_MODE.mode,
-  };
+export function hasExplicitKeyModeInManifest(
+  manifestRaw: unknown,
+  artifacts?: KeyModeArtifacts | null,
+): boolean {
+  return Boolean(
+    keyModeFromManifestObject(manifestRaw) ??
+      keyModeFromHarmonyDoc(artifacts?.harmony) ??
+      keyModeFromKeysDoc(artifacts?.keys),
+  );
 }
 
 export function formatKeyMode(km: KeyMode): string {

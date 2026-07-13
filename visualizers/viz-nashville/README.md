@@ -1,17 +1,20 @@
 # @auralprimer/viz-nashville
 
-Reference visualization plugin for a **Nashville / chord-lane** style view.
+Reference visualization plugin for a Nashville / chord-lane style view.
 
-## Current behavior (MVP)
+## Current behavior
 
-- Renders a single horizontal lane of **Roman numerals** (I–IV–V–vi loop) aligned to bar boundaries.
-- Driven *only* by the host-provided `TransportState` (time + bpm + time signature).
+- Renders a scrolling Nashville-number piano roll from host-provided melodic notes.
+- Reads `ctx.song.harmony` / `ctx.song.keys` when available to choose the key
+  before falling back to note-derived key inference.
+- Renders a top chord band from `harmony.events[]`, preferring Roman-numeral
+  labels when the ingest pipeline provides them.
+- Uses host-provided `TransportState` for timing, tempo, and time signature.
 
-## Why placeholder?
+## Planned upgrades
 
-The host does not yet provide chord/key data to plugins (no `SongHandle` / feature query APIs).
-Once the Viz SDK grows song queries, this plugin should switch from synthetic chords to real data.
+- Richer chord voicing/quality display.
+- Section-aware chord grouping.
 
 Lifecycle contract validated:
-`init → onResize → update → render → dispose`.
-
+`init -> onResize -> update -> render -> dispose`.

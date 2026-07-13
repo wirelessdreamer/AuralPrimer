@@ -1,0 +1,106 @@
+{
+  "dataset": "guitarset",
+  "task": "fingering_metadata_validation",
+  "corpus_root": "E:\\AudioSourceOfTruthData\\extracted\\guitarset",
+  "variant": "all",
+  "max_fret": 24,
+  "generated_at": "2026-07-08T12:47:04.356283+00:00",
+  "summary": {
+    "ok": true,
+    "variant_count": 4,
+    "case_count": 1440,
+    "note_count": 249904,
+    "metadata_count": 249904,
+    "invalid_note_count": 0
+  },
+  "variants": {
+    "mic": {
+      "ok": true,
+      "case_count": 360,
+      "note_count": 62476,
+      "metadata_count": 62476,
+      "invalid_note_count": 0,
+      "fret_min": 0,
+      "fret_max": 19,
+      "string_counts": {
+        "0": 4638,
+        "1": 9047,
+        "2": 14056,
+        "3": 15355,
+        "4": 12843,
+        "5": 6537
+      },
+      "style_counts": {
+        "comp": 180,
+        "solo": 180
+      },
+      "invalid_examples": []
+    },
+    "pickup_mix": {
+      "ok": true,
+      "case_count": 360,
+      "note_count": 62476,
+      "metadata_count": 62476,
+      "invalid_note_count": 0,
+      "fret_min": 0,
+      "fret_max": 19,
+      "string_counts": {
+        "0": 4638,
+        "1": 9047,
+        "2": 14056,
+        "3": 15355,
+        "4": 12843,
+        "5": 6537
+      },
+      "style_counts": {
+        "comp": 180,
+        "solo": 180
+      },
+      "invalid_examples": []
+    },
+    "hex_original": {
+      "ok": true,
+      "case_count": 360,
+      "note_count": 62476,
+      "metadata_count": 62476,
+      "invalid_note_count": 0,
+      "fret_min": 0,
+      "fret_max": 19,
+      "string_counts": {
+        "0": 4638,
+        "1": 9047,
+        "2": 14056,
+        "3": 15355,
+        "4": 12843,
+        "5": 6537
+      },
+      "style_counts": {
+        "comp": 180,
+        "solo": 180
+      },
+      "invalid_examples": []
+    },
+    "hex_debleeded": {
+      "ok": true,
+      "case_count": 360,
+      "note_count": 62476,
+      "metadata_count": 62476,
+      "invalid_note_count": 0,
+      "fret_min": 0,
+      "fret_max": 19,
+      "string_counts": {
+        "0": 4638,
+        "1": 9047,
+        "2": 14056,
+        "3": 15355,
+        "4": 12843,
+        "5": 6537
+      },
+      "style_counts": {
+        "comp": 180,
+        "solo": 180
+      },
+      "invalid_examples": []
+    }
+  }
+}

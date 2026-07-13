@@ -108,6 +108,16 @@ pub struct AuralSongDetails {
     pub has_lyrics: bool,
     /// Optional MIDI note data (not yet consumed by gameplay viz).
     pub has_notes_mid: bool,
+    /// Pack-root song timeline with tempos, meter, beats, and sections.
+    pub has_song_timeline: bool,
+    /// Pack-root drum chart used when notes MIDI is absent or drum edits exist.
+    pub has_drum_tab: bool,
+    /// Model artifact presence.
+    pub has_keys: bool,
+    pub has_harmony: bool,
+    pub has_vocal_pitch: bool,
+    pub has_vocal_pitch_contour: bool,
+    pub has_aural_fingering: bool,
 
     /// Audio presence.
     pub has_mix_mp3: bool,
@@ -444,14 +454,140 @@ fn is_supported_container(container_path: &str) -> bool {
     container::is_supported_pack(container_path)
 }
 
-/// Whether a frontend-supplied `rel_path` is an allowed feature/asset path.
+/// True when a frontend-supplied path stays inside the pack container.
+fn is_safe_container_rel(rel_path: &str) -> bool {
+    if rel_path.trim().is_empty() || rel_path.contains('\\') || rel_path.contains(':') {
+        return false;
+    }
+    if rel_path
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return false;
+    }
+    let path = Path::new(rel_path);
+    !path.is_absolute()
+        && !path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+}
+
+fn require_safe_container_rel(rel_path: &str) -> Result<(), String> {
+    if is_safe_container_rel(rel_path) {
+        Ok(())
+    } else {
+        Err("rel_path must be a safe relative path".to_string())
+    }
+}
+
+fn container_has_file(container: &Path, rel_path: &str) -> bool {
+    if container.is_dir() {
+        dir_has_file(container, rel_path)
+    } else {
+        zip_has_file(container, rel_path).unwrap_or(false)
+    }
+}
+
+fn container_has_safe_file(container: &Path, rel_path: &str) -> bool {
+    is_safe_container_rel(rel_path) && container_has_file(container, rel_path)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ModelArtifactAvailability {
+    has_keys: bool,
+    has_harmony: bool,
+    has_vocal_pitch: bool,
+    has_vocal_pitch_contour: bool,
+    has_aural_fingering: bool,
+}
+
+fn manifest_pointer_has_file(container: &Path, rel: &Option<String>) -> bool {
+    rel.as_deref()
+        .map(|rel| container_has_safe_file(container, rel))
+        .unwrap_or(false)
+}
+
+const SUPPORTED_FINGERING_ROLES: &[&str] = &[
+    "bass",
+    "guitar",
+    "rhythm_guitar",
+    "lead_guitar",
+    "keys",
+    "vocals",
+    "melodic",
+];
+
+fn manifest_fingering_pointer_has_file(
+    container: &Path,
+    rels: &Option<std::collections::BTreeMap<String, String>>,
+) -> bool {
+    rels.as_ref()
+        .map(|rels| {
+            rels.iter().any(|(role, rel_path)| {
+                SUPPORTED_FINGERING_ROLES.contains(&role.as_str())
+                    && container_has_safe_file(container, rel_path)
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn feedpak_model_artifact_availability(
+    container: &Path,
+    manifest: &FeedpakManifest,
+) -> ModelArtifactAvailability {
+    ModelArtifactAvailability {
+        has_keys: manifest_pointer_has_file(container, &manifest.keys),
+        has_harmony: manifest_pointer_has_file(container, &manifest.harmony),
+        has_vocal_pitch: manifest_pointer_has_file(container, &manifest.vocal_pitch),
+        has_vocal_pitch_contour: manifest_pointer_has_file(
+            container,
+            &manifest.vocal_pitch_contour,
+        ),
+        has_aural_fingering: manifest_fingering_pointer_has_file(
+            container,
+            &manifest.aural_fingering,
+        ),
+    }
+}
+
+fn legacy_has_aural_fingering(container: &Path) -> bool {
+    SUPPORTED_FINGERING_ROLES
+        .iter()
+        .any(|role| container_has_file(container, &format!("features/fingering.{role}.json")))
+}
+
+fn legacy_model_artifact_availability(container: &Path) -> ModelArtifactAvailability {
+    ModelArtifactAvailability {
+        has_keys: container_has_file(container, "features/keys.json"),
+        has_harmony: container_has_file(container, "features/harmony.json"),
+        has_vocal_pitch: container_has_file(container, "features/vocal_pitch.json"),
+        has_vocal_pitch_contour: container_has_file(container, "features/vocal_pitch_contour.json")
+            || container_has_file(container, "features/pitch_contour.json"),
+        has_aural_fingering: legacy_has_aural_fingering(container),
+    }
+}
+
+fn is_allowed_manifest_json_rel(rel_path: &str) -> bool {
+    is_safe_container_rel(rel_path) && rel_path.ends_with(".json")
+}
+
+fn is_allowed_manifest_mid_rel(rel_path: &str) -> bool {
+    is_safe_container_rel(rel_path) && (rel_path.ends_with(".mid") || rel_path.ends_with(".midi"))
+}
+
+/// Whether a frontend-supplied `rel_path` is an allowed legacy feature/asset path.
 ///
-/// Legacy `.auralsong` packs use `features/...`; feedpak packs relocate the
-/// same artifacts under `aural/...` (spectrogram, refine candidates, notes.mid,
-/// refinement) and notation under `arrangements/...`. Any of those prefixes is
-/// accepted; `..` is always rejected (path-traversal guard).
+/// Legacy `.auralsong` packs use `features/...`; manifest packs commonly use
+/// `aural/...` and `arrangements/...`, plus a few root artifacts. This helper
+/// remains intentionally narrow for byte reads and legacy paths; manifest JSON
+/// and MIDI pointers get their own safe-relative checks at the command boundary.
 fn is_allowed_feature_rel(rel_path: &str) -> bool {
-    if rel_path.contains("..") {
+    if !is_safe_container_rel(rel_path) {
         return false;
     }
     rel_path.starts_with("features/")
@@ -468,7 +604,10 @@ fn is_allowed_feature_rel(rel_path: &str) -> bool {
         // Sloppak lyrics + vocal pitch live at the pack ROOT (manifest
         // `lyrics: lyrics.json`), not under a feature dir — allow reading them.
         || rel_path == "lyrics.json"
+        || rel_path == "keys.json"
+        || rel_path == "harmony.json"
         || rel_path == "vocal_pitch.json"
+        || rel_path == "vocal_pitch_contour.json"
 }
 
 /// Read+parse a feedpak `manifest.yaml` from a directory or zip container.
@@ -509,6 +648,7 @@ fn feedpak_default_stem(manifest: &FeedpakManifest) -> Result<(String, &'static 
         .or_else(|| manifest.stems.first())
         .ok_or_else(|| "feedpak has no stems".to_string())?;
 
+    require_safe_container_rel(&stem.file)?;
     let lower = stem.file.to_ascii_lowercase();
     let mime = if lower.ends_with(".ogg") {
         "audio/ogg"
@@ -1644,6 +1784,7 @@ fn native_audio_load_pack_audio(
         if !take {
             continue;
         }
+        require_safe_container_rel(&stem.file)?;
         let mime = audio_mime_for_path(&stem.file);
         mime_out = mime;
         let bytes = if p.is_dir() {
@@ -1667,7 +1808,11 @@ fn native_audio_load_pack_audio(
     let Some((sr, channels)) = fmt else {
         return Err(format!("no decodable stem for role {role:?}"));
     };
-    let duration_sec = if sr > 0 { max_frames as f64 / sr as f64 } else { 0.0 };
+    let duration_sec = if sr > 0 {
+        max_frames as f64 / sr as f64
+    } else {
+        0.0
+    };
 
     let target_sr = preferred_native_audio_sample_rate_hz(&state, sr)?;
     ensure_native_audio_engine_format(&state, target_sr, channels)?;
@@ -1691,10 +1836,17 @@ fn read_auralsong_json(
     rel_path: String,
 ) -> Result<serde_json::Value, String> {
     let p = PathBuf::from(&container_path);
+    let is_manifest = is_feedpak_path(&container_path);
     if !is_supported_container(&container_path) {
         return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
-    if !is_allowed_feature_rel(&rel_path) {
+    if is_manifest {
+        if !is_allowed_manifest_json_rel(&rel_path) {
+            return Err(
+                "manifest pack json rel_path must be a safe relative .json path".to_string(),
+            );
+        }
+    } else if !is_allowed_feature_rel(&rel_path) {
         return Err("only features/* or aural/* json is allowed".to_string());
     }
     if !rel_path.ends_with(".json") {
@@ -1712,10 +1864,17 @@ fn read_auralsong_json(
 #[tauri::command]
 fn read_auralsong_mid(container_path: String, rel_path: String) -> Result<MidiBlob, String> {
     let p = PathBuf::from(&container_path);
+    let is_manifest = is_feedpak_path(&container_path);
     if !is_supported_container(&container_path) {
         return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
-    if !is_allowed_feature_rel(&rel_path) {
+    if is_manifest {
+        if !is_allowed_manifest_mid_rel(&rel_path) {
+            return Err(
+                "manifest pack MIDI rel_path must be a safe relative .mid/.midi path".to_string(),
+            );
+        }
+    } else if !is_allowed_feature_rel(&rel_path) {
         return Err("only features/* or aural/* is allowed".to_string());
     }
     if !rel_path.ends_with(".mid") && !rel_path.ends_with(".midi") {
@@ -1819,8 +1978,8 @@ fn write_auralsong_lyrics_json(
 /// (feedpak: `aural/refinement.<instrument>.json`; legacy:
 /// `features/refinement.<instrument>.json`) and -- in future -- any other
 /// small editor-time JSON the workspace produces. Path-traversal safe:
-/// `rel_path` must start with `features/`, `aural/`, or `arrangements/`,
-/// must not contain `..`, and must end with `.json`.
+/// legacy `.auralsong` writes stay under the known feature roots, while
+/// manifest packs may write safe relative `.json` manifest-pointer paths.
 ///
 /// Directory containers only -- writing into a zip pack would require
 /// re-archiving; the workspace already requires a directory container for
@@ -1832,6 +1991,7 @@ fn write_auralsong_features_json(
     value: serde_json::Value,
 ) -> Result<(), String> {
     let p = PathBuf::from(&container_path);
+    let is_manifest = is_feedpak_path(&container_path);
     if !is_supported_container(&container_path) {
         return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
     }
@@ -1841,7 +2001,13 @@ fn write_auralsong_features_json(
                 .to_string(),
         );
     }
-    if !is_allowed_feature_rel(&rel_path) {
+    if is_manifest {
+        if !is_allowed_manifest_json_rel(&rel_path) {
+            return Err(
+                "manifest pack json rel_path must be a safe relative .json path".to_string(),
+            );
+        }
+    } else if !is_allowed_feature_rel(&rel_path) {
         return Err("rel_path must start with features/, aural/, or arrangements/".to_string());
     }
     if !rel_path.ends_with(".json") {
@@ -1881,6 +2047,13 @@ fn feedpak_details(container_path: String, p: &Path) -> AuralSongDetails {
                 has_events: false,
                 has_lyrics: false,
                 has_notes_mid: false,
+                has_song_timeline: false,
+                has_drum_tab: false,
+                has_keys: false,
+                has_harmony: false,
+                has_vocal_pitch: false,
+                has_vocal_pitch_contour: false,
+                has_aural_fingering: false,
                 has_mix_mp3: false,
                 has_mix_ogg: false,
                 has_mix_wav: false,
@@ -1902,16 +2075,36 @@ fn feedpak_details(container_path: String, p: &Path) -> AuralSongDetails {
         .ok()
         .and_then(|raw| serde_yaml::from_str::<serde_json::Value>(&raw).ok());
 
-    let has_timeline = manifest.song_timeline.is_some();
-    let has_notes_mid = manifest.aural_notes_mid.is_some();
-    let has_structure = has_timeline || has_notes_mid;
+    let has_song_timeline = manifest
+        .song_timeline
+        .as_deref()
+        .map(|rel| container_has_safe_file(p, rel))
+        .unwrap_or(false);
+    let has_drum_tab = manifest
+        .drum_tab
+        .as_deref()
+        .map(|rel| container_has_safe_file(p, rel))
+        .unwrap_or(false);
+    let has_notes_mid = manifest
+        .aural_notes_mid
+        .as_deref()
+        .map(|rel| container_has_safe_file(p, rel))
+        .unwrap_or(false);
+    let has_lyrics = manifest
+        .lyrics
+        .as_deref()
+        .map(|rel| container_has_safe_file(p, rel))
+        .unwrap_or(false);
+    let has_structure = has_song_timeline || has_notes_mid;
+    let model_artifacts = feedpak_model_artifact_availability(p, &manifest);
 
     // Default-stem container -> audio presence flag.
     let (has_mix_ogg, has_mix_mp3, has_mix_wav) = match feedpak_default_stem(&manifest) {
-        Ok((_, "audio/ogg")) => (true, false, false),
-        Ok((_, "audio/mpeg")) => (false, true, false),
-        Ok(_) => (false, false, true),
+        Ok((rel, "audio/ogg")) if container_has_safe_file(p, &rel) => (true, false, false),
+        Ok((rel, "audio/mpeg")) if container_has_safe_file(p, &rel) => (false, true, false),
+        Ok((rel, _)) if container_has_safe_file(p, &rel) => (false, false, true),
         Err(_) => (false, false, false),
+        _ => (false, false, false),
     };
 
     AuralSongDetails {
@@ -1924,8 +2117,15 @@ fn feedpak_details(container_path: String, p: &Path) -> AuralSongDetails {
         has_tempo_map: has_structure,
         has_sections: has_structure,
         has_events: has_notes_mid,
-        has_lyrics: manifest.lyrics.is_some(),
+        has_lyrics,
         has_notes_mid,
+        has_song_timeline,
+        has_drum_tab,
+        has_keys: model_artifacts.has_keys,
+        has_harmony: model_artifacts.has_harmony,
+        has_vocal_pitch: model_artifacts.has_vocal_pitch,
+        has_vocal_pitch_contour: model_artifacts.has_vocal_pitch_contour,
+        has_aural_fingering: model_artifacts.has_aural_fingering,
         has_mix_mp3,
         has_mix_ogg,
         has_mix_wav,
@@ -1933,7 +2133,10 @@ fn feedpak_details(container_path: String, p: &Path) -> AuralSongDetails {
         // legacy charts/ list is empty for feedpak.
         charts: vec![],
         arrangements_count: manifest.arrangements.len(),
-        lyrics_rel: manifest.lyrics.clone(),
+        lyrics_rel: manifest
+            .lyrics
+            .clone()
+            .filter(|rel| container_has_safe_file(p, rel)),
         error: None,
     }
 }
@@ -1955,6 +2158,13 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
             has_events: false,
             has_lyrics: false,
             has_notes_mid: false,
+            has_song_timeline: false,
+            has_drum_tab: false,
+            has_keys: false,
+            has_harmony: false,
+            has_vocal_pitch: false,
+            has_vocal_pitch_contour: false,
+            has_aural_fingering: false,
             has_mix_mp3: false,
             has_mix_ogg: false,
             has_mix_wav: false,
@@ -1973,6 +2183,7 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
 
     if p.is_dir() {
         // Directory AuralSong
+        let model_artifacts = legacy_model_artifact_availability(&p);
         let manifest_raw = match read_dir_manifest_raw(&p) {
             Ok(v) => Some(v),
             Err(e) => {
@@ -1992,6 +2203,13 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
                         || dir_has_file(&p, "features/notes.mid"),
                     has_lyrics: dir_has_file(&p, "features/lyrics.json"),
                     has_notes_mid: dir_has_file(&p, "features/notes.mid"),
+                    has_song_timeline: false,
+                    has_drum_tab: false,
+                    has_keys: model_artifacts.has_keys,
+                    has_harmony: model_artifacts.has_harmony,
+                    has_vocal_pitch: model_artifacts.has_vocal_pitch,
+                    has_vocal_pitch_contour: model_artifacts.has_vocal_pitch_contour,
+                    has_aural_fingering: model_artifacts.has_aural_fingering,
                     has_mix_mp3: dir_has_file(&p, "audio/mix.mp3"),
                     has_mix_ogg: dir_has_file(&p, "audio/mix.ogg"),
                     has_mix_wav: dir_has_file(&p, "audio/mix.wav"),
@@ -2024,6 +2242,13 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
                 || dir_has_file(&p, "features/notes.mid"),
             has_lyrics: dir_has_file(&p, "features/lyrics.json"),
             has_notes_mid: dir_has_file(&p, "features/notes.mid"),
+            has_song_timeline: false,
+            has_drum_tab: false,
+            has_keys: model_artifacts.has_keys,
+            has_harmony: model_artifacts.has_harmony,
+            has_vocal_pitch: model_artifacts.has_vocal_pitch,
+            has_vocal_pitch_contour: model_artifacts.has_vocal_pitch_contour,
+            has_aural_fingering: model_artifacts.has_aural_fingering,
             has_mix_mp3: dir_has_file(&p, "audio/mix.mp3"),
             has_mix_ogg: dir_has_file(&p, "audio/mix.ogg"),
             has_mix_wav: dir_has_file(&p, "audio/mix.wav"),
@@ -2034,6 +2259,7 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
         })
     } else {
         // Zip AuralSong
+        let model_artifacts = legacy_model_artifact_availability(&p);
         let manifest_raw = match read_zip_manifest_raw(&p) {
             Ok(v) => Some(v),
             Err(e) => {
@@ -2053,6 +2279,13 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
                         || zip_has_file(&p, "features/notes.mid").unwrap_or(false),
                     has_lyrics: zip_has_file(&p, "features/lyrics.json").unwrap_or(false),
                     has_notes_mid: zip_has_file(&p, "features/notes.mid").unwrap_or(false),
+                    has_song_timeline: false,
+                    has_drum_tab: false,
+                    has_keys: model_artifacts.has_keys,
+                    has_harmony: model_artifacts.has_harmony,
+                    has_vocal_pitch: model_artifacts.has_vocal_pitch,
+                    has_vocal_pitch_contour: model_artifacts.has_vocal_pitch_contour,
+                    has_aural_fingering: model_artifacts.has_aural_fingering,
                     has_mix_mp3: zip_has_file(&p, "audio/mix.mp3").unwrap_or(false),
                     has_mix_ogg: zip_has_file(&p, "audio/mix.ogg").unwrap_or(false),
                     has_mix_wav: zip_has_file(&p, "audio/mix.wav").unwrap_or(false),
@@ -2089,6 +2322,13 @@ fn get_auralsong_details(container_path: String) -> Result<AuralSongDetails, Str
                 || zip_has_file(&p, "features/notes.mid").unwrap_or(false),
             has_lyrics: zip_has_file(&p, "features/lyrics.json").unwrap_or(false),
             has_notes_mid: zip_has_file(&p, "features/notes.mid").unwrap_or(false),
+            has_song_timeline: false,
+            has_drum_tab: false,
+            has_keys: model_artifacts.has_keys,
+            has_harmony: model_artifacts.has_harmony,
+            has_vocal_pitch: model_artifacts.has_vocal_pitch,
+            has_vocal_pitch_contour: model_artifacts.has_vocal_pitch_contour,
+            has_aural_fingering: model_artifacts.has_aural_fingering,
             has_mix_mp3: zip_has_file(&p, "audio/mix.mp3").unwrap_or(false),
             has_mix_ogg: zip_has_file(&p, "audio/mix.ogg").unwrap_or(false),
             has_mix_wav: zip_has_file(&p, "audio/mix.wav").unwrap_or(false),
@@ -2994,11 +3234,81 @@ mod feedpak_read_tests {
         assert!(is_allowed_feature_rel("arrangements/notation_keys.json"));
         // Sloppak lyrics + vocal pitch live at the pack root.
         assert!(is_allowed_feature_rel("lyrics.json"));
+        assert!(is_allowed_feature_rel("keys.json"));
+        assert!(is_allowed_feature_rel("harmony.json"));
         assert!(is_allowed_feature_rel("vocal_pitch.json"));
+        assert!(is_allowed_feature_rel("vocal_pitch_contour.json"));
         assert!(is_allowed_feature_rel("drum_tab.json"));
         assert!(is_allowed_feature_rel("song_timeline.json"));
         assert!(!is_allowed_feature_rel("audio/stems/keys.wav"));
         assert!(!is_allowed_feature_rel("aural/../../escape.json"));
+        assert!(!is_allowed_feature_rel("aural//keys.json"));
+        assert!(!is_allowed_feature_rel("aural/./keys.json"));
+        assert!(!is_allowed_feature_rel("/abs.json"));
+        assert!(!is_allowed_feature_rel("C:/escape.json"));
+        assert!(!is_allowed_feature_rel("aural\\escape.json"));
+    }
+
+    #[test]
+    fn manifest_pointer_rel_paths_allow_safe_custom_json_and_midi() {
+        assert!(is_allowed_manifest_json_rel("custom/fret-map.lead.json"));
+        assert!(is_allowed_manifest_json_rel("metadata/vocals/pitch.json"));
+        assert!(is_allowed_manifest_mid_rel("custom/notes.midi"));
+        assert!(is_allowed_manifest_mid_rel("custom/notes.mid"));
+
+        assert!(!is_allowed_manifest_json_rel("audio/stems/keys.wav"));
+        assert!(!is_allowed_manifest_json_rel("custom/notes.mid"));
+        assert!(!is_allowed_manifest_mid_rel("custom/fret-map.lead.json"));
+        assert!(!is_allowed_manifest_json_rel("custom/../escape.json"));
+        assert!(!is_allowed_manifest_json_rel("custom//escape.json"));
+        assert!(!is_allowed_manifest_json_rel("custom/./escape.json"));
+        assert!(!is_allowed_manifest_json_rel("/abs.json"));
+        assert!(!is_allowed_manifest_json_rel("C:/escape.json"));
+        assert!(!is_allowed_manifest_json_rel("custom\\escape.json"));
+        assert!(!is_allowed_manifest_mid_rel("C:/escape.mid"));
+        assert!(!is_allowed_manifest_mid_rel("custom\\escape.mid"));
+    }
+
+    #[test]
+    fn read_manifest_pack_json_accepts_custom_pointer_path() {
+        let td = tempfile::tempdir().unwrap();
+        let pack = td.path().join("x.feedpak");
+        fs::create_dir_all(pack.join("custom")).unwrap();
+        fs::write(
+            pack.join("custom").join("fret-map.lead.json"),
+            r#"{"ok":true}"#,
+        )
+        .unwrap();
+
+        let v = read_auralsong_json(
+            pack.to_string_lossy().to_string(),
+            "custom/fret-map.lead.json".to_string(),
+        )
+        .expect("custom manifest pointer json should read");
+        assert_eq!(v.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        let err = read_auralsong_json(
+            pack.to_string_lossy().to_string(),
+            "custom/../escape.json".to_string(),
+        )
+        .expect_err("traversal must stay rejected");
+        assert!(err.contains("safe relative"));
+
+        for rel in [
+            "C:/escape.json",
+            "custom\\escape.json",
+            "custom//escape.json",
+        ] {
+            let err = read_auralsong_json(pack.to_string_lossy().to_string(), rel.to_string())
+                .expect_err("windows-style json path must stay rejected");
+            assert!(err.contains("safe relative"), "{rel:?}: {err}");
+        }
+
+        for rel in ["C:/escape.mid", "custom\\escape.mid", "custom//escape.mid"] {
+            let err = read_auralsong_mid(pack.to_string_lossy().to_string(), rel.to_string())
+                .expect_err("windows-style midi path must stay rejected");
+            assert!(err.contains("safe relative"), "{rel:?}: {err}");
+        }
     }
 
     fn minimal_sloppak_dir() -> PathBuf {
@@ -3030,8 +3340,94 @@ mod feedpak_read_tests {
         // Sloppak lyrics live at the pack root, pointed to by the manifest.
         assert_eq!(d.lyrics_rel.as_deref(), Some("lyrics.json"));
         assert!(d.has_lyrics);
+        assert!(d.has_drum_tab);
+        assert!(!d.has_keys);
+        assert!(!d.has_harmony);
+        assert!(!d.has_vocal_pitch);
+        assert!(!d.has_vocal_pitch_contour);
+        assert!(!d.has_aural_fingering);
         // The gate the frontend uses.
         assert!(d.arrangements_count > 0 && !d.has_notes_mid);
+    }
+
+    #[test]
+    fn details_ignore_unsafe_manifest_pointer_presence() {
+        let td = tempfile::tempdir().unwrap();
+        let pack = td.path().join("unsafe.feedpak");
+        fs::create_dir_all(&pack).unwrap();
+        fs::write(td.path().join("outside.json"), "{}").unwrap();
+        fs::write(td.path().join("outside.mid"), "midi").unwrap();
+        fs::write(td.path().join("outside.wav"), "wav").unwrap();
+        fs::write(
+            pack.join("manifest.yaml"),
+            r#"feedpak_version: 1.11.0
+title: Unsafe Details
+artist: AuralPrimer
+duration: 1.0
+arrangements:
+- id: lead
+  name: Lead
+  type: guitar
+  file: arrangements/lead.json
+stems:
+- id: vocals
+  file: ../outside.wav
+  default: true
+song_timeline: ../outside.json
+drum_tab: ../outside.json
+lyrics: ../outside.json
+keys: ../outside.json
+harmony: ../outside.json
+vocal_pitch: ../outside.json
+vocal_pitch_contour: ../outside.json
+aural_notes_mid: ../outside.mid
+aural_fingering:
+  lead_guitar: ../outside.json
+"#,
+        )
+        .unwrap();
+
+        let d = feedpak_details(pack.to_string_lossy().to_string(), &pack);
+        assert!(d.ok, "{:?}", d.error);
+        assert_eq!(d.arrangements_count, 1);
+        assert!(!d.has_notes_mid);
+        assert!(!d.has_lyrics);
+        assert!(d.lyrics_rel.is_none());
+        assert!(!d.has_beats);
+        assert!(!d.has_tempo_map);
+        assert!(!d.has_sections);
+        assert!(!d.has_events);
+        assert!(!d.has_song_timeline);
+        assert!(!d.has_drum_tab);
+        assert!(!d.has_keys);
+        assert!(!d.has_harmony);
+        assert!(!d.has_vocal_pitch);
+        assert!(!d.has_vocal_pitch_contour);
+        assert!(!d.has_aural_fingering);
+        assert!(!d.has_mix_wav);
+    }
+
+    #[test]
+    fn details_ignore_unsupported_fingering_manifest_roles() {
+        let td = tempfile::tempdir().unwrap();
+        let pack = td.path().join("unsupported-fingering.feedpak");
+        fs::create_dir_all(pack.join("aural")).unwrap();
+        fs::write(pack.join("aural/fingering.drums.json"), "{}").unwrap();
+        fs::write(
+            pack.join("manifest.yaml"),
+            r#"feedpak_version: 1.11.0
+title: Unsupported Fingering
+artist: AuralPrimer
+duration: 1.0
+aural_fingering:
+  drums: aural/fingering.drums.json
+"#,
+        )
+        .unwrap();
+
+        let d = feedpak_details(pack.to_string_lossy().to_string(), &pack);
+        assert!(d.ok, "{:?}", d.error);
+        assert!(!d.has_aural_fingering);
     }
 
     #[test]
@@ -3040,6 +3436,27 @@ mod feedpak_read_tests {
         let (rel, mime) = feedpak_default_stem(&m).expect("default stem");
         assert_eq!(rel, "audio/stems/keys.wav");
         assert_eq!(mime, "audio/wav");
+    }
+
+    #[test]
+    fn default_stem_rejects_unsafe_manifest_paths() {
+        for rel in ["../outside.wav", "C:/outside.wav", "audio\\outside.wav"] {
+            let yaml = format!(
+                r#"feedpak_version: 1.11.0
+title: Unsafe Stem
+artist: AuralPrimer
+duration: 1.0
+stems:
+- id: vocals
+  file: '{rel}'
+  default: true
+"#
+            );
+            let manifest: FeedpakManifest =
+                serde_yaml::from_str(&yaml).expect("parse manifest yaml");
+            let err = feedpak_default_stem(&manifest).expect_err("unsafe stem path must fail");
+            assert!(err.contains("safe relative path"), "{rel:?}: {err}");
+        }
     }
 
     #[test]
@@ -3054,9 +3471,16 @@ mod feedpak_read_tests {
         );
         // song_timeline + notes.mid both present in the fixture.
         assert!(d.has_notes_mid);
+        assert!(d.has_song_timeline);
+        assert!(d.has_drum_tab);
         assert!(d.has_beats && d.has_tempo_map && d.has_sections);
         assert!(d.has_events); // notes.mid present
         assert!(!d.has_lyrics);
+        assert!(d.has_keys);
+        assert!(d.has_harmony);
+        assert!(d.has_vocal_pitch);
+        assert!(d.has_vocal_pitch_contour);
+        assert!(d.has_aural_fingering);
         assert!(d.has_mix_wav && !d.has_mix_ogg && !d.has_mix_mp3);
         // Raw manifest reshaped to JSON carries the typed aural_* key.
         let raw = d.manifest_raw.expect("manifest_raw");
@@ -3064,5 +3488,27 @@ mod feedpak_read_tests {
             raw.get("aural_notes_mid").and_then(|v| v.as_str()),
             Some("aural/notes.mid")
         );
+    }
+
+    #[test]
+    fn legacy_directory_details_report_conventional_model_artifacts() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("legacy.auralsong");
+        let features = dir.join("features");
+        fs::create_dir_all(&features).unwrap();
+        fs::write(dir.join("manifest.json"), r#"{"title":"Legacy"}"#).unwrap();
+        fs::write(features.join("keys.json"), "{}").unwrap();
+        fs::write(features.join("harmony.json"), "{}").unwrap();
+        fs::write(features.join("vocal_pitch.json"), "{}").unwrap();
+        fs::write(features.join("pitch_contour.json"), "{}").unwrap();
+        fs::write(features.join("fingering.keys.json"), "{}").unwrap();
+
+        let d = get_auralsong_details(dir.to_string_lossy().to_string()).expect("details");
+        assert!(d.ok, "{:?}", d.error);
+        assert!(d.has_keys);
+        assert!(d.has_harmony);
+        assert!(d.has_vocal_pitch);
+        assert!(d.has_vocal_pitch_contour);
+        assert!(d.has_aural_fingering);
     }
 }

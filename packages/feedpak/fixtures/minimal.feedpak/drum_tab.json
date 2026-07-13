@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Minimal drum tab",
+  "kit": [
+    {
+      "id": "kick",
+      "name": "Kick"
+    },
+    {
+      "id": "snare",
+      "name": "Snare"
+    }
+  ],
+  "hits": [
+    {
+      "t": 0,
+      "p": "kick",
+      "v": 96
+    },
+    {
+      "t": 1,
+      "p": "snare",
+      "v": 72
+    }
+  ]
+}

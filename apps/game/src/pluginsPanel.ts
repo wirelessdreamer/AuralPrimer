@@ -74,9 +74,15 @@ function pluginRequirements(id: string): {
 } {
   switch (id) {
     case "viz-lyrics":
-      return { ok: (d) => Boolean(d?.has_lyrics), reason: "Requires lyrics (manifest lyrics pointer)" };
+      return {
+        ok: (d) => Boolean(d?.has_lyrics || d?.has_vocal_pitch || d?.has_vocal_pitch_contour),
+        reason: "Requires lyrics or vocal pitch artifacts"
+      };
     case "viz-drum-highway":
-      return { ok: (d) => Boolean(d?.has_notes_mid), reason: "Requires aural/notes.mid" };
+      return {
+        ok: (d) => Boolean(d?.has_notes_mid || d?.has_drum_tab),
+        reason: "Requires aural/notes.mid or drum_tab.json"
+      };
     default:
       return { ok: () => true, reason: "" };
   }

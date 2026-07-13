@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "gate": "beat_this_barline_listening_review",
+  "status": "incomplete",
+  "reviewed_by": "local-human-reviewer",
+  "reviewed_at_utc": "2026-07-10T17:31:05Z",
+  "source_smoke_report": "benchmarks/meter/beat_this_dbn_refresh_meter_smoke.md",
+  "review_surface": {
+    "app": "AuralStudio portable",
+    "portable_studio_path": "D:/AuralPrimer/AuralPrimerPortable/AuralStudio.exe",
+    "portable_studio_last_write": "2026-07-10T13:07:04Z",
+    "notes": "Review performed after refreshing the portable Studio build so the post-June-30 beat-grid overlay was visible."
+  },
+  "cases": {
+    "psalm_121_my_help.feedpak": {
+      "barlines_ok": true,
+      "listening_ok": true,
+      "notes": "Beat identification was perfect, including the freeform piano pause; the detected grid fully accounted for the pause."
+    },
+    "psalm_130_please_hear_me.feedpak": {
+      "barlines_ok": true,
+      "listening_ok": true,
+      "notes": "Human review judged the Beat This barline/listening result great."
+    },
+    "psalm_5_every_morning.feedpak": {
+      "barlines_ok": false,
+      "listening_ok": false,
+      "notes": "Human review found multiple trouble spots during slower, quieter sections. Do not promote this gate until Psalm 5 is corrected or explicitly re-reviewed as acceptable."
+    }
+  },
+  "attachments": [
+    "C:/Users/dreamer/AppData/Local/Temp/codex-clipboard-a0859458-1467-4a6a-81a4-b1075f32db26.png",
+    "C:/Users/dreamer/AppData/Local/Temp/codex-clipboard-38330f3a-5dac-4465-ad0a-ef2983445a3d.png"
+  ]
+}

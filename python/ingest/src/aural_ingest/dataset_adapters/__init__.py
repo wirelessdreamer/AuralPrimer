@@ -17,8 +17,21 @@ Supported datasets (corpora prepared under
   - ``guitarset``   GuitarSet v1.1.0 -- acoustic guitar
   - ``guitar_techs`` Guitar-TECHS v1 -- electric guitar
   - ``maestro``      MAESTRO v3.0.0 -- real acoustic piano (keys)
+  - ``mir_st500``    MIR-ST500 -- separated lead vocals
 """
 
-from .common import GroundTruthCase, GroundTruthInstrument
+from .common import (
+    GroundTruthCase,
+    GroundTruthChordEvent,
+    GroundTruthInstrument,
+    GroundTruthKeyEvent,
+    GroundTruthScalar,
+)
 
-__all__ = ["GroundTruthCase", "GroundTruthInstrument"]
+__all__ = [
+    "GroundTruthCase",
+    "GroundTruthChordEvent",
+    "GroundTruthInstrument",
+    "GroundTruthKeyEvent",
+    "GroundTruthScalar",
+]

@@ -26,7 +26,8 @@ If the bound is exceeded, the fix is one of:
   * Tighten `combined_filter` low-band guard threshold (currently 0.55).
   * Promote `beat_conditioned_multiband_decoder` or
     `spectral_flux_multiband` to the legacy `combined_filter` slot.
-  * Integrate ADTOF / YourMT3+ as the production drum default
+  * Keep modelpack-backed engines (CRNN, YourMT3+, ADTOF) behind the
+    benchmark/gameplay/listening gates before any default profile change
     (path 2 of docs/research-deep-dive-adt-2026-05-07.md).
 """
 from __future__ import annotations

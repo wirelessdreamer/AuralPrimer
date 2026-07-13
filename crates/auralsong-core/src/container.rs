@@ -141,7 +141,10 @@ mod container_tests {
         assert_eq!(summary.title, "Minimal Sloppak");
         assert_eq!(summary.artist, "Slopsmith");
         assert_eq!(summary.duration, 4.0);
-        assert_eq!(summary.arrangement_ids, vec!["lead".to_string(), "bass".to_string()]);
+        assert_eq!(
+            summary.arrangement_ids,
+            vec!["lead".to_string(), "bass".to_string()]
+        );
         assert_eq!(
             summary.stem_ids,
             vec![
@@ -155,7 +158,8 @@ mod container_tests {
 
         // Confirm the raw manifest parses and the sloppak arrangement uses
         // `file` (not `notation`), plus the unknown key round-trips.
-        let manifest = crate::feedpak::read_dir_feedpak_manifest(&dir).expect("parse sloppak manifest");
+        let manifest =
+            crate::feedpak::read_dir_feedpak_manifest(&dir).expect("parse sloppak manifest");
         assert_eq!(manifest.arrangements.len(), 2);
         assert_eq!(
             manifest.arrangements[0].file.as_deref(),
@@ -168,7 +172,10 @@ mod container_tests {
             "unknown sloppak key must survive in extra"
         );
         assert_eq!(
-            manifest.extra.get("slopsmith_version").and_then(|v| v.as_str()),
+            manifest
+                .extra
+                .get("slopsmith_version")
+                .and_then(|v| v.as_str()),
             Some("0.9.0")
         );
     }

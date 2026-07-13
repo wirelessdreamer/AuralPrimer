@@ -14,12 +14,23 @@ export type VizNote = {
   t_off?: number;
   pitch: number;
   velocity?: number;
+  string?: number;
+  fret?: number;
+  s?: number;
+  f?: number;
+  role?: MelodicTrackSelection["role"] | "drums";
+  instrument?: string;
   channel?: number;
   trackName?: string;
 };
 
 export type VizSongContext = {
   lyrics?: unknown;
+  vocalPitch?: unknown;
+  vocalPitchContour?: unknown;
+  songTimeline?: unknown;
+  keys?: unknown;
+  harmony?: unknown;
   charts?: AuralSongChartsByPath;
   notes?: VizNote[];
 };
@@ -28,6 +39,11 @@ export type BuildVizSongContextInput = {
   drumSelection: DrumChartSelection | null;
   melodicTracks: MelodicTrackSelection[];
   lyrics: unknown | null;
+  vocalPitch?: unknown | null;
+  vocalPitchContour?: unknown | null;
+  songTimeline?: unknown | null;
+  keys?: unknown | null;
+  harmony?: unknown | null;
   charts: AuralSongChartsByPath | null;
 };
 
@@ -37,7 +53,9 @@ export function buildVizSongContext(input: BuildVizSongContextInput): VizSongCon
       t_on: ev.t,
       t_off: ev.t + 0.08,
       pitch: ev.midi,
-      velocity: 100,
+      velocity: ev.velocity ?? 100,
+      role: "drums",
+      instrument: "drums",
       channel: 9,
       trackName: ev.trackName,
     })) ?? [];
@@ -49,6 +67,12 @@ export function buildVizSongContext(input: BuildVizSongContextInput): VizSongCon
       t_off: n.t_off,
       pitch: n.pitch,
       velocity: n.velocity,
+      string: n.string,
+      fret: n.fret,
+      s: n.s,
+      f: n.f,
+      role: track.role,
+      instrument: track.role,
       channel: track.channel,
       trackName: track.trackName,
     })),
@@ -59,6 +83,11 @@ export function buildVizSongContext(input: BuildVizSongContextInput): VizSongCon
 
   return {
     lyrics: input.lyrics ?? undefined,
+    vocalPitch: input.vocalPitch ?? undefined,
+    vocalPitchContour: input.vocalPitchContour ?? undefined,
+    songTimeline: input.songTimeline ?? undefined,
+    keys: input.keys ?? undefined,
+    harmony: input.harmony ?? undefined,
     charts: input.charts ?? undefined,
     notes: allNotes.length > 0 ? allNotes : undefined,
   };

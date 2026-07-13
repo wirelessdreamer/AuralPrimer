@@ -14,7 +14,7 @@
     },
     "instrument": {
       "type": "string",
-      "enum": ["keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "melodic"],
+      "enum": ["keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "vocals", "melodic"],
       "description": "Which instrument's track this refinement applies to."
     },
     "session_id": {
@@ -47,7 +47,11 @@
         "t_on": { "type": "number", "minimum": 0, "description": "Onset time in seconds (song-time)." },
         "t_off": { "type": "number", "exclusiveMinimum": 0, "description": "Offset time in seconds (song-time). Must be > t_on." },
         "pitch": { "type": "integer", "minimum": 0, "maximum": 127, "description": "MIDI pitch number." },
-        "velocity": { "type": "integer", "minimum": 1, "maximum": 127, "description": "MIDI velocity." }
+        "velocity": { "type": "integer", "minimum": 1, "maximum": 127, "description": "MIDI velocity." },
+        "string": { "type": "integer", "minimum": 0, "maximum": 8, "description": "Optional zero-based string index, lowest/thickest string first." },
+        "fret": { "type": "integer", "minimum": 0, "maximum": 36, "description": "Optional fret number paired with string." },
+        "s": { "type": "integer", "minimum": 0, "maximum": 8, "description": "Compact alias for string, matching arrangement wire JSON." },
+        "f": { "type": "integer", "minimum": 0, "maximum": 36, "description": "Compact alias for fret, matching arrangement wire JSON." }
       }
     },
     "region": {

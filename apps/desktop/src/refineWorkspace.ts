@@ -46,7 +46,11 @@ import {
 import { getAvOffsetSec } from "./avOffset";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { GridMetronome } from "./gridMetronome";
-import { detectMelodicStems, auralsongJsonExists } from "./cleanupReadiness";
+import {
+  detectMelodicStems,
+  auralsongJsonExists,
+  drumTabRelPath as resolveDrumTabRelPath,
+} from "./cleanupReadiness";
 import {
   laneOrderForTab,
   hitsToNotes,
@@ -114,13 +118,14 @@ export type RefineWorkspaceHandle = {
 // Editable melodic roles, in the order we prefer them as the default pick.
 // (Drums are charted via the drum tab, not melodic candidates, so they are
 // deliberately absent here and never offered in the Refine instrument picker.)
-const MELODIC_PICK_ORDER = ["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar"];
+const MELODIC_PICK_ORDER = ["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "vocals"];
 const INSTRUMENT_LABELS: Record<string, string> = {
   keys: "Keys",
   bass: "Bass",
   guitar: "Guitar",
   lead_guitar: "Lead Guitar",
   rhythm_guitar: "Rhythm Guitar",
+  vocals: "Vocals",
   // Drums are the exception to the candidates flow: the picker offers them
   // when the pack has a drum_tab.json, and the workspace switches to the lane
   // editor over the drums spectrogram (see the drumMode branches below).
@@ -185,10 +190,12 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   let selectedIndex: number | null = null;
   let durationSec = 0;
   // Drum-cleanup mode: the editor shows kit lanes over the drums spectrogram
-  // and edits the pack's drum_tab.json directly (no candidates/regions).
-  let drumMode = false;
-  let drumLanes: string[] = [];
-  let drumTabOriginal: DrumTabFile | null = null;
+  // and edits the pack's drum_tab artifact directly (no candidates/regions).
+let drumMode = false;
+let drumLanes: string[] = [];
+let drumTabOriginal: DrumTabFile | null = null;
+let drumTabRelPath = "drum_tab.json";
+let songTimelineRelPath = "song_timeline.json";
 
   // transport
   //  - Audio plays through the SAME native engine as the game (via
@@ -222,6 +229,36 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       try { URL.revokeObjectURL(u); } catch { /* ignore */ }
     }
     spectroTileUrls.length = 0;
+  }
+
+  function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  function stringRelPath(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  async function resolveSongTimelineRelPath(path: string): Promise<string> {
+    try {
+      const details = await invoke<{
+        manifest_raw?: {
+          song_timeline?: unknown;
+          artifacts?: unknown;
+        } | null;
+      }>("get_auralsong_details", { containerPath: path });
+      const raw = details.manifest_raw;
+      const artifacts = isObject(raw?.artifacts) ? raw.artifacts : null;
+      return (
+        stringRelPath(raw?.song_timeline) ??
+        stringRelPath(artifacts?.song_timeline) ??
+        "song_timeline.json"
+      );
+    } catch {
+      return "song_timeline.json";
+    }
   }
 
   // ---- the editor (created once; load() swaps geometry + notes) ----
@@ -614,14 +651,14 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     metronome.setBeats(loadedBeatTimes, downbeats);
   }
 
-  // Load the pack's beats (song_timeline.json) into the editor's grid, then
-  // apply the current quant level. No timeline -> no grid (snap becomes inert).
+  // Load the pack's beats into the editor's grid, following manifest pointers,
+  // then apply the current quant level. No timeline -> no grid (snap becomes inert).
   async function applyBeatGrid(): Promise<void> {
     if (!containerPath) return;
     try {
       const tl = (await invoke("read_auralsong_json", {
         containerPath,
-        relPath: "song_timeline.json",
+        relPath: songTimelineRelPath,
       })) as {
         beats?: Array<{ time?: number; measure?: number }>;
         time_signatures?: Array<{ ts?: number[] }>;
@@ -718,16 +755,16 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   // -------------------------------------------------------------------------
 
   async function save(): Promise<void> {
-    // Drum mode: convert the edited lane hits back into the pack's root
-    // drum_tab.json (preserving version/name/kit) — the game charts straight
-    // from that file, so the edit lands with no further pipeline step.
+    // Drum mode: convert the edited lane hits back into the pack's drum_tab
+    // artifact (preserving version/name/kit). Runtime charts straight from
+    // that file, so the edit lands with no further pipeline step.
     if (drumMode) {
       if (!containerPath || !drumTabOriginal) return;
       const tab = notesToTab(editor.getNotes(), drumLanes, drumTabOriginal);
       try {
         await invoke<void>("write_auralsong_features_json", {
           containerPath,
-          relPath: "drum_tab.json",
+          relPath: drumTabRelPath,
           value: tab,
         });
         drumTabOriginal = tab;
@@ -797,19 +834,23 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
 
     // The dropdown should offer only this song's editable instruments — the
     // melodic roles that actually have candidates, plus Drums when the pack
-    // carries a drum chart (drum_tab.json), which opens the lane editor
-    // instead of the candidates flow.
+    // carries a drum chart, which opens the lane editor instead of the
+    // candidates flow.
     let available: string[] = [];
     let primary = "keys";
     try {
       const det = await detectMelodicStems(path);
       primary = det.primary;
       available = MELODIC_PICK_ORDER.filter((r) => det.readiness.get(r)?.candidates);
+      drumTabRelPath = await resolveDrumTabRelPath(path);
+      songTimelineRelPath = await resolveSongTimelineRelPath(path);
     } catch {
       // Detection failed — leave the static option set + current instrument.
+      drumTabRelPath = "drum_tab.json";
+      songTimelineRelPath = "song_timeline.json";
     }
     try {
-      if (await auralsongJsonExists(path, "drum_tab.json")) available.push("drums");
+      if (await auralsongJsonExists(path, drumTabRelPath)) available.push("drums");
     } catch {
       /* no drum option on probe failure */
     }
@@ -835,7 +876,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
       try {
         const tab = (await invoke("read_auralsong_json", {
           containerPath: path,
-          relPath: "drum_tab.json",
+          relPath: drumTabRelPath,
         })) as DrumTabFile;
         if (!tab || !Array.isArray(tab.hits)) {
           showEmpty(true, "drumtab");
@@ -945,13 +986,13 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
     try {
       const cur = notesToTab(editor.getNotes(), drumLanes, drumTabOriginal);
       await invoke<void>("write_auralsong_features_json", {
-        containerPath, relPath: "drum_tab.json", value: cur,
+        containerPath, relPath: drumTabRelPath, value: cur,
       });
       const res = await invoke<{ stdout?: string }>("ingest_align_drum_onsets", {
         req: { container_path: containerPath },
       });
       const aligned = (await invoke("read_auralsong_json", {
-        containerPath, relPath: "drum_tab.json",
+        containerPath, relPath: drumTabRelPath,
       })) as DrumTabFile;
       drumTabOriginal = aligned;
       editor.setNotes(hitsToNotes(aligned, drumLanes)); // undoable (snapshots current)

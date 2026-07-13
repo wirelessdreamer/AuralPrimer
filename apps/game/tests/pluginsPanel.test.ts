@@ -74,6 +74,30 @@ describe("pluginsPanel", () => {
     for (const o of Array.from(select().options)) expect(o.disabled).toBe(false);
   });
 
+  it("enables the lyrics visualizer for vocal-pitch-only packs", () => {
+    const details = { has_lyrics: false, has_vocal_pitch: true } as any;
+    const handle = initPluginsPanel(makeDeps({ getSelectedAuralSongDetails: vi.fn(() => details) }));
+    handle.render();
+    const lyrics = Array.from(select().options).find((o) => o.text.startsWith("Lyrics"))!;
+    expect(lyrics.disabled).toBe(false);
+  });
+
+  it("enables the lyrics visualizer for vocal-contour-only packs", () => {
+    const details = { has_lyrics: false, has_vocal_pitch_contour: true } as any;
+    const handle = initPluginsPanel(makeDeps({ getSelectedAuralSongDetails: vi.fn(() => details) }));
+    handle.render();
+    const lyrics = Array.from(select().options).find((o) => o.text.startsWith("Lyrics"))!;
+    expect(lyrics.disabled).toBe(false);
+  });
+
+  it("enables the drum highway for drum-tab-only packs without notes.mid", () => {
+    const details = { has_lyrics: false, has_notes_mid: false, has_drum_tab: true } as any;
+    const handle = initPluginsPanel(makeDeps({ getSelectedAuralSongDetails: vi.fn(() => details) }));
+    handle.render();
+    const drums = Array.from(select().options).find((o) => o.text.startsWith("Drum"))!;
+    expect(drums.disabled).toBe(false);
+  });
+
   it("render re-picks the first enabled option if the selected one is disabled", () => {
     // viz-beats is always enabled and is first, so default selection stays valid.
     const handle = initPluginsPanel(makeDeps());

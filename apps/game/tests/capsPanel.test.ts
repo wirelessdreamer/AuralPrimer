@@ -42,6 +42,13 @@ const richDetails: CapsAuralSongDetails = {
   has_events: true,
   has_lyrics: true,
   has_notes_mid: true,
+  has_drum_tab: true,
+  has_song_timeline: true,
+  has_keys: true,
+  has_harmony: true,
+  has_vocal_pitch: true,
+  has_vocal_pitch_contour: true,
+  has_aural_fingering: true,
   has_mix_wav: true,
   has_mix_mp3: true,
   has_mix_ogg: true,
@@ -61,6 +68,13 @@ describe("capsPanel", () => {
       events: true,
       lyrics: true,
       notes_mid: true,
+      drum_tab: true,
+      song_timeline: true,
+      keys: true,
+      harmony: true,
+      vocal_pitch: true,
+      vocal_pitch_contour: true,
+      aural_fingering: true,
     });
     expect(caps.audio).toEqual({ wav: true, mp3: true, ogg: true });
     expect(caps.charts.any).toBe(true);
@@ -88,6 +102,7 @@ describe("capsPanel", () => {
     const caps = handle.compute(null, null, null);
     expect(caps.charts.any).toBe(false);
     expect(caps.features.beats).toBe(false);
+    expect(caps.features.aural_fingering).toBe(false);
     expect(caps.audio.wav).toBe(false);
   });
 
@@ -100,6 +115,10 @@ describe("capsPanel", () => {
     expect(html).toContain("Charts");
     expect(html).toContain("Audio");
     expect(html).toContain("events=2");
+    expect(html).toContain("song_timeline.json");
+    expect(html).toContain("drum_tab.json");
+    expect(html).toContain("vocal_pitch.json");
+    expect(html).toContain("aural/fingering");
     expect(html).toContain("capPill--ok");
   });
 
@@ -108,6 +127,14 @@ describe("capsPanel", () => {
     handle.render(null, null, null);
     const html = (document.getElementById("songCaps") as HTMLElement).innerHTML;
     expect(html).toContain("capPill--missing");
+  });
+
+  it("render names drum_tab.json in the drum chart hint when selected", () => {
+    const handle = initCapsPanel(makeDeps());
+    handle.render(richDetails, { mode: "relaxed", reason: "drum_tab", events: [1, 2, 3] } as any, null);
+    const html = (document.getElementById("songCaps") as HTMLElement).innerHTML;
+    expect(html).toContain("drum_tab.json");
+    expect(html).toContain("events=3");
   });
 
   it("applyAvailability disables instruments with no chart and re-picks first enabled", () => {

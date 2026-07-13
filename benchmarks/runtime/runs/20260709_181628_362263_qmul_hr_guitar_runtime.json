@@ -1,0 +1,930 @@
+{
+  "engine": "qmul_hr_guitar",
+  "instrument": "lead_guitar",
+  "note_count": 128,
+  "notes": [
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 0.5,
+      "t_on": 0.02474,
+      "velocity": 95
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 0.759115,
+      "t_on": 0.026042,
+      "velocity": 98
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 0.679688,
+      "t_on": 0.029948,
+      "velocity": 96
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 0.919271,
+      "t_on": 0.507812,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 1.619792,
+      "t_on": 0.713542,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 1.878906,
+      "t_on": 0.927083,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 1.617188,
+      "t_on": 1.177083,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 1.81901,
+      "t_on": 1.179688,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 1.848958,
+      "t_on": 1.621094,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 2.56901,
+      "t_on": 1.626302,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 2.329427,
+      "t_on": 1.888021,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 2.059896,
+      "t_on": 1.894531,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 2.559896,
+      "t_on": 1.894531,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 2.589844,
+      "t_on": 2.071615,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 2.579427,
+      "t_on": 2.335938,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 3.279948,
+      "t_on": 2.58724,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 2.959635,
+      "t_on": 2.595052,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 3.317708,
+      "t_on": 2.595052,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 3.5,
+      "t_on": 2.970052,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 3.651042,
+      "t_on": 3.0625,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 4.179688,
+      "t_on": 3.291667,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 3.938802,
+      "t_on": 3.50651,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 4.658854,
+      "t_on": 3.736979,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 72,
+      "t_off": 4.408854,
+      "t_on": 3.747396,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 4.39974,
+      "t_on": 3.751302,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 4.429688,
+      "t_on": 3.953125,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 5.339844,
+      "t_on": 4.184896,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 4.878906,
+      "t_on": 4.436198,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 5.809896,
+      "t_on": 4.665365,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 5.199219,
+      "t_on": 4.666667,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 70,
+      "t_off": 5.279948,
+      "t_on": 4.669271,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 5.145833,
+      "t_on": 4.884115,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 6.049479,
+      "t_on": 5.34375,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 6.229167,
+      "t_on": 5.352865,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 70,
+      "t_off": 6.658854,
+      "t_on": 5.352865,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 6.289062,
+      "t_on": 5.354167,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 6.809896,
+      "t_on": 5.817708,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 7.158854,
+      "t_on": 6.05599,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 6.839844,
+      "t_on": 6.298177,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 6.639323,
+      "t_on": 6.299479,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 7.019531,
+      "t_on": 6.651042,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 7.053385,
+      "t_on": 6.820312,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 7.658854,
+      "t_on": 7.199219,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 8.14974,
+      "t_on": 7.459635,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 44,
+      "t_off": 7.919271,
+      "t_on": 7.460938,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 60,
+      "t_off": 8.14974,
+      "t_on": 7.46224,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 8.14974,
+      "t_on": 7.673177,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 44,
+      "t_off": 8.889323,
+      "t_on": 7.932292,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 8.619792,
+      "t_on": 8.157552,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 8.921875,
+      "t_on": 8.157552,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 60,
+      "t_off": 9.079427,
+      "t_on": 8.158854,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 9.079427,
+      "t_on": 8.626302,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 44,
+      "t_off": 9.408854,
+      "t_on": 8.895833,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 9.347656,
+      "t_on": 9.080729,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 60,
+      "t_off": 9.408854,
+      "t_on": 9.084635,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 9.320312,
+      "t_on": 9.08724,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 9.979167,
+      "t_on": 9.570312,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 63,
+      "t_off": 10.029948,
+      "t_on": 9.571615,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 10.81901,
+      "t_on": 9.572917,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 72,
+      "t_off": 10.259115,
+      "t_on": 9.572917,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 63,
+      "t_off": 10.489583,
+      "t_on": 10.035156,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 10.699219,
+      "t_on": 10.25651,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 72,
+      "t_off": 10.929688,
+      "t_on": 10.265625,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 63,
+      "t_off": 10.938802,
+      "t_on": 10.501302,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 10.949219,
+      "t_on": 10.708333,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 63,
+      "t_off": 11.39974,
+      "t_on": 10.953125,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 11.878906,
+      "t_on": 11.15625,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 11.75,
+      "t_on": 11.16276,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 63,
+      "t_off": 11.691406,
+      "t_on": 11.404948,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 12.699219,
+      "t_on": 11.885417,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 12.329427,
+      "t_on": 11.888021,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 12.329427,
+      "t_on": 11.891927,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 12.688802,
+      "t_on": 12.338542,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 12.64974,
+      "t_on": 12.342448,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 12.669271,
+      "t_on": 12.34375,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 12.97526,
+      "t_on": 12.789062,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 70,
+      "t_off": 13.039062,
+      "t_on": 12.789062,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 12.984375,
+      "t_on": 12.790365,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 13.059896,
+      "t_on": 12.794271,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 13.959635,
+      "t_on": 13.296875,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 14.158854,
+      "t_on": 13.303385,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 14.115885,
+      "t_on": 13.304688,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 14.199219,
+      "t_on": 13.763021,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 14.878906,
+      "t_on": 13.970052,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 14.64974,
+      "t_on": 14.213542,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 14.889323,
+      "t_on": 14.440104,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 14.648438,
+      "t_on": 14.441406,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 14.898438,
+      "t_on": 14.658854,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 15.369792,
+      "t_on": 14.893229,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 46,
+      "t_off": 16.889323,
+      "t_on": 15.328125,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 16.489583,
+      "t_on": 15.563802,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 16.829427,
+      "t_on": 15.820312,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 53,
+      "t_off": 16.848958,
+      "t_on": 16.03125,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 70,
+      "t_off": 16.829427,
+      "t_on": 16.253906,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 16.839844,
+      "t_on": 16.502604,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 60,
+      "t_off": 17.1875,
+      "t_on": 17.010417,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 55,
+      "t_off": 17.21875,
+      "t_on": 17.011719,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 17.183594,
+      "t_on": 17.011719,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 63,
+      "t_off": 18.429688,
+      "t_on": 17.697917,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 60,
+      "t_off": 18.39974,
+      "t_on": 17.703125,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 44,
+      "t_off": 18.158854,
+      "t_on": 17.704427,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 18.389323,
+      "t_on": 17.915365,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 44,
+      "t_off": 18.438802,
+      "t_on": 18.165365,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 18.619792,
+      "t_on": 18.403646,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 56,
+      "t_off": 18.558594,
+      "t_on": 18.403646,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 18.813802,
+      "t_on": 18.634115,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 18.822917,
+      "t_on": 18.638021,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 18.889323,
+      "t_on": 18.641927,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 19.669271,
+      "t_on": 19.085938,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 19.279948,
+      "t_on": 19.09375,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 19.279948,
+      "t_on": 19.096354,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 19.539062,
+      "t_on": 19.290365,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 19.460938,
+      "t_on": 19.291667,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 19.64974,
+      "t_on": 19.292969,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 20.019531,
+      "t_on": 19.766927,
+      "velocity": 101
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 20.109375,
+      "t_on": 19.768229,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 19.973958,
+      "t_on": 19.772135,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 20.549479,
+      "t_on": 20.253906,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 65,
+      "t_off": 20.40625,
+      "t_on": 20.257812,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 20.529948,
+      "t_on": 20.260417,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 20.489583,
+      "t_on": 20.261719,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 51,
+      "t_off": 20.959635,
+      "t_on": 20.69401,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 20.947917,
+      "t_on": 20.700521,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 20.989583,
+      "t_on": 20.701823,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 22.06901,
+      "t_on": 21.151042,
+      "velocity": 100
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 58,
+      "t_off": 22.359375,
+      "t_on": 21.414062,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 67,
+      "t_off": 22.369792,
+      "t_on": 21.414062,
+      "velocity": 99
+    },
+    {
+      "instrument": "lead_guitar",
+      "pitch": 62,
+      "t_off": 22.394531,
+      "t_on": 22.075521,
+      "velocity": 99
+    }
+  ],
+  "ok": true,
+  "reason": null,
+  "require_notes": true,
+  "returncode": 0,
+  "runtime": {
+    "command": "{python_q} -m hf_midi_transcription.cli {wav_path_q} {out_midi_q} --instrument guitar --checkpoint D:\\AuralPrimer\\.external\\qmul-hf-midi\\checkpoints\\guitar-fl.pth --device cpu --batch-size 8",
+    "configured": true,
+    "engine": "qmul_hr_guitar",
+    "env": {
+      "AURAL_QMUL_GUITAR_COMMAND": "{python_q} -m hf_midi_transcription.cli {wav_path_q} {out_midi_q} --instrument guitar --checkpoint D:\\AuralPrimer\\.external\\qmul-hf-midi\\checkpoints\\guitar-fl.pth --device cpu --batch-size 8",
+      "AURAL_QMUL_GUITAR_PYTHON": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\.venv\\Scripts\\python.exe",
+      "AURAL_QMUL_GUITAR_REPO": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\hf_midi_transcription",
+      "AURAL_QMUL_GUITAR_TIMEOUT_SEC": "1800"
+    },
+    "missing": [],
+    "python": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\.venv\\Scripts\\python.exe",
+    "python_exists": true,
+    "python_is_file": true,
+    "repo": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\hf_midi_transcription",
+    "repo_exists": true,
+    "repo_is_dir": true,
+    "timeout_sec": 1800.0
+  },
+  "status": "ok",
+  "stderr_tail": "<frozen runpy>:128: RuntimeWarning: 'hf_midi_transcription.cli' found in sys.modules after import of package 'hf_midi_transcription', but prior to execution of 'hf_midi_transcription.cli'; this may result in unpredictable behaviour\n",
+  "stdout_tail": "Checkpoint path: D:\\AuralPrimer\\.external\\qmul-hf-midi\\checkpoints\\guitar-fl.pth\nUsing cpu for inference.\nUsing CPU.\nSegment 0 / 1\nSegment 8 / 1\nWrite out to C:\\Users\\dreamer\\AppData\\Local\\Temp\\aural_qmul_guitar_elcj4sv7\\qmul_hr_guitar.mid\n\u2713 Transcription completed successfully!\nOutput saved to: C:\\Users\\dreamer\\AppData\\Local\\Temp\\aural_qmul_guitar_elcj4sv7\\qmul_hr_guitar.mid\n",
+  "wav_path": "E:\\AudioSourceOfTruthData\\extracted\\guitarset\\guitarset_mono_mic\\00_BN1-129-Eb_comp_mic.wav"
+}

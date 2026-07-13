@@ -16,6 +16,7 @@ import pytest
 from aural_ingest.pack_paths import (
     load_pack_manifest,
     pack_feature_dirname,
+    resolve_drum_tab_path,
     resolve_mix_path,
     resolve_stem_paths,
     update_manifest_keys,
@@ -123,6 +124,32 @@ def test_resolve_mix_path_feedpak_default_flag(tmp_path: Path):
     mix = resolve_mix_path(pack)
     assert mix is not None
     assert mix.name == "full.wav"
+
+
+def test_resolve_drum_tab_path_honors_safe_manifest_pointer(tmp_path: Path):
+    pack = _make_feedpak(tmp_path)
+    (pack / "custom").mkdir()
+    (pack / "manifest.yaml").write_text(
+        (pack / "manifest.yaml").read_text(encoding="utf-8")
+        + "drum_tab: custom/drums.json\n",
+        encoding="utf-8",
+    )
+
+    assert resolve_drum_tab_path(pack) == pack / "custom" / "drums.json"
+
+
+def test_resolve_drum_tab_path_falls_back_for_missing_or_unsafe_manifest_pointer(
+    tmp_path: Path,
+):
+    pack = _make_feedpak(tmp_path)
+    assert resolve_drum_tab_path(pack) == pack / "drum_tab.json"
+
+    (pack / "manifest.yaml").write_text(
+        (pack / "manifest.yaml").read_text(encoding="utf-8")
+        + "drum_tab: custom//drums.json\n",
+        encoding="utf-8",
+    )
+    assert resolve_drum_tab_path(pack) == pack / "drum_tab.json"
 
 
 # --- glob fallback (legacy pack, no manifest) ------------------------------

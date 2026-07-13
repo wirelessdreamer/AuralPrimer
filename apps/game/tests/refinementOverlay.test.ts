@@ -88,6 +88,17 @@ describe("applyRefinementsToMelodicTracks", () => {
     expect(out[1].notes).toEqual([n(0.5, 0.9, 40), n(2.1, 2.2, 45)]);
   });
 
+  it("preserves fretted string/fret metadata from replacement notes", () => {
+    const ref = refinement("lead_guitar", [
+      region(0.0, 1.0, [{ t_on: 0.2, t_off: 0.6, pitch: 64, velocity: 90, string: 0, fret: 24 }]),
+    ]);
+    const lead = track("lead_guitar", [n(0.3, 0.5, 64)]);
+    const out = applyRefinementsToMelodicTracks([lead], [ref]);
+    expect(out[0].notes).toEqual([
+      { t_on: 0.2, t_off: 0.6, pitch: 64, velocity: 90, string: 0, fret: 24 },
+    ]);
+  });
+
   it("ignores refinements whose instrument matches no track", () => {
     const refUnused = refinement("drums", [region(0.0, 5.0, [])]);
     const out = applyRefinementsToMelodicTracks([keys, bass], [refUnused]);

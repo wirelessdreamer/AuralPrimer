@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "instrument": "lead_guitar",
+  "notes": [
+    {
+      "t_on": 0.5,
+      "t_off": 0.75,
+      "pitch": 64,
+      "velocity": 96,
+      "string": 1,
+      "fret": 5
+    }
+  ]
+}

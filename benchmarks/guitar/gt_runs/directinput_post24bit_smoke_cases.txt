@@ -1,0 +1,6 @@
+# Short Guitar-TECHS directinput cases used to verify the 24-bit WAV reader fix
+# without starting the sweep on the longest 200-550 second DI files.
+guitar_techs:P3_music:midi_11:directinput
+guitar_techs:P3_music:midi_08:directinput
+guitar_techs:P3_music:midi_03:directinput
+guitar_techs:P1_chords:midi_Set1_aug:directinput

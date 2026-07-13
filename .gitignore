@@ -84,10 +84,13 @@ assets/models/yourmt3/
 assets/models/piano_pti/
 assets/models/piano_d3rm/
 assets/models/drum_crnn/
+assets/models/beat_this/
+assets/models/rmvpe/
 
 # Local agent/worktree scratch state
 .claude/
 .work/
+.external/
 
 # Ad-hoc command output and generated import products
 tmp/

@@ -1,0 +1,33 @@
+{
+  "engine": "qmul_hr_guitar",
+  "instrument": "lead_guitar",
+  "note_count": 0,
+  "notes": [],
+  "ok": false,
+  "reason": "runner exited with code 1",
+  "require_notes": true,
+  "returncode": 1,
+  "runtime": {
+    "command": "{python_q} -m hf_midi_transcription.cli {wav_path_q} {out_midi_q} --instrument guitar --checkpoint D:\\AuralPrimer\\.external\\qmul-hf-midi\\checkpoints\\guitar-fl.pth --device cpu --batch-size 8",
+    "configured": true,
+    "engine": "qmul_hr_guitar",
+    "env": {
+      "AURAL_QMUL_GUITAR_COMMAND": "{python_q} -m hf_midi_transcription.cli {wav_path_q} {out_midi_q} --instrument guitar --checkpoint D:\\AuralPrimer\\.external\\qmul-hf-midi\\checkpoints\\guitar-fl.pth --device cpu --batch-size 8",
+      "AURAL_QMUL_GUITAR_PYTHON": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\.venv\\Scripts\\python.exe",
+      "AURAL_QMUL_GUITAR_REPO": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\hf_midi_transcription",
+      "AURAL_QMUL_GUITAR_TIMEOUT_SEC": "1800"
+    },
+    "missing": [],
+    "python": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\.venv\\Scripts\\python.exe",
+    "python_exists": true,
+    "python_is_file": true,
+    "repo": "D:\\AuralPrimer\\.external\\qmul-hf-midi\\hf_midi_transcription",
+    "repo_exists": true,
+    "repo_is_dir": true,
+    "timeout_sec": 1800.0
+  },
+  "status": "runner_failed",
+  "stderr_tail": "<frozen runpy>:128: RuntimeWarning: 'hf_midi_transcription.cli' found in sys.modules after import of package 'hf_midi_transcription', but prior to execution of 'hf_midi_transcription.cli'; this may result in unpredictable behaviour\n\\u2717 Error during transcription: 'charmap' codec can't encode character '\\u2713' in position 0: character maps to <undefined>\n",
+  "stdout_tail": "Checkpoint path: D:\\AuralPrimer\\.external\\qmul-hf-midi\\checkpoints\\guitar-fl.pth\nUsing cpu for inference.\nUsing CPU.\nSegment 0 / 1\nSegment 8 / 1\nWrite out to C:\\Users\\dreamer\\AppData\\Local\\Temp\\aural_qmul_guitar_kgdgs0eu\\qmul_hr_guitar.mid\n",
+  "wav_path": "E:\\AudioSourceOfTruthData\\extracted\\guitarset\\guitarset_mono_mic\\00_BN1-129-Eb_comp_mic.wav"
+}

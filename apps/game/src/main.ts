@@ -1,5 +1,6 @@
 import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
+import { isManifestPack } from "@auralprimer/auralsong/packKind";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
 import { TransportController } from "./transportController";
 import { initAvCalibration } from "@auralprimer/av-sync";
@@ -60,7 +61,7 @@ import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
-import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
+import { loadAuralSongAudioIntoTransport } from "./auralsongAudioLoader";
 import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
@@ -347,6 +348,11 @@ let transport: TransportState = {
 };
 
 let currentLyrics: LyricsFile | null = null;
+let currentKeys: unknown | null = null;
+let currentHarmony: unknown | null = null;
+let currentVocalPitch: unknown | null = null;
+let currentVocalPitchContour: unknown | null = null;
+let currentSongTimeline: unknown | null = null;
 
 // Desktop default: use Rust native audio engine.
 let currentTimebase: TransportTimebase = new NativeAudioTimebase({ sampleRateHz: 48_000, channels: 2 });
@@ -538,6 +544,11 @@ function buildVizSongContextLocal() {
     drumSelection: selectedDrumChartSelection,
     melodicTracks: selectedMelodicTracks,
     lyrics: currentLyrics,
+    vocalPitch: currentVocalPitch,
+    vocalPitchContour: currentVocalPitchContour,
+    songTimeline: currentSongTimeline,
+    keys: currentKeys,
+    harmony: currentHarmony,
     charts: selectedAuralSongCharts,
   });
 }
@@ -773,10 +784,47 @@ function updateInstrumentSelector(): void {
   playSurfaceController.updateInstrumentSelector();
 }
 
+type ManifestArtifactPointers = {
+  lyrics?: unknown;
+  keys?: unknown;
+  harmony?: unknown;
+  vocal_pitch?: unknown;
+  vocal_pitch_contour?: unknown;
+  song_timeline?: unknown;
+};
+
+function manifestArtifactRelPath(
+  manifestRaw: ManifestArtifactPointers | undefined,
+  key: keyof ManifestArtifactPointers,
+): string | null {
+  const value = manifestRaw?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+async function readOptionalArtifactJson(
+  containerPath: string,
+  manifestRaw: ManifestArtifactPointers | undefined,
+  key: keyof ManifestArtifactPointers,
+  legacyFeatureName: string,
+): Promise<unknown | null> {
+  const relPath = manifestArtifactRelPath(manifestRaw, key) ?? (isManifestPack(containerPath) ? null : `features/${legacyFeatureName}`);
+  if (!relPath) return null;
+  try {
+    return await invoke<unknown>("read_auralsong_json", { containerPath, relPath });
+  } catch {
+    return null;
+  }
+}
+
 async function selectAuralSong(containerPath: string) {
   const songChanged = selectedAuralSongPath !== containerPath;
   selectedDrumChartSelection = null;
   selectedAuralSongCharts = null;
+  currentKeys = null;
+  currentHarmony = null;
+  currentVocalPitch = null;
+  currentVocalPitchContour = null;
+  currentSongTimeline = null;
   setSelectedSongCard(containerPath);
   songLibraryPanel.setDetailsHTML("Loading details...");
   try {
@@ -785,7 +833,22 @@ async function selectAuralSong(containerPath: string) {
     });
     songDetailsView.renderDetails(details);
     selectedAuralSongDetails = details;
-    songDetailsView.setHudKeyMode(details.manifest_raw);
+    const manifestRaw = details.manifest_raw as ManifestArtifactPointers | undefined;
+    currentKeys = await readOptionalArtifactJson(containerPath, manifestRaw, "keys", "keys.json");
+    currentHarmony = await readOptionalArtifactJson(containerPath, manifestRaw, "harmony", "harmony.json");
+    currentSongTimeline = await readOptionalArtifactJson(containerPath, manifestRaw, "song_timeline", "song_timeline.json");
+    if (!currentSongTimeline && !manifestArtifactRelPath(manifestRaw, "song_timeline")) {
+      try {
+        currentSongTimeline = await invoke<unknown>("read_auralsong_json", {
+          containerPath,
+          relPath: "song_timeline.json",
+        });
+      } catch {
+        currentSongTimeline = null;
+      }
+    }
+    const keyModeArtifacts = { keys: currentKeys, harmony: currentHarmony };
+    songDetailsView.setHudKeyMode(details.manifest_raw, null, keyModeArtifacts);
     if (details.charts.length > 0) {
       try {
         selectedAuralSongCharts = await safeInvoke<AuralSongChartsByPath>("read_auralsong_charts", { containerPath });
@@ -806,17 +869,17 @@ async function selectAuralSong(containerPath: string) {
     {
       let songBpm = 120;
       let songTimeSig: [number, number] = [4, 4];
-      try {
-        const tl = await invoke<{
-          tempos?: Array<{ bpm?: number }>;
-          time_signatures?: Array<{ ts?: number[] }>;
-        }>("read_auralsong_json", { containerPath, relPath: "song_timeline.json" });
+      const tl = currentSongTimeline as
+        | {
+            tempos?: Array<{ bpm?: number }>;
+            time_signatures?: Array<{ ts?: number[] }>;
+          }
+        | null;
+      if (tl) {
         const b = tl?.tempos?.[0]?.bpm;
         if (typeof b === "number" && b > 0) songBpm = b;
         const ts = tl?.time_signatures?.[0]?.ts;
         if (Array.isArray(ts) && ts.length >= 2) songTimeSig = [Math.round(ts[0]), Math.round(ts[1])];
-      } catch {
-        // no song_timeline (or read blocked) -> keep the default meter
       }
       transportController.setSongMeter(songBpm, songTimeSig);
       transport = transportController.getState();
@@ -827,9 +890,7 @@ async function selectAuralSong(containerPath: string) {
     // data-driven key instead of the manifest default.
     const keyTrack =
       selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
-    if (keyTrack) {
-      songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack.notes);
-    }
+    songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack?.notes ?? null, keyModeArtifacts);
     if (learnMode) buildLearnGroups();
 
     // Populate instrument selector with available melodic tracks.
@@ -840,21 +901,23 @@ async function selectAuralSong(containerPath: string) {
     capsPanel.applyAvailability(details, selectedDrumChartSelection, selectedAuralSongCharts);
     pluginsPanel.render();
 
-    // Load lyrics (best-effort). feedpak points to the lyrics doc via the
-    // manifest `lyrics` key (no fixed features/lyrics.json path).
-    const lyricsRel =
-      typeof (details.manifest_raw as { lyrics?: unknown } | undefined)?.lyrics === "string"
-        ? ((details.manifest_raw as { lyrics: string }).lyrics)
-        : null;
-    if (lyricsRel) {
+    currentLyrics = (await readOptionalArtifactJson(containerPath, manifestRaw, "lyrics", "lyrics.json")) as LyricsFile | null;
+    currentVocalPitch = await readOptionalArtifactJson(containerPath, manifestRaw, "vocal_pitch", "vocal_pitch.json");
+    currentVocalPitchContour = await readOptionalArtifactJson(
+      containerPath,
+      manifestRaw,
+      "vocal_pitch_contour",
+      "vocal_pitch_contour.json",
+    );
+    if (!currentVocalPitchContour && !manifestArtifactRelPath(manifestRaw, "vocal_pitch_contour") && !isManifestPack(containerPath)) {
       try {
-        const lyr = await invoke<unknown>("read_auralsong_json", { containerPath, relPath: lyricsRel });
-        currentLyrics = (lyr ?? null) as LyricsFile | null;
+        currentVocalPitchContour = await invoke<unknown>("read_auralsong_json", {
+          containerPath,
+          relPath: "features/pitch_contour.json",
+        });
       } catch {
-        currentLyrics = null;
+        currentVocalPitchContour = null;
       }
-    } else {
-      currentLyrics = null;
     }
     renderPlaybackLyrics(transport.t);
 
@@ -1009,9 +1072,9 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
   const plugin = currentSelectedPlugin();
   setVizStatus(`Loading pluginâ€¦ (${plugin.id})`);
 
-  if (plugin.id === "viz-lyrics" && !currentLyrics) {
+  if (plugin.id === "viz-lyrics" && !currentLyrics && !currentVocalPitch && !currentVocalPitchContour) {
     setVizStatus(
-      "viz-lyrics: no lyrics in this feedpak. Generate them in AuralStudio, then reopen this song."
+      "viz-lyrics: no lyrics or vocal pitch artifacts in this feedpak. Generate them in AuralStudio, then reopen this song."
     );
   }
 

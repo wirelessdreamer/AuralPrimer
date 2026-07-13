@@ -85,6 +85,29 @@ def test_serialize_note_clamps_velocity_into_midi_range():
     assert serialize_note(too_low)["velocity"] == 1
 
 
+def test_serialize_note_preserves_fretted_metadata():
+    note = MelodicNote(
+        t_on=0.0,
+        t_off=0.5,
+        pitch=64,
+        velocity=90,
+        instrument="lead_guitar",
+        string=2,
+        fret=7,
+    )
+
+    assert serialize_note(note) == {
+        "t_on": 0.0,
+        "t_off": 0.5,
+        "pitch": 64,
+        "velocity": 90,
+        "string": 2,
+        "s": 2,
+        "fret": 7,
+        "f": 7,
+    }
+
+
 def test_jaccard_overlap_empty_empty_is_one():
     assert jaccard_overlap([], []) == 1.0
 
@@ -449,6 +472,22 @@ def test_precompute_dynamic_set_only_two_algorithms(tmp_path: Path):
     for region in payload["regions"]:
         assert set(region["candidate_notes"].keys()) <= {"basic_pitch", "d3rm"}
         assert region["auto_picked"] in {"basic_pitch", "d3rm"}
+
+
+def test_precompute_accepts_vocals_with_injected_runner(tmp_path: Path):
+    sp = _make_song(tmp_path)
+    (sp / "audio" / "stems" / "vocals.wav").write_bytes(b"")
+    runner = _fake_runner_returning({"rmvpe": [MelodicNote(0.5, 1.0, 69, 90, instrument="vocals")]})
+
+    payload = precompute_refine_candidates(
+        auralsong_root=sp,
+        instrument="vocals",
+        runner=runner,
+    )
+
+    assert payload["instrument"] == "vocals"
+    assert set(payload["candidates"].keys()) == {"rmvpe"}
+    assert payload["regions"]
 
 
 def test_precompute_omits_failing_algorithm(tmp_path: Path):

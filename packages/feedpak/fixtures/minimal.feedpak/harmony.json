@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "key": "C",
+  "mode": "major",
+  "method": "fixture",
+  "events": [
+    {
+      "t": 0,
+      "duration": 2,
+      "root": "C",
+      "quality": "maj",
+      "rn": "I",
+      "bass": "C",
+      "confidence": 1,
+      "method": "fixture"
+    }
+  ]
+}

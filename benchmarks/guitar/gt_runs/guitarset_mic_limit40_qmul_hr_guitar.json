@@ -1,0 +1,917 @@
+{
+  "ok": true,
+  "dataset": "guitarset",
+  "family": "melodic",
+  "extra": {
+    "split": "test",
+    "variant": "mic",
+    "limit": 40,
+    "min_duration_sec": null,
+    "max_duration_sec": null,
+    "tolerance_ms": 50.0,
+    "pitch_tolerance_semitones": 0
+  },
+  "case_count": 40,
+  "summary": {
+    "overall": {
+      "cases": 40,
+      "cases_ok": 40,
+      "cases_err": 0,
+      "tp": 7064,
+      "fp": 1095,
+      "fn": 840,
+      "precision": 0.865792,
+      "recall": 0.893725,
+      "f1": 0.879537,
+      "onset_mae_sec": 0.006852,
+      "mean_runtime_sec": 14.6925
+    },
+    "per_algorithm": {
+      "qmul_hr_guitar": {
+        "cases": 40,
+        "cases_ok": 40,
+        "cases_err": 0,
+        "tp": 7064,
+        "fp": 1095,
+        "fn": 840,
+        "precision": 0.865792,
+        "recall": 0.893725,
+        "f1": 0.879537,
+        "onset_mae_sec": 0.006852,
+        "mean_runtime_sec": 14.6925,
+        "buckets": {
+          "style": {
+            "comp": {
+              "cases": 20,
+              "cases_ok": 20,
+              "cases_err": 0,
+              "tp": 5416,
+              "fp": 963,
+              "fn": 677,
+              "precision": 0.849036,
+              "recall": 0.888889,
+              "f1": 0.868505,
+              "onset_mae_sec": 0.007516,
+              "mean_runtime_sec": 14.8324
+            },
+            "solo": {
+              "cases": 20,
+              "cases_ok": 20,
+              "cases_err": 0,
+              "tp": 1648,
+              "fp": 132,
+              "fn": 163,
+              "precision": 0.925843,
+              "recall": 0.909994,
+              "f1": 0.91785,
+              "onset_mae_sec": 0.006188,
+              "mean_runtime_sec": 14.5526
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 24.3941,
+      "tp": 120,
+      "fp": 8,
+      "fn": 13,
+      "precision": 0.9375,
+      "recall": 0.902256,
+      "f1": 0.91954,
+      "onset_mae_sec": 0.007642,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-129-Eb_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.6893,
+      "tp": 64,
+      "fp": 4,
+      "fn": 7,
+      "precision": 0.941176,
+      "recall": 0.901408,
+      "f1": 0.920863,
+      "onset_mae_sec": 0.008341,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "129",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 12.0625,
+      "tp": 125,
+      "fp": 15,
+      "fn": 26,
+      "precision": 0.892857,
+      "recall": 0.827815,
+      "f1": 0.859107,
+      "onset_mae_sec": 0.005424,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN1-147-Gb_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 12.1722,
+      "tp": 83,
+      "fp": 3,
+      "fn": 6,
+      "precision": 0.965116,
+      "recall": 0.932584,
+      "f1": 0.948571,
+      "onset_mae_sec": 0.003751,
+      "metadata": {
+        "player": "00",
+        "progression": "BN1",
+        "bpm": "147",
+        "key": "Gb",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-131-B_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 14.3007,
+      "tp": 193,
+      "fp": 27,
+      "fn": 46,
+      "precision": 0.877273,
+      "recall": 0.807531,
+      "f1": 0.840959,
+      "onset_mae_sec": 0.007012,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "131",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-131-B_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 14.2527,
+      "tp": 91,
+      "fp": 7,
+      "fn": 6,
+      "precision": 0.928571,
+      "recall": 0.938144,
+      "f1": 0.933333,
+      "onset_mae_sec": 0.0062,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "131",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 14.561,
+      "tp": 179,
+      "fp": 15,
+      "fn": 21,
+      "precision": 0.92268,
+      "recall": 0.895,
+      "f1": 0.908629,
+      "onset_mae_sec": 0.005898,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN2-166-Ab_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 14.9427,
+      "tp": 79,
+      "fp": 6,
+      "fn": 8,
+      "precision": 0.929412,
+      "recall": 0.908046,
+      "f1": 0.918605,
+      "onset_mae_sec": 0.003524,
+      "metadata": {
+        "player": "00",
+        "progression": "BN2",
+        "bpm": "166",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 17.1818,
+      "tp": 145,
+      "fp": 8,
+      "fn": 24,
+      "precision": 0.947712,
+      "recall": 0.857988,
+      "f1": 0.900621,
+      "onset_mae_sec": 0.00818,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-119-G_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.7732,
+      "tp": 77,
+      "fp": 3,
+      "fn": 2,
+      "precision": 0.9625,
+      "recall": 0.974684,
+      "f1": 0.968553,
+      "onset_mae_sec": 0.007121,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.2638,
+      "tp": 138,
+      "fp": 17,
+      "fn": 35,
+      "precision": 0.890323,
+      "recall": 0.797688,
+      "f1": 0.841463,
+      "onset_mae_sec": 0.008999,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_BN3-154-E_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.1375,
+      "tp": 94,
+      "fp": 5,
+      "fn": 7,
+      "precision": 0.949495,
+      "recall": 0.930693,
+      "f1": 0.94,
+      "onset_mae_sec": 0.006723,
+      "metadata": {
+        "player": "00",
+        "progression": "BN3",
+        "bpm": "154",
+        "key": "E",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.2106,
+      "tp": 270,
+      "fp": 42,
+      "fn": 37,
+      "precision": 0.865385,
+      "recall": 0.879479,
+      "f1": 0.872375,
+      "onset_mae_sec": 0.008469,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-114-Ab_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.2659,
+      "tp": 52,
+      "fp": 5,
+      "fn": 6,
+      "precision": 0.912281,
+      "recall": 0.896552,
+      "f1": 0.904348,
+      "onset_mae_sec": 0.006844,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "114",
+        "key": "Ab",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.8047,
+      "tp": 357,
+      "fp": 62,
+      "fn": 39,
+      "precision": 0.852029,
+      "recall": 0.901515,
+      "f1": 0.876074,
+      "onset_mae_sec": 0.006551,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk1-97-C_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 14.0918,
+      "tp": 54,
+      "fp": 2,
+      "fn": 8,
+      "precision": 0.964286,
+      "recall": 0.870968,
+      "f1": 0.915254,
+      "onset_mae_sec": 0.00662,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk1",
+        "bpm": "97",
+        "key": "C",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 17.0145,
+      "tp": 476,
+      "fp": 83,
+      "fn": 47,
+      "precision": 0.851521,
+      "recall": 0.910134,
+      "f1": 0.879852,
+      "onset_mae_sec": 0.00664,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-108-Eb_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 16.1859,
+      "tp": 107,
+      "fp": 12,
+      "fn": 14,
+      "precision": 0.89916,
+      "recall": 0.884298,
+      "f1": 0.891667,
+      "onset_mae_sec": 0.007492,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "108",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.4328,
+      "tp": 409,
+      "fp": 104,
+      "fn": 53,
+      "precision": 0.797271,
+      "recall": 0.885281,
+      "f1": 0.838974,
+      "onset_mae_sec": 0.006629,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk2-119-G_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.6087,
+      "tp": 71,
+      "fp": 4,
+      "fn": 7,
+      "precision": 0.946667,
+      "recall": 0.910256,
+      "f1": 0.928105,
+      "onset_mae_sec": 0.005489,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk2",
+        "bpm": "119",
+        "key": "G",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk3-112-C#_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 14.7411,
+      "tp": 435,
+      "fp": 130,
+      "fn": 57,
+      "precision": 0.769912,
+      "recall": 0.884146,
+      "f1": 0.823084,
+      "onset_mae_sec": 0.006158,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk3",
+        "bpm": "112",
+        "key": "C#",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk3-112-C#_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 17.7922,
+      "tp": 134,
+      "fp": 15,
+      "fn": 10,
+      "precision": 0.899329,
+      "recall": 0.930556,
+      "f1": 0.914676,
+      "onset_mae_sec": 0.005826,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk3",
+        "bpm": "112",
+        "key": "C#",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk3-98-A_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 16.3842,
+      "tp": 412,
+      "fp": 96,
+      "fn": 39,
+      "precision": 0.811024,
+      "recall": 0.913525,
+      "f1": 0.859228,
+      "onset_mae_sec": 0.006493,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk3",
+        "bpm": "98",
+        "key": "A",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Funk3-98-A_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 16.3189,
+      "tp": 107,
+      "fp": 4,
+      "fn": 12,
+      "precision": 0.963964,
+      "recall": 0.89916,
+      "f1": 0.930435,
+      "onset_mae_sec": 0.00445,
+      "metadata": {
+        "player": "00",
+        "progression": "Funk3",
+        "bpm": "98",
+        "key": "A",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz1-130-D_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.0545,
+      "tp": 189,
+      "fp": 39,
+      "fn": 17,
+      "precision": 0.828947,
+      "recall": 0.917476,
+      "f1": 0.870968,
+      "onset_mae_sec": 0.009493,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "130",
+        "key": "D",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz1-130-D_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 12.8006,
+      "tp": 55,
+      "fp": 1,
+      "fn": 2,
+      "precision": 0.982143,
+      "recall": 0.964912,
+      "f1": 0.973451,
+      "onset_mae_sec": 0.00705,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "130",
+        "key": "D",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 11.7285,
+      "tp": 142,
+      "fp": 18,
+      "fn": 22,
+      "precision": 0.8875,
+      "recall": 0.865854,
+      "f1": 0.876543,
+      "onset_mae_sec": 0.009094,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 11.5628,
+      "tp": 42,
+      "fp": 4,
+      "fn": 11,
+      "precision": 0.913043,
+      "recall": 0.792453,
+      "f1": 0.848485,
+      "onset_mae_sec": 0.007296,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz2-110-Bb_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.4605,
+      "tp": 231,
+      "fp": 44,
+      "fn": 21,
+      "precision": 0.84,
+      "recall": 0.916667,
+      "f1": 0.87666,
+      "onset_mae_sec": 0.008976,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz2",
+        "bpm": "110",
+        "key": "Bb",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz2-110-Bb_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.3662,
+      "tp": 80,
+      "fp": 4,
+      "fn": 5,
+      "precision": 0.952381,
+      "recall": 0.941176,
+      "f1": 0.946746,
+      "onset_mae_sec": 0.006136,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz2",
+        "bpm": "110",
+        "key": "Bb",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz2-187-F#_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.3432,
+      "tp": 201,
+      "fp": 26,
+      "fn": 41,
+      "precision": 0.885463,
+      "recall": 0.830579,
+      "f1": 0.857143,
+      "onset_mae_sec": 0.006746,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz2",
+        "bpm": "187",
+        "key": "F#",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz2-187-F#_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.2251,
+      "tp": 85,
+      "fp": 8,
+      "fn": 15,
+      "precision": 0.913978,
+      "recall": 0.85,
+      "f1": 0.880829,
+      "onset_mae_sec": 0.005602,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz2",
+        "bpm": "187",
+        "key": "F#",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz3-137-Eb_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 14.3678,
+      "tp": 187,
+      "fp": 27,
+      "fn": 26,
+      "precision": 0.873832,
+      "recall": 0.877934,
+      "f1": 0.875878,
+      "onset_mae_sec": 0.00858,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz3",
+        "bpm": "137",
+        "key": "Eb",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz3-137-Eb_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.1817,
+      "tp": 58,
+      "fp": 6,
+      "fn": 5,
+      "precision": 0.90625,
+      "recall": 0.920635,
+      "f1": 0.913386,
+      "onset_mae_sec": 0.003736,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz3",
+        "bpm": "137",
+        "key": "Eb",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz3-150-C_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.3522,
+      "tp": 215,
+      "fp": 22,
+      "fn": 37,
+      "precision": 0.907173,
+      "recall": 0.853175,
+      "f1": 0.879346,
+      "onset_mae_sec": 0.008465,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz3",
+        "bpm": "150",
+        "key": "C",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz3-150-C_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 12.9059,
+      "tp": 68,
+      "fp": 9,
+      "fn": 13,
+      "precision": 0.883117,
+      "recall": 0.839506,
+      "f1": 0.860759,
+      "onset_mae_sec": 0.006503,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz3",
+        "bpm": "150",
+        "key": "C",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Rock1-130-A_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 13.2359,
+      "tp": 374,
+      "fp": 93,
+      "fn": 29,
+      "precision": 0.800857,
+      "recall": 0.92804,
+      "f1": 0.85977,
+      "onset_mae_sec": 0.006744,
+      "metadata": {
+        "player": "00",
+        "progression": "Rock1",
+        "bpm": "130",
+        "key": "A",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Rock1-130-A_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.1969,
+      "tp": 79,
+      "fp": 13,
+      "fn": 9,
+      "precision": 0.858696,
+      "recall": 0.897727,
+      "f1": 0.877778,
+      "onset_mae_sec": 0.008463,
+      "metadata": {
+        "player": "00",
+        "progression": "Rock1",
+        "bpm": "130",
+        "key": "A",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Rock1-90-C#_comp:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.753,
+      "tp": 618,
+      "fp": 87,
+      "fn": 47,
+      "precision": 0.876596,
+      "recall": 0.929323,
+      "f1": 0.90219,
+      "onset_mae_sec": 0.008119,
+      "metadata": {
+        "player": "00",
+        "progression": "Rock1",
+        "bpm": "90",
+        "key": "C#",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Rock1-90-C#_solo:mic",
+      "algorithm_id": "qmul_hr_guitar",
+      "runtime_sec": 15.581,
+      "tp": 168,
+      "fp": 17,
+      "fn": 10,
+      "precision": 0.908108,
+      "recall": 0.94382,
+      "f1": 0.92562,
+      "onset_mae_sec": 0.006582,
+      "metadata": {
+        "player": "00",
+        "progression": "Rock1",
+        "bpm": "90",
+        "key": "C#",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    }
+  ]
+}

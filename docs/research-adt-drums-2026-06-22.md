@@ -29,9 +29,10 @@ confirmed, 2 killed). Goal: raise our drum F1 (real-world ~0.15–0.4, with a
 
 - **Pretrained-weight license is UNRESOLVED** (a "CC BY 4.0" claim was *refuted*).
   We may need to **retrain the CRNN on the ADTOF dataset** for shippable weights.
-- ADTOF is **TensorFlow**-based. We already ship TF (via basic-pitch), so the
-  footprint may be acceptable; **ONNX export is the practical packaging route**
-  for the PyInstaller one-file sidecar.
+- ADTOF is **TensorFlow**-based. The current ingest runtime does not ship
+  TensorFlow for Basic Pitch; Basic Pitch runs through its ONNX model plus
+  `onnxruntime`. Keep ADTOF in a separate pinned runtime until **ONNX export**
+  is proven for the PyInstaller one-file sidecar.
 
 ## Caveats
 

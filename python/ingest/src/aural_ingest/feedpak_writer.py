@@ -22,11 +22,13 @@ feedpak layout produced
       drum_tab.json                  # only if a drums stem/notes exist
       arrangements/
         notation_<role>.json         # one per melodic stem (e.g. keys)
+        tab_<role>.json              # when string/fret fingering exists
       audio/
         stems/<role>.wav             # copied from the .auralsong stems
       aural/                         # our authoring artifacts (aural_* exts)
         notes.mid
         spectrogram/<role>/...
+        fingering.<role>.json
         refine_candidates.<role>.json
         benchmark/<role>/...
 
@@ -61,6 +63,7 @@ drum pitches are mapped to feedpak drum-tab lanes (``p``) and emitted as
 from __future__ import annotations
 
 import json
+import math
 import shutil
 from pathlib import Path
 from typing import Any
@@ -73,6 +76,12 @@ FEEDPAK_VERSION = "1.11.0"
 # Roles that engrave on a grand (treble+bass) staff. Everything else gets a
 # single treble staff.
 _PIANO_FAMILY_ROLES = {"keys", "piano", "synth", "melodic"}
+_FRETTED_ROLE_TUNINGS: dict[str, list[int]] = {
+    "bass": [28, 33, 38, 43],
+    "guitar": [40, 45, 50, 55, 59, 64],
+    "lead_guitar": [40, 45, 50, 55, 59, 64],
+    "rhythm_guitar": [40, 45, 50, 55, 59, 64],
+}
 
 # General MIDI percussion key -> feedpak drum-tab lane id. Covers the common GM
 # drum map; unmapped pitches fall back to a generic ``"perc"`` lane so no hit is
@@ -104,6 +113,103 @@ _GM_DRUM_LANES: dict[int, str] = {
 
 # feedpak notation ``dur`` enum: note-value codes. 1=whole .. 32=thirty-second.
 _DUR_VALUES = (1, 2, 4, 8, 16, 32)
+
+# Krumhansl-Schmuckler key profiles, ported from visualizers/viz-tab/src/index.ts.
+_KEY_DETECTION_METHOD = "krumhansl_schmuckler_notes_v1"
+_CHORD_DETECTION_METHOD = "measure_note_profile_chords_v1"
+_SHARP_PC_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+_FLAT_PC_NAMES = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
+_CHORD_TEMPLATES: tuple[tuple[str, tuple[int, ...]], ...] = (
+    ("maj7", (0, 4, 7, 11)),
+    ("7", (0, 4, 7, 10)),
+    ("min7", (0, 3, 7, 10)),
+    ("minmaj7", (0, 3, 7, 11)),
+    ("dim7", (0, 3, 6, 9)),
+    ("hdim7", (0, 3, 6, 10)),
+    ("maj", (0, 4, 7)),
+    ("min", (0, 3, 7)),
+    ("dim", (0, 3, 6)),
+    ("aug", (0, 4, 8)),
+    ("sus2", (0, 2, 7)),
+    ("sus4", (0, 5, 7)),
+)
+_MAJOR_PROFILE = (6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88)
+_MINOR_PROFILE = (6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17)
+
+_MAJOR_SIGNATURES: dict[str, dict[str, Any]] = {
+    "C": {"pitch_class": 0, "accidental_kind": "natural", "accidentals": []},
+    "G": {"pitch_class": 7, "accidental_kind": "sharp", "accidentals": ["F#"]},
+    "D": {"pitch_class": 2, "accidental_kind": "sharp", "accidentals": ["F#", "C#"]},
+    "A": {"pitch_class": 9, "accidental_kind": "sharp", "accidentals": ["F#", "C#", "G#"]},
+    "E": {
+        "pitch_class": 4,
+        "accidental_kind": "sharp",
+        "accidentals": ["F#", "C#", "G#", "D#"],
+    },
+    "B": {
+        "pitch_class": 11,
+        "accidental_kind": "sharp",
+        "accidentals": ["F#", "C#", "G#", "D#", "A#"],
+    },
+    "F#": {
+        "pitch_class": 6,
+        "accidental_kind": "sharp",
+        "accidentals": ["F#", "C#", "G#", "D#", "A#", "E#"],
+    },
+    "F": {"pitch_class": 5, "accidental_kind": "flat", "accidentals": ["Bb"]},
+    "Bb": {"pitch_class": 10, "accidental_kind": "flat", "accidentals": ["Bb", "Eb"]},
+    "Eb": {"pitch_class": 3, "accidental_kind": "flat", "accidentals": ["Bb", "Eb", "Ab"]},
+    "Ab": {
+        "pitch_class": 8,
+        "accidental_kind": "flat",
+        "accidentals": ["Bb", "Eb", "Ab", "Db"],
+    },
+    "Db": {
+        "pitch_class": 1,
+        "accidental_kind": "flat",
+        "accidentals": ["Bb", "Eb", "Ab", "Db", "Gb"],
+    },
+    "Gb": {
+        "pitch_class": 6,
+        "accidental_kind": "flat",
+        "accidentals": ["Bb", "Eb", "Ab", "Db", "Gb", "Cb"],
+    },
+}
+
+_MINOR_SIGNATURES: dict[str, dict[str, Any]] = {
+    "A": {"pitch_class": 9, "accidental_kind": "natural", "accidentals": []},
+    "E": {"pitch_class": 4, "accidental_kind": "sharp", "accidentals": ["F#"]},
+    "B": {"pitch_class": 11, "accidental_kind": "sharp", "accidentals": ["F#", "C#"]},
+    "F#": {"pitch_class": 6, "accidental_kind": "sharp", "accidentals": ["F#", "C#", "G#"]},
+    "C#": {
+        "pitch_class": 1,
+        "accidental_kind": "sharp",
+        "accidentals": ["F#", "C#", "G#", "D#"],
+    },
+    "G#": {
+        "pitch_class": 8,
+        "accidental_kind": "sharp",
+        "accidentals": ["F#", "C#", "G#", "D#", "A#"],
+    },
+    "D": {"pitch_class": 2, "accidental_kind": "flat", "accidentals": ["Bb"]},
+    "G": {"pitch_class": 7, "accidental_kind": "flat", "accidentals": ["Bb", "Eb"]},
+    "C": {"pitch_class": 0, "accidental_kind": "flat", "accidentals": ["Bb", "Eb", "Ab"]},
+    "F": {
+        "pitch_class": 5,
+        "accidental_kind": "flat",
+        "accidentals": ["Bb", "Eb", "Ab", "Db"],
+    },
+    "Bb": {
+        "pitch_class": 10,
+        "accidental_kind": "flat",
+        "accidentals": ["Bb", "Eb", "Ab", "Db", "Gb"],
+    },
+    "Eb": {
+        "pitch_class": 3,
+        "accidental_kind": "flat",
+        "accidentals": ["Bb", "Eb", "Ab", "Db", "Gb", "Cb"],
+    },
+}
 
 
 def _load_json(path: Path) -> Any:
@@ -325,6 +431,113 @@ def _build_placeholder_notation(
     }
 
 
+def _role_from_fingering_filename(path: Path) -> str:
+    # role is the middle component: fingering.<role>.json
+    return path.name.split(".")[1] if path.name.count(".") >= 2 else path.stem
+
+
+def _load_fingering_sidecars(auralsong_dir: Path) -> dict[str, dict[str, Any]]:
+    docs: dict[str, dict[str, Any]] = {}
+    for src in sorted(auralsong_dir.glob("features/fingering.*.json")):
+        try:
+            raw = _load_json(src)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(raw, dict):
+            docs[_role_from_fingering_filename(src)] = raw
+    return docs
+
+
+def _finite_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if math.isfinite(out) else None
+
+
+def _int_in_range(value: Any, lo: int, hi: int) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        out = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return out if lo <= out <= hi else None
+
+
+def _tuning_from_fingering_doc(role: str, doc: dict[str, Any]) -> list[int] | None:
+    raw_tuning = doc.get("tuning")
+    if isinstance(raw_tuning, list) and raw_tuning:
+        tuning: list[int] = []
+        for value in raw_tuning:
+            parsed = _int_in_range(value, 0, 127)
+            if parsed is None:
+                return None
+            tuning.append(parsed)
+        return tuning
+    return _FRETTED_ROLE_TUNINGS.get(role.lower())
+
+
+def _arrangement_type_for_role(role: str) -> str:
+    role_lower = role.lower()
+    if role_lower == "bass":
+        return "bass"
+    if role_lower in _FRETTED_ROLE_TUNINGS:
+        return "guitar"
+    if role_lower in _PIANO_FAMILY_ROLES:
+        return "piano"
+    return role
+
+
+def _build_tab_arrangement_from_fingering(role: str, doc: dict[str, Any]) -> dict[str, Any] | None:
+    tuning = _tuning_from_fingering_doc(role, doc)
+    if not tuning:
+        return None
+    raw_notes = doc.get("notes")
+    if not isinstance(raw_notes, list):
+        return None
+
+    notes: list[dict[str, Any]] = []
+    for raw in raw_notes:
+        if not isinstance(raw, dict):
+            continue
+        t_on = _finite_float(raw.get("t_on", raw.get("t")))
+        if t_on is None or t_on < 0:
+            continue
+        string_idx = _int_in_range(raw.get("string", raw.get("s")), 0, len(tuning) - 1)
+        fret = _int_in_range(raw.get("fret", raw.get("f")), 0, 36)
+        if string_idx is None or fret is None:
+            continue
+
+        out: dict[str, Any] = {
+            "t": round(t_on, 6),
+            "s": string_idx,
+            "f": fret,
+        }
+        t_off = _finite_float(raw.get("t_off"))
+        if t_off is not None and t_off > t_on:
+            out["sus"] = round(t_off - t_on, 6)
+        pitch = _int_in_range(raw.get("pitch", raw.get("midi")), 0, 127)
+        if pitch is not None:
+            out["midi"] = pitch
+        velocity = _int_in_range(raw.get("velocity", raw.get("v")), 0, 127)
+        if velocity is not None:
+            out["v"] = velocity
+        notes.append(out)
+
+    if not notes:
+        return None
+    notes.sort(key=lambda note: (note["t"], note["s"], note["f"], note.get("midi", -1)))
+    return {
+        "name": role.replace("_", " ").title(),
+        "tuning": tuning,
+        "notes": notes,
+    }
+
+
 def _build_song_timeline(
     tempo_map: dict[str, Any],
     beats: dict[str, Any] | None,
@@ -408,6 +621,327 @@ def _build_drum_tab(inst: pretty_midi.Instrument, name: str) -> dict[str, Any]:
     }
 
 
+def _build_vocal_pitch_doc(inst: pretty_midi.Instrument) -> dict[str, Any] | None:
+    notes: list[dict[str, Any]] = []
+    for note in sorted(inst.notes, key=lambda n: (n.start, n.pitch)):
+        start = float(note.start)
+        duration = max(0.0, float(note.end) - start)
+        if duration <= 0:
+            continue
+        notes.append(
+            {
+                "t": round(start, 6),
+                "d": round(duration, 6),
+                "midi": int(note.pitch),
+            }
+        )
+    if not notes:
+        return None
+    return {"version": 1, "notes": notes}
+
+
+def _first_existing_feature(auralsong_dir: Path, names: tuple[str, ...]) -> Path | None:
+    for name in names:
+        candidate = auralsong_dir / "features" / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _velocity_to_unit(value: int | float | None) -> float:
+    if value is None:
+        return 0.7
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.7
+    if not math.isfinite(v):
+        return 0.7
+    if v <= 1.0:
+        return _clamp(v, 0.0, 1.0)
+    return _clamp(v / 127.0, 0.0, 1.0)
+
+
+def _cosine_similarity(
+    weights: list[float],
+    template: tuple[float, ...],
+    tonic_pitch_class: int,
+) -> float:
+    dot = 0.0
+    weight_norm = 0.0
+    template_norm = 0.0
+
+    for i in range(12):
+        w = weights[(i + tonic_pitch_class) % 12]
+        t = template[i]
+        dot += w * t
+        weight_norm += w * w
+        template_norm += t * t
+
+    if weight_norm <= 1e-9 or template_norm <= 1e-9:
+        return 0.0
+    return dot / math.sqrt(weight_norm * template_norm)
+
+
+def _build_pitch_class_weights(pm: pretty_midi.PrettyMIDI) -> tuple[list[float], int]:
+    weights = [0.0] * 12
+    note_count = 0
+    for inst in pm.instruments:
+        if inst.is_drum:
+            continue
+        for note in inst.notes:
+            duration = max(0.06, float(note.end) - float(note.start))
+            velocity = 0.5 + _velocity_to_unit(int(note.velocity)) * 0.5
+            weights[int(note.pitch) % 12] += duration * velocity
+            note_count += 1
+    return weights, note_count
+
+
+def _infer_key_signature(pm: pretty_midi.PrettyMIDI) -> dict[str, Any] | None:
+    """Infer a song-level key from non-drum MIDI notes.
+
+    This is intentionally deterministic and dependency-free: it mirrors the
+    Krumhansl-Schmuckler implementation already used by viz-tab for in-game
+    note labeling.
+    """
+    weights, note_count = _build_pitch_class_weights(pm)
+    if note_count == 0 or sum(weights) <= 1e-9:
+        return None
+
+    best: dict[str, Any] | None = None
+    runner_up_score = float("-inf")
+
+    def consume_candidate(tonic: str, mode: str, signature: dict[str, Any]) -> None:
+        nonlocal best, runner_up_score
+        pitch_class = int(signature["pitch_class"])
+        template = _MAJOR_PROFILE if mode == "major" else _MINOR_PROFILE
+        score = _cosine_similarity(weights, template, pitch_class)
+        candidate = {
+            "key": tonic,
+            "tonic": tonic,
+            "mode": mode,
+            "pitch_class": pitch_class,
+            "accidental_kind": signature["accidental_kind"],
+            "accidentals": list(signature["accidentals"]),
+            "score": score,
+            "confidence": 0.0,
+            "method": _KEY_DETECTION_METHOD,
+            "note_count": note_count,
+        }
+
+        if best is None or score > float(best["score"]):
+            if best is not None:
+                runner_up_score = max(runner_up_score, float(best["score"]))
+            best = candidate
+        else:
+            runner_up_score = max(runner_up_score, score)
+
+    for tonic, signature in _MAJOR_SIGNATURES.items():
+        consume_candidate(tonic, "major", signature)
+    for tonic, signature in _MINOR_SIGNATURES.items():
+        consume_candidate(tonic, "minor", signature)
+
+    if best is None:
+        return None
+
+    gap = max(0.0, float(best["score"]) - max(0.0, runner_up_score))
+    confidence = _clamp(0.52 + gap * 1.9, 0.52, 0.99)
+    best["score"] = round(float(best["score"]), 6)
+    best["confidence"] = round(float(confidence), 6)
+    return best
+
+
+def _pc_name(pc: int, accidental_kind: str | None = None) -> str:
+    names = _FLAT_PC_NAMES if accidental_kind == "flat" else _SHARP_PC_NAMES
+    return names[int(pc) % 12]
+
+
+def _roman_numeral_for(root_pc: int, quality: str, key_analysis: dict[str, Any] | None) -> str:
+    if not key_analysis:
+        return ""
+    tonic_pc = int(key_analysis.get("pitch_class", 0)) % 12
+    mode = str(key_analysis.get("mode", "major")).lower()
+    degree = (int(root_pc) - tonic_pc) % 12
+    major_map = {0: "I", 1: "bII", 2: "II", 3: "bIII", 4: "III", 5: "IV", 6: "bV", 7: "V", 8: "bVI", 9: "VI", 10: "bVII", 11: "VII"}
+    minor_map = {0: "i", 1: "bII", 2: "ii", 3: "III", 4: "#III", 5: "iv", 6: "bV", 7: "v", 8: "VI", 9: "#VI", 10: "VII", 11: "#VII"}
+    numeral = (minor_map if mode == "minor" else major_map).get(degree, "")
+    if not numeral:
+        return ""
+    if quality.startswith("min") and numeral.isupper():
+        numeral = numeral.lower()
+    elif quality in {"maj", "maj7", "7", "aug", "sus2", "sus4"} and numeral.islower():
+        numeral = numeral.upper()
+    suffix = {
+        "maj7": "maj7",
+        "7": "7",
+        "min7": "7",
+        "minmaj7": "maj7",
+        "dim": "dim",
+        "dim7": "dim7",
+        "hdim7": "m7b5",
+        "aug": "aug",
+        "sus2": "sus2",
+        "sus4": "sus4",
+    }.get(quality, "")
+    return f"{numeral}{suffix}"
+
+
+def _note_overlap(start: float, end: float, left: float, right: float) -> float:
+    return max(0.0, min(end, right) - max(start, left))
+
+
+def _pitch_class_weights_for_span(
+    pm: pretty_midi.PrettyMIDI,
+    start: float,
+    end: float,
+) -> tuple[list[float], int | None]:
+    weights = [0.0] * 12
+    lowest_pitch: int | None = None
+    for inst in pm.instruments:
+        if inst.is_drum:
+            continue
+        for note in inst.notes:
+            overlap = _note_overlap(float(note.start), float(note.end), start, end)
+            if overlap <= 1e-6:
+                continue
+            pitch = int(note.pitch)
+            weights[pitch % 12] += overlap * (0.5 + _velocity_to_unit(int(note.velocity)) * 0.5)
+            if lowest_pitch is None or pitch < lowest_pitch:
+                lowest_pitch = pitch
+    return weights, lowest_pitch
+
+
+def _score_chord_template(weights: list[float], root_pc: int, intervals: tuple[int, ...]) -> float:
+    total = sum(weights)
+    if total <= 1e-9:
+        return float("-inf")
+    template_pcs = {(root_pc + interval) % 12 for interval in intervals}
+    support = sum(weights[pc] for pc in template_pcs)
+    extra = total - support
+    max_weight = max(weights) if weights else 0.0
+    present_floor = max(0.02 * total, 0.08 * max_weight, 1e-9)
+    missing = sum(1 for pc in template_pcs if weights[pc] < present_floor)
+    return (support / total) - (0.18 * missing) - (0.12 * (extra / total))
+
+
+def _infer_chord_for_span(
+    weights: list[float],
+    lowest_pitch: int | None,
+    *,
+    key_analysis: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    total = sum(weights)
+    if total <= 1e-9:
+        return None
+    distinct = sum(1 for value in weights if value >= max(0.04 * total, 1e-9))
+    if distinct < 2:
+        return None
+
+    best: dict[str, Any] | None = None
+    for root_pc in range(12):
+        for quality, intervals in _CHORD_TEMPLATES:
+            score = _score_chord_template(weights, root_pc, intervals)
+            if best is None or score > float(best["score"]):
+                best = {
+                    "root_pc": root_pc,
+                    "quality": quality,
+                    "score": score,
+                }
+    if best is None or float(best["score"]) < 0.28:
+        return None
+
+    accidental_kind = str(key_analysis.get("accidental_kind", "")) if key_analysis else ""
+    root = _pc_name(int(best["root_pc"]), accidental_kind)
+    bass = _pc_name(int(lowest_pitch) % 12, accidental_kind) if lowest_pitch is not None else root
+    quality = str(best["quality"])
+    return {
+        "root": root,
+        "quality": quality,
+        "bass": bass,
+        "rn": _roman_numeral_for(int(best["root_pc"]), quality, key_analysis),
+        "score": round(float(best["score"]), 6),
+        "confidence": round(_clamp(0.5 + max(0.0, float(best["score"])) * 0.45, 0.5, 0.95), 6),
+    }
+
+
+def _infer_chord_events(
+    pm: pretty_midi.PrettyMIDI,
+    measures: list[dict[str, Any]],
+    duration_sec: float,
+    key_analysis: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not measures:
+        return []
+    starts = [float(measure.get("t", 0.0) or 0.0) for measure in measures]
+    if len(starts) >= 2:
+        fallback_span = max(0.25, starts[-1] - starts[-2])
+    else:
+        fallback_span = max(0.25, duration_sec or 4.0)
+    events: list[dict[str, Any]] = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else max(duration_sec, start + fallback_span)
+        if end <= start + 1e-6:
+            continue
+        weights, lowest_pitch = _pitch_class_weights_for_span(pm, start, end)
+        chord = _infer_chord_for_span(weights, lowest_pitch, key_analysis=key_analysis)
+        if chord is None:
+            continue
+        event = {
+            "t": round(start, 6),
+            "duration": round(end - start, 6),
+            "root": chord["root"],
+            "quality": chord["quality"],
+            "rn": chord["rn"],
+            "bass": chord["bass"],
+            "confidence": chord["confidence"],
+            "score": chord["score"],
+            "method": _CHORD_DETECTION_METHOD,
+        }
+        if events:
+            prev = events[-1]
+            if (
+                prev.get("root") == event["root"]
+                and prev.get("quality") == event["quality"]
+                and prev.get("bass") == event["bass"]
+            ):
+                prev["duration"] = round(float(prev.get("duration", 0.0)) + float(event["duration"]), 6)
+                continue
+        events.append(event)
+    return events
+
+
+def _build_keys_doc(analysis: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "method": analysis["method"],
+        "events": [
+            {
+                "t": 0.0,
+                "key": analysis["key"],
+                "scale": analysis["mode"],
+                "confidence": analysis["confidence"],
+                "score": analysis["score"],
+            }
+        ],
+    }
+
+
+def _build_harmony_doc(analysis: dict[str, Any], chord_events: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "key": analysis["key"],
+        "mode": analysis["mode"],
+        "confidence": analysis["confidence"],
+        "method": analysis["method"],
+        "chord_method": _CHORD_DETECTION_METHOD,
+        "events": chord_events,
+    }
+
+
 def _copy_tree(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     if src.is_dir():
@@ -437,6 +971,11 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
     if song_stem.endswith(".auralsong"):
         song_stem = song_stem[: -len(".auralsong")]
     feedpak_dir = out_dir / f"{song_stem}.feedpak"
+    if feedpak_dir.exists():
+        if feedpak_dir.is_dir():
+            shutil.rmtree(feedpak_dir)
+        else:
+            feedpak_dir.unlink()
     feedpak_dir.mkdir(parents=True, exist_ok=True)
     (feedpak_dir / "arrangements").mkdir(exist_ok=True)
     (feedpak_dir / "audio" / "stems").mkdir(parents=True, exist_ok=True)
@@ -470,6 +1009,10 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
     pm: pretty_midi.PrettyMIDI | None = None
     if notes_rel and (auralsong_dir / notes_rel).exists():
         pm = pretty_midi.PrettyMIDI(str(auralsong_dir / notes_rel))
+    key_analysis = _infer_key_signature(pm) if pm is not None else None
+    chord_events = (
+        _infer_chord_events(pm, measures_template, duration, key_analysis) if pm is not None else []
+    )
 
     # Determine stem roles present (everything under audio/stems/*; the stems
     # block carries ``<role>_path`` keys plus some non-path metadata keys).
@@ -512,7 +1055,10 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
     # --- arrangements + notation ----------------------------------------
     arrangement_entries: list[dict[str, Any]] = []
     notation_files: dict[str, dict[str, Any]] = {}
+    arrangement_files: dict[str, dict[str, Any]] = {}
+    fingering_docs = _load_fingering_sidecars(auralsong_dir)
     drum_tab_doc: dict[str, Any] | None = None
+    vocal_pitch_doc: dict[str, Any] | None = None
     roundtrip_notes = 0
 
     if pm is not None:
@@ -534,15 +1080,22 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
             rel = f"arrangements/notation_{role}.json"
             notation_files[rel] = notation
             roundtrip_notes += len(inst.notes)
-            arr_type = "piano" if role.lower() in _PIANO_FAMILY_ROLES else role
-            arrangement_entries.append(
-                {
-                    "id": role,
-                    "name": role.replace("_", " ").title(),
-                    "type": arr_type,
-                    "notation": rel,
-                }
-            )
+            arr_type = _arrangement_type_for_role(role)
+            entry: dict[str, Any] = {
+                "id": role,
+                "name": role.replace("_", " ").title(),
+                "type": arr_type,
+                "notation": rel,
+            }
+            tab_doc = _build_tab_arrangement_from_fingering(role, fingering_docs.get(role, {}))
+            if tab_doc is not None:
+                tab_rel = f"arrangements/tab_{role}.json"
+                arrangement_files[tab_rel] = tab_doc
+                entry["file"] = tab_rel
+                entry["tuning"] = tab_doc["tuning"]
+            arrangement_entries.append(entry)
+            if role.lower() in {"vocals", "vocal"}:
+                vocal_pitch_doc = _build_vocal_pitch_doc(inst)
 
         # Drums: a drum-flagged instrument or a "drums" stem role.
         drum_inst = next((ins for ins in pm.instruments if ins.is_drum), None)
@@ -580,11 +1133,23 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
         (feedpak_dir / rel).write_text(
             json.dumps(doc, indent=2), encoding="utf-8"
         )
+    for rel, doc in arrangement_files.items():
+        (feedpak_dir / rel).write_text(
+            json.dumps(doc, indent=2), encoding="utf-8"
+        )
 
     song_timeline = _build_song_timeline(tempo_map, beats, sections)
     (feedpak_dir / "song_timeline.json").write_text(
         json.dumps(song_timeline, indent=2), encoding="utf-8"
     )
+
+    if key_analysis is not None:
+        (feedpak_dir / "keys.json").write_text(
+            json.dumps(_build_keys_doc(key_analysis), indent=2), encoding="utf-8"
+        )
+        (feedpak_dir / "harmony.json").write_text(
+            json.dumps(_build_harmony_doc(key_analysis, chord_events), indent=2), encoding="utf-8"
+        )
 
     if drum_tab_doc is not None:
         # Refine the hit times onto the real drums-stem transients — mr_mt3's
@@ -602,6 +1167,26 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
         (feedpak_dir / "drum_tab.json").write_text(
             json.dumps(drum_tab_doc, indent=2), encoding="utf-8"
         )
+
+    vocal_pitch_rel: str | None = None
+    vocal_pitch_src = _first_existing_feature(auralsong_dir, ("vocal_pitch.json",))
+    if vocal_pitch_src is not None:
+        vocal_pitch_rel = "vocal_pitch.json"
+        _copy_tree(vocal_pitch_src, feedpak_dir / vocal_pitch_rel)
+    elif vocal_pitch_doc is not None:
+        vocal_pitch_rel = "vocal_pitch.json"
+        (feedpak_dir / vocal_pitch_rel).write_text(
+            json.dumps(vocal_pitch_doc, indent=2), encoding="utf-8"
+        )
+
+    vocal_pitch_contour_rel: str | None = None
+    vocal_pitch_contour_src = _first_existing_feature(
+        auralsong_dir,
+        ("vocal_pitch_contour.json", "pitch_contour.json"),
+    )
+    if vocal_pitch_contour_src is not None:
+        vocal_pitch_contour_rel = "vocal_pitch_contour.json"
+        _copy_tree(vocal_pitch_contour_src, feedpak_dir / vocal_pitch_contour_rel)
 
     # --- aural_* artifacts (copied + referenced) ------------------------
     aural_ext: dict[str, Any] = {}
@@ -627,6 +1212,17 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
     if refine_map:
         aural_ext["aural_refine_candidates"] = refine_map
 
+    # fingering.<role>.json files carry string/fret note metadata that cannot
+    # be represented in MIDI. Runtime merges these back onto notes.mid tracks.
+    fingering_map: dict[str, str] = {}
+    for src in sorted(auralsong_dir.glob("features/fingering.*.json")):
+        dst_rel = f"aural/{src.name}"
+        _copy_tree(src, feedpak_dir / dst_rel)
+        role = src.name.split(".")[1] if src.name.count(".") >= 2 else src.stem
+        fingering_map[role] = dst_rel
+    if fingering_map:
+        aural_ext["aural_fingering"] = fingering_map
+
     benchmark_src = auralsong_dir / "features" / "benchmark"
     if benchmark_src.exists():
         _copy_tree(benchmark_src, aural_dir / "benchmark")
@@ -647,8 +1243,34 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
         "stems": stem_entries,
         "song_timeline": "song_timeline.json",
     }
+    if key_analysis is not None:
+        fp_manifest["keys"] = "keys.json"
+        fp_manifest["harmony"] = "harmony.json"
+        # AuralPrimer compatibility extension: current HUD fallback reads
+        # top-level key/mode from manifest_raw. The spec-defined `keys` and
+        # `harmony` fields remain relpath pointers above.
+        fp_manifest["key"] = key_analysis["key"]
+        fp_manifest["mode"] = key_analysis["mode"]
     if drum_tab_doc is not None:
         fp_manifest["drum_tab"] = "drum_tab.json"
+    if vocal_pitch_rel is not None:
+        fp_manifest["vocal_pitch"] = vocal_pitch_rel
+    if vocal_pitch_contour_rel is not None:
+        fp_manifest["vocal_pitch_contour"] = vocal_pitch_contour_rel
+    if vocal_pitch_rel is not None or vocal_pitch_contour_rel is not None:
+        transcription = manifest.get("pipeline", {}).get("transcription", {})
+        method = "vocal_notes"
+        if isinstance(transcription, dict):
+            by_instrument = transcription.get("instrument_melodic_methods_used")
+            if isinstance(by_instrument, dict) and isinstance(by_instrument.get("vocals"), str):
+                method = by_instrument["vocals"]
+            elif isinstance(transcription.get("melodic_method_used"), str):
+                method = transcription["melodic_method_used"]
+        fp_manifest["pitch_extraction"] = {
+            "engine": "aural_ingest",
+            "model": str(method),
+            "version": "1.0.0",
+        }
     fp_manifest.update(aural_ext)
 
     (feedpak_dir / "manifest.yaml").write_text(

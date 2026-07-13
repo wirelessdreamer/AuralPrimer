@@ -544,9 +544,17 @@ impl NativeAudioHandle {
         let mut resampled: Vec<Vec<i16>> = Vec::with_capacity(stems.len());
         for (sr, ch, data) in stems {
             if ch != self.channels {
-                return Err(format!("stem channels {} != engine channels {}", ch, self.channels));
+                return Err(format!(
+                    "stem channels {} != engine channels {}",
+                    ch, self.channels
+                ));
             }
-            resampled.push(resample_pcm16_linear_interleaved(&data, ch, sr, self.sample_rate_hz)?);
+            resampled.push(resample_pcm16_linear_interleaved(
+                &data,
+                ch,
+                sr,
+                self.sample_rate_hz,
+            )?);
         }
         let max_len = resampled.iter().map(|s| s.len()).max().unwrap_or(0);
         let mut mixed = vec![0i32; max_len];
@@ -1513,7 +1521,11 @@ mod tests {
 
         assert_eq!(rendered.len(), 384);
         for (i, &v) in rendered.iter().enumerate() {
-            let expect = if clicks.contains(&i) { 30_000.0 / i16::MAX as f32 } else { 0.0 };
+            let expect = if clicks.contains(&i) {
+                30_000.0 / i16::MAX as f32
+            } else {
+                0.0
+            };
             approx_eq(v, expect);
         }
     }

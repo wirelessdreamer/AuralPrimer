@@ -64,16 +64,21 @@ def test_transcription_profiles_are_valid_and_role_specific() -> None:
     ]
     assert "piano_transkun_clean" in melodic_methods_for_profile("fidelity_midi", "keys")
     assert "torchcrepe" in melodic_methods_for_profile("research_ab", "bass")
+    research_lead_guitar = melodic_methods_for_profile("research_ab", "lead_guitar")
+    research_rhythm_guitar = melodic_methods_for_profile("research_ab", "rhythm_guitar")
+    assert "yourmt3_guitar" in research_lead_guitar
+    assert "yourmt3_guitar" in research_rhythm_guitar
+    assert "yourmt3_guitar" not in melodic_methods_for_profile("gameplay_default", "lead_guitar")
     # torchcrepe was promoted to the production bass head in June 2026 (octave-clean,
     # ~9x faster); the YIN chain now trails it as the score-gated fallback.
     gameplay_bass = melodic_methods_for_profile("gameplay_default", "bass")
     assert gameplay_bass[0] == "torchcrepe"
     assert "melodic_yin_octave_hps_fix" in gameplay_bass
-    # mr_mt3_drums is the promoted neural drum head; beat_conditioned_multiband_decoder
-    # is now the first DSP fallback (used when the MT3 checkpoint/runtime is absent).
+    # Gameplay drums stay on the stable local chain until neural/modelpack
+    # candidates clear the gameplay-metric + listening-review gate.
     gameplay_drums = drum_engines_for_profile("gameplay_default")
-    assert gameplay_drums[0] == "mr_mt3_drums"
-    assert gameplay_drums[1] == "beat_conditioned_multiband_decoder"
+    assert gameplay_drums[0] == "beat_conditioned_multiband_decoder"
+    assert "mr_mt3_drums" not in gameplay_drums
 
 
 def test_melodic_gameplay_metrics_flag_density_duplicates_and_polyphony() -> None:
@@ -192,6 +197,182 @@ def test_quality_metric_backend_and_dataset_status_is_fail_safe(monkeypatch) -> 
     assert "internal benchmarking only" in datasets["enst_drums"]["ship_policy"]
     assert separation["available"] is False
     assert separation["backend"] == "museval"
+
+
+def test_discover_musdb18_tracks_and_map_estimate_stems(tmp_path: Path) -> None:
+    from aural_ingest.quality_benchmark import (
+        discover_musdb18_tracks,
+        prepare_musdb_estimate_stems,
+        summarize_museval_separation_runs,
+    )
+
+    track = tmp_path / "test" / "Track One"
+    track.mkdir(parents=True)
+    for name in ("mixture", "vocals", "drums", "bass", "other"):
+        (track / f"{name}.wav").write_bytes(b"wav")
+    ignored = tmp_path / "train" / "Incomplete"
+    ignored.mkdir(parents=True)
+    (ignored / "mixture.wav").write_bytes(b"wav")
+
+    tracks = discover_musdb18_tracks(tmp_path, split="test")
+
+    assert [t.track_id for t in tracks] == ["test/Track One"]
+    assert set(tracks[0].reference_stems) == {"vocals", "drums", "bass", "other"}
+
+    stems_dir = tmp_path / "estimates"
+    stems_dir.mkdir()
+    for name in ("vocals", "drums", "bass", "other"):
+        (stems_dir / f"{name}.wav").write_bytes(b"wav")
+    mapped = prepare_musdb_estimate_stems(
+        {
+            "vocals": "audio/stems/vocals.wav",
+            "drums": "audio/stems/drums.wav",
+            "bass": "audio/stems/bass.wav",
+            "other": "audio/stems/other.wav",
+        },
+        tmp_path / "mapped",
+        stems_dir=stems_dir,
+    )
+    assert mapped == {
+        "vocals": stems_dir / "vocals.wav",
+        "drums": stems_dir / "drums.wav",
+        "bass": stems_dir / "bass.wav",
+        "other": stems_dir / "other.wav",
+    }
+
+    summary = summarize_museval_separation_runs(
+        [
+            {
+                "evaluation": {
+                    "status": "ok",
+                    "role_metrics": [
+                        {"role": "vocals", "sdr_median": 5.0},
+                        {"role": "drums", "sdr_median": 7.0},
+                    ],
+                }
+            }
+        ]
+    )
+    assert summary["tracks_ok"] == 1
+    assert summary["role_summary"]["vocals"]["median_sdr_mean"] == 5.0
+
+
+def test_museval_separation_fails_when_estimate_roles_missing(monkeypatch, tmp_path: Path) -> None:
+    from aural_ingest import quality_benchmark
+
+    monkeypatch.setattr(
+        quality_benchmark.importlib.util,
+        "find_spec",
+        lambda name: object() if name in {"museval", "soundfile"} else None,
+    )
+
+    references = {
+        role: tmp_path / f"ref_{role}.wav"
+        for role in quality_benchmark.MUSDB18_ROLES
+    }
+    estimates = {
+        role: tmp_path / f"est_{role}.wav"
+        for role in quality_benchmark.MUSDB18_ROLES
+        if role != "other"
+    }
+
+    result = quality_benchmark.evaluate_museval_separation(references, estimates)
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "missing estimate stem roles"
+    assert result["missing_estimate_roles"] == ["other"]
+
+
+def test_museval_separation_fails_when_required_role_audio_cannot_load(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    np = pytest.importorskip("numpy")
+    sf = pytest.importorskip("soundfile")
+
+    from aural_ingest import quality_benchmark
+
+    sample_rate = 8_000
+    references = {}
+    estimates = {}
+    for role in quality_benchmark.MUSDB18_ROLES:
+        ref_path = tmp_path / f"ref_{role}.wav"
+        est_path = tmp_path / f"est_{role}.wav"
+        sf.write(str(ref_path), np.zeros((64, 1), dtype=np.float32), sample_rate)
+        if role == "other":
+            est_path.write_text("not audio", encoding="utf-8")
+        else:
+            sf.write(str(est_path), np.zeros((64, 1), dtype=np.float32), sample_rate)
+        references[role] = ref_path
+        estimates[role] = est_path
+
+    real_find_spec = quality_benchmark.importlib.util.find_spec
+    monkeypatch.setattr(
+        quality_benchmark.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "museval" else real_find_spec(name),
+    )
+
+    result = quality_benchmark.evaluate_museval_separation(references, estimates)
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "stem audio load failures"
+    assert result["failed_roles"] == ["other"]
+    assert result["roles"] == ["vocals", "drums", "bass"]
+    assert "other" in result["errors"]
+
+
+def test_museval_separation_crops_roles_to_common_length(monkeypatch, tmp_path: Path) -> None:
+    np = pytest.importorskip("numpy")
+    sf = pytest.importorskip("soundfile")
+
+    from aural_ingest import quality_benchmark
+
+    sample_rate = 8_000
+    references = {}
+    estimates = {}
+    for idx, role in enumerate(quality_benchmark.MUSDB18_ROLES):
+        ref_path = tmp_path / f"ref_{role}.wav"
+        est_path = tmp_path / f"est_{role}.wav"
+        sf.write(str(ref_path), np.zeros((120 + idx, 1), dtype=np.float32), sample_rate)
+        sf.write(str(est_path), np.zeros((96 + idx, 1), dtype=np.float32), sample_rate)
+        references[role] = ref_path
+        estimates[role] = est_path
+
+    captured: dict[str, tuple[int, ...]] = {}
+
+    class FakeScores:
+        sdr = np.ones((len(quality_benchmark.MUSDB18_ROLES), 2), dtype=np.float32)
+
+    class FakeMuseval:
+        @staticmethod
+        def evaluate(references_arr, estimates_arr, *, win, hop):
+            captured["references_shape"] = tuple(references_arr.shape)
+            captured["estimates_shape"] = tuple(estimates_arr.shape)
+            captured["win_hop"] = (win, hop)
+            return FakeScores()
+
+    real_import_module = quality_benchmark.importlib.import_module
+
+    def fake_import_module(name: str):
+        if name == "museval":
+            return FakeMuseval
+        return real_import_module(name)
+
+    real_find_spec = quality_benchmark.importlib.util.find_spec
+    monkeypatch.setattr(
+        quality_benchmark.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "museval" else real_find_spec(name),
+    )
+    monkeypatch.setattr(quality_benchmark.importlib, "import_module", fake_import_module)
+
+    result = quality_benchmark.evaluate_museval_separation(references, estimates)
+
+    assert result["status"] == "ok"
+    assert captured["references_shape"] == (4, 96, 1)
+    assert captured["estimates_shape"] == (4, 96, 1)
+    assert captured["win_hop"] == (sample_rate, sample_rate)
 
 
 def test_mir_eval_transcription_metrics_report_onset_and_offset_modes() -> None:

@@ -6,8 +6,11 @@ At runtime, end users should not need to install:
 - FFmpeg
 - ML runtimes
 
-**Model weights are not bundled in installers.**
-- If needed, they are obtained **post-install** via in-app download or manual offline import.
+**Model weights are not auto-fetched by packaging.**
+- Reviewed local modelpacks/checkpoints can be staged into portable/release
+  artifacts when they are present, pinned, and recorded in the build manifest.
+- Otherwise, models are obtained **post-install** via in-app download or manual
+  offline import.
 - Models are stored under `assets/models/<model-id>/<version>/...`.
 
 Instead, everything else needed for local processing is **bundled** into the shipped app.
@@ -34,7 +37,16 @@ Build OS-specific executables from `python/ingest`.
 Bundling requirements:
 - include Python runtime
 - include native deps (numpy, torch, etc. if used)
-- **do not include model weights** in installers
+- include only reviewed/pinned modelpacks when explicitly staged; record their
+  id/version/hash/license metadata in packaging manifests
+- install the mirrored `python/ingest/requirements-runtime.txt` dependencies
+  before PyInstaller runs; clean sidecar builds must not rely on an already
+  hydrated developer venv. `basic-pitch` is installed separately with
+  `--no-deps` because its TensorFlow dependency is unavailable on Python 3.13,
+  while AuralPrimer uses the ONNX Basic Pitch path.
+- emit the host-platform sidecar executable name (`aural_ingest.exe` on
+  Windows, `aural_ingest` elsewhere) so Tauri external-bin packaging works for
+  Windows and Linux/macOS release jobs
 
 ### Audio decoding
 Host playback:
@@ -59,8 +71,15 @@ This containment helps security and makes sandboxing easier.
 
 ### Portable build guard (Windows recovery)
 - `build_sidecar.ps1` writes `dist/sidecar/build_manifest.json` with sidecar hash/timestamp.
+- The build manifest carries `runtime-check` asset snapshots for Basic Pitch,
+  Demucs, optional `demucs_ft_drums`, and MT3 checkpoints so stale/missing
+  model assets are visible in release artifacts.
 - `create_portable.ps1` stages `D:\AuralPrimer\AuralPrimerPortable\` with both `AuralPrimer.exe` and `AuralStudio.exe`.
 - The script fails if copied sidecar hash/timestamp checks do not match the just-built sidecar.
+- `npm run portable:verify-sidecar` verifies all staged sidecar copies share
+  the build-manifest hash, independently recomputes ingest-source freshness,
+  checks the portable manifest, and runs frozen `runtime-check` from the repo,
+  portable, and `AURAL_MODEL_UPGRADE_EVIDENCE_ROOT` override contexts.
 - This prevents shipping stale sidecar binaries in portable artifacts.
 
 ---
@@ -117,6 +136,13 @@ If you bundle ffmpeg:
 - include `THIRD_PARTY_NOTICES.md`
 - ensure the chosen ffmpeg build/license is compatible with your distribution goals
 
+If you create a portable package:
+- include the root project `LICENSE`
+- record the packaged license file hash in `portable_manifest.json`
+
 If you support post-install model downloads/imports:
 - include model license text in the downloaded model pack
 - record model pack id/version/license metadata alongside the model files
+- for staged `modelpack.json` assets under `assets/models/<id>/<version>/`,
+  require a non-empty `license` field before copying into portable/release
+  artifacts and copy that value into `portable_manifest.json`

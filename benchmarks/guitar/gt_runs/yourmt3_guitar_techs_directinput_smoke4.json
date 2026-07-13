@@ -1,0 +1,157 @@
+{
+  "dataset": "guitar_techs",
+  "family": "melodic",
+  "extra": {
+    "split": "test",
+    "variant": "directinput",
+    "limit": null,
+    "tolerance_ms": 50.0,
+    "pitch_tolerance_semitones": 0
+  },
+  "case_count": 4,
+  "summary": {
+    "overall": {
+      "cases": 4,
+      "cases_ok": 4,
+      "cases_err": 0,
+      "tp": 149,
+      "fp": 50,
+      "fn": 221,
+      "precision": 0.748744,
+      "recall": 0.402703,
+      "f1": 0.523726,
+      "onset_mae_sec": 0.019191,
+      "mean_runtime_sec": 15.5703
+    },
+    "per_algorithm": {
+      "yourmt3_guitar": {
+        "cases": 4,
+        "cases_ok": 4,
+        "cases_err": 0,
+        "tp": 149,
+        "fp": 50,
+        "fn": 221,
+        "precision": 0.748744,
+        "recall": 0.402703,
+        "f1": 0.523726,
+        "onset_mae_sec": 0.019191,
+        "mean_runtime_sec": 15.5703,
+        "buckets": {
+          "category": {
+            "chords": {
+              "cases": 1,
+              "cases_ok": 1,
+              "cases_err": 0,
+              "tp": 2,
+              "fp": 19,
+              "fn": 42,
+              "precision": 0.095238,
+              "recall": 0.045455,
+              "f1": 0.061538,
+              "onset_mae_sec": 0.025,
+              "mean_runtime_sec": 29.3761
+            },
+            "music": {
+              "cases": 3,
+              "cases_ok": 3,
+              "cases_err": 0,
+              "tp": 147,
+              "fp": 31,
+              "fn": 179,
+              "precision": 0.825843,
+              "recall": 0.45092,
+              "f1": 0.583333,
+              "onset_mae_sec": 0.017254,
+              "mean_runtime_sec": 10.9684
+            }
+          },
+          "signal": {
+            "directinput": {
+              "cases": 4,
+              "cases_ok": 4,
+              "cases_err": 0,
+              "tp": 149,
+              "fp": 50,
+              "fn": 221,
+              "precision": 0.748744,
+              "recall": 0.402703,
+              "f1": 0.523726,
+              "onset_mae_sec": 0.019191,
+              "mean_runtime_sec": 15.5703
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "guitar_techs:P1_chords:midi_Set1_aug:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 29.3761,
+      "tp": 2,
+      "fp": 19,
+      "fn": 42,
+      "precision": 0.095238,
+      "recall": 0.045455,
+      "f1": 0.061538,
+      "onset_mae_sec": 0.025,
+      "metadata": {
+        "player": "P1",
+        "category": "chords",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P3_music:midi_03:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 13.9108,
+      "tp": 65,
+      "fp": 12,
+      "fn": 13,
+      "precision": 0.844156,
+      "recall": 0.833333,
+      "f1": 0.83871,
+      "onset_mae_sec": 0.011888,
+      "metadata": {
+        "player": "P3",
+        "category": "music",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P3_music:midi_08:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 8.238,
+      "tp": 39,
+      "fp": 4,
+      "fn": 104,
+      "precision": 0.906977,
+      "recall": 0.272727,
+      "f1": 0.419355,
+      "onset_mae_sec": 0.0137,
+      "metadata": {
+        "player": "P3",
+        "category": "music",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P3_music:midi_11:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 10.7564,
+      "tp": 43,
+      "fp": 15,
+      "fn": 62,
+      "precision": 0.741379,
+      "recall": 0.409524,
+      "f1": 0.527607,
+      "onset_mae_sec": 0.026175,
+      "metadata": {
+        "player": "P3",
+        "category": "music",
+        "signal": "directinput"
+      }
+    }
+  ]
+}

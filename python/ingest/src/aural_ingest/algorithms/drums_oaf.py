@@ -11,7 +11,10 @@ decision to adopt it, and the license reasoning, live in
   is a genuine advantage over every heuristic engine, which all fabricate it.
 - **License:** Magenta code is Apache 2.0 and E-GMD is CC BY 4.0, so an
   E-GMD-trained checkpoint is shippable by *both* code and data license -- the
-  cleanest story of any neural ADT model (ADTOF is CC BY-NC-SA and cannot ship).
+  cleanest production-default story of any neural ADT model. ADTOF's
+  CC BY-NC-SA repo/weights/dataset can remain an explicit research adapter, but
+  it carries non-commercial and ShareAlike obligations that make it a poor
+  default-training source.
 
 **The open gate (why this ships as a scaffold):** the *published* E-GMD drum
 checkpoint's download availability is unverified (magenta issues #1792/#1876/

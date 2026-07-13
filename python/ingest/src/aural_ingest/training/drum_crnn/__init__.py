@@ -2,7 +2,8 @@
 
 Builds and trains OUR OWN 5-class drum-onset model on the Expanded Groove MIDI
 Dataset (E-GMD, CC BY 4.0) so the product can ship its own weights instead of
-depending on license-blocked models. See ``README.md`` for the architecture
+depending on external research checkpoints whose weights, data, or ShareAlike
+obligations are unsuitable for defaults. See ``README.md`` for the architecture
 citation, feature config, how to launch a real run, and the E-GMD attribution
 requirement.
 

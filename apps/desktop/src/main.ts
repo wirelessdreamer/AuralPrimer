@@ -29,7 +29,22 @@ import { BUILTIN_PLUGINS, type PluginDescriptor, loadPlugin, scanBundledPlugins,
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { generateLyricsJsonFromPlainText } from "./lyricsGenerator";
-import { selectDrumChartFromMidiBytes, type DrumChartSelection } from "./chartLoader";
+import {
+  selectDrumChartFromMidiBytes,
+  selectMelodicTracksFromMidiBytes,
+  type DrumChartSelection,
+  type MelodicTrackSelection,
+} from "./chartLoader";
+import { loadDrumChartFromTab } from "./drumTabChart";
+import {
+  FINGERING_ROLES,
+  fingeringFilesToMelodicTracks,
+  fingeringFilesToVisualizerNotes,
+  fingeringRolesFromManifest,
+  loadFingeringForRoles,
+  mergeFingeringIntoVisualizerNotes,
+  type VisualizerSongNote,
+} from "./fingeringLoader";
 import { refineWorkspaceHtml } from "./refineWorkspaceHtml";
 import { initRefineWorkspace, type RefineWorkspaceHandle } from "./refineWorkspace";
 import { lyricTimingHtml } from "./lyricTimingHtml";
@@ -47,6 +62,7 @@ import {
   MELODIC_ROLE_LABELS,
   invalidateCleanupCache,
   auralsongJsonExists,
+  drumTabRelPath,
   getRoleReadiness,
   melodicStemRoles,
   detectMelodicStems,
@@ -162,6 +178,71 @@ function lyricsReadRelPath(containerPath: string, details?: unknown): string {
   return pointer || `${featureDir(containerPath)}/lyrics.json`;
 }
 
+type ManifestArtifactPointers = {
+  lyrics?: unknown;
+  drum_tab?: unknown;
+  keys?: unknown;
+  harmony?: unknown;
+  vocal_pitch?: unknown;
+  vocal_pitch_contour?: unknown;
+  song_timeline?: unknown;
+  aural_notes_mid?: unknown;
+};
+
+function manifestArtifactRelPath(
+  manifestRaw: ManifestArtifactPointers | undefined,
+  key: keyof ManifestArtifactPointers,
+): string | null {
+  const value = manifestRaw?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function artifactReadRelPath(
+  containerPath: string,
+  details: AuralSongDetails,
+  key: keyof ManifestArtifactPointers,
+  legacyFeatureName: string,
+): string | null {
+  const manifestRaw = details.manifest_raw as ManifestArtifactPointers | undefined;
+  const manifestPointer = manifestArtifactRelPath(manifestRaw, key);
+  if (manifestPointer) return manifestPointer;
+  return isManifestPack(containerPath) ? null : `features/${legacyFeatureName}`;
+}
+
+async function readOptionalArtifactJson(
+  containerPath: string,
+  details: AuralSongDetails,
+  key: keyof ManifestArtifactPointers,
+  legacyFeatureName: string,
+): Promise<unknown | null> {
+  const relPath = artifactReadRelPath(containerPath, details, key, legacyFeatureName);
+  if (!relPath) return null;
+  try {
+    return await invoke<unknown>("read_auralsong_json", { containerPath, relPath });
+  } catch {
+    return null;
+  }
+}
+
+function applySongMeterFromTimeline(timeline: unknown): void {
+  let songBpm = 120;
+  let songTimeSig: [number, number] = [4, 4];
+  const tl = timeline as
+    | {
+        tempos?: Array<{ bpm?: number }>;
+        time_signatures?: Array<{ ts?: number[] }>;
+      }
+    | null;
+  if (tl) {
+    const bpm = tl.tempos?.[0]?.bpm;
+    if (typeof bpm === "number" && bpm > 0) songBpm = bpm;
+    const ts = tl.time_signatures?.[0]?.ts;
+    if (Array.isArray(ts) && ts.length >= 2) songTimeSig = [Math.round(ts[0]), Math.round(ts[1])];
+  }
+  transportController.setSongMeter(songBpm, songTimeSig);
+  transport = transportController.getState();
+}
+
 type AuralSongDetails = {
   container_path: string;
   kind: string;
@@ -174,6 +255,13 @@ type AuralSongDetails = {
   has_events: boolean;
   has_lyrics?: boolean;
   has_notes_mid?: boolean;
+  has_song_timeline?: boolean;
+  has_drum_tab?: boolean;
+  has_keys?: boolean;
+  has_harmony?: boolean;
+  has_vocal_pitch?: boolean;
+  has_vocal_pitch_contour?: boolean;
+  has_aural_fingering?: boolean;
   // Arrangement/lyrics readiness fields consumed defensively (owned by the Rust
   // lane, CONTRACT C6). All optional; the exact names are feature-detected in
   // needsArrangementPrep / arrangementCount / lyricsReadRelPath.
@@ -196,6 +284,13 @@ type SongCapabilities = {
     events: boolean;
     lyrics: boolean;
     notes_mid: boolean;
+    drum_tab: boolean;
+    song_timeline: boolean;
+    keys: boolean;
+    harmony: boolean;
+    vocal_pitch: boolean;
+    vocal_pitch_contour: boolean;
+    aural_fingering: boolean;
   };
   audio: {
     wav: boolean;
@@ -520,7 +615,10 @@ root.innerHTML = `
               <div class="row">
                 <label class="meta">Drum engine</label>
                 <select id="ingestDrumFilter">
-                  <option value="combined_filter">combined_filter (default heuristic)</option>
+                  <option value="auto" selected>auto (profile default)</option>
+                  <option value="beat_conditioned_multiband_decoder">beat_conditioned_multiband_decoder (quality default)</option>
+                  <option value="spectral_flux_multiband">spectral_flux_multiband</option>
+                  <option value="combined_filter">combined_filter</option>
                   <option value="adaptive_beat_grid">adaptive_beat_grid</option>
                   <option value="dsp_bandpass_improved">dsp_bandpass_improved</option>
                   <option value="dsp_spectral_flux">dsp_spectral_flux</option>
@@ -1093,7 +1191,7 @@ cleanupBuildAllBtn?.addEventListener("click", async () => {
     // lane editor. Spectrogram only — drums have no candidate system (the
     // drum tab is the source of truth), so candRoles never includes drums.
     try {
-      if (await auralsongJsonExists(path, "drum_tab.json")) {
+      if (await auralsongJsonExists(path, await drumTabRelPath(path))) {
         const fd = featureDir(path);
         const hasDrumSpec = await auralsongJsonExists(path, `${fd}/spectrogram/drums/spectrogram.json`);
         if (!hasDrumSpec) specRoles.push("drums");
@@ -1466,8 +1564,8 @@ async function refreshIngestRuntimeStatus() {
   }
 }
 
-function setHudKeyMode(manifestRaw: unknown) {
-  const km = extractKeyModeFromManifest(manifestRaw);
+function setHudKeyMode(manifestRaw: unknown, artifacts?: { keys?: unknown | null; harmony?: unknown | null }) {
+  const km = extractKeyModeFromManifest(manifestRaw, artifacts);
   hudKeyModeEl.textContent = `${km.key} ${km.mode}`;
 }
 
@@ -1492,6 +1590,13 @@ function renderDetails(details: AuralSongDetails) {
       <li>sections: ${escapeHtml(yesNo(details.has_sections))}</li>
       <li>events: ${escapeHtml(yesNo(details.has_events))}</li>
       <li>lyrics: ${escapeHtml(yesNo(Boolean(details.has_lyrics)))}</li>
+      <li>song_timeline: ${escapeHtml(yesNo(Boolean(details.has_song_timeline)))}</li>
+      <li>drum_tab: ${escapeHtml(yesNo(Boolean(details.has_drum_tab)))}</li>
+      <li>keys: ${escapeHtml(yesNo(Boolean(details.has_keys)))}</li>
+      <li>harmony: ${escapeHtml(yesNo(Boolean(details.has_harmony)))}</li>
+      <li>vocal_pitch: ${escapeHtml(yesNo(Boolean(details.has_vocal_pitch)))}</li>
+      <li>vocal_pitch_contour: ${escapeHtml(yesNo(Boolean(details.has_vocal_pitch_contour)))}</li>
+      <li>aural_fingering: ${escapeHtml(yesNo(Boolean(details.has_aural_fingering)))}</li>
     </ul>
 
     <h4>Audio</h4>
@@ -1961,6 +2066,14 @@ let transport: TransportState = {
 };
 
 let currentLyrics: LyricsFile | null = null;
+let currentKeys: unknown | null = null;
+let currentHarmony: unknown | null = null;
+let currentVocalPitch: unknown | null = null;
+let currentVocalPitchContour: unknown | null = null;
+let currentSongTimeline: unknown | null = null;
+let currentMelodicTracks: MelodicTrackSelection[] = [];
+let currentMelodicNotes: VisualizerSongNote[] = [];
+let currentFingeringNotes: VisualizerSongNote[] = [];
 
 // Desktop default: use Rust native audio engine.
 let currentTimebase: TransportTimebase = new NativeAudioTimebase({ sampleRateHz: 48_000, channels: 2 });
@@ -2000,38 +2113,81 @@ const INSTRUMENT_LABELS: Record<Instrument, string> = {
   vocals: "Vocals"
 };
 
-async function readDrumChartSelection(containerPath: string, details: AuralSongDetails): Promise<DrumChartSelection | null> {
-  if (!details.has_notes_mid) {
-    return null;
-  }
-
+async function readNotesMidiBytes(containerPath: string, details: AuralSongDetails): Promise<Uint8Array | null> {
+  if (!details.has_notes_mid) return null;
+  const manifestRaw = details.manifest_raw as ManifestArtifactPointers | undefined;
+  const relPath = manifestArtifactRelPath(manifestRaw, "aural_notes_mid") ?? `${featureDir(containerPath)}/notes.mid`;
   try {
-    const relPath = `${featureDir(containerPath)}/notes.mid`;
     const midi = await invoke<MidiBlob>("read_auralsong_mid", { containerPath, relPath });
-    if (!midi.bytes.length) {
-      return null;
-    }
-    return selectDrumChartFromMidiBytes(new Uint8Array(midi.bytes));
+    return midi.bytes.length ? new Uint8Array(midi.bytes) : null;
   } catch (e) {
-    warnConsole("debugging", `failed to load/parse notes.mid from ${containerPath}`, e);
+    warnConsole("debugging", `failed to load/parse notes MIDI from ${containerPath}`, e);
     return null;
   }
 }
 
-function computeSongCapabilities(details: AuralSongDetails | null, drumSelection: DrumChartSelection | null): SongCapabilities {
+function melodicTracksToVisualizerNotes(tracks: readonly MelodicTrackSelection[]): VisualizerSongNote[] {
+  const notes = tracks.flatMap((track) =>
+    track.notes.map((note) => ({
+      t_on: note.t_on,
+      t_off: note.t_off,
+      pitch: note.pitch,
+      velocity: note.velocity,
+      string: note.string,
+      fret: note.fret,
+      s: note.s,
+      f: note.f,
+      role: track.role,
+      instrument: track.role,
+      channel: track.channel,
+      trackName: track.trackName,
+    })),
+  );
+  notes.sort((a, b) => a.t_on - b.t_on || a.pitch - b.pitch || (a.channel ?? -1) - (b.channel ?? -1));
+  return notes;
+}
+
+async function readDrumChartSelection(containerPath: string, details: AuralSongDetails): Promise<DrumChartSelection | null> {
+  if (details.has_drum_tab) {
+    const relPath = artifactReadRelPath(containerPath, details, "drum_tab", "drum_tab.json") ?? "drum_tab.json";
+    const selection = await loadDrumChartFromTab(containerPath, relPath);
+    if (selection) return selection;
+  }
+
+  const midiBytes = await readNotesMidiBytes(containerPath, details);
+  return midiBytes ? selectDrumChartFromMidiBytes(midiBytes) : null;
+}
+
+async function readMelodicTrackSelection(containerPath: string, details: AuralSongDetails): Promise<MelodicTrackSelection[]> {
+  const midiBytes = await readNotesMidiBytes(containerPath, details);
+  if (!midiBytes) return [];
+  return selectMelodicTracksFromMidiBytes(midiBytes);
+}
+
+function computeSongCapabilities(
+  details: AuralSongDetails | null,
+  drumSelection: DrumChartSelection | null,
+  melodicTracks: readonly MelodicTrackSelection[] = currentMelodicTracks,
+): SongCapabilities {
   const charts = details?.charts ?? [];
   const byInstrument: SongCapabilities["charts"]["byInstrument"] = {};
-  const midiDrumsAvailable = Boolean(drumSelection?.events.length);
+  const drumChartAvailable = Boolean(drumSelection?.events.length);
+  const hasMelodicRole = (role: Instrument): boolean =>
+    melodicTracks.some((track) => track.role === role && track.notes.length > 0);
+  const melodicChartAvailable = (Object.keys(INSTRUMENT_LABELS) as Instrument[]).some(hasMelodicRole);
 
   // Heuristic mapping: chart filenames often carry role/instrument hints.
   // We’ll firm this up later with a proper chart manifest, but this gives the UX a useful signal now.
   const anyMatch = (re: RegExp) => charts.some((c) => re.test(c));
-  byInstrument.lead_guitar = anyMatch(/lead|guitar(?!_rhythm)|gtr/i);
-  byInstrument.rhythm_guitar = anyMatch(/rhythm|guitar_rhythm|rhythm_guitar/i);
-  byInstrument.bass = anyMatch(/bass/i);
-  byInstrument.drums = midiDrumsAvailable || anyMatch(/drum|kit/i);
-  byInstrument.keys = anyMatch(/keys|piano|synth/i);
-  byInstrument.vocals = anyMatch(/vocal|vox|lyrics/i);
+  byInstrument.lead_guitar = hasMelodicRole("lead_guitar") || anyMatch(/lead|guitar(?!_rhythm)|gtr/i);
+  byInstrument.rhythm_guitar = hasMelodicRole("rhythm_guitar") || anyMatch(/rhythm|guitar_rhythm|rhythm_guitar/i);
+  byInstrument.bass = hasMelodicRole("bass") || anyMatch(/bass/i);
+  byInstrument.drums = drumChartAvailable || anyMatch(/drum|kit/i);
+  byInstrument.keys = hasMelodicRole("keys") || anyMatch(/keys|piano|synth/i);
+  byInstrument.vocals =
+    hasMelodicRole("vocals") ||
+    Boolean(details?.has_lyrics || details?.has_vocal_pitch || details?.has_vocal_pitch_contour) ||
+    anyMatch(/vocal|vox|lyrics/i);
 
   return {
     features: {
@@ -2041,6 +2197,13 @@ function computeSongCapabilities(details: AuralSongDetails | null, drumSelection
       events: Boolean(details?.has_events),
       lyrics: Boolean(details?.has_lyrics),
       notes_mid: Boolean(details?.has_notes_mid),
+      drum_tab: Boolean(details?.has_drum_tab),
+      song_timeline: Boolean(details?.has_song_timeline),
+      keys: Boolean(details?.has_keys),
+      harmony: Boolean(details?.has_harmony),
+      vocal_pitch: Boolean(details?.has_vocal_pitch),
+      vocal_pitch_contour: Boolean(details?.has_vocal_pitch_contour),
+      aural_fingering: Boolean(details?.has_aural_fingering),
     },
     audio: {
       wav: Boolean(details?.has_mix_wav),
@@ -2048,14 +2211,14 @@ function computeSongCapabilities(details: AuralSongDetails | null, drumSelection
       ogg: Boolean(details?.has_mix_ogg),
     },
     charts: {
-      any: charts.length > 0 || midiDrumsAvailable,
+      any: charts.length > 0 || drumChartAvailable || melodicChartAvailable,
       byInstrument,
     },
   };
 }
 
 function renderCaps(details: AuralSongDetails | null, drumSelection: DrumChartSelection | null) {
-  const caps = computeSongCapabilities(details, drumSelection);
+  const caps = computeSongCapabilities(details, drumSelection, currentMelodicTracks);
 
   const pill = (label: string, ok: boolean, hint?: string) => {
     const cls = ok ? "capPill capPill--ok" : "capPill capPill--missing";
@@ -2070,10 +2233,17 @@ function renderCaps(details: AuralSongDetails | null, drumSelection: DrumChartSe
     pill("events", caps.features.events, "features/notes.mid (drums ch10 + melodic ch1 notes)"),
     pill("lyrics", caps.features.lyrics, "features/lyrics.json"),
     pill("midi", caps.features.notes_mid, "features/notes.mid"),
+    pill("drum tab", caps.features.drum_tab, "drum_tab.json"),
+    pill("timeline", caps.features.song_timeline, "song_timeline.json"),
+    pill("keys", caps.features.keys, "keys.json"),
+    pill("harmony", caps.features.harmony, "harmony.json"),
+    pill("vocal pitch", caps.features.vocal_pitch, "vocal_pitch.json"),
+    pill("vocal contour", caps.features.vocal_pitch_contour, "vocal_pitch_contour.json"),
+    pill("fingering", caps.features.aural_fingering, "aural/fingering.<role>.json"),
   ].join("\n");
 
   const drumHint = drumSelection
-    ? `features/notes.mid (${drumSelection.mode}, ${drumSelection.reason}, events=${drumSelection.events.length})`
+    ? `${drumSelection.reason === "drum_tab" ? "drum_tab.json" : "features/notes.mid"} (${drumSelection.mode}, ${drumSelection.reason}, events=${drumSelection.events.length})`
     : "chart availability (heuristic)";
   const chartPills = (Object.keys(INSTRUMENT_LABELS) as Instrument[])
     .map((inst) => {
@@ -2105,7 +2275,7 @@ function renderCaps(details: AuralSongDetails | null, drumSelection: DrumChartSe
 }
 
 function applyInstrumentAvailability(details: AuralSongDetails | null, drumSelection: DrumChartSelection | null) {
-  const caps = computeSongCapabilities(details, drumSelection);
+  const caps = computeSongCapabilities(details, drumSelection, currentMelodicTracks);
   for (const chip of Array.from(playersEl.querySelectorAll<HTMLElement>(".playerChip"))) {
     const sel = chip.querySelector<HTMLSelectElement>("select.playerInstrument");
     if (!sel) continue;
@@ -2121,7 +2291,14 @@ function applyInstrumentAvailability(details: AuralSongDetails | null, drumSelec
     // If current selection is now disabled, pick first enabled.
     if (sel.selectedOptions.length && sel.selectedOptions[0].disabled) {
       const firstEnabled = Array.from(sel.options).find((o) => !o.disabled);
-      if (firstEnabled) sel.value = firstEnabled.value;
+      if (firstEnabled) {
+        sel.value = firstEnabled.value;
+        const playerId = chip.getAttribute("data-player-id");
+        const nextInstrument = firstEnabled.value as Instrument;
+        if (playerId) {
+          players = players.map((p) => (p.id === playerId ? { ...p, instrument: nextInstrument } : p));
+        }
+      }
     }
   }
 }
@@ -2131,13 +2308,13 @@ function pluginRequirements(id: string): { ok: (d: AuralSongDetails | null) => b
   switch (id) {
     case "viz-lyrics":
       return {
-        ok: (d) => Boolean(d?.has_lyrics),
-        reason: "Requires features/lyrics.json"
+        ok: (d) => Boolean(d?.has_lyrics || d?.has_vocal_pitch || d?.has_vocal_pitch_contour),
+        reason: "Requires lyrics or vocal pitch artifacts"
       };
     case "viz-drum-highway":
       return {
-        ok: (d) => Boolean(d?.has_notes_mid),
-        reason: "Requires features/notes.mid"
+        ok: (d) => Boolean(d?.has_notes_mid || d?.has_drum_tab),
+        reason: "Requires features/notes.mid or drum_tab.json"
       };
     // Placeholder visualizers: they can run with transport only.
     default:
@@ -2147,28 +2324,37 @@ function pluginRequirements(id: string): { ok: (d: AuralSongDetails | null) => b
 
 function buildVizSongContext(): {
   lyrics?: LyricsFile;
-  notes?: Array<{
-    t_on: number;
-    t_off?: number;
-    pitch: number;
-    velocity?: number;
-    channel?: number;
-    trackName?: string;
-  }>;
+  vocalPitch?: unknown;
+  vocalPitchContour?: unknown;
+  songTimeline?: unknown;
+  keys?: unknown;
+  harmony?: unknown;
+  notes?: VisualizerSongNote[];
 } {
   const drumNotes =
     selectedDrumChartSelection?.events.map((ev) => ({
       t_on: ev.t,
       t_off: ev.t + 0.08,
       pitch: ev.midi,
-      velocity: 100,
+      velocity: ev.velocity ?? 100,
+      role: "drums",
+      instrument: "drums",
       channel: 9,
       trackName: ev.trackName
     })) ?? [];
+  const melodicNotes = mergeFingeringIntoVisualizerNotes(currentMelodicNotes, currentFingeringNotes);
+  const notes = [...drumNotes, ...melodicNotes].sort(
+    (a, b) => a.t_on - b.t_on || a.pitch - b.pitch || (a.channel ?? -1) - (b.channel ?? -1),
+  );
 
   return {
     lyrics: currentLyrics ?? undefined,
-    notes: drumNotes.length > 0 ? drumNotes : undefined
+    vocalPitch: currentVocalPitch ?? undefined,
+    vocalPitchContour: currentVocalPitchContour ?? undefined,
+    songTimeline: currentSongTimeline ?? undefined,
+    keys: currentKeys ?? undefined,
+    harmony: currentHarmony ?? undefined,
+    notes: notes.length > 0 ? notes : undefined
   };
 }
 
@@ -3353,16 +3539,17 @@ let stemMidiLastImportedPath: string | null = null;
 
 function gameRolesToRefineInstruments(gameRoles: string[]): string[] {
   // Map the AuralSong manifest's mapped_game_roles list to the instrument
-  // ids the refine-candidates sidecar expects. Drop drums (drum candidates
-  // are deferred to v2; the keys/bass/guitar precompute reuses PTI which
-  // isn't appropriate for drums) and vocals (no melodic transcription).
+  // ids the refine-candidates sidecar expects. Drop drums because they use
+  // the lane editor/drum_tab flow instead of melodic candidate regions.
   const out: string[] = [];
   for (const role of gameRoles) {
     switch (role) {
       case "keys":
       case "bass":
+      case "guitar":
       case "lead_guitar":
       case "rhythm_guitar":
+      case "vocals":
         out.push(role);
         break;
       default:
@@ -3847,6 +4034,15 @@ function stopVisualizer(opts?: { keepStatus?: boolean }) {
 
 async function selectAuralSong(containerPath: string, opts?: { autoLoadAudio?: boolean }) {
   detailsEl.innerHTML = "Loading details...";
+  currentLyrics = null;
+  currentKeys = null;
+  currentHarmony = null;
+  currentVocalPitch = null;
+  currentVocalPitchContour = null;
+  currentSongTimeline = null;
+  currentMelodicTracks = [];
+  currentMelodicNotes = [];
+  currentFingeringNotes = [];
   try {
     const details = await invoke<AuralSongDetails>("get_auralsong_details", {
       containerPath,
@@ -3867,6 +4063,81 @@ async function selectAuralSong(containerPath: string, opts?: { autoLoadAudio?: b
     } catch {
       currentLyrics = null;
     }
+
+    currentKeys = await readOptionalArtifactJson(containerPath, details, "keys", "keys.json");
+    currentHarmony = await readOptionalArtifactJson(containerPath, details, "harmony", "harmony.json");
+    currentSongTimeline = await readOptionalArtifactJson(
+      containerPath,
+      details,
+      "song_timeline",
+      "song_timeline.json",
+    );
+    const manifestRaw = details.manifest_raw as ManifestArtifactPointers | undefined;
+    if (!currentSongTimeline && isManifestPack(containerPath) && !manifestArtifactRelPath(manifestRaw, "song_timeline")) {
+      try {
+        currentSongTimeline = await invoke<unknown>("read_auralsong_json", {
+          containerPath,
+          relPath: "song_timeline.json",
+        });
+      } catch {
+        currentSongTimeline = null;
+      }
+    }
+    applySongMeterFromTimeline(currentSongTimeline);
+    setHudKeyMode(details.manifest_raw, { keys: currentKeys, harmony: currentHarmony });
+
+    const vocalPitchRel = artifactReadRelPath(containerPath, details, "vocal_pitch", "vocal_pitch.json");
+    if (vocalPitchRel) {
+      try {
+        currentVocalPitch = await invoke<unknown>("read_auralsong_json", {
+          containerPath,
+          relPath: vocalPitchRel,
+        });
+      } catch {
+        currentVocalPitch = null;
+      }
+    }
+
+    const vocalPitchContourCandidates = isManifestPack(containerPath)
+      ? [artifactReadRelPath(containerPath, details, "vocal_pitch_contour", "vocal_pitch_contour.json")].filter(
+          (rel): rel is string => Boolean(rel),
+        )
+      : ["features/vocal_pitch_contour.json", "features/pitch_contour.json"];
+    for (const vocalPitchContourRel of vocalPitchContourCandidates) {
+      try {
+        currentVocalPitchContour = await invoke<unknown>("read_auralsong_json", {
+          containerPath,
+          relPath: vocalPitchContourRel,
+        });
+        break;
+      } catch {
+        currentVocalPitchContour = null;
+      }
+    }
+
+    currentMelodicTracks = await readMelodicTrackSelection(containerPath, details);
+    currentMelodicNotes = melodicTracksToVisualizerNotes(currentMelodicTracks);
+
+    if (details.has_aural_fingering) {
+      const manifestRoles = fingeringRolesFromManifest(details.manifest_raw);
+      const roles = manifestRoles.length > 0 ? manifestRoles : FINGERING_ROLES;
+      const fingeringFiles = await loadFingeringForRoles(
+        containerPath,
+        roles,
+        { warn: warnConsole },
+        details.manifest_raw,
+      );
+      currentFingeringNotes = fingeringFilesToVisualizerNotes(fingeringFiles);
+      if (currentMelodicTracks.length === 0) {
+        currentMelodicTracks = fingeringFilesToMelodicTracks(fingeringFiles);
+        currentMelodicNotes = melodicTracksToVisualizerNotes(currentMelodicTracks);
+      }
+    }
+
+    selectedDrumChartSelection = await readDrumChartSelection(containerPath, details);
+    renderCaps(details, selectedDrumChartSelection);
+    applyInstrumentAvailability(details, selectedDrumChartSelection);
+    renderPluginsWithAvailability(details);
 
     selectedAuralSongPath = containerPath;
     setAuralSongEditorStatus(`selected AuralSong: ${containerPath}`);
@@ -3955,9 +4226,9 @@ async function startVisualizer() {
   const plugin = currentSelectedPlugin();
   setVizStatus(`Loading plugin… (${plugin.id})`);
 
-  if (plugin.id === "viz-lyrics" && !currentLyrics) {
+  if (plugin.id === "viz-lyrics" && !currentLyrics && !currentVocalPitch && !currentVocalPitchContour) {
     const ok = confirm(
-      "This auralsong has no lyric animation (features/lyrics.json).\n\nGenerate it now from a .txt lyrics file? (directory AuralSongs only)"
+      "This auralsong has no lyric animation or vocal pitch artifacts.\n\nGenerate lyrics now from a .txt lyrics file? (directory AuralSongs only)"
     );
     if (ok) {
       await generateLyricsForSelectedAuralSong();

@@ -65,9 +65,10 @@ distorted pop — must be validated on our psalm imports, not just corpora.
    MDB / 0.76 ENST. Gameplay value: real crash/ride lanes + velocity.
    Electronic drums regress (0.58→0.56 RBMA) — gate on style.
 5. **Vocals — an entire missing modality.** Nothing is transcribed today.
-   RMVPE (MIT code+weights, battle-tested) for a karaoke pitch lane;
-   SOME / ROSVOT (openvpi ecosystem, weights likely CC BY-NC-SA — verify)
-   for note-level MIDI a chart actually needs.
+   RMVPE (official code Apache-2.0; checkpoint source/license audit still
+   required) for a karaoke pitch lane; SOME / ROSVOT (openvpi ecosystem,
+   weights likely CC BY-NC-SA — verify) for note-level MIDI a chart actually
+   needs.
 6. **Stem separation upgrade + finally measurable.** htdemucs_6s (2022) is
    no longer SOTA; BS/Mel-RoFormer community checkpoints (ZFTurbo's MIT
    Music-Source-Separation-Training ecosystem; per-checkpoint license

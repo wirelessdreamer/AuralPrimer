@@ -10,6 +10,8 @@ import {
   parseMidiTracksFromBytes,
   selectDrumChart,
   selectDrumChartFromMidiBytes,
+  selectMelodicTracks,
+  selectMelodicTracksFromMidiBytes,
   type MidiTrackLike,
 } from "../src/chartLoader";
 
@@ -199,7 +201,51 @@ describe("parseMidiTracksFromBytes", () => {
     expect(tracks[0].name).toBe("Drums");
     expect(tracks[0].notes).toHaveLength(2);
     expect(tracks[0].notes[0].midi).toBe(36);
+    expect(tracks[0].notes[0].velocity).toBe(100);
     expect(tracks[0].notes[0].channel).toBe(9);
+    expect(tracks[0].notes[1].t).toBeCloseTo(0.5, 6);
+  });
+
+  it("preserves note-off timing in seconds", () => {
+    const events = [
+      ...encodeVarLen(0), 0xff, 0x03, ...encodeVarLen(4), ...asciiBytes("Keys"),
+      ...encodeVarLen(0), 0xff, 0x51, 0x03, 0x07, 0xa1, 0x20,
+      ...encodeVarLen(0), 0x93, 60, 100,
+      ...encodeVarLen(480), 0x83, 60, 0,
+      ...encodeVarLen(0), 0xff, 0x2f, 0x00,
+    ];
+
+    const tracks = parseMidiTracksFromBytes(buildTestMidi(events));
+    expect(tracks[0].notes[0].t).toBeCloseTo(0, 6);
+    expect(tracks[0].notes[0].t_off).toBeCloseTo(0.5, 6);
+  });
+
+  it("closes an open same-pitch note when a retrigger arrives", () => {
+    const events = [
+      ...encodeVarLen(0), 0xff, 0x03, ...encodeVarLen(4), ...asciiBytes("Keys"),
+      ...encodeVarLen(0), 0x93, 60, 100,
+      ...encodeVarLen(240), 0x93, 60, 90,
+      ...encodeVarLen(240), 0x83, 60, 0,
+      ...encodeVarLen(0), 0xff, 0x2f, 0x00,
+    ];
+
+    const tracks = parseMidiTracksFromBytes(buildTestMidi(events));
+    expect(tracks[0].notes).toHaveLength(2);
+    expect(tracks[0].notes[0]).toMatchObject({ t: 0, midi: 60, velocity: 100 });
+    expect(tracks[0].notes[0].t_off).toBeCloseTo(0.25, 6);
+    expect(tracks[0].notes[1]).toMatchObject({ t: 0.25, midi: 60, velocity: 90 });
+    expect(tracks[0].notes[1].t_off).toBeCloseTo(0.5, 6);
+  });
+
+  it("preserves MIDI note-on velocity through drum chart selection", () => {
+    const events = [
+      ...encodeVarLen(0), 0xff, 0x03, ...encodeVarLen(5), ...asciiBytes("Drums"),
+      ...encodeVarLen(0), 0x99, 36, 37,
+      ...encodeVarLen(120), 0x99, 38, 111,
+      ...encodeVarLen(0), 0xff, 0x2f, 0x00,
+    ];
+    const selection = selectDrumChartFromMidiBytes(buildTestMidi(events));
+    expect(selection.events.map((e) => e.velocity)).toEqual([37, 111]);
   });
 
   it("ignores note-on with velocity 0 (treated as note-off)", () => {
@@ -257,5 +303,47 @@ describe("parseMidiTracksFromBytes", () => {
     ];
     const selection = selectDrumChartFromMidiBytes(buildTestMidi(events));
     expect(selection.events.map((e) => e.lane)).toEqual(["BD"]);
+  });
+});
+
+describe("selectMelodicTracks", () => {
+  function melodicTrack(name: string | undefined, channel: number, midi = 60): MidiTrackLike {
+    return {
+      index: 0,
+      name,
+      notes: [{ t: 0, t_off: 0.5, midi, channel, velocity: 100 }],
+    };
+  }
+
+  it("infers roles from channels and track names", () => {
+    expect(selectMelodicTracks([melodicTrack("Untitled", 0)])[0]?.role).toBe("bass");
+    expect(selectMelodicTracks([melodicTrack("Lead Vocal", 4)])[0]?.role).toBe("vocals");
+  });
+
+  it("skips drum and structure tracks", () => {
+    expect(
+      selectMelodicTracks([
+        { index: 0, name: "Drums", notes: [{ t: 0, midi: 60, channel: 9 }] },
+        { index: 1, name: "Conductor", notes: [{ t: 0, midi: 60, channel: 0 }] },
+        { index: 2, name: "Structure", notes: [{ t: 0, midi: 60, channel: 0 }] },
+      ]),
+    ).toHaveLength(0);
+  });
+
+  it("extracts melodic tracks from MIDI bytes with note durations", () => {
+    const events = [
+      ...encodeVarLen(0), 0xff, 0x03, ...encodeVarLen(4), ...asciiBytes("Keys"),
+      ...encodeVarLen(0), 0x93, 60, 100,
+      ...encodeVarLen(240), 0x83, 60, 0,
+      ...encodeVarLen(0), 0xff, 0x2f, 0x00,
+    ];
+
+    const tracks = selectMelodicTracksFromMidiBytes(buildTestMidi(events));
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0].role).toBe("keys");
+    expect(tracks[0].channel).toBe(3);
+    expect(tracks[0].notes[0]).toMatchObject({ t_on: 0, pitch: 60 });
+    expect(tracks[0].notes[0].t_off).toBeCloseTo(0.25, 6);
+    expect(tracks[0].notes[0].velocity).toBeCloseTo(100 / 127, 6);
   });
 });

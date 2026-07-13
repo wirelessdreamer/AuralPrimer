@@ -114,12 +114,13 @@ export function drumChartFromTab(doc: unknown): DrumChartSelection | null {
  */
 export async function loadDrumChartFromTab(
   containerPath: string,
+  relPath = "drum_tab.json",
 ): Promise<DrumChartSelection | null> {
   let raw: unknown;
   try {
     raw = await invoke<unknown>("read_auralsong_json", {
       containerPath,
-      relPath: "drum_tab.json",
+      relPath,
     });
   } catch {
     // Missing file is the common case (no drum cleanup authored); stay silent.

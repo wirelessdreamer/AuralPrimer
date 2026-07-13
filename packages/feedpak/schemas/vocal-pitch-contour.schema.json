@@ -16,7 +16,7 @@
         "additionalProperties": true,
         "properties": {
           "t": { "type": "number" },
-          "hz": { "type": "number" }
+          "hz": { "type": "number", "exclusiveMinimum": 0 }
         }
       }
     }

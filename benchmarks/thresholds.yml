@@ -13,7 +13,8 @@
   },
   "notes": [
     "JSON-compatible YAML keeps CI dependency-free. Change mode to strict only after baselines are frozen.",
-    "Research-only datasets may feed internal benchmark runs, but dataset content or derived in-game fixtures must not ship."
+    "Research-only datasets may feed internal benchmark runs, but dataset content or derived in-game fixtures must not ship.",
+    "model_upgrade_decisions preserves completed benchmark conclusions; it does not clear external/runtime promotion gates."
   ],
   "hardware": {
     "target_profile": "minimum_modern",
@@ -44,6 +45,183 @@
     "max_sync_quarantine_count": 0,
     "max_flagged_case_rate": 1.0,
     "min_mean_f1_by_role": {}
+  },
+  "model_upgrade_decisions": {
+    "decisions": [
+      {
+        "id": "t1_2_yourmt3_drums_test30_useful_not_promoted",
+        "report": "benchmarks/drums/gt_runs/yourmt3_mr_mt3_test30.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "egmd"},
+          {"id": "case_count", "path": "case_count", "min": 30},
+          {"id": "yourmt3_cases_ok", "path": "summary.per_algorithm.yourmt3_drums.cases_ok", "min": 30},
+          {"id": "yourmt3_cases_err", "path": "summary.per_algorithm.yourmt3_drums.cases_err", "equals": 0},
+          {"id": "mr_mt3_cases_err", "path": "summary.per_algorithm.mr_mt3_drums.cases_err", "equals": 0},
+          {"id": "yourmt3_aggregate_f1_floor", "path": "summary.per_algorithm.yourmt3_drums.f1", "min": 0.58},
+          {"id": "yourmt3_beats_mr_mt3", "path": "summary.per_algorithm.yourmt3_drums.f1", "min_delta_over_path": 0.30, "over_path": "summary.per_algorithm.mr_mt3_drums.f1"},
+          {
+            "id": "yourmt3_macro5_below_drum_crnn_run4_reference",
+            "average_of": [
+              "summary.per_algorithm.yourmt3_drums.per_class.kick.f1",
+              "summary.per_algorithm.yourmt3_drums.per_class.snare.f1",
+              "summary.per_algorithm.yourmt3_drums.per_class.hi_hat.f1",
+              "summary.per_algorithm.yourmt3_drums.per_class.toms.f1",
+              "summary.per_algorithm.yourmt3_drums.per_class.cymbals.f1"
+            ],
+            "max": 0.707
+          }
+        ]
+      },
+      {
+        "id": "t1_3_adtof_drums_test30_useful_not_promoted",
+        "report": "benchmarks/drums/gt_runs/adtof_test30.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "egmd"},
+          {"id": "case_count", "path": "case_count", "min": 30},
+          {"id": "adtof_cases_ok", "path": "summary.per_algorithm.adtof_drums.cases_ok", "min": 30},
+          {"id": "adtof_cases_err", "path": "summary.per_algorithm.adtof_drums.cases_err", "equals": 0},
+          {"id": "adtof_aggregate_f1_floor", "path": "summary.per_algorithm.adtof_drums.f1", "min": 0.42},
+          {
+            "id": "adtof_macro5_below_drum_crnn_run4_reference",
+            "average_of": [
+              "summary.per_algorithm.adtof_drums.per_class.kick.f1",
+              "summary.per_algorithm.adtof_drums.per_class.snare.f1",
+              "summary.per_algorithm.adtof_drums.per_class.hi_hat.f1",
+              "summary.per_algorithm.adtof_drums.per_class.toms.f1",
+              "summary.per_algorithm.adtof_drums.per_class.cymbals.f1"
+            ],
+            "max": 0.706
+          }
+        ]
+      },
+      {
+        "id": "t2_6a_demucs_musdb10_baseline_ready",
+        "report": "benchmarks/quality/runs/20260709_232250_434347_demucs_musdb_separation_sdr.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "musdb18_or_musdb18_hq"},
+          {"id": "provider", "path": "provider", "equals": "demucs"},
+          {"id": "split", "path": "split", "equals": "test"},
+          {"id": "ok", "path": "ok", "equals": true},
+          {"id": "tracks_ok", "path": "summary.tracks_ok", "min": 10},
+          {"id": "tracks_failed", "path": "summary.tracks_failed", "equals": 0},
+          {"id": "tracks_skipped", "path": "summary.tracks_skipped", "equals": 0},
+          {"id": "median_sdr_floor", "path": "summary.median_sdr_mean", "min": 7.3},
+          {"id": "drums_sdr_floor", "path": "summary.role_summary.drums.median_sdr_mean", "min": 8.9}
+        ]
+      },
+      {
+        "id": "t2_6b_demucs_ft_drums_musdb10_not_promoted",
+        "report": "benchmarks/quality/runs/20260709_234848_965718_demucs_demucs_ft_drums_musdb_separation_sdr.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "musdb18_or_musdb18_hq"},
+          {"id": "provider", "path": "provider", "equals": "demucs"},
+          {"id": "modelpack", "path": "config.stem_separation_modelpack_id", "equals": "demucs_ft_drums"},
+          {"id": "split", "path": "split", "equals": "test"},
+          {"id": "ok", "path": "ok", "equals": true},
+          {"id": "tracks_ok", "path": "summary.tracks_ok", "min": 10},
+          {"id": "tracks_failed", "path": "summary.tracks_failed", "equals": 0},
+          {"id": "tracks_skipped", "path": "summary.tracks_skipped", "equals": 0},
+          {"id": "median_sdr_below_default_baseline", "path": "summary.median_sdr_mean", "max": 7.3},
+          {"id": "drums_sdr_below_default_baseline", "path": "summary.role_summary.drums.median_sdr_mean", "max": 8.9}
+        ]
+      },
+      {
+        "id": "t2_6c_roformer_musdb10_positive",
+        "report": "benchmarks/quality/runs/20260710_024833_512208_roformer_musdb_separation_sdr.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "musdb18_or_musdb18_hq"},
+          {"id": "provider", "path": "provider", "equals": "roformer"},
+          {"id": "split", "path": "split", "equals": "test"},
+          {"id": "ok", "path": "ok", "equals": true},
+          {"id": "tracks_ok", "path": "summary.tracks_ok", "min": 10},
+          {"id": "tracks_failed", "path": "summary.tracks_failed", "equals": 0},
+          {"id": "tracks_skipped", "path": "summary.tracks_skipped", "equals": 0},
+          {"id": "median_sdr_floor", "path": "summary.median_sdr_mean", "min": 9.0},
+          {"id": "drums_sdr_floor", "path": "summary.role_summary.drums.median_sdr_mean", "min": 10.4},
+          {"id": "vocals_sdr_floor", "path": "summary.role_summary.vocals.median_sdr_mean", "min": 11.0}
+        ]
+      },
+      {
+        "id": "t3_7_1_yourmt3_guitarset_limit40_positive",
+        "report": "benchmarks/guitar/gt_runs/guitarset_mic_limit40_yourmt3_vs_baselines.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "guitarset"},
+          {"id": "case_count", "path": "case_count", "min": 40},
+          {"id": "yourmt3_cases_err", "path": "summary.per_algorithm.yourmt3_guitar.cases_err", "equals": 0},
+          {"id": "yourmt3_f1_floor", "path": "summary.per_algorithm.yourmt3_guitar.f1", "min": 0.68},
+          {"id": "yourmt3_beats_combined", "path": "summary.per_algorithm.yourmt3_guitar.f1", "gt_path": "summary.per_algorithm.melodic_combined.f1"},
+          {"id": "yourmt3_beats_combined_guitar", "path": "summary.per_algorithm.yourmt3_guitar.f1", "gt_path": "summary.per_algorithm.melodic_combined_guitar.f1"}
+        ]
+      },
+      {
+        "id": "t3_7_qmul_guitarset_limit40_positive",
+        "report": "benchmarks/guitar/gt_runs/guitarset_mic_limit40_qmul_hr_guitar.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "guitarset"},
+          {"id": "case_count", "path": "case_count", "min": 40},
+          {"id": "qmul_cases_err", "path": "summary.per_algorithm.qmul_hr_guitar.cases_err", "equals": 0},
+          {"id": "qmul_f1_floor", "path": "summary.per_algorithm.qmul_hr_guitar.f1", "min": 0.87},
+          {"id": "qmul_comp_bucket_floor", "path": "summary.per_algorithm.qmul_hr_guitar.buckets.style.comp.f1", "min": 0.86},
+          {"id": "qmul_solo_bucket_floor", "path": "summary.per_algorithm.qmul_hr_guitar.buckets.style.solo.f1", "min": 0.91}
+        ]
+      },
+      {
+        "id": "t3_7_1_guitar_techs_full_negative_broad_promotion",
+        "report": "benchmarks/guitar/gt_runs/guitar_techs_directinput_full_duration_shards_104.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "guitar_techs"},
+          {"id": "case_count", "path": "case_count", "min": 104},
+          {"id": "yourmt3_cases_err", "path": "summary.per_algorithm.yourmt3_guitar.cases_err", "equals": 0},
+          {"id": "combined_guitar_cases_err", "path": "summary.per_algorithm.melodic_combined_guitar.cases_err", "equals": 0},
+          {"id": "combined_guitar_beats_yourmt3_overall", "path": "summary.per_algorithm.melodic_combined_guitar.f1", "gt_path": "summary.per_algorithm.yourmt3_guitar.f1"},
+          {"id": "yourmt3_still_leads_music_bucket", "path": "summary.per_algorithm.yourmt3_guitar.buckets.category.music.f1", "gt_path": "summary.per_algorithm.melodic_combined_guitar.buckets.category.music.f1"}
+        ]
+      },
+      {
+        "id": "t3_7_qmul_guitar_techs_full_positive_research_candidate",
+        "report": "benchmarks/guitar/gt_runs/guitar_techs_directinput_qmul_hr_guitar.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "guitar_techs"},
+          {"id": "case_count", "path": "case_count", "min": 104},
+          {"id": "qmul_cases_err", "path": "summary.per_algorithm.qmul_hr_guitar.cases_err", "equals": 0},
+          {"id": "qmul_f1_floor", "path": "summary.per_algorithm.qmul_hr_guitar.f1", "min": 0.86},
+          {"id": "qmul_chords_bucket_floor", "path": "summary.per_algorithm.qmul_hr_guitar.buckets.category.chords.f1", "min": 0.85},
+          {"id": "qmul_music_bucket_floor", "path": "summary.per_algorithm.qmul_hr_guitar.buckets.category.music.f1", "min": 0.70},
+          {"id": "qmul_scales_bucket_floor", "path": "summary.per_algorithm.qmul_hr_guitar.buckets.category.scales.f1", "min": 0.93},
+          {"id": "qmul_techniques_bucket_floor", "path": "summary.per_algorithm.qmul_hr_guitar.buckets.category.techniques.f1", "min": 0.64}
+        ]
+      },
+      {
+        "id": "bass_torchcrepe_strict_low_string_proxy",
+        "report": "benchmarks/bass/gt_runs/bass_hexdebleed_60_strict.json",
+        "checks": [
+          {"id": "dataset", "path": "dataset", "equals": "guitarset_bass"},
+          {"id": "case_count", "path": "case_count", "min": 60},
+          {"id": "torchcrepe_cases_err", "path": "summary.per_algorithm.melodic_torchcrepe.cases_err", "equals": 0},
+          {"id": "torchcrepe_f1_floor", "path": "summary.per_algorithm.melodic_torchcrepe.f1", "min": 0.21},
+          {"id": "torchcrepe_beats_pyin", "path": "summary.per_algorithm.melodic_torchcrepe.f1", "gt_path": "summary.per_algorithm.melodic_pyin_bass_strict.f1"},
+          {"id": "torchcrepe_beats_combined", "path": "summary.per_algorithm.melodic_torchcrepe.f1", "gt_path": "summary.per_algorithm.melodic_combined.f1"}
+        ]
+      },
+      {
+        "id": "t3_8_key_guitarset_full_baseline",
+        "report": "benchmarks/guitar/gt_runs/guitarset_key_mic_full.json",
+        "checks": [
+          {"id": "cases_scored", "path": "summary.cases_scored", "min": 360},
+          {"id": "accuracy_floor", "path": "summary.accuracy", "min": 0.65},
+          {"id": "mode_accuracy_floor", "path": "summary.mode_accuracy", "min": 0.77}
+        ]
+      },
+      {
+        "id": "t3_8_chords_guitarset_full_baseline",
+        "report": "benchmarks/guitar/gt_runs/guitarset_chords_mireval_full.json",
+        "checks": [
+          {"id": "events_scored", "path": "summary.events_scored", "min": 4250},
+          {"id": "accuracy_floor", "path": "summary.accuracy", "min": 0.26},
+          {"id": "root_accuracy_floor", "path": "summary.root_accuracy", "min": 0.52}
+        ]
+      }
+    ]
   },
   "frontend": {
     "max_mean_ms_by_benchmark": {

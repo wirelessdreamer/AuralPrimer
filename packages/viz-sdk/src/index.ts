@@ -58,6 +58,21 @@ export type VizInitContext = {
     /** Optional karaoke/lyrics timing data loaded from features/lyrics.json */
     lyrics?: unknown;
 
+    /** Optional feedpak vocal_pitch.json document. */
+    vocalPitch?: unknown;
+
+    /** Optional feedpak vocal_pitch_contour.json document. */
+    vocalPitchContour?: unknown;
+
+    /** Optional feedpak song_timeline.json document. */
+    songTimeline?: unknown;
+
+    /** Optional feedpak keys.json document. */
+    keys?: unknown;
+
+    /** Optional feedpak harmony.json document. */
+    harmony?: unknown;
+
     /** Optional parsed charts from charts/*.json (key: relPath like charts/easy.json) */
     charts?: Record<string, unknown>;
 
@@ -70,6 +85,18 @@ export type VizInitContext = {
       t_off?: number;
       pitch: number;
       velocity?: number;
+      /** Zero-based string index, lowest/thickest string first. */
+      string?: number;
+      /** Fret number on `string`. */
+      fret?: number;
+      /** Compact alias for `string`, matching arrangement wire JSON. */
+      s?: number;
+      /** Compact alias for `fret`, matching arrangement wire JSON. */
+      f?: number;
+      /** Host instrument role, e.g. "drums", "bass", "lead_guitar", "keys". */
+      role?: string;
+      /** Alias for role used by older visualizer/plugin conventions. */
+      instrument?: string;
       channel?: number;
       trackName?: string;
     }>;

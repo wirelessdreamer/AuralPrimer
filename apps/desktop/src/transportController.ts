@@ -50,6 +50,22 @@ export class TransportController {
   }
 
   /**
+   * Apply the song's initial tempo + time signature from song_timeline.json.
+   * External MIDI clock still overrides bpm at tick time when enabled.
+   */
+  setSongMeter(bpm: number, timeSignature: [number, number]): void {
+    const nextBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : this.state.bpm;
+    const ts: [number, number] =
+      Array.isArray(timeSignature) &&
+      timeSignature.length >= 2 &&
+      Number.isFinite(timeSignature[0]) && timeSignature[0] >= 1 &&
+      Number.isFinite(timeSignature[1]) && timeSignature[1] >= 1
+        ? [Math.round(timeSignature[0]), Math.round(timeSignature[1])]
+        : this.state.timeSignature;
+    this.state = { ...this.state, bpm: nextBpm, timeSignature: ts };
+  }
+
+  /**
    * Load audio into the timebase and reset transport to t=0.
    */
   async loadAudio(source: { blob: Blob; mime: string }): Promise<void> {

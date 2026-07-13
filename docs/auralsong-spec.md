@@ -17,6 +17,24 @@ Two interchangeable container forms:
 
 The host must support both.
 
+### FeedPak migration overlay
+
+`.feedpak` is the target native container. During migration, hosts still support
+legacy `.auralsong` where needed, but new model-upgrade artifacts are specified
+through `manifest.yaml` pointers in feedpak:
+
+- `song_timeline` replaces legacy beat/tempo feature files for bar, beat,
+  meter, tempo, and section timing.
+- `drum_tab` carries typed drum hits and velocity.
+- `keys`, `harmony`, `vocal_pitch`, and `vocal_pitch_contour` carry model or
+  authored theory/vocal artifacts.
+- `aural_notes_mid` preserves the tempo-aware MIDI chart path during the
+  migration.
+- `aural_fingering` maps instrument roles to string/fret sidecars.
+
+All feedpak manifest paths must be safe container-relative paths and must exist
+inside the same container before a host reports the artifact as available.
+
 ### Deliverable
 The distribution deliverable is the deterministic **zip AuralSong** (`*.auralsong` file).
 See: `docs/auralsong-deliverable.md`.
@@ -184,6 +202,7 @@ All time-based content is represented as a set of normalized events in `features
     }
   ]
 }
+```
 
 ---
 ## Lyrics / karaoke timings
@@ -217,7 +236,6 @@ Minimum shape:
 Notes:
 - `start/end` are in seconds in the audio timebase.
 - `chunks` are optional; if missing, a visualizer may fall back to line-level highlighting.
-```
 
 ### Design notes
 - All lists are optional but `beats` and `sections` should exist for most gameplay modes.

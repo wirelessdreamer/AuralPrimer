@@ -5,12 +5,15 @@ from collections import Counter
 import contextlib
 import hashlib
 import importlib
+import importlib.metadata
 import io
 import inspect
 import json
 import math
 import os
+import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -18,7 +21,8 @@ import time
 import warnings
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 from collections.abc import Iterable
 from typing import Any
 
@@ -58,6 +62,7 @@ from aural_ingest.transcription import (
     validate_drum_events_against_stem_silence,
     validate_melodic_method,
     validate_transcription_profile,
+    resolve_rmvpe_checkpoint_path,
     DEFAULT_DRUM_SILENCE_GATE_DBFS,
     DEFAULT_DRUM_SILENCE_GATE_WINDOW_MS,
 )
@@ -89,7 +94,20 @@ IMPORT_EMIT_FEEDPAK = True
 SCHEMA_VERSION = "1.0.0"
 DEMUCS_MODELPACK_ID = "demucs_6"
 DEMUCS_MODELPACK_FILENAME = "demucs_6.zip"
+DEMUCS_FT_DRUMS_MODELPACK_ID = "demucs_ft_drums"
+DEMUCS_FT_DRUMS_MODELPACK_FILENAME = "demucs_ft_drums.zip"
+SUPPORTED_DEMUCS_MODELPACK_FILENAMES: dict[str, str] = {
+    DEMUCS_MODELPACK_ID: DEMUCS_MODELPACK_FILENAME,
+    DEMUCS_FT_DRUMS_MODELPACK_ID: DEMUCS_FT_DRUMS_MODELPACK_FILENAME,
+}
+SUPPORTED_DEMUCS_MODELPACK_IDS: tuple[str, ...] = tuple(SUPPORTED_DEMUCS_MODELPACK_FILENAMES)
+DEMUCS_MODELPACK_ID_ALIASES: dict[str, str] = {
+    "htdemucs_6s": DEMUCS_MODELPACK_ID,
+    "htdemucs_ft": DEMUCS_FT_DRUMS_MODELPACK_ID,
+    "htdemucs_ft_drums": DEMUCS_FT_DRUMS_MODELPACK_ID,
+}
 DEMUCS_PROVIDER = "demucs"
+ROFORMER_PROVIDER = "roformer"
 DEFAULT_STEM_SEPARATION_PROVIDER = "auto"
 DEFAULT_BEAT_ANALYSIS_MODE = "high_accuracy"
 KNOWN_BEAT_ANALYSIS_MODES: tuple[str, ...] = ("standard", "high_accuracy")
@@ -107,6 +125,9 @@ BEAT_TEMPO_PRODUCTION_POLICY: dict[str, Any] = {
 STEM_SEPARATION_PROVIDER_POLICY: dict[str, Any] = {
     "default_provider": DEFAULT_STEM_SEPARATION_PROVIDER,
     "demucs_support_status": "optional_experimental",
+    "roformer_support_status": "research_external_command",
+    "demucs_supported_modelpacks": list(SUPPORTED_DEMUCS_MODELPACK_IDS),
+    "demucs_default_modelpack_id": DEMUCS_MODELPACK_ID,
     "absence_behavior": "skip_separation_and_continue_with_mix_or_provided_stems",
     "portable_requirement": "normal import must not require Demucs runtime or modelpack",
     "gpu_policy": "supported_when_available_with_cpu_fallback_required",
@@ -147,6 +168,28 @@ RUNTIME_DEPENDENCY_POLICIES: dict[str, dict[str, Any]] = {
         "required": False,
         "role": "optional_experimental_separator",
         "missing_behavior": "Demucs separation is skipped",
+    },
+    "basic_pitch": {
+        "required": True,
+        "distribution": "basic-pitch",
+        "role": "basic_pitch_default_transcription_runtime",
+        "missing_behavior": "runtime-check fails; auto transcription profiles can still fall back at transcription time",
+    },
+    "basic_pitch.inference": {
+        "required": True,
+        "distribution": "basic-pitch",
+        "role": "basic_pitch_inference_entrypoint",
+        "missing_behavior": "runtime-check fails; auto transcription profiles can still fall back at transcription time",
+    },
+    "onnxruntime": {
+        "required": False,
+        "role": "basic_pitch_onnx_backend",
+        "missing_behavior": "Basic Pitch ONNX models cannot run",
+    },
+    "tensorflow": {
+        "required": False,
+        "role": "basic_pitch_tensorflow_backend",
+        "missing_behavior": "Basic Pitch TensorFlow SavedModel backend is unavailable; ONNX remains usable when onnxruntime is present",
     },
 }
 INPUT_STEM_ROLE_ALIASES: dict[str, str] = {
@@ -256,9 +299,14 @@ def _resolved_demucs_stage_requirement(
     modelpack_manifest: dict[str, Any] | None,
     modelpack_error: str | None,
 ) -> dict[str, Any]:
+    modelpack_id = (
+        _demucs_modelpack_id_from_manifest(modelpack_manifest)
+        if isinstance(modelpack_manifest, dict)
+        else DEMUCS_MODELPACK_ID
+    )
     return {
-        "model_id": DEMUCS_MODELPACK_ID,
-        "modelpack_id": DEMUCS_MODELPACK_ID,
+        "model_id": modelpack_id,
+        "modelpack_id": modelpack_id,
         "version": (
             str(modelpack_manifest.get("version", "")).strip() or None
             if isinstance(modelpack_manifest, dict)
@@ -905,6 +953,328 @@ def _write_json(path: Path, obj: Any) -> None:
     path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _bounded_int(value: Any, *, lo: int, hi: int) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        out = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    if lo <= out <= hi:
+        return out
+    return None
+
+
+_FRETTED_ROLE_TUNINGS: dict[str, list[int]] = {
+    "bass": [28, 33, 38, 43],
+    "guitar": [40, 45, 50, 55, 59, 64],
+    "lead_guitar": [40, 45, 50, 55, 59, 64],
+    "rhythm_guitar": [40, 45, 50, 55, 59, 64],
+}
+
+
+def _candidate_fretted_positions(
+    role: str,
+    pitch: int,
+    *,
+    max_fret: int = 24,
+) -> list[tuple[int, int]]:
+    tuning = _FRETTED_ROLE_TUNINGS.get(role.lower())
+    if not tuning:
+        return []
+
+    candidates: list[tuple[int, int]] = []
+    for string_idx, open_pitch in enumerate(tuning):
+        fret = pitch - open_pitch
+        if fret < 0 or fret > max_fret:
+            continue
+        candidates.append((string_idx, fret))
+    return candidates
+
+
+def _fingering_position_cost(
+    role: str,
+    position: tuple[int, int],
+    previous: tuple[int, int] | None = None,
+) -> float:
+    string_idx, fret = position
+    cost = float(fret) * 0.25
+    if fret == 0:
+        cost -= 0.4
+    if role.lower() == "bass":
+        cost += float(string_idx) * 0.05
+    if previous is not None:
+        prev_string, prev_fret = previous
+        cost += abs(string_idx - prev_string) * 0.6
+        cost += abs(fret - prev_fret) * 0.15
+    return cost
+
+
+def _infer_fretted_position(
+    role: str,
+    pitch: int,
+    *,
+    max_fret: int = 24,
+    previous: tuple[int, int] | None = None,
+    occupied_strings: set[int] | None = None,
+) -> tuple[int, int] | None:
+    candidates = _candidate_fretted_positions(role, pitch, max_fret=max_fret)
+    if not candidates:
+        return None
+    occupied = occupied_strings or set()
+    return min(
+        candidates,
+        key=lambda position: (
+            100.0 if position[0] in occupied else 0.0,
+            _fingering_position_cost(role, position, previous),
+            position[1],
+            position[0],
+        ),
+    )
+
+
+def _note_fingering(note: Any) -> tuple[int, int] | None:
+    string_idx = _bounded_int(getattr(note, "string", None), lo=0, hi=8)
+    fret = _bounded_int(getattr(note, "fret", None), lo=0, hi=36)
+    if string_idx is None or fret is None:
+        return None
+    return string_idx, fret
+
+
+def _group_assignment_cost(
+    role: str,
+    group: list[dict[str, Any]],
+    positions: list[tuple[int, int]],
+    *,
+    previous: tuple[int, int] | None,
+    occupied_strings: set[int],
+) -> float:
+    cost = sum(_fingering_position_cost(role, position, previous) for position in positions)
+    used: dict[int, int] = {}
+    for position in positions:
+        used[position[0]] = used.get(position[0], 0) + 1
+        if position[0] in occupied_strings:
+            cost += 100.0
+    for count in used.values():
+        if count > 1:
+            cost += 100.0 * float(count - 1)
+
+    for left_idx, left in enumerate(group):
+        for right_idx in range(left_idx + 1, len(group)):
+            right = group[right_idx]
+            if int(left["pitch"]) > int(right["pitch"]):
+                continue
+            left_string = positions[left_idx][0]
+            right_string = positions[right_idx][0]
+            if left_string > right_string:
+                cost += 8.0 * float(left_string - right_string + 1)
+    if positions:
+        frets = [position[1] for position in positions]
+        cost += float(max(frets) - min(frets)) * 0.1
+    return cost
+
+
+def _infer_fretted_group(
+    role: str,
+    group: list[dict[str, Any]],
+    *,
+    previous: tuple[int, int] | None,
+) -> list[tuple[int, int] | None]:
+    assigned: list[tuple[int, int] | None] = [None] * len(group)
+    occupied_strings: set[int] = set()
+    inferred_indices: list[int] = []
+    candidate_lists: list[list[tuple[int, int]]] = []
+
+    for idx, item in enumerate(group):
+        explicit = _note_fingering(item["note"])
+        if explicit is not None:
+            assigned[idx] = explicit
+            occupied_strings.add(explicit[0])
+            continue
+        candidates = _candidate_fretted_positions(role, int(item["pitch"]))
+        if not candidates:
+            continue
+        inferred_indices.append(idx)
+        candidate_lists.append(candidates)
+
+    if not inferred_indices:
+        return assigned
+
+    if len(inferred_indices) > 6:
+        local_occupied = set(occupied_strings)
+        local_previous = previous
+        for idx in inferred_indices:
+            position = _infer_fretted_position(
+                role,
+                int(group[idx]["pitch"]),
+                previous=local_previous,
+                occupied_strings=local_occupied,
+            )
+            assigned[idx] = position
+            if position is not None:
+                local_occupied.add(position[0])
+                local_previous = position
+        return assigned
+
+    from itertools import product
+
+    best_combo: tuple[tuple[int, int], ...] | None = None
+    best_cost: float | None = None
+    inferred_group = [group[idx] for idx in inferred_indices]
+    for combo in product(*candidate_lists):
+        cost = _group_assignment_cost(
+            role,
+            inferred_group,
+            list(combo),
+            previous=previous,
+            occupied_strings=occupied_strings,
+        )
+        if best_cost is None or cost < best_cost:
+            best_cost = cost
+            best_combo = combo
+
+    if best_combo is not None:
+        for idx, position in zip(inferred_indices, best_combo, strict=False):
+            assigned[idx] = position
+    return assigned
+
+
+def _build_fingering_doc(role: str, notes: Iterable[Any]) -> dict[str, Any] | None:
+    parsed: list[dict[str, Any]] = []
+    for note in notes:
+        try:
+            t_on = round(float(getattr(note, "t_on")), 6)
+            t_off = round(float(getattr(note, "t_off")), 6)
+            pitch = int(round(float(getattr(note, "pitch"))))
+            velocity = int(round(float(getattr(note, "velocity", 100))))
+        except (TypeError, ValueError):
+            continue
+        if t_off <= t_on or not 0 <= pitch <= 127:
+            continue
+        parsed.append(
+            {
+                "note": note,
+                "t_on": t_on,
+                "t_off": t_off,
+                "pitch": pitch,
+                "velocity": max(1, min(127, velocity)),
+            }
+        )
+
+    parsed.sort(key=lambda item: (item["t_on"], item["pitch"], item["t_off"]))
+    entries: list[dict[str, Any]] = []
+    previous: tuple[int, int] | None = None
+    idx = 0
+    while idx < len(parsed):
+        group = [parsed[idx]]
+        idx += 1
+        group_start = float(group[0]["t_on"])
+        while idx < len(parsed) and float(parsed[idx]["t_on"]) - group_start <= 0.03:
+            group.append(parsed[idx])
+            idx += 1
+
+        positions = _infer_fretted_group(role, group, previous=previous)
+        for item, fingering in zip(group, positions, strict=False):
+            if fingering is None:
+                continue
+            string_idx, fret = fingering
+            previous = fingering
+            entries.append(
+                {
+                    "t_on": item["t_on"],
+                    "t_off": item["t_off"],
+                    "pitch": item["pitch"],
+                    "velocity": item["velocity"],
+                    "string": string_idx,
+                    "fret": fret,
+                }
+            )
+
+    if not entries:
+        return None
+    entries.sort(key=lambda item: (item["t_on"], item["pitch"], item["string"], item["fret"], item["t_off"]))
+    out: dict[str, Any] = {"version": "1.0.0", "instrument": role, "notes": entries}
+    tuning = _FRETTED_ROLE_TUNINGS.get(role.lower())
+    if tuning:
+        out["tuning"] = tuning
+    return out
+
+
+def _write_fingering_sidecars(root: Path, instrument_tracks: dict[str, Iterable[Any]]) -> dict[str, str]:
+    features_dir = root / "features"
+    features_dir.mkdir(parents=True, exist_ok=True)
+    for stale in features_dir.glob("fingering.*.json"):
+        stale.unlink()
+
+    paths: dict[str, str] = {}
+    for role, notes in sorted(instrument_tracks.items()):
+        doc = _build_fingering_doc(role, notes)
+        if doc is None:
+            continue
+        rel_path = f"features/fingering.{role}.json"
+        _write_json(root / rel_path, doc)
+        paths[role] = rel_path
+    return paths
+
+
+def _write_vocal_pitch_contour_sidecar(root: Path, instrument_results: Iterable[Any]) -> str | None:
+    features_dir = root / "features"
+    features_dir.mkdir(parents=True, exist_ok=True)
+    out_path = features_dir / "vocal_pitch_contour.json"
+    if out_path.exists():
+        out_path.unlink()
+
+    for result in instrument_results:
+        if getattr(result, "instrument", None) not in {"vocal", "vocals"}:
+            continue
+        meta = getattr(result, "meta", {})
+        if not isinstance(meta, dict):
+            continue
+        contour = meta.get("vocal_pitch_contour")
+        if not isinstance(contour, dict):
+            continue
+        samples = contour.get("samples")
+        if not isinstance(samples, list) or not samples:
+            continue
+        doc = {
+            "version": int(contour.get("version") or 1),
+            "samples": samples,
+        }
+        _write_json(out_path, doc)
+        return "features/vocal_pitch_contour.json"
+    return None
+
+
+def _write_vocal_pitch_sidecar(root: Path, instrument_results: Iterable[Any]) -> str | None:
+    features_dir = root / "features"
+    features_dir.mkdir(parents=True, exist_ok=True)
+    out_path = features_dir / "vocal_pitch.json"
+    if out_path.exists():
+        out_path.unlink()
+
+    for result in instrument_results:
+        if getattr(result, "instrument", None) not in {"vocal", "vocals"}:
+            continue
+        notes: list[dict[str, Any]] = []
+        for note in sorted(getattr(result, "notes", []) or [], key=lambda n: (float(n.t_on), int(n.pitch))):
+            start = float(note.t_on)
+            duration = max(0.0, float(note.t_off) - start)
+            if duration <= 0:
+                continue
+            notes.append(
+                {
+                    "t": round(start, 6),
+                    "d": round(duration, 6),
+                    "midi": int(note.pitch),
+                }
+            )
+        if not notes:
+            continue
+        _write_json(out_path, {"version": 1, "notes": notes})
+        return "features/vocal_pitch.json"
+    return None
+
+
 def _safe_slug(value: str) -> str:
     out = []
     prev_sep = False
@@ -919,7 +1289,57 @@ def _safe_slug(value: str) -> str:
     return "".join(out).strip("_") or "x"
 
 
-def _default_demucs_modelpack_candidates() -> list[Path]:
+def _canonical_demucs_modelpack_id(raw: object) -> str:
+    value = str(raw or "").strip().lower()
+    return DEMUCS_MODELPACK_ID_ALIASES.get(value, value)
+
+
+def _requested_demucs_modelpack_id(config: dict[str, Any]) -> str | None:
+    for key in ("demucs_modelpack_id", "stem_separation_modelpack_id"):
+        raw = config.get(key)
+        if raw is None:
+            continue
+        value = _canonical_demucs_modelpack_id(raw)
+        if value and value not in {"auto", "default"}:
+            return value
+    return None
+
+
+def _demucs_modelpack_id_from_manifest(modelpack_manifest: dict[str, Any]) -> str:
+    modelpack_id = _canonical_demucs_modelpack_id(modelpack_manifest.get("id"))
+    return modelpack_id or DEMUCS_MODELPACK_ID
+
+
+def _demucs_modelpack_ids_for_config(config: dict[str, Any]) -> tuple[tuple[str, ...], str | None]:
+    requested_id = _requested_demucs_modelpack_id(config)
+    if requested_id is not None:
+        if requested_id not in SUPPORTED_DEMUCS_MODELPACK_IDS:
+            return (), (
+                f"unsupported demucs modelpack id {requested_id!r}; "
+                f"supported: {', '.join(SUPPORTED_DEMUCS_MODELPACK_IDS)}"
+            )
+        return (requested_id,), None
+
+    configured = config.get("demucs_modelpack_zip_path")
+    if isinstance(configured, str) and configured.strip():
+        return SUPPORTED_DEMUCS_MODELPACK_IDS, None
+
+    return (DEMUCS_MODELPACK_ID,), None
+
+
+def _config_with_cli_demucs_modelpack_options(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
+    out = config
+    modelpack_id = getattr(args, "stem_separation_modelpack_id", None)
+    if isinstance(modelpack_id, str) and modelpack_id.strip():
+        out = {**out, "stem_separation_modelpack_id": modelpack_id}
+    zip_path = getattr(args, "demucs_modelpack_zip_path", None)
+    if isinstance(zip_path, str) and zip_path.strip():
+        out = {**out, "demucs_modelpack_zip_path": zip_path}
+    return out
+
+
+def _default_demucs_modelpack_candidates(modelpack_ids: Iterable[str] | None = None) -> list[Path]:
+    selected_ids = tuple(modelpack_ids) if modelpack_ids is not None else SUPPORTED_DEMUCS_MODELPACK_IDS
     roots: list[Path] = []
     seen_roots: set[str] = set()
 
@@ -962,17 +1382,21 @@ def _default_demucs_modelpack_candidates() -> list[Path]:
     candidates: list[Path] = []
     seen: set[str] = set()
     for root in roots:
-        for candidate in (
-            root / "modelpacks" / DEMUCS_MODELPACK_FILENAME,
-            root / "AuralPrimerPortable" / "modelpacks" / DEMUCS_MODELPACK_FILENAME,
-            root / "dist" / "modelpacks" / DEMUCS_MODELPACK_FILENAME,
-            root / DEMUCS_MODELPACK_FILENAME,
-        ):
-            key = str(candidate)
-            if key in seen:
+        for modelpack_id in selected_ids:
+            filename = SUPPORTED_DEMUCS_MODELPACK_FILENAMES.get(modelpack_id)
+            if not filename:
                 continue
-            seen.add(key)
-            candidates.append(candidate)
+            for candidate in (
+                root / "modelpacks" / filename,
+                root / "AuralPrimerPortable" / "modelpacks" / filename,
+                root / "dist" / "modelpacks" / filename,
+                root / filename,
+            ):
+                key = str(candidate)
+                if key in seen:
+                    continue
+                seen.add(key)
+                candidates.append(candidate)
     return candidates
 
 
@@ -985,36 +1409,167 @@ def _read_zip_json(zip_path: Path, entry_name: str) -> dict[str, Any]:
     return data
 
 
+def _is_safe_zip_rel_path(rel_path: str) -> bool:
+    value = rel_path.strip()
+    if not value or "\\" in value or ":" in value or value.startswith("/") or "//" in value:
+        return False
+    return not any(part in {"", ".", ".."} for part in PurePosixPath(value).parts)
+
+
+def _is_sha256_hex(value: str) -> bool:
+    return len(value) == 64 and all(ch in "0123456789abcdefABCDEF" for ch in value)
+
+
+def _primary_demucs_weight_info(modelpack_zip: Path, modelpack_manifest: dict[str, Any]) -> dict[str, Any]:
+    weights = modelpack_manifest.get("weights")
+    if not isinstance(weights, list) or not weights:
+        raise RuntimeError(f"{modelpack_zip} modelpack.json missing weights[]")
+    if len(weights) != 1:
+        raise RuntimeError(f"{modelpack_zip} modelpack.json must declare exactly one Demucs weight")
+
+    weight_info = weights[0]
+    if not isinstance(weight_info, dict):
+        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0] must be an object")
+
+    rel_path = str(weight_info.get("path", "")).strip()
+    if not rel_path:
+        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0].path missing")
+    if not _is_safe_zip_rel_path(rel_path):
+        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0].path is not a safe zip-relative path")
+
+    checksum = str(weight_info.get("sha256", "")).strip().lower()
+    if not checksum:
+        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0].sha256 missing")
+    if not _is_sha256_hex(checksum):
+        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0].sha256 must be 64 hex characters")
+
+    source_url = str(weight_info.get("source_url", "")).strip()
+    if not source_url:
+        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0].source_url missing")
+
+    return weight_info
+
+
+def _demucs_modelpack_required_stems(modelpack_id: str) -> tuple[str, ...]:
+    if modelpack_id == DEMUCS_FT_DRUMS_MODELPACK_ID:
+        return ("drums",)
+    return DEMUCS_PRIMARY_STEM_ROLES
+
+
+def _declared_demucs_stems(modelpack_manifest: dict[str, Any]) -> set[str]:
+    stems = modelpack_manifest.get("stems")
+    if not isinstance(stems, list):
+        return set()
+    out: set[str] = set()
+    for stem in stems:
+        key = str(stem).strip().lower().replace(" ", "_")
+        if not key:
+            continue
+        out.add(DEMUCS_STEM_ROLE_ALIASES.get(key, key))
+    return out
+
+
+def _demucs_modelpack_has_license_file(zf: zipfile.ZipFile) -> bool:
+    return any(
+        PurePosixPath(info.filename).name.lower() in {"license", "license.txt", "license.md"}
+        for info in zf.infolist()
+        if not info.is_dir()
+    )
+
+
+def _validate_demucs_modelpack_archive(
+    modelpack_zip: Path,
+    *,
+    expected_ids: set[str],
+) -> dict[str, Any]:
+    manifest = _read_zip_json(modelpack_zip, "modelpack.json")
+    modelpack_id = _demucs_modelpack_id_from_manifest(manifest)
+    if modelpack_id not in SUPPORTED_DEMUCS_MODELPACK_IDS:
+        raise RuntimeError(f"unsupported demucs modelpack id: {manifest.get('id')!r}")
+    if modelpack_id not in expected_ids:
+        raise RuntimeError(f"unexpected demucs modelpack id: {manifest.get('id')!r}")
+
+    version = str(manifest.get("version", "")).strip()
+    if not version:
+        raise RuntimeError("modelpack.json missing version")
+    provider = str(manifest.get("provider", "")).strip().lower()
+    if provider and provider != DEMUCS_PROVIDER:
+        raise RuntimeError(f"modelpack.json provider must be '{DEMUCS_PROVIDER}'")
+    architecture = str(manifest.get("architecture", "")).strip()
+    if not architecture:
+        raise RuntimeError("modelpack.json missing architecture")
+
+    declared_stems = _declared_demucs_stems(manifest)
+    missing_stems = sorted(set(_demucs_modelpack_required_stems(modelpack_id)) - declared_stems)
+    if missing_stems:
+        raise RuntimeError(f"modelpack.json missing required stem roles: {', '.join(missing_stems)}")
+
+    weight_info = _primary_demucs_weight_info(modelpack_zip, manifest)
+    rel_path = str(weight_info["path"]).strip()
+    expected_sha = str(weight_info["sha256"]).strip().lower()
+
+    with zipfile.ZipFile(modelpack_zip) as zf:
+        try:
+            weight_bytes = zf.read(rel_path)
+        except KeyError as exc:
+            raise RuntimeError(f"modelpack weight missing from zip: {rel_path}") from exc
+        actual_sha = hashlib.sha256(weight_bytes).hexdigest()
+        if actual_sha != expected_sha:
+            raise RuntimeError(
+                f"modelpack weight sha256 mismatch for {rel_path}: expected {expected_sha} got {actual_sha}"
+            )
+
+        if modelpack_id == DEMUCS_FT_DRUMS_MODELPACK_ID:
+            license_name = str(manifest.get("license", "")).strip()
+            if not license_name:
+                raise RuntimeError("demucs_ft_drums modelpack.json missing license")
+            if not _demucs_modelpack_has_license_file(zf):
+                raise RuntimeError("demucs_ft_drums modelpack zip missing LICENSE file")
+
+    return manifest
+
+
 def _resolve_demucs_modelpack(
     config: dict[str, Any],
 ) -> tuple[Path | None, dict[str, Any] | None, str | None]:
+    modelpack_ids, id_error = _demucs_modelpack_ids_for_config(config)
+    if id_error:
+        return None, None, id_error
+
     configured = config.get("demucs_modelpack_zip_path")
     candidates: list[Path] = []
     if isinstance(configured, str) and configured.strip():
         candidates.append(Path(configured).expanduser())
-    candidates.extend(_default_demucs_modelpack_candidates())
+    else:
+        candidates.extend(_default_demucs_modelpack_candidates(modelpack_ids))
 
     last_error: str | None = None
+    expected_ids = set(modelpack_ids)
     for candidate in candidates:
         if not candidate.is_file():
             continue
         try:
-            manifest = _read_zip_json(candidate, "modelpack.json")
+            manifest = _validate_demucs_modelpack_archive(candidate, expected_ids=expected_ids)
         except Exception as exc:
             last_error = f"invalid demucs modelpack {candidate}: {exc}"
-            continue
-        if str(manifest.get("id", "")).strip() != DEMUCS_MODELPACK_ID:
-            last_error = f"unexpected modelpack id in {candidate}: {manifest.get('id')!r}"
             continue
         return candidate, manifest, None
 
     if last_error:
         return None, None, last_error
-    return None, None, f"{DEMUCS_MODELPACK_FILENAME} not found in default search locations"
+    expected_filenames = [
+        SUPPORTED_DEMUCS_MODELPACK_FILENAMES[modelpack_id]
+        for modelpack_id in modelpack_ids
+        if modelpack_id in SUPPORTED_DEMUCS_MODELPACK_FILENAMES
+    ]
+    return None, None, f"{' or '.join(expected_filenames)} not found in default search locations"
 
 
 def build_default_stem_separation_provider_registry() -> dict[str, Any]:
-    return {DEMUCS_PROVIDER: _separate_stems_with_demucs}
+    return {
+        DEMUCS_PROVIDER: _separate_stems_with_demucs,
+        ROFORMER_PROVIDER: _separate_stems_with_roformer,
+    }
 
 
 def _load_stem_separation_provider_path(provider_path: str) -> Any:
@@ -1028,6 +1583,350 @@ def _load_stem_separation_provider_path(provider_path: str) -> Any:
     if provider is None or not callable(provider):
         raise RuntimeError(f"stem separation provider '{provider_path}' is not callable")
     return provider
+
+
+ROFORMER_ENV_PYTHON = "AURAL_ROFORMER_PYTHON"
+ROFORMER_ENV_REPO = "AURAL_ROFORMER_REPO"
+ROFORMER_ENV_COMMAND = "AURAL_ROFORMER_COMMAND"
+ROFORMER_ENV_TIMEOUT = "AURAL_ROFORMER_TIMEOUT_SEC"
+ROFORMER_STEM_ROLE_ALIASES: dict[str, str] = {
+    "vocal": "vocals",
+    "vocals": "vocals",
+    "voice": "vocals",
+    "drum": "drums",
+    "drums": "drums",
+    "bass": "bass",
+    "guitar": "guitar",
+    "guitars": "guitar",
+    "piano": "keys",
+    "keys": "keys",
+    "keyboard": "keys",
+    "synth": "keys",
+    "other": "other",
+    "accompaniment": "other",
+    "instrumental": "other",
+    "no_vocals": "other",
+}
+
+
+def _config_or_env(config: dict[str, Any], key: str, env_name: str) -> str:
+    value = config.get(key)
+    if value is None:
+        value = os.environ.get(env_name, "")
+    return str(value).strip()
+
+
+def _resolve_roformer_runtime(config: dict[str, Any]) -> tuple[Path | None, Path | None, str | None, str | None]:
+    python_raw = _config_or_env(config, "roformer_python", ROFORMER_ENV_PYTHON)
+    repo_raw = _config_or_env(config, "roformer_repo", ROFORMER_ENV_REPO)
+    command = _config_or_env(config, "roformer_command", ROFORMER_ENV_COMMAND)
+    if not python_raw or not repo_raw or not command:
+        return None, None, None, (
+            f"{ROFORMER_ENV_PYTHON}, {ROFORMER_ENV_REPO}, and {ROFORMER_ENV_COMMAND} are required"
+        )
+
+    python = Path(python_raw).expanduser()
+    repo = Path(repo_raw).expanduser()
+    if not python.exists():
+        return None, None, None, f"{ROFORMER_ENV_PYTHON} does not exist: {python}"
+    if not python.is_file():
+        return None, None, None, f"{ROFORMER_ENV_PYTHON} is not a file: {python}"
+    if not repo.exists():
+        return None, None, None, f"{ROFORMER_ENV_REPO} does not exist: {repo}"
+    if not repo.is_dir():
+        return None, None, None, f"{ROFORMER_ENV_REPO} is not a directory: {repo}"
+    return python, repo, command, None
+
+
+def roformer_runtime_status(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return JSON-serializable RoFormer/MSST provider diagnostics."""
+    cfg = config or {}
+    python_raw = _config_or_env(cfg, "roformer_python", ROFORMER_ENV_PYTHON)
+    repo_raw = _config_or_env(cfg, "roformer_repo", ROFORMER_ENV_REPO)
+    command = _config_or_env(cfg, "roformer_command", ROFORMER_ENV_COMMAND)
+    timeout_raw = _config_or_env(cfg, "roformer_timeout_sec", ROFORMER_ENV_TIMEOUT)
+
+    python_path = Path(python_raw).expanduser() if python_raw else None
+    repo_path = Path(repo_raw).expanduser() if repo_raw else None
+    python, repo, command_template, runtime_error = _resolve_roformer_runtime(cfg)
+
+    missing: list[str] = []
+    if runtime_error:
+        if not python_raw:
+            missing.append(f"{ROFORMER_ENV_PYTHON} is unset")
+        elif python_path is None or not python_path.exists():
+            missing.append(f"{ROFORMER_ENV_PYTHON} does not exist: {python_path}")
+        elif not python_path.is_file():
+            missing.append(f"{ROFORMER_ENV_PYTHON} is not a file: {python_path}")
+
+        if not repo_raw:
+            missing.append(f"{ROFORMER_ENV_REPO} is unset")
+        elif repo_path is None or not repo_path.exists():
+            missing.append(f"{ROFORMER_ENV_REPO} does not exist: {repo_path}")
+        elif not repo_path.is_dir():
+            missing.append(f"{ROFORMER_ENV_REPO} is not a directory: {repo_path}")
+
+        if not command:
+            missing.append(f"{ROFORMER_ENV_COMMAND} is unset")
+        if not missing:
+            missing.append(runtime_error)
+
+    return {
+        "configured": python is not None and repo is not None and command_template is not None,
+        "provider": ROFORMER_PROVIDER,
+        "missing": missing,
+        "env": {
+            ROFORMER_ENV_PYTHON: python_raw or None,
+            ROFORMER_ENV_REPO: repo_raw or None,
+            ROFORMER_ENV_COMMAND: command or None,
+            ROFORMER_ENV_TIMEOUT: timeout_raw or None,
+        },
+        "python": str(python_path) if python_path is not None else None,
+        "python_exists": bool(python_path is not None and python_path.exists()),
+        "python_is_file": bool(python_path is not None and python_path.is_file()),
+        "repo": str(repo_path) if repo_path is not None else None,
+        "repo_exists": bool(repo_path is not None and repo_path.exists()),
+        "repo_is_dir": bool(repo_path is not None and repo_path.is_dir()),
+        "command": command or None,
+        "timeout_sec": _roformer_timeout_seconds(cfg),
+    }
+
+
+def _roformer_timeout_seconds(config: dict[str, Any]) -> float:
+    raw_value = _config_or_env(config, "roformer_timeout_sec", ROFORMER_ENV_TIMEOUT)
+    if not raw_value:
+        return 60.0 * 60.0
+    try:
+        timeout = float(raw_value)
+    except ValueError:
+        return 60.0 * 60.0
+    return max(1.0, timeout)
+
+
+def _shell_quote(value: Path | str) -> str:
+    text = str(value)
+    if os.name == "nt":
+        return subprocess.list2cmdline([text])
+    return shlex.quote(text)
+
+
+def _format_roformer_command(
+    command: str,
+    *,
+    python: Path,
+    repo: Path,
+    mix_wav: Path,
+    out_dir: Path,
+    stems_dir: Path,
+    config_json: Path,
+    mix_sha256: str,
+    shifts: int,
+) -> str:
+    values = {
+        "python": str(python),
+        "python_q": _shell_quote(python),
+        "repo_path": str(repo),
+        "repo_path_q": _shell_quote(repo),
+        "mix_wav": str(mix_wav),
+        "mix_wav_q": _shell_quote(mix_wav),
+        "out_dir": str(out_dir),
+        "out_dir_q": _shell_quote(out_dir),
+        "stems_dir": str(stems_dir),
+        "stems_dir_q": _shell_quote(stems_dir),
+        "config_json": str(config_json),
+        "config_json_q": _shell_quote(config_json),
+        "mix_sha256": mix_sha256,
+        "shifts": str(max(1, int(shifts))),
+    }
+    return command.format(**values)
+
+
+def _normalize_roformer_stem_role(path: Path) -> str | None:
+    key = path.stem.strip().lower().replace(" ", "_").replace("-", "_")
+    role = ROFORMER_STEM_ROLE_ALIASES.get(key, INPUT_STEM_ROLE_ALIASES.get(key, key))
+    if role in KNOWN_INPUT_STEM_ROLES:
+        return role
+    return None
+
+
+def _collect_roformer_stem_files(*roots: Path) -> dict[str, Path]:
+    stem_files: dict[str, Path] = {}
+    for root in roots:
+        if not root.exists():
+            continue
+        for candidate in sorted(root.rglob("*.wav")):
+            role = _normalize_roformer_stem_role(candidate)
+            if role is not None and role not in stem_files:
+                stem_files[role] = candidate
+    return stem_files
+
+
+def _copy_roformer_stems(
+    stem_files: dict[str, Path],
+    stems_dir: Path,
+    *,
+    protected_roles: Iterable[str] | None = None,
+) -> dict[str, str]:
+    protected_set = {str(r).strip().lower() for r in (protected_roles or [])}
+    out: dict[str, str] = {}
+    for role, src in sorted(stem_files.items()):
+        dst = stems_dir / f"{role}.wav"
+        if role in protected_set and dst.is_file():
+            out[role] = f"audio/stems/{dst.name}"
+            continue
+        if src.resolve() != dst.resolve():
+            shutil.copyfile(src, dst)
+        out[role] = f"audio/stems/{dst.name}"
+    return out
+
+
+def _separate_stems_with_roformer(
+    mix_wav: Path,
+    stems_dir: Path,
+    *,
+    mix_sha256: str,
+    shifts: int,
+    config: dict[str, Any],
+    protected_roles: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    if bool(config.get("disable_stem_separation", False)) or str(
+        config.get("stem_separation_provider", "")
+    ).strip().lower() == "none":
+        return {"ok": False, "status": "skipped", "reason": "stem separation disabled by config"}
+
+    python, repo, command_template, runtime_error = _resolve_roformer_runtime(config)
+    if python is None or repo is None or command_template is None:
+        return {"ok": False, "status": "skipped", "provider": ROFORMER_PROVIDER, "reason": runtime_error}
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="aural_roformer_") as temp_dir:
+            temp = Path(temp_dir)
+            out_dir = temp / "stems"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            config_json = temp / "provider_config.json"
+            config_json.write_text(
+                json.dumps(
+                    {
+                        "mix_wav": str(mix_wav),
+                        "out_dir": str(out_dir),
+                        "stems_dir": str(stems_dir),
+                        "mix_sha256": mix_sha256,
+                        "shifts": max(1, int(shifts)),
+                        "config": config,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            command = _format_roformer_command(
+                command_template,
+                python=python,
+                repo=repo,
+                mix_wav=mix_wav,
+                out_dir=out_dir,
+                stems_dir=stems_dir,
+                config_json=config_json,
+                mix_sha256=mix_sha256,
+                shifts=shifts,
+            )
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(repo) + os.pathsep + env.get("PYTHONPATH", "")
+            proc = subprocess.run(
+                command,
+                cwd=str(repo),
+                env=env,
+                capture_output=True,
+                text=True,
+                shell=True,
+                timeout=_roformer_timeout_seconds(config),
+            )
+            if proc.returncode != 0:
+                return {
+                    "ok": False,
+                    "status": "skipped",
+                    "provider": ROFORMER_PROVIDER,
+                    "reason": f"roformer provider command failed with exit code {proc.returncode}",
+                    "stderr": proc.stderr.strip()[:1000],
+                }
+
+            discovered = _collect_roformer_stem_files(out_dir, stems_dir)
+            if not discovered:
+                return {
+                    "ok": False,
+                    "status": "skipped",
+                    "provider": ROFORMER_PROVIDER,
+                    "reason": "roformer provider command produced no recognized role-named wav stems",
+                }
+
+            stem_paths = _copy_roformer_stems(discovered, stems_dir, protected_roles=protected_roles)
+            return {
+                "ok": True,
+                "status": "fresh",
+                "provider": ROFORMER_PROVIDER,
+                "stem_paths": stem_paths,
+                "cache_hit": False,
+                "shifts": int(max(1, shifts)),
+                "repo_path": str(repo),
+            }
+    except (OSError, subprocess.SubprocessError, KeyError, ValueError) as exc:
+        return {"ok": False, "status": "skipped", "provider": ROFORMER_PROVIDER, "reason": str(exc)}
+
+
+def validate_roformer_runtime(
+    mix_wav: Path | str,
+    *,
+    stems_dir: Path | str | None = None,
+    shifts: int = 1,
+    config: dict[str, Any] | None = None,
+    require_roles: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """Run the external RoFormer provider once and return a validation report."""
+    mix = Path(mix_wav)
+    cfg = config or {}
+    required = [str(role).strip().lower() for role in (require_roles or []) if str(role).strip()]
+    if stems_dir is None:
+        with tempfile.TemporaryDirectory(prefix="aural_roformer_validate_") as temp_dir:
+            return validate_roformer_runtime(
+                mix,
+                stems_dir=Path(temp_dir) / "stems",
+                shifts=shifts,
+                config=cfg,
+                require_roles=required,
+            )
+
+    stems = Path(stems_dir)
+    stems.mkdir(parents=True, exist_ok=True)
+    result = _separate_stems_with_roformer(
+        mix,
+        stems,
+        mix_sha256=_sha256_file(mix),
+        shifts=max(1, int(shifts)),
+        config=cfg,
+        protected_roles=[],
+    )
+    stem_paths = result.get("stem_paths", {})
+    roles = sorted(stem_paths.keys()) if isinstance(stem_paths, dict) else []
+    missing_roles = [role for role in required if role not in roles]
+    ok = bool(result.get("ok")) and not missing_roles
+    reason = result.get("reason")
+    if bool(result.get("ok")) and missing_roles:
+        reason = f"missing required RoFormer stem roles: {', '.join(missing_roles)}"
+
+    return {
+        "ok": ok,
+        "provider": ROFORMER_PROVIDER,
+        "mix_wav": str(mix),
+        "stems_dir": str(stems),
+        "status": result.get("status", "unknown"),
+        "reason": reason,
+        "require_roles": required,
+        "missing_roles": missing_roles,
+        "roles": roles,
+        "stem_paths": stem_paths if isinstance(stem_paths, dict) else {},
+        "runtime": roformer_runtime_status(cfg),
+        "raw_result": result,
+    }
 
 
 def _run_stem_separation(
@@ -1082,22 +1981,13 @@ def _prepare_demucs_weight_file(
     modelpack_zip: Path,
     modelpack_manifest: dict[str, Any],
 ) -> tuple[Path, dict[str, Any], Path]:
-    weights = modelpack_manifest.get("weights")
-    if not isinstance(weights, list) or not weights:
-        raise RuntimeError(f"{modelpack_zip} modelpack.json missing weights[]")
-
-    weight_info = weights[0]
-    if not isinstance(weight_info, dict):
-        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0] must be an object")
-
+    weight_info = _primary_demucs_weight_info(modelpack_zip, modelpack_manifest)
     rel_path = str(weight_info.get("path", "")).strip()
-    if not rel_path:
-        raise RuntimeError(f"{modelpack_zip} modelpack.json weights[0].path missing")
-
+    modelpack_id = _demucs_modelpack_id_from_manifest(modelpack_manifest)
     version = str(modelpack_manifest.get("version", "unknown")).strip() or "unknown"
     checksum = str(weight_info.get("sha256", "")).strip().lower()
     cache_root = Path(tempfile.gettempdir()) / "auralprimer_demucs_modelpacks"
-    cache_dir = cache_root / f"{DEMUCS_MODELPACK_ID}_{_safe_slug(version)}_{checksum[:16] or 'nocheck'}"
+    cache_dir = cache_root / f"{_safe_slug(modelpack_id)}_{_safe_slug(version)}_{checksum[:16]}"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     weight_name = Path(rel_path).name
@@ -1107,12 +1997,11 @@ def _prepare_demucs_weight_file(
             data = zf.read(rel_path)
         weight_path.write_bytes(data)
 
-    if checksum:
-        actual = _sha256_file(weight_path)
-        if actual != checksum:
-            raise RuntimeError(
-                f"demucs weight checksum mismatch for {weight_path.name}: expected {checksum} got {actual}"
-            )
+    actual = _sha256_file(weight_path)
+    if actual != checksum:
+        raise RuntimeError(
+            f"demucs weight checksum mismatch for {weight_path.name}: expected {checksum} got {actual}"
+        )
 
     return weight_path, weight_info, cache_dir
 
@@ -1138,6 +2027,26 @@ def _load_demucs_model(weight_path: Path) -> Any:
     set_state(model, package["state"])
     model.eval()
     return model
+
+
+def _demucs_separation_cache_dir(
+    *,
+    mix_sha256: str,
+    modelpack_id: str,
+    version: str,
+    weight_sha: str,
+    shifts: int,
+) -> Path:
+    if not _is_sha256_hex(weight_sha):
+        raise ValueError("demucs separation cache requires a verified weight sha256")
+    return (
+        Path(tempfile.gettempdir())
+        / "auralprimer_demucs_stem_cache"
+        / (
+            f"{mix_sha256[:24]}_{_safe_slug(modelpack_id)}_"
+            f"{_safe_slug(version)}_{weight_sha[:12]}_sh{max(1, shifts)}"
+        )
+    )
 
 
 def _read_wav_tensor(path: Path) -> tuple[Any, int]:
@@ -1305,6 +2214,53 @@ def _synthesize_mix_wav_from_input_stems(dst_wav: Path, config: dict[str, Any]) 
     return _wav_duration_sec(dst_wav)
 
 
+def _is_safe_demucs_cache_stem_filename(filename: str) -> bool:
+    value = filename.strip()
+    if not value or "\\" in value or "/" in value or ":" in value:
+        return False
+    path = Path(value)
+    return path.name == value and path.suffix.lower() == ".wav" and path.stem.strip() != ""
+
+
+def _demucs_cache_meta_matches(
+    cache_meta: dict[str, Any],
+    *,
+    cache_dir: Path,
+    mix_sha256: str,
+    modelpack_id: str,
+    version: str,
+    architecture: str,
+    weight_sha: str,
+    shifts: int,
+) -> bool:
+    expected = {
+        "provider": DEMUCS_PROVIDER,
+        "mix_sha256": mix_sha256,
+        "modelpack_id": modelpack_id,
+        "modelpack_version": version,
+        "architecture": architecture,
+        "weight_sha256": weight_sha,
+        "shifts": int(max(1, shifts)),
+    }
+    for key, value in expected.items():
+        if cache_meta.get(key) != value:
+            return False
+
+    stem_files = cache_meta.get("stem_files", {})
+    if not isinstance(stem_files, dict) or not stem_files:
+        return False
+    for stem_name, filename in stem_files.items():
+        stem_role = str(stem_name).strip().lower()
+        file_name = str(filename)
+        if stem_role not in KNOWN_INPUT_STEM_ROLES:
+            return False
+        if not _is_safe_demucs_cache_stem_filename(file_name):
+            return False
+        if not (cache_dir / file_name).is_file():
+            return False
+    return True
+
+
 def _copy_cached_stems(
     cache_dir: Path,
     stems_dir: Path,
@@ -1327,18 +2283,21 @@ def _copy_cached_stems(
     protected_set = {str(r).strip().lower() for r in (protected_roles or [])}
     out: dict[str, str] = {}
     for stem_name, filename in stem_files.items():
+        stem_role = str(stem_name).strip().lower()
+        if stem_role not in KNOWN_INPUT_STEM_ROLES or not _is_safe_demucs_cache_stem_filename(str(filename)):
+            continue
         src = cache_dir / filename
         dst = stems_dir / filename
-        if stem_name.strip().lower() in protected_set and dst.is_file():
+        if stem_role in protected_set and dst.is_file():
             # User-supplied input stem already on disk -- keep it. Skip the
             # cache->pack copy for this role and report the existing file
             # path so the caller's manifest stays consistent.
-            out[stem_name] = f"audio/stems/{filename}"
+            out[stem_role] = f"audio/stems/{filename}"
             continue
         if not src.is_file():
             continue
         shutil.copyfile(src, dst)
-        out[stem_name] = f"audio/stems/{filename}"
+        out[stem_role] = f"audio/stems/{filename}"
     return out
 
 
@@ -1360,6 +2319,39 @@ def _separate_stems_with_demucs(
     if modelpack_zip is None or modelpack_manifest is None:
         return {"ok": False, "status": "skipped", "reason": err or "demucs modelpack unavailable"}
 
+    modelpack_id = _demucs_modelpack_id_from_manifest(modelpack_manifest)
+    if modelpack_id == DEMUCS_FT_DRUMS_MODELPACK_ID:
+        return _separate_stems_with_demucs_ft_drums(
+            mix_wav,
+            stems_dir,
+            mix_sha256=mix_sha256,
+            shifts=shifts,
+            modelpack_zip=modelpack_zip,
+            modelpack_manifest=modelpack_manifest,
+            protected_roles=protected_roles,
+        )
+
+    return _separate_stems_with_demucs_single_model(
+        mix_wav,
+        stems_dir,
+        mix_sha256=mix_sha256,
+        shifts=shifts,
+        modelpack_zip=modelpack_zip,
+        modelpack_manifest=modelpack_manifest,
+        protected_roles=protected_roles,
+    )
+
+
+def _separate_stems_with_demucs_single_model(
+    mix_wav: Path,
+    stems_dir: Path,
+    *,
+    mix_sha256: str,
+    shifts: int,
+    modelpack_zip: Path,
+    modelpack_manifest: dict[str, Any],
+    protected_roles: Iterable[str] | None = None,
+) -> dict[str, Any]:
     try:
         from demucs.apply import apply_model
         from demucs.audio import convert_audio
@@ -1372,12 +2364,15 @@ def _separate_stems_with_demucs(
         return {"ok": False, "status": "skipped", "reason": f"demucs modelpack prepare failed: {exc}"}
 
     version = str(modelpack_manifest.get("version", "unknown")).strip() or "unknown"
+    modelpack_id = _demucs_modelpack_id_from_manifest(modelpack_manifest)
     architecture = str(modelpack_manifest.get("architecture", "unknown")).strip() or "unknown"
     weight_sha = str(weight_info.get("sha256", "")).strip().lower()
-    sep_cache_dir = (
-        Path(tempfile.gettempdir())
-        / "auralprimer_demucs_stem_cache"
-        / f"{mix_sha256[:24]}_{_safe_slug(version)}_{weight_sha[:12] or 'nocheck'}_sh{max(1, shifts)}"
+    sep_cache_dir = _demucs_separation_cache_dir(
+        mix_sha256=mix_sha256,
+        modelpack_id=modelpack_id,
+        version=version,
+        weight_sha=weight_sha,
+        shifts=shifts,
     )
     sep_cache_dir.mkdir(parents=True, exist_ok=True)
     cache_meta_path = sep_cache_dir / "separation_meta.json"
@@ -1385,26 +2380,34 @@ def _separate_stems_with_demucs(
     if cache_meta_path.is_file():
         try:
             cache_meta = json.loads(cache_meta_path.read_text("utf-8"))
-            if isinstance(cache_meta, dict):
+            if isinstance(cache_meta, dict) and _demucs_cache_meta_matches(
+                cache_meta,
+                cache_dir=sep_cache_dir,
+                mix_sha256=mix_sha256,
+                modelpack_id=modelpack_id,
+                version=version,
+                architecture=architecture,
+                weight_sha=weight_sha,
+                shifts=shifts,
+            ):
                 stem_files = cache_meta.get("stem_files", {})
-                if isinstance(stem_files, dict) and all((sep_cache_dir / name).is_file() for name in stem_files.values()):
-                    stem_paths = _copy_cached_stems(
-                        sep_cache_dir, stems_dir, stem_files,
-                        protected_roles=protected_roles,
-                    )
-                    return {
-                        "ok": True,
-                        "status": "cached",
-                        "provider": DEMUCS_PROVIDER,
-                        "modelpack_id": DEMUCS_MODELPACK_ID,
-                        "modelpack_version": version,
-                        "architecture": architecture,
-                        "modelpack_path": str(modelpack_zip),
-                        "weight_path": str(weight_path),
-                        "stem_paths": stem_paths,
-                        "cache_hit": True,
-                        "shifts": int(max(1, shifts)),
-                    }
+                stem_paths = _copy_cached_stems(
+                    sep_cache_dir, stems_dir, stem_files,
+                    protected_roles=protected_roles,
+                )
+                return {
+                    "ok": True,
+                    "status": "cached",
+                    "provider": DEMUCS_PROVIDER,
+                    "modelpack_id": modelpack_id,
+                    "modelpack_version": version,
+                    "architecture": architecture,
+                    "modelpack_path": str(modelpack_zip),
+                    "weight_path": str(weight_path),
+                    "stem_paths": stem_paths,
+                    "cache_hit": True,
+                    "shifts": int(max(1, shifts)),
+                }
         except Exception:
             pass
 
@@ -1440,9 +2443,11 @@ def _separate_stems_with_demucs(
 
         cache_meta = {
             "provider": DEMUCS_PROVIDER,
-            "modelpack_id": DEMUCS_MODELPACK_ID,
+            "mix_sha256": mix_sha256,
+            "modelpack_id": modelpack_id,
             "modelpack_version": version,
             "architecture": architecture,
+            "weight_sha256": weight_sha,
             "modelpack_path": str(modelpack_zip),
             "weight_path": str(weight_path),
             "samplerate": int(model.samplerate),
@@ -1463,7 +2468,7 @@ def _separate_stems_with_demucs(
             "ok": True,
             "status": "fresh",
             "provider": DEMUCS_PROVIDER,
-            "modelpack_id": DEMUCS_MODELPACK_ID,
+            "modelpack_id": modelpack_id,
             "modelpack_version": version,
             "architecture": architecture,
             "modelpack_path": str(modelpack_zip),
@@ -1477,12 +2482,127 @@ def _separate_stems_with_demucs(
         return {"ok": False, "status": "skipped", "reason": f"demucs separation failed: {exc}"}
 
 
+def _separate_stems_with_demucs_ft_drums(
+    mix_wav: Path,
+    stems_dir: Path,
+    *,
+    mix_sha256: str,
+    shifts: int,
+    modelpack_zip: Path,
+    modelpack_manifest: dict[str, Any],
+    protected_roles: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """Run default Demucs for full stems, then replace drums with FT output."""
+
+    baseline_zip, baseline_manifest, baseline_err = _resolve_demucs_modelpack(
+        {"stem_separation_modelpack_id": DEMUCS_MODELPACK_ID}
+    )
+    if baseline_zip is None or baseline_manifest is None:
+        return {
+            "ok": False,
+            "status": "skipped",
+            "reason": f"demucs_ft_drums baseline modelpack unavailable: {baseline_err or 'demucs_6 unavailable'}",
+            "provider": DEMUCS_PROVIDER,
+            "modelpack_id": DEMUCS_FT_DRUMS_MODELPACK_ID,
+        }
+
+    baseline = _separate_stems_with_demucs_single_model(
+        mix_wav,
+        stems_dir,
+        mix_sha256=mix_sha256,
+        shifts=shifts,
+        modelpack_zip=baseline_zip,
+        modelpack_manifest=baseline_manifest,
+        protected_roles=protected_roles,
+    )
+    if not baseline.get("ok"):
+        return {
+            "ok": False,
+            "status": "skipped",
+            "reason": f"demucs_ft_drums baseline separation failed: {baseline.get('reason') or baseline.get('status')}",
+            "provider": DEMUCS_PROVIDER,
+            "modelpack_id": DEMUCS_FT_DRUMS_MODELPACK_ID,
+            "baseline_result": baseline,
+        }
+
+    refinement = _separate_stems_with_demucs_single_model(
+        mix_wav,
+        stems_dir,
+        mix_sha256=mix_sha256,
+        shifts=shifts,
+        modelpack_zip=modelpack_zip,
+        modelpack_manifest=modelpack_manifest,
+        protected_roles=protected_roles,
+    )
+    if not refinement.get("ok"):
+        return {
+            "ok": False,
+            "status": "skipped",
+            "reason": f"demucs_ft_drums refinement failed: {refinement.get('reason') or refinement.get('status')}",
+            "provider": DEMUCS_PROVIDER,
+            "modelpack_id": DEMUCS_FT_DRUMS_MODELPACK_ID,
+            "baseline_result": baseline,
+            "refinement_result": refinement,
+        }
+
+    baseline_paths = baseline.get("stem_paths")
+    refinement_paths = refinement.get("stem_paths")
+    if not isinstance(baseline_paths, dict) or not isinstance(refinement_paths, dict):
+        return {
+            "ok": False,
+            "status": "skipped",
+            "reason": "demucs_ft_drums requires baseline and refinement stem_paths",
+            "provider": DEMUCS_PROVIDER,
+            "modelpack_id": DEMUCS_FT_DRUMS_MODELPACK_ID,
+            "baseline_result": baseline,
+            "refinement_result": refinement,
+        }
+    refined_drums = refinement_paths.get("drums")
+    if not isinstance(refined_drums, str) or not refined_drums.strip():
+        return {
+            "ok": False,
+            "status": "skipped",
+            "reason": "demucs_ft_drums refinement did not produce a drums stem",
+            "provider": DEMUCS_PROVIDER,
+            "modelpack_id": DEMUCS_FT_DRUMS_MODELPACK_ID,
+            "baseline_result": baseline,
+            "refinement_result": refinement,
+        }
+
+    version = str(modelpack_manifest.get("version", "unknown")).strip() or "unknown"
+    architecture = str(modelpack_manifest.get("architecture", "unknown")).strip() or "unknown"
+    baseline_manifest_id = _demucs_modelpack_id_from_manifest(baseline_manifest)
+    stem_paths = {str(role): str(path) for role, path in baseline_paths.items()}
+    stem_paths["drums"] = refined_drums
+    status = "cached" if baseline.get("status") == "cached" and refinement.get("status") == "cached" else "fresh"
+
+    return {
+        "ok": True,
+        "status": status,
+        "provider": DEMUCS_PROVIDER,
+        "modelpack_id": DEMUCS_FT_DRUMS_MODELPACK_ID,
+        "modelpack_version": version,
+        "architecture": architecture,
+        "modelpack_path": str(modelpack_zip),
+        "stem_paths": stem_paths,
+        "cache_hit": status == "cached",
+        "shifts": int(max(1, shifts)),
+        "composite": True,
+        "refinement_role": "drums",
+        "baseline_modelpack_id": baseline_manifest_id,
+        "baseline_modelpack_version": baseline.get("modelpack_version"),
+        "baseline_result": baseline,
+        "refinement_result": refinement,
+    }
+
+
 MIDI_TICKS_PER_QUARTER = 480
 MIDI_CHANNEL_BASS = 0
 MIDI_CHANNEL_RHYTHM_GUITAR = 1
 MIDI_CHANNEL_LEAD_GUITAR = 2
 MIDI_CHANNEL_KEYS = 3
 MIDI_CHANNEL_MELODIC = 4  # legacy fallback
+MIDI_CHANNEL_VOCALS = 5
 MIDI_CHANNEL_DRUMS = 9
 MIDI_CHANNEL_STRUCTURE = 15
 DRUM_AUDIT_DEFAULT_THRESHOLDS_DBFS: tuple[float, ...] = (-50.0, -45.0, -40.0)
@@ -1522,6 +2642,7 @@ _INSTRUMENT_MIDI_CHANNELS: dict[str, int] = {
     "lead_guitar": MIDI_CHANNEL_LEAD_GUITAR,
     "keys": MIDI_CHANNEL_KEYS,
     "melodic": MIDI_CHANNEL_MELODIC,
+    "vocals": MIDI_CHANNEL_VOCALS,
 }
 
 # Pretty track names for MIDI output.
@@ -1531,6 +2652,7 @@ _INSTRUMENT_TRACK_NAMES: dict[str, str] = {
     "lead_guitar": "Lead Guitar",
     "keys": "Keys",
     "melodic": "Melodic",
+    "vocals": "Vocals",
 }
 
 
@@ -1715,7 +2837,7 @@ def _build_notes_mid_bytes(
 
     if instrument_tracks:
         # Write each instrument as a separate MIDI track with dedicated channel.
-        for role in ("bass", "rhythm_guitar", "lead_guitar", "keys"):
+        for role in ("bass", "rhythm_guitar", "lead_guitar", "keys", "vocals"):
             notes = instrument_tracks.get(role)
             if not notes:
                 continue
@@ -1895,13 +3017,14 @@ def _resolve_transcription_options(
                 # importing without it are paying a meaningful drum
                 # transcription quality cost.
                 provider_name = "none"
+                requested_demucs_id = _requested_demucs_modelpack_id(config) or DEMUCS_MODELPACK_ID
                 warnings.append(
                     "stem_separation_provider=auto fell through to 'none' because the "
-                    f"{DEMUCS_MODELPACK_ID} modelpack was not found "
+                    f"{requested_demucs_id} modelpack was not found "
                     f"({modelpack_err or 'no candidates checked'}); production drum "
                     "transcription quality is reduced without Demucs preprocessing"
                 )
-    elif provider_name not in {DEMUCS_PROVIDER, "none"} and not provider_path:
+    elif provider_name not in {DEMUCS_PROVIDER, ROFORMER_PROVIDER, "none"} and not provider_path:
         provider_path = str(raw_provider).strip()
         provider_name = "external"
 
@@ -1992,6 +3115,8 @@ def _add_transcription_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--beat-analysis-mode", default=DEFAULT_BEAT_ANALYSIS_MODE)
     p.add_argument("--stem-separation-provider", default=DEFAULT_STEM_SEPARATION_PROVIDER)
     p.add_argument("--stem-separation-provider-path")
+    p.add_argument("--stem-separation-modelpack-id")
+    p.add_argument("--demucs-modelpack-zip-path")
     p.add_argument("--shifts", type=int, default=1)
     p.add_argument("--multi-filter", action="store_true")
     p.add_argument(
@@ -2626,60 +3751,172 @@ def _validate_events_json_matches_notes_mid(root: Path) -> dict[str, Any] | None
 def _validate_feedpak(root: Path) -> int:
     """Validate a ``.feedpak`` pack (manifest.yaml layout).
 
-    Checks the layout emitted by ``feedpak_writer.write_feedpak``: the manifest
-    parses, every ``stems[].file`` and ``arrangements[].notation`` exists, and
-    the referenced ``song_timeline`` / ``drum_tab`` JSON documents parse.
-    Feedpaks are stems-only — there is intentionally no ``audio/mix.wav``
-    requirement.
+    Checks manifest-referenced artifacts emitted by ``feedpak_writer.write_feedpak``:
+    stems, arrangements, MIDI/artifact pointers, model JSON documents, and
+    directory outputs must stay inside the pack and exist; schema-known JSON
+    artifacts must validate. Feedpaks are stems-only; there is intentionally no
+    ``audio/mix.wav`` requirement.
     """
     import yaml
+
+    from . import feedpak_validate
 
     try:
         manifest = yaml.safe_load((root / "manifest.yaml").read_text("utf-8"))
         if not isinstance(manifest, dict):
             raise ValueError("manifest.yaml must be a YAML mapping")
+        manifest_errors = feedpak_validate.iter_errors(manifest, "manifest.schema.json")
+        if manifest_errors:
+            raise ValueError(f"schema invalid: {'; '.join(manifest_errors)}")
     except Exception as e:
         print(json.dumps({"ok": False, "error": f"manifest.yaml: {e}"}, sort_keys=True))
         return 1
 
-    referenced: list[str] = []
-    for list_key, path_key in (("stems", "file"), ("arrangements", "notation")):
-        entries = manifest.get(list_key)
-        if not isinstance(entries, list) or not entries:
-            print(
-                json.dumps(
-                    {"ok": False, "error": f"manifest.yaml {list_key} must be a non-empty list"},
-                    sort_keys=True,
-                )
-            )
-            return 1
-        for entry in entries:
-            rel = entry.get(path_key) if isinstance(entry, dict) else None
-            if not isinstance(rel, str) or not rel:
-                print(
-                    json.dumps(
-                        {"ok": False, "error": f"manifest.yaml {list_key}[] entries must set {path_key}"},
-                        sort_keys=True,
-                    )
-                )
-                return 1
-            referenced.append(rel)
-
+    file_refs: list[str] = []
+    path_refs: list[str] = []
     json_refs: list[str] = []
-    for key in ("song_timeline", "drum_tab"):
-        rel = manifest.get(key)
-        if isinstance(rel, str) and rel:
-            referenced.append(rel)
-            json_refs.append(rel)
+    schema_refs: dict[str, str] = {}
 
-    missing = [rel for rel in referenced if not (root / rel).is_file()]
+    def rel_error(rel: str) -> str | None:
+        norm = rel.replace("\\", "/")
+        posix_path = PurePosixPath(norm)
+        if not rel.strip():
+            return "must not be empty"
+        if Path(rel).is_absolute() or posix_path.is_absolute():
+            return "must be relative"
+        if ".." in posix_path.parts:
+            return "must not contain '..'"
+        return None
+
+    def add_file_ref(rel: str, *, json_doc: bool = False, schema_name: str | None = None) -> str | None:
+        err = rel_error(rel)
+        if err is not None:
+            return err
+        file_refs.append(rel)
+        if json_doc or schema_name:
+            json_refs.append(rel)
+        if schema_name:
+            schema_refs[rel] = schema_name
+        return None
+
+    def add_path_ref(rel: str) -> str | None:
+        err = rel_error(rel)
+        if err is not None:
+            return err
+        path_refs.append(rel)
+        return None
+
+    def fail_pointer(path: str, detail: str) -> int:
+        print(json.dumps({"ok": False, "error": f"manifest.yaml {path}: {detail}"}, sort_keys=True))
+        return 1
+
+    stems = manifest.get("stems")
+    if not isinstance(stems, list) or not stems:
+        print(json.dumps({"ok": False, "error": "manifest.yaml stems must be a non-empty list"}, sort_keys=True))
+        return 1
+    for idx, entry in enumerate(stems):
+        rel = entry.get("file") if isinstance(entry, dict) else None
+        if not isinstance(rel, str) or not rel:
+            return fail_pointer(f"stems[{idx}].file", "must be a non-empty relpath")
+        err = add_file_ref(rel)
+        if err is not None:
+            return fail_pointer(f"stems[{idx}].file", err)
+
+    arrangements = manifest.get("arrangements")
+    if not isinstance(arrangements, list) or not arrangements:
+        print(
+            json.dumps({"ok": False, "error": "manifest.yaml arrangements must be a non-empty list"}, sort_keys=True)
+        )
+        return 1
+    for idx, entry in enumerate(arrangements):
+        if not isinstance(entry, dict):
+            return fail_pointer(f"arrangements[{idx}]", "must be a mapping")
+        found_arrangement_pointer = False
+        for path_key in ("notation", "file"):
+            rel = entry.get(path_key)
+            if rel is None:
+                continue
+            if not isinstance(rel, str) or not rel:
+                return fail_pointer(f"arrangements[{idx}].{path_key}", "must be a non-empty relpath")
+            schema_name = "notation.schema.json" if path_key == "notation" else "arrangement.schema.json"
+            err = add_file_ref(rel, schema_name=schema_name)
+            if err is not None:
+                return fail_pointer(f"arrangements[{idx}].{path_key}", err)
+            found_arrangement_pointer = True
+        if not found_arrangement_pointer:
+            return fail_pointer(f"arrangements[{idx}]", "must set file or notation")
+
+    sidecar_schemas = {
+        "lyrics": "lyrics.schema.json",
+        "song_timeline": "song-timeline.schema.json",
+        "drum_tab": "drum-tab.schema.json",
+        "keys": "keys.schema.json",
+        "harmony": "harmony.schema.json",
+        "vocal_pitch": "vocal-pitch.schema.json",
+        "vocal_pitch_contour": "vocal-pitch-contour.schema.json",
+    }
+    for key, schema_name in sidecar_schemas.items():
+        rel = manifest.get(key)
+        if rel is None:
+            continue
+        if not isinstance(rel, str) or not rel:
+            return fail_pointer(key, "must be a non-empty relpath")
+        err = add_file_ref(rel, schema_name=schema_name)
+        if err is not None:
+            return fail_pointer(key, err)
+
+    rel = manifest.get("aural_notes_mid")
+    if rel is not None:
+        if not isinstance(rel, str) or not rel:
+            return fail_pointer("aural_notes_mid", "must be a non-empty relpath")
+        err = add_file_ref(rel)
+        if err is not None:
+            return fail_pointer("aural_notes_mid", err)
+
+    for key in ("aural_spectrogram", "aural_benchmark"):
+        rel = manifest.get(key)
+        if rel is None:
+            continue
+        if not isinstance(rel, str) or not rel:
+            return fail_pointer(key, "must be a non-empty relpath")
+        err = add_path_ref(rel)
+        if err is not None:
+            return fail_pointer(key, err)
+
+    for key in ("aural_refine_candidates", "aural_fingering"):
+        raw = manifest.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, dict):
+            return fail_pointer(key, "must be a mapping of role to relpath")
+        for role, rel in raw.items():
+            if not isinstance(rel, str) or not rel:
+                return fail_pointer(f"{key}.{role}", "must be a non-empty relpath")
+            err = add_file_ref(
+                rel,
+                json_doc=True,
+                schema_name="aural-fingering.schema.json" if key == "aural_fingering" else None,
+            )
+            if err is not None:
+                return fail_pointer(f"{key}.{role}", err)
+
+    missing = [rel for rel in file_refs if not (root / rel).is_file()]
+    missing.extend(rel for rel in path_refs if not (root / rel).exists())
     if missing:
         print(json.dumps({"ok": False, "missing": missing}, sort_keys=True))
         return 1
 
     try:
         for rel in json_refs:
-            json.loads((root / rel).read_text("utf-8"))
+            try:
+                payload = json.loads((root / rel).read_text("utf-8"))
+            except Exception as e:
+                raise ValueError(f"{rel}: {e}") from e
+            schema_name = schema_refs.get(rel)
+            if schema_name:
+                errors = feedpak_validate.iter_errors(payload, schema_name)
+                if errors:
+                    raise ValueError(f"{rel}: schema invalid: {'; '.join(errors)}")
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)}, sort_keys=True))
         return 1
@@ -2891,6 +4128,1302 @@ def cmd_refine_piano(args: argparse.Namespace) -> int:
     return 0
 
 
+def _runtime_dependency_snapshot(module_name: str, dependency_policy: dict[str, Any]) -> dict[str, Any]:
+    distribution_name = str(dependency_policy.get("distribution") or module_name)
+    payload: dict[str, Any] = {
+        **dependency_policy,
+        "distribution": distribution_name,
+    }
+    try:
+        payload["installed"] = True
+        payload["installed_version"] = importlib.metadata.version(distribution_name)
+    except importlib.metadata.PackageNotFoundError:
+        payload["installed"] = False
+        payload["installed_error"] = "distribution not installed"
+    except Exception as exc:
+        payload["installed"] = False
+        payload["installed_error"] = str(exc)
+
+    try:
+        module = importlib.import_module(module_name)
+        payload["ok"] = True
+        payload["version"] = getattr(
+            module,
+            "__version__",
+            payload.get("installed_version", "unknown"),
+        )
+    except Exception as exc:
+        payload["ok"] = False
+        payload["error"] = str(exc)
+        if "installed_version" in payload:
+            payload["version"] = payload["installed_version"]
+
+    return payload
+
+
+def _basic_pitch_runtime_feature(
+    basic_pitch_model_asset: dict[str, Any],
+    dependencies: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    basic_pitch_dep = dependencies.get("basic_pitch", {})
+    basic_pitch_inference_dep = dependencies.get("basic_pitch.inference", {})
+    onnxruntime_dep = dependencies.get("onnxruntime", {})
+    tensorflow_dep = dependencies.get("tensorflow", {})
+    model_path = str(basic_pitch_model_asset.get("path") or "")
+    model_path_lower = model_path.lower()
+    model_installed = bool(basic_pitch_model_asset.get("ok"))
+    if not model_installed:
+        backend = "unresolved"
+        backend_dependency_key: str | None = None
+        backend_dep: dict[str, Any] = {}
+    elif model_path_lower.endswith(".onnx"):
+        backend = "onnx"
+        backend_dependency_key = "onnxruntime"
+        backend_dep = onnxruntime_dep
+    elif model_path_lower.endswith(".tflite"):
+        backend = "tflite"
+        backend_dependency_key = "tensorflow"
+        backend_dep = tensorflow_dep
+    else:
+        backend = "tensorflow_saved_model"
+        backend_dependency_key = "tensorflow"
+        backend_dep = tensorflow_dep
+
+    missing: list[str] = []
+    if not basic_pitch_model_asset.get("ok"):
+        missing.append("basic_pitch_model")
+    if not basic_pitch_dep.get("ok"):
+        missing.append("basic_pitch")
+    if not basic_pitch_inference_dep.get("ok"):
+        missing.append("basic_pitch.inference")
+    if backend_dependency_key is not None and not backend_dep.get("ok"):
+        missing.append(backend_dependency_key)
+
+    dependency_warnings: list[str] = []
+    if not tensorflow_dep.get("ok"):
+        dependency_warnings.append("tensorflow")
+
+    payload: dict[str, Any] = {
+        "enabled": not missing,
+        "backend": backend,
+        "backend_dependency": backend_dependency_key,
+        "model_installed": model_installed,
+        "runtime_importable": bool(basic_pitch_dep.get("ok") and basic_pitch_inference_dep.get("ok")),
+        "backend_importable": bool(backend_dependency_key is not None and backend_dep.get("ok")),
+        "package_dependency_health_ok": not dependency_warnings,
+        "methods": [
+            "basic_pitch",
+            "melodic_basic_pitch",
+            "piano_basic_pitch_playable",
+            "piano_basic_pitch",
+            "piano_basic_pitch_clean",
+        ],
+        "fallback_behavior": "auto profiles fall through to non-Basic-Pitch methods; strict Basic Pitch requests fail",
+    }
+    if missing:
+        payload["missing"] = missing
+    if dependency_warnings:
+        payload["dependency_warnings"] = dependency_warnings
+    if basic_pitch_dep.get("error"):
+        payload["runtime_error"] = basic_pitch_dep.get("error")
+    if basic_pitch_inference_dep.get("error"):
+        payload["inference_error"] = basic_pitch_inference_dep.get("error")
+    if backend_dep.get("error"):
+        payload["backend_error"] = backend_dep.get("error")
+    return payload
+
+
+BEAT_THIS_REVIEW_EVIDENCE_RELATIVE_PATH = Path("benchmarks") / "meter" / "beat_this_dbn_barline_listening_review.json"
+BEAT_THIS_REVIEW_REQUIRED_CASES: tuple[str, ...] = (
+    "psalm_121_my_help.feedpak",
+    "psalm_130_please_hear_me.feedpak",
+    "psalm_5_every_morning.feedpak",
+)
+MUSDB_SDR_EVIDENCE_GLOB = Path("benchmarks") / "quality" / "runs" / "*_musdb_separation_sdr.json"
+ADTOF_RUNTIME_EVIDENCE_GLOB = Path("benchmarks") / "runtime" / "runs" / "*_adtof_runtime.json"
+DRUM_STEMSEP_RUNTIME_EVIDENCE_GLOB = Path("benchmarks") / "runtime" / "runs" / "*_drum_stemsep_runtime.json"
+RMVPE_RUNTIME_EVIDENCE_GLOB = Path("benchmarks") / "runtime" / "runs" / "*_rmvpe_runtime.json"
+ROFORMER_RUNTIME_EVIDENCE_GLOB = Path("benchmarks") / "runtime" / "runs" / "*_roformer_runtime.json"
+QMUL_HR_GUITAR_RUNTIME_EVIDENCE_GLOB = Path("benchmarks") / "runtime" / "runs" / "*_qmul_hr_guitar_runtime.json"
+MIR_ST500_VOCALS_EVIDENCE_GLOB = Path("benchmarks") / "vocals" / "gt_runs" / "*_mir_st500_vocals.json"
+MODEL_UPGRADE_GATE_EVIDENCE_CHECKLIST = (
+    Path("benchmarks") / "runtime" / "model_upgrade_gate_evidence.md"
+)
+MODEL_UPGRADE_EVIDENCE_ROOT_ENV = "AURAL_MODEL_UPGRADE_EVIDENCE_ROOT"
+
+
+def _model_upgrade_evidence_root() -> Path:
+    raw_root = os.environ.get(MODEL_UPGRADE_EVIDENCE_ROOT_ENV, "").strip()
+    if raw_root:
+        return Path(raw_root).expanduser().resolve()
+
+    def looks_like_evidence_root(path: Path) -> bool:
+        return (path / MODEL_UPGRADE_GATE_EVIDENCE_CHECKLIST).is_file()
+
+    cwd = Path.cwd().resolve()
+    if looks_like_evidence_root(cwd):
+        return cwd
+
+    source_root = Path(__file__).resolve().parents[4]
+    if looks_like_evidence_root(source_root):
+        return source_root
+
+    if getattr(sys, "frozen", False):
+        return cwd
+    return source_root
+
+
+def _evidence_filename_timestamp(path: Path) -> float | None:
+    parts = path.stem.split("_")
+    if len(parts) < 2:
+        return None
+    date_part, time_part = parts[0], parts[1]
+    if not (len(date_part) == 8 and len(time_part) == 6 and date_part.isdigit() and time_part.isdigit()):
+        return None
+    micro_part = parts[2] if len(parts) > 2 and len(parts[2]) == 6 and parts[2].isdigit() else "000000"
+    try:
+        parsed = datetime.strptime(
+            date_part + time_part + micro_part,
+            "%Y%m%d%H%M%S%f",
+        ).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return parsed.timestamp()
+
+
+def _evidence_candidates(pattern: Path) -> list[Path]:
+    if not pattern.parent.exists():
+        return []
+    candidates: list[tuple[int, float, float, Path]] = []
+    for path in pattern.parent.glob(pattern.name):
+        try:
+            stat_result = path.stat()
+        except OSError:
+            continue
+        if not stat.S_ISREG(stat_result.st_mode):
+            continue
+        filename_timestamp = _evidence_filename_timestamp(path)
+        if filename_timestamp is None:
+            candidates.append((0, stat_result.st_mtime, stat_result.st_mtime, path))
+        else:
+            candidates.append((1, filename_timestamp, stat_result.st_mtime, path))
+    return [path for *_sort_key, path in sorted(candidates, reverse=True)]
+
+
+def _is_iso8601_utc_z_timestamp(value: str) -> bool:
+    if "T" not in value or not value.endswith("Z"):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() == timezone.utc.utcoffset(None)
+
+
+def _beat_this_review_evidence_status() -> dict[str, Any]:
+    path = _model_upgrade_evidence_root() / BEAT_THIS_REVIEW_EVIDENCE_RELATIVE_PATH
+    status: dict[str, Any] = {
+        "path": str(path),
+        "exists": path.is_file(),
+        "required_cases": list(BEAT_THIS_REVIEW_REQUIRED_CASES),
+        "reviewed_cases": [],
+        "missing_cases": list(BEAT_THIS_REVIEW_REQUIRED_CASES),
+        "metadata_errors": [],
+        "invalid_cases": [],
+        "ready": False,
+        "reason": None,
+    }
+    if not path.is_file():
+        status["reason"] = f"review evidence not found: {path}"
+        return status
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        status["reason"] = f"could not read review evidence: {exc}"
+        return status
+    if not isinstance(payload, dict):
+        status["reason"] = "review evidence must be a JSON object"
+        return status
+
+    status["version"] = payload.get("version")
+    status["reviewed_by"] = payload.get("reviewed_by")
+    status["reviewed_at_utc"] = payload.get("reviewed_at_utc")
+    status["source_smoke_report"] = payload.get("source_smoke_report")
+    metadata_errors: list[str] = []
+    if payload.get("gate") != "beat_this_barline_listening_review":
+        metadata_errors.append("gate must be 'beat_this_barline_listening_review'")
+    if payload.get("version") != 1:
+        metadata_errors.append("version must be 1")
+    reviewed_by = str(payload.get("reviewed_by") or "").strip()
+    if not reviewed_by or reviewed_by == "TODO":
+        metadata_errors.append("reviewed_by must identify the reviewer")
+    reviewed_at_utc = str(payload.get("reviewed_at_utc") or "").strip()
+    if not reviewed_at_utc or reviewed_at_utc == "TODO":
+        metadata_errors.append("reviewed_at_utc must record the review timestamp")
+    elif not _is_iso8601_utc_z_timestamp(reviewed_at_utc):
+        metadata_errors.append("reviewed_at_utc must be an ISO-8601 UTC timestamp ending in Z")
+    if payload.get("source_smoke_report") != "benchmarks/meter/beat_this_dbn_refresh_meter_smoke.md":
+        metadata_errors.append("source_smoke_report must be 'benchmarks/meter/beat_this_dbn_refresh_meter_smoke.md'")
+    status["metadata_errors"] = metadata_errors
+
+    raw_cases = payload.get("cases")
+    if isinstance(raw_cases, dict):
+        cases = raw_cases
+    elif isinstance(raw_cases, list):
+        cases = {}
+        for item in raw_cases:
+            if isinstance(item, dict):
+                case_id = item.get("id") or item.get("pack") or item.get("name")
+                if isinstance(case_id, str) and case_id.strip():
+                    cases[case_id.strip()] = item
+    else:
+        status["reason"] = "review evidence must contain cases as an object or list"
+        return status
+
+    reviewed: list[str] = []
+    invalid: list[str] = []
+    for case_id in BEAT_THIS_REVIEW_REQUIRED_CASES:
+        item = cases.get(case_id)
+        if not isinstance(item, dict):
+            continue
+        barlines_ok = item.get("barlines_ok") is True
+        listening_ok = item.get("listening_ok") is True
+        if barlines_ok and listening_ok:
+            reviewed.append(case_id)
+        else:
+            missing_flags = [
+                label
+                for label, ok in (("barlines_ok", barlines_ok), ("listening_ok", listening_ok))
+                if not ok
+            ]
+            invalid.append(f"{case_id}: {', '.join(missing_flags)} must be true")
+
+    missing = [case_id for case_id in BEAT_THIS_REVIEW_REQUIRED_CASES if case_id not in reviewed]
+    status["reviewed_cases"] = reviewed
+    status["missing_cases"] = missing
+    status["invalid_cases"] = invalid
+    status["ready"] = not metadata_errors and not missing and not invalid
+    if status["ready"]:
+        status["reason"] = None
+    elif metadata_errors:
+        status["reason"] = "; ".join(metadata_errors)
+    elif invalid:
+        status["reason"] = "; ".join(invalid)
+    else:
+        status["reason"] = "missing reviewed cases: " + ", ".join(missing)
+    return status
+
+
+def _canonical_report_modelpack_id(payload: dict[str, Any]) -> str | None:
+    candidates: list[Any] = [
+        payload.get("modelpack_id"),
+        payload.get("stem_separation_modelpack_id"),
+    ]
+    config = payload.get("config")
+    if isinstance(config, dict):
+        candidates.extend(
+            [
+                config.get("stem_separation_modelpack_id"),
+                config.get("demucs_modelpack_id"),
+            ]
+        )
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not candidate.strip():
+            continue
+        value = _canonical_demucs_modelpack_id(candidate)
+        return value or None
+    return None
+
+
+MUSDB_SDR_EVIDENCE_REQUIRED_ROLES: tuple[str, ...] = ("bass", "drums", "other", "vocals")
+MUSDB_SDR_EVIDENCE_MIN_TRACKS = 10
+MUSDB_SDR_EVIDENCE_REQUIRED_DATASET = "musdb18_or_musdb18_hq"
+MUSDB_SDR_EVIDENCE_REQUIRED_SPLIT = "test"
+MIR_ST500_VOCALS_EVIDENCE_REQUIRED_LIMIT: int | None = None
+
+
+def _musdb_role_summary_rejection(summary: Any) -> str | None:
+    if not isinstance(summary, dict):
+        return "report summary is missing"
+    try:
+        tracks_ok = int(summary.get("tracks_ok") or 0)
+    except (TypeError, ValueError):
+        return "summary.tracks_ok must be numeric"
+    if tracks_ok <= 0:
+        return "summary.tracks_ok must be greater than zero"
+    for key in ("tracks_failed", "tracks_skipped"):
+        try:
+            count = int(summary.get(key) or 0)
+        except (TypeError, ValueError):
+            return f"summary.{key} must be numeric"
+        if count != 0:
+            return f"summary.{key} must be zero"
+    if tracks_ok < MUSDB_SDR_EVIDENCE_MIN_TRACKS:
+        return f"summary.tracks_ok must be at least {MUSDB_SDR_EVIDENCE_MIN_TRACKS}"
+    try:
+        median_sdr_mean = float(summary.get("median_sdr_mean"))
+    except (TypeError, ValueError):
+        return "summary.median_sdr_mean must be numeric"
+    if not math.isfinite(median_sdr_mean):
+        return "summary.median_sdr_mean must be finite"
+    role_summary = summary.get("role_summary")
+    if not isinstance(role_summary, dict):
+        return "summary.role_summary is missing"
+    for role in MUSDB_SDR_EVIDENCE_REQUIRED_ROLES:
+        metrics = role_summary.get(role)
+        if not isinstance(metrics, dict):
+            return f"summary.role_summary.{role} is missing"
+        try:
+            track_count = int(metrics.get("track_count") or 0)
+        except (TypeError, ValueError):
+            track_count = 0
+        if track_count <= 0:
+            return f"summary.role_summary.{role}.track_count must be greater than zero"
+        if track_count != tracks_ok:
+            return f"summary.role_summary.{role}.track_count must equal summary.tracks_ok"
+        try:
+            median_sdr_mean = float(metrics.get("median_sdr_mean"))
+        except (TypeError, ValueError):
+            return f"summary.role_summary.{role}.median_sdr_mean must be numeric"
+        if not math.isfinite(median_sdr_mean):
+            return f"summary.role_summary.{role}.median_sdr_mean must be finite"
+    return None
+
+
+def _musdb_sdr_report_evidence_status(
+    *,
+    provider: str,
+    required_modelpack_id: str | None = None,
+) -> dict[str, Any]:
+    root = _model_upgrade_evidence_root()
+    pattern = root / MUSDB_SDR_EVIDENCE_GLOB
+    candidates = _evidence_candidates(pattern)
+    status: dict[str, Any] = {
+        "glob": str(pattern),
+        "provider": provider,
+        "required_modelpack_id": required_modelpack_id,
+        "required_dataset": MUSDB_SDR_EVIDENCE_REQUIRED_DATASET,
+        "required_split": MUSDB_SDR_EVIDENCE_REQUIRED_SPLIT,
+        "latest_matching_identity_only": True,
+        "candidate_count": len(candidates),
+        "matching_identity_candidate_count": 0,
+        "candidates_checked": 0,
+        "rejection_count": 0,
+        "rejections": [],
+        "path": None,
+        "summary": None,
+        "ready": False,
+        "reason": None,
+    }
+    failures: list[str] = []
+
+    def reject(path: Path, reason: str, payload: dict[str, Any] | None = None) -> None:
+        failures.append(f"{path}: {reason}")
+        rejection: dict[str, Any] = {"path": str(path), "reason": reason}
+        if payload is not None:
+            rejection["provider"] = payload.get("provider")
+            rejection["modelpack_id"] = _canonical_report_modelpack_id(payload)
+            rejection["dataset"] = payload.get("dataset")
+            rejection["split"] = payload.get("split")
+            rejection["ok"] = payload.get("ok")
+            summary = payload.get("summary")
+            if isinstance(summary, dict):
+                rejection["tracks_ok"] = summary.get("tracks_ok")
+                rejection["median_sdr_mean"] = summary.get("median_sdr_mean")
+        status["rejection_count"] = int(status["rejection_count"]) + 1
+        if len(status["rejections"]) < 10:
+            status["rejections"].append(rejection)
+
+    for path in candidates:
+        status["candidates_checked"] = int(status["candidates_checked"]) + 1
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            reject(path, f"could not read report: {exc}")
+            continue
+        if not isinstance(payload, dict):
+            reject(path, "report is not a JSON object")
+            continue
+        if payload.get("provider") != provider:
+            reject(path, f"provider is {payload.get('provider')!r}, expected {provider!r}", payload)
+            continue
+        report_modelpack_id = _canonical_report_modelpack_id(payload)
+        if required_modelpack_id is not None and report_modelpack_id != required_modelpack_id:
+            reject(path, f"modelpack id is {report_modelpack_id!r}, expected {required_modelpack_id!r}", payload)
+            continue
+        if (
+            required_modelpack_id is None
+            and provider == DEMUCS_PROVIDER
+            and report_modelpack_id not in (None, DEMUCS_MODELPACK_ID)
+        ):
+            reject(path, "non-default Demucs report does not satisfy the default Demucs baseline", payload)
+            continue
+        status["matching_identity_candidate_count"] = int(status["matching_identity_candidate_count"]) + 1
+        report_dataset = payload.get("dataset")
+        if report_dataset != MUSDB_SDR_EVIDENCE_REQUIRED_DATASET:
+            reject(
+                path,
+                (
+                    f"dataset is {report_dataset!r}, "
+                    f"expected {MUSDB_SDR_EVIDENCE_REQUIRED_DATASET!r}"
+                ),
+                payload,
+            )
+            break
+        report_split = payload.get("split")
+        if report_split != MUSDB_SDR_EVIDENCE_REQUIRED_SPLIT:
+            reject(
+                path,
+                f"split is {report_split!r}, expected {MUSDB_SDR_EVIDENCE_REQUIRED_SPLIT!r}",
+                payload,
+            )
+            break
+        summary = payload.get("summary")
+        tracks_ok = 0
+        if isinstance(summary, dict):
+            try:
+                tracks_ok = int(summary.get("tracks_ok") or 0)
+            except (TypeError, ValueError):
+                tracks_ok = 0
+        if payload.get("ok") is not True or tracks_ok <= 0:
+            reject(path, "report did not complete with at least one successful track", payload)
+            break
+        role_summary_rejection = _musdb_role_summary_rejection(summary)
+        if role_summary_rejection is not None:
+            reject(path, role_summary_rejection, payload)
+            break
+        status.update(
+            {
+                "path": str(path),
+                "summary": summary,
+                "ready": True,
+                "reason": None,
+                "modelpack_id": report_modelpack_id,
+            }
+        )
+        return status
+
+    status["reason"] = (
+        "no successful MUSDB SDR report found"
+        if not failures
+        else "no successful MUSDB SDR report found; " + "; ".join(failures[:3])
+    )
+    return status
+
+
+def _musdb_sdr_comparison_status(
+    *,
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    baseline_label: str,
+    candidate_label: str,
+) -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "baseline": baseline_label,
+        "candidate": candidate_label,
+        "metric": "summary.median_sdr_mean",
+        "baseline_value": None,
+        "candidate_value": None,
+        "delta": None,
+        "ready": False,
+        "reason": None,
+    }
+    if not baseline.get("ready"):
+        status["reason"] = f"{baseline_label} evidence is not ready"
+        return status
+    if not candidate.get("ready"):
+        status["reason"] = f"{candidate_label} evidence is not ready"
+        return status
+    try:
+        baseline_value = float((baseline.get("summary") or {}).get("median_sdr_mean"))
+        candidate_value = float((candidate.get("summary") or {}).get("median_sdr_mean"))
+    except (AttributeError, TypeError, ValueError):
+        status["reason"] = "comparison summaries must provide numeric median_sdr_mean"
+        return status
+    if not math.isfinite(baseline_value) or not math.isfinite(candidate_value):
+        status["reason"] = "comparison summaries must provide finite median_sdr_mean"
+        return status
+    delta = candidate_value - baseline_value
+    status.update(
+        {
+            "baseline_value": baseline_value,
+            "candidate_value": candidate_value,
+            "delta": delta,
+        }
+    )
+    if delta < 0.0:
+        status["reason"] = (
+            f"{candidate_label} median_sdr_mean {candidate_value:.6f} is below "
+            f"{baseline_label} {baseline_value:.6f}"
+        )
+        return status
+    status["ready"] = True
+    return status
+
+
+def _runtime_validation_report_evidence_status(
+    *,
+    evidence_glob: Path,
+    engine: str,
+    required_bool: str | None = None,
+    count_field: str | None = None,
+    allowed_statuses: Iterable[str] | None = None,
+    identity_field: str = "engine",
+    required_roles: Iterable[str] | None = None,
+    runtime_required_field: str | None = None,
+) -> dict[str, Any]:
+    root = _model_upgrade_evidence_root()
+    pattern = root / evidence_glob
+    candidates = _evidence_candidates(pattern)
+    allowed_status_set = {str(item) for item in (allowed_statuses or [])}
+    required_role_set = {str(role).strip().lower() for role in (required_roles or []) if str(role).strip()}
+    status: dict[str, Any] = {
+        "glob": str(pattern),
+        "engine": engine,
+        "identity_field": identity_field,
+        "required_bool": required_bool,
+        "count_field": count_field,
+        "runtime_required_field": runtime_required_field,
+        "allowed_statuses": sorted(allowed_status_set),
+        "required_roles": sorted(required_role_set),
+        "latest_candidate_only": True,
+        "candidate_count": len(candidates),
+        "candidates_checked": 0,
+        "rejection_count": 0,
+        "rejections": [],
+        "path": None,
+        "report": None,
+        "ready": False,
+        "reason": None,
+    }
+    failures: list[str] = []
+
+    def reject(path: Path, reason: str, payload: dict[str, Any] | None = None) -> None:
+        failures.append(f"{path}: {reason}")
+        rejection: dict[str, Any] = {"path": str(path), "reason": reason}
+        if payload is not None:
+            rejection[identity_field] = payload.get(identity_field)
+            rejection["ok"] = payload.get("ok")
+            rejection["status"] = payload.get("status")
+            if required_bool is not None:
+                rejection[required_bool] = payload.get(required_bool)
+            if count_field is not None:
+                rejection[count_field] = payload.get(count_field)
+                if count_field == "event_count":
+                    rejection["events"] = payload.get("events")
+                if count_field == "note_count":
+                    rejection["notes"] = payload.get("notes")
+            if required_role_set:
+                rejection["roles"] = payload.get("roles")
+                rejection["require_roles"] = payload.get("require_roles")
+                rejection["missing_roles"] = payload.get("missing_roles")
+                rejection["stem_paths"] = payload.get("stem_paths")
+            rejection["runtime"] = payload.get("runtime")
+        status["rejection_count"] = int(status["rejection_count"]) + 1
+        if len(status["rejections"]) < 10:
+            status["rejections"].append(rejection)
+
+    for path in candidates[:1]:
+        status["candidates_checked"] = int(status["candidates_checked"]) + 1
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            reject(path, f"could not read report: {exc}")
+            continue
+        if not isinstance(payload, dict):
+            reject(path, "report is not a JSON object")
+            continue
+        if payload.get(identity_field) != engine:
+            reject(path, f"{identity_field} is {payload.get(identity_field)!r}, expected {engine!r}", payload)
+            continue
+        if payload.get("ok") is not True:
+            reject(path, "runtime validation report ok is not true", payload)
+            continue
+        if allowed_status_set and str(payload.get("status")) not in allowed_status_set:
+            reject(path, f"status is {payload.get('status')!r}, expected one of {sorted(allowed_status_set)!r}", payload)
+            continue
+        if required_bool is not None and payload.get(required_bool) is not True:
+            reject(path, f"{required_bool} must be true", payload)
+            continue
+        if count_field is not None:
+            raw_count = payload.get(count_field)
+            if type(raw_count) is not int:
+                reject(path, f"{count_field} must be an integer greater than zero", payload)
+                continue
+            count = raw_count
+            if count <= 0:
+                reject(path, f"{count_field} must be greater than zero", payload)
+                continue
+            array_field = {"event_count": "events", "note_count": "notes"}.get(count_field)
+            if array_field is not None:
+                items = payload.get(array_field)
+                if not isinstance(items, list):
+                    reject(path, f"report is missing {array_field}[]", payload)
+                    continue
+                if len(items) != count:
+                    reject(path, f"{array_field} length must equal {count_field}", payload)
+                    continue
+                if not items:
+                    reject(path, f"{array_field}[] must not be empty", payload)
+                    continue
+                item_rejection = None
+                for idx, item in enumerate(items):
+                    if array_field == "events":
+                        item_rejection = _runtime_event_payload_rejection(item, idx)
+                    elif array_field == "notes":
+                        item_rejection = _runtime_note_payload_rejection(item, idx)
+                    if item_rejection is not None:
+                        break
+                if item_rejection is not None:
+                    reject(path, item_rejection, payload)
+                    continue
+        runtime = payload.get("runtime")
+        if not isinstance(runtime, dict):
+            reject(path, "runtime must be a JSON object", payload)
+            continue
+        if runtime_required_field is not None:
+            if runtime.get(runtime_required_field) is not True:
+                reject(path, f"runtime.{runtime_required_field} must be true", payload)
+                continue
+        elif runtime.get("ready") is not True and runtime.get("configured") is not True:
+            reject(path, "runtime.ready or runtime.configured must be true", payload)
+            continue
+        if required_role_set:
+            required_requested = {
+                str(role).strip().lower()
+                for role in (payload.get("require_roles") or [])
+                if str(role).strip()
+            }
+            if not required_role_set.issubset(required_requested):
+                missing_requested = sorted(required_role_set - required_requested)
+                reject(path, "require_roles must include: " + ", ".join(missing_requested), payload)
+                continue
+            missing_reported = {
+                str(role).strip().lower()
+                for role in (payload.get("missing_roles") or [])
+                if str(role).strip()
+            }
+            if missing_reported:
+                reject(path, "missing_roles must be empty", payload)
+                continue
+            roles = {str(role).strip().lower() for role in (payload.get("roles") or []) if str(role).strip()}
+            if not required_role_set.issubset(roles):
+                missing_roles = sorted(required_role_set - roles)
+                reject(path, "roles missing required entries: " + ", ".join(missing_roles), payload)
+                continue
+            stem_paths = payload.get("stem_paths")
+            if not isinstance(stem_paths, dict):
+                reject(path, "stem_paths must be an object when roles are required", payload)
+                continue
+            stem_path_roles = {
+                str(role).strip().lower()
+                for role, role_path in stem_paths.items()
+                if str(role).strip() and isinstance(role_path, str) and role_path.strip()
+            }
+            if not required_role_set.issubset(stem_path_roles):
+                missing_stem_paths = sorted(required_role_set - stem_path_roles)
+                reject(path, "stem_paths missing required entries: " + ", ".join(missing_stem_paths), payload)
+                continue
+
+        report = {
+            identity_field: payload.get(identity_field),
+            "ok": payload.get("ok"),
+            "status": payload.get("status"),
+            "reason": payload.get("reason"),
+        }
+        for key in (
+            "wav_path",
+            "mix_wav",
+            "instrument",
+            "event_count",
+            "note_count",
+            "require_events",
+            "require_notes",
+            "require_roles",
+            "roles",
+            "missing_roles",
+            "stem_paths",
+        ):
+            if key in payload:
+                report[key] = payload.get(key)
+        report["runtime_ready"] = runtime.get(runtime_required_field) if runtime_required_field else (
+            runtime.get("ready") or runtime.get("configured")
+        )
+        status.update(
+            {
+                "path": str(path),
+                "report": report,
+                "ready": True,
+                "reason": None,
+            }
+        )
+        return status
+
+    status["reason"] = (
+        "no successful runtime validation report found"
+        if not failures
+        else "no successful runtime validation report found; " + "; ".join(failures[:3])
+    )
+    return status
+
+
+def _finite_number(value: Any) -> float | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    out = float(value)
+    return out if math.isfinite(out) else None
+
+
+def _json_int(value: Any, *, lo: int, hi: int) -> int | None:
+    if type(value) is not int:
+        return None
+    if lo <= value <= hi:
+        return value
+    return None
+
+
+def _runtime_event_payload_rejection(item: Any, index: int) -> str | None:
+    label = f"events[{index}]"
+    if not isinstance(item, dict):
+        return f"{label} must be an object"
+    time_sec = _finite_number(item.get("time"))
+    if time_sec is None or time_sec < 0.0:
+        return f"{label}.time must be a finite nonnegative number"
+    if _json_int(item.get("note"), lo=0, hi=127) is None:
+        return f"{label}.note must be an integer MIDI note in [0, 127]"
+    if _json_int(item.get("velocity"), lo=1, hi=127) is None:
+        return f"{label}.velocity must be an integer MIDI velocity in [1, 127]"
+    if "duration" in item:
+        duration = _finite_number(item.get("duration"))
+        if duration is None or duration < 0.0:
+            return f"{label}.duration must be a finite nonnegative number when present"
+    return None
+
+
+def _runtime_note_payload_rejection(item: Any, index: int) -> str | None:
+    label = f"notes[{index}]"
+    if not isinstance(item, dict):
+        return f"{label} must be an object"
+    t_on = _finite_number(item.get("t_on"))
+    if t_on is None or t_on < 0.0:
+        return f"{label}.t_on must be a finite nonnegative number"
+    t_off = _finite_number(item.get("t_off"))
+    if t_off is None or t_off <= t_on:
+        return f"{label}.t_off must be a finite number greater than t_on"
+    if _json_int(item.get("pitch"), lo=0, hi=127) is None:
+        return f"{label}.pitch must be an integer MIDI note in [0, 127]"
+    if _json_int(item.get("velocity"), lo=1, hi=127) is None:
+        return f"{label}.velocity must be an integer MIDI velocity in [1, 127]"
+    instrument = item.get("instrument")
+    if not isinstance(instrument, str) or not instrument.strip():
+        return f"{label}.instrument must be a non-empty string"
+    for field, upper in (("string", 8), ("fret", 36)):
+        if field in item and _json_int(item.get(field), lo=0, hi=upper) is None:
+            return f"{label}.{field} must be an integer in [0, {upper}] when present"
+    return None
+
+
+def _mir_st500_vocals_report_evidence_status(*, algorithm: str = "melodic_rmvpe") -> dict[str, Any]:
+    root = _model_upgrade_evidence_root()
+    pattern = root / MIR_ST500_VOCALS_EVIDENCE_GLOB
+    candidates = _evidence_candidates(pattern)
+    status: dict[str, Any] = {
+        "glob": str(pattern),
+        "dataset": "mir_st500",
+        "family": "melodic",
+        "algorithm": algorithm,
+        "latest_matching_identity_only": True,
+        "candidate_count": len(candidates),
+        "matching_identity_candidate_count": 0,
+        "candidates_checked": 0,
+        "rejection_count": 0,
+        "rejections": [],
+        "path": None,
+        "summary": None,
+        "case_count": 0,
+        "algorithm_case_count": 0,
+        "ready": False,
+        "reason": None,
+    }
+    failures: list[str] = []
+
+    def reject(path: Path, reason: str, payload: dict[str, Any] | None = None) -> None:
+        failures.append(f"{path}: {reason}")
+        rejection: dict[str, Any] = {"path": str(path), "reason": reason}
+        if payload is not None:
+            rejection["ok"] = payload.get("ok")
+            rejection["dataset"] = payload.get("dataset")
+            rejection["family"] = payload.get("family")
+            rejection["case_count"] = payload.get("case_count")
+            extra = payload.get("extra")
+            if isinstance(extra, dict):
+                rejection["split"] = extra.get("split")
+                rejection["variant"] = extra.get("variant")
+                rejection["algorithms"] = extra.get("algorithms")
+        status["rejection_count"] = int(status["rejection_count"]) + 1
+        if len(status["rejections"]) < 10:
+            status["rejections"].append(rejection)
+
+    for path in candidates:
+        status["candidates_checked"] = int(status["candidates_checked"]) + 1
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            reject(path, f"could not read report: {exc}")
+            continue
+        if not isinstance(payload, dict):
+            reject(path, "report is not a JSON object")
+            continue
+        if payload.get("dataset") != "mir_st500":
+            reject(path, f"dataset is {payload.get('dataset')!r}, expected 'mir_st500'", payload)
+            continue
+        if payload.get("family") != "melodic":
+            reject(path, f"family is {payload.get('family')!r}, expected 'melodic'", payload)
+            continue
+        extra = payload.get("extra")
+        if not isinstance(extra, dict):
+            reject(path, "report is missing extra metadata", payload)
+            continue
+        if extra.get("split") != "test":
+            reject(path, f"extra.split is {extra.get('split')!r}, expected 'test'", payload)
+            continue
+        if extra.get("variant") != "vocal":
+            reject(path, f"extra.variant is {extra.get('variant')!r}, expected 'vocal'", payload)
+            continue
+        if extra.get("limit") is not MIR_ST500_VOCALS_EVIDENCE_REQUIRED_LIMIT:
+            reject(path, "extra.limit must be null for full test/vocal coverage", payload)
+            continue
+        algorithms = extra.get("algorithms")
+        if not isinstance(algorithms, list) or algorithm not in {str(item) for item in algorithms}:
+            reject(path, f"extra.algorithms must include {algorithm!r}", payload)
+            continue
+        status["matching_identity_candidate_count"] = int(status["matching_identity_candidate_count"]) + 1
+        if payload.get("ok") is not True:
+            reject(path, "report ok is not true", payload)
+            break
+        try:
+            case_count = int(payload.get("case_count") or 0)
+        except (TypeError, ValueError):
+            case_count = 0
+        if case_count <= 0:
+            reject(path, "case_count must be greater than zero", payload)
+            break
+        cases = payload.get("cases")
+        if not isinstance(cases, list):
+            reject(path, "report is missing cases[]", payload)
+            break
+        matching_cases = [
+            row
+            for row in cases
+            if isinstance(row, dict) and row.get("algorithm_id") == algorithm
+        ]
+        if not matching_cases:
+            reject(path, f"no cases for algorithm {algorithm!r}", payload)
+            break
+        if len(matching_cases) != case_count:
+            reject(path, f"{algorithm} case count must equal report case_count", payload)
+            break
+        errored = [row for row in matching_cases if row.get("error")]
+        if errored:
+            reject(path, f"{len(errored)} {algorithm} cases have errors", payload)
+            break
+
+        summary = payload.get("summary")
+        algorithm_summary = None
+        if isinstance(summary, dict):
+            per_algorithm = summary.get("per_algorithm")
+            if isinstance(per_algorithm, dict):
+                algorithm_summary = per_algorithm.get(algorithm)
+        if not isinstance(algorithm_summary, dict):
+            reject(path, f"summary.per_algorithm.{algorithm} is missing", payload)
+            break
+        try:
+            cases_total = int(algorithm_summary.get("cases") or 0)
+            cases_ok = int(algorithm_summary.get("cases_ok") or 0)
+            cases_err = int(algorithm_summary.get("cases_err") or 0)
+        except (TypeError, ValueError):
+            reject(path, f"summary.per_algorithm.{algorithm} cases/cases_ok/cases_err must be numeric", payload)
+            break
+        if cases_total != case_count:
+            reject(path, f"summary.per_algorithm.{algorithm}.cases must equal report case_count", payload)
+            break
+        if cases_ok <= 0:
+            reject(path, f"summary.per_algorithm.{algorithm}.cases_ok must be greater than zero", payload)
+            break
+        if cases_ok != case_count:
+            reject(path, f"summary.per_algorithm.{algorithm}.cases_ok must equal report case_count", payload)
+            break
+        if cases_err != 0:
+            reject(path, f"summary.per_algorithm.{algorithm}.cases_err must be zero", payload)
+            break
+        invalid_metric = False
+        for key in ("precision", "recall", "f1"):
+            try:
+                value_float = float(algorithm_summary.get(key))
+            except (TypeError, ValueError):
+                reject(path, f"summary.per_algorithm.{algorithm}.{key} must be numeric", payload)
+                invalid_metric = True
+                break
+            if not math.isfinite(value_float) or value_float < 0.0 or value_float > 1.0:
+                reject(path, f"summary.per_algorithm.{algorithm}.{key} must be finite and between 0 and 1", payload)
+                invalid_metric = True
+                break
+        if invalid_metric:
+            break
+        invalid_case = False
+        for row in matching_cases:
+            for key in ("tp", "fp", "fn"):
+                try:
+                    value = int(row.get(key))
+                except (TypeError, ValueError):
+                    reject(path, f"{algorithm} case {row.get('case_id')!r} has non-numeric {key}", payload)
+                    invalid_case = True
+                    break
+                if value < 0:
+                    reject(path, f"{algorithm} case {row.get('case_id')!r} has negative {key}", payload)
+                    invalid_case = True
+                    break
+            if invalid_case:
+                break
+            else:
+                for key in ("precision", "recall", "f1"):
+                    try:
+                        value_float = float(row.get(key))
+                    except (TypeError, ValueError):
+                        reject(path, f"{algorithm} case {row.get('case_id')!r} has non-numeric {key}", payload)
+                        invalid_case = True
+                        break
+                    if not math.isfinite(value_float):
+                        reject(path, f"{algorithm} case {row.get('case_id')!r} has non-finite {key}", payload)
+                        invalid_case = True
+                        break
+                if invalid_case:
+                    break
+                else:
+                    continue
+        if invalid_case:
+            break
+        status.update(
+            {
+                "path": str(path),
+                "summary": algorithm_summary,
+                "case_count": case_count,
+                "algorithm_case_count": len(matching_cases),
+                "ready": True,
+                "reason": None,
+            }
+        )
+        return status
+
+    status["reason"] = (
+        "no successful MIR-ST500 vocal benchmark report found"
+        if not failures
+        else "no successful MIR-ST500 vocal benchmark report found; " + "; ".join(failures[:3])
+    )
+    return status
+
+
+def _model_upgrade_gates_snapshot(
+    *,
+    demucs_ft_modelpack_path: Path | str | None,
+    demucs_ft_modelpack_manifest: dict[str, Any] | None,
+    demucs_ft_modelpack_error: str | None,
+    roformer_status: dict[str, Any],
+    asset_payload: Any,
+) -> dict[str, Any]:
+    """Summarize the external gates that still block model-upgrade promotion.
+
+    This is deliberately read-only and lightweight: it checks env vars,
+    filesystem presence, adapter readiness helpers, and small dataset discovery
+    diagnostics. It does not launch model subprocesses or run benchmarks.
+    """
+
+    def gate(ready: bool, *, kind: str, reason: str | None, **extra: Any) -> dict[str, Any]:
+        return {
+            "ready": ready,
+            "kind": kind,
+            "reason": reason,
+            **extra,
+        }
+
+    def env_root_status(env_var: str) -> dict[str, Any]:
+        raw = os.environ.get(env_var, "").strip()
+        path = Path(raw).expanduser() if raw else None
+        return {
+            "env_var": env_var,
+            "configured": bool(raw),
+            "path": str(path) if path is not None else None,
+            "exists": bool(path is not None and path.exists()),
+            "is_dir": bool(path is not None and path.is_dir()),
+        }
+
+    def musdb_gate() -> dict[str, Any]:
+        from aural_ingest.quality_benchmark import discover_musdb18_tracks, inspect_quality_dataset_sources
+
+        datasets = inspect_quality_dataset_sources()
+        musdb_datasets = {key: datasets[key] for key in ("musdb18_hq", "musdb18") if key in datasets}
+        ready_roots: list[dict[str, Any]] = []
+        diagnostics: list[str] = []
+        for dataset_id, dataset in musdb_datasets.items():
+            for root in dataset.get("roots", []):
+                path_text = str(root.get("path") or "")
+                if not root.get("exists") or not path_text:
+                    continue
+                root_report = {
+                    "dataset": dataset_id,
+                    "env_var": root.get("env_var"),
+                    "path": path_text,
+                    "sample_track_count": 0,
+                    "error": None,
+                }
+                try:
+                    tracks = discover_musdb18_tracks(Path(path_text), split="test", limit=1)
+                    root_report["sample_track_count"] = len(tracks)
+                    if tracks:
+                        root_report["sample_track"] = tracks[0].track_id
+                        ready_roots.append(root_report)
+                    else:
+                        diagnostics.append(f"{path_text} has no test WAV-format MUSDB tracks")
+                except Exception as exc:  # pragma: no cover - defensive against local filesystem surprises
+                    root_report["error"] = str(exc)
+                    diagnostics.append(str(exc))
+                root["discovery"] = root_report
+        dataset_ready = bool(ready_roots)
+        report_evidence = _musdb_sdr_report_evidence_status(provider=DEMUCS_PROVIDER)
+        ready = bool(report_evidence.get("ready"))
+        reason = None if ready else str(report_evidence.get("reason") or "missing Demucs MUSDB SDR report")
+        return gate(
+            ready,
+            kind="benchmark_report",
+            reason=reason,
+            datasets=musdb_datasets,
+            ready_roots=ready_roots,
+            dataset_ready=dataset_ready,
+            dataset_reason=None
+            if dataset_ready
+            else "; ".join(diagnostics) or "AURAL_MUSDB18_HQ_ROOT or AURAL_MUSDB18_ROOT is unset",
+            evidence=report_evidence,
+        )
+
+    def mir_st500_gate() -> dict[str, Any]:
+        root = env_root_status("AURAL_MIR_ST500_ROOT")
+        diagnosis: dict[str, object] | None = None
+        ready = False
+        reason: str | None = None
+        if not root["configured"]:
+            reason = "AURAL_MIR_ST500_ROOT is unset"
+        elif not root["exists"]:
+            reason = f"AURAL_MIR_ST500_ROOT does not exist: {root['path']}"
+        elif not root["is_dir"]:
+            reason = f"AURAL_MIR_ST500_ROOT is not a directory: {root['path']}"
+        else:
+            from aural_ingest.dataset_adapters.mir_st500 import diagnose_corpus
+
+            diagnosis = diagnose_corpus(Path(str(root["path"])), split="test", variant="vocal", limit=1)
+            ready = int(diagnosis.get("emitted_count", 0)) > 0
+            reason = None if ready else str(diagnosis.get("reason") or "no test vocal cases discovered")
+        return gate(
+            ready,
+            kind="dataset",
+            reason=reason,
+            root=root,
+            diagnosis=diagnosis,
+        )
+
+    musdb = musdb_gate()
+    mir_st500 = mir_st500_gate()
+    beat_this_review = _beat_this_review_evidence_status()
+    demucs_ft_sdr_evidence = _musdb_sdr_report_evidence_status(
+        provider=DEMUCS_PROVIDER,
+        required_modelpack_id=DEMUCS_FT_DRUMS_MODELPACK_ID,
+    )
+    roformer_sdr_evidence = _musdb_sdr_report_evidence_status(provider=ROFORMER_PROVIDER)
+    roformer_sdr_comparison = _musdb_sdr_comparison_status(
+        baseline=musdb.get("evidence") if isinstance(musdb.get("evidence"), dict) else {},
+        candidate=roformer_sdr_evidence,
+        baseline_label="default Demucs",
+        candidate_label="RoFormer",
+    )
+    roformer_validation_evidence = _runtime_validation_report_evidence_status(
+        evidence_glob=ROFORMER_RUNTIME_EVIDENCE_GLOB,
+        engine=ROFORMER_PROVIDER,
+        identity_field="provider",
+        allowed_statuses=("fresh",),
+        required_roles=MUSDB_SDR_EVIDENCE_REQUIRED_ROLES,
+        runtime_required_field="configured",
+    )
+    rmvpe_validation_evidence = _runtime_validation_report_evidence_status(
+        evidence_glob=RMVPE_RUNTIME_EVIDENCE_GLOB,
+        engine="melodic_rmvpe",
+        allowed_statuses=("ready", "ok"),
+        runtime_required_field="ready",
+    )
+    mir_st500_report_evidence = _mir_st500_vocals_report_evidence_status()
+    adtof_validation_evidence = _runtime_validation_report_evidence_status(
+        evidence_glob=ADTOF_RUNTIME_EVIDENCE_GLOB,
+        engine="adtof_drums",
+        required_bool="require_events",
+        count_field="event_count",
+        allowed_statuses=("ok",),
+        runtime_required_field="configured",
+    )
+    drum_stemsep_validation_evidence = _runtime_validation_report_evidence_status(
+        evidence_glob=DRUM_STEMSEP_RUNTIME_EVIDENCE_GLOB,
+        engine="drum_stemsep",
+        required_bool="require_events",
+        count_field="event_count",
+        allowed_statuses=("ok",),
+        runtime_required_field="configured",
+    )
+    qmul_validation_evidence = _runtime_validation_report_evidence_status(
+        evidence_glob=QMUL_HR_GUITAR_RUNTIME_EVIDENCE_GLOB,
+        engine="qmul_hr_guitar",
+        required_bool="require_notes",
+        count_field="note_count",
+        allowed_statuses=("ok",),
+        runtime_required_field="configured",
+    )
+
+    from aural_ingest.algorithms import adtof_drums, drum_stemsep, melodic_rmvpe, qmul_hr_guitar
+
+    rmvpe_checkpoint = resolve_rmvpe_checkpoint_path(_default_basic_pitch_model_roots())
+    rmvpe_runtime = melodic_rmvpe.runtime_status(rmvpe_checkpoint)
+    adtof_runtime = adtof_drums.runtime_status()
+    drum_stemsep_runtime = drum_stemsep.runtime_status()
+    qmul_runtime = qmul_hr_guitar.runtime_status()
+    demucs_ft_asset = asset_payload(
+        demucs_ft_modelpack_path,
+        kind="demucs-modelpack",
+        required=False,
+    )
+    if demucs_ft_modelpack_manifest is not None:
+        demucs_ft_asset["manifest"] = {
+            "id": demucs_ft_modelpack_manifest.get("id"),
+            "version": demucs_ft_modelpack_manifest.get("version"),
+            "license": demucs_ft_modelpack_manifest.get("license"),
+        }
+    if demucs_ft_modelpack_error:
+        demucs_ft_asset["error"] = demucs_ft_modelpack_error
+
+    gates: dict[str, dict[str, Any]] = {
+        "beat_this_barline_listening_review": gate(
+            bool(beat_this_review.get("ready")),
+            kind="manual_review",
+            reason=(
+                None
+                if beat_this_review.get("ready")
+                else "requires human bar-line/listening review evidence for the DBN refresh-meter smokes"
+            ),
+            evidence_required=[
+                "reviewed Psalm 121 refresh-meter timeline",
+                "reviewed Psalm 130 refresh-meter timeline",
+                "reviewed Psalm 5 refresh-meter timeline",
+            ],
+            evidence=beat_this_review,
+        ),
+        "musdb_sdr_baseline": musdb,
+        "demucs_ft_drums_sdr": gate(
+            bool(demucs_ft_asset.get("ok") and demucs_ft_sdr_evidence.get("ready")),
+            kind="modelpack_and_benchmark_report",
+            reason=(
+                None
+                if demucs_ft_asset.get("ok") and demucs_ft_sdr_evidence.get("ready")
+                else "requires a license-verified demucs_ft_drums modelpack and a successful MUSDB SDR report"
+            ),
+            modelpack=demucs_ft_asset,
+            evidence=demucs_ft_sdr_evidence,
+        ),
+        "roformer_musdb_comparison": gate(
+            bool(
+                musdb.get("ready")
+                and roformer_validation_evidence.get("ready")
+                and roformer_sdr_evidence.get("ready")
+                and roformer_sdr_comparison.get("ready")
+            ),
+            kind="runtime_validation_and_benchmark_comparison",
+            reason=(
+                None
+                if (
+                    musdb.get("ready")
+                    and roformer_validation_evidence.get("ready")
+                    and roformer_sdr_evidence.get("ready")
+                    and roformer_sdr_comparison.get("ready")
+                )
+                else str(
+                    roformer_sdr_comparison.get("reason")
+                    or "requires successful RoFormer/MSST runtime validation plus baseline Demucs and RoFormer MUSDB SDR reports"
+                )
+            ),
+            runtime=roformer_status,
+            musdb_ready=musdb.get("ready"),
+            runtime_evidence=roformer_validation_evidence,
+            evidence=roformer_sdr_evidence,
+            comparison=roformer_sdr_comparison,
+        ),
+        "rmvpe_mir_st500_vocals": gate(
+            bool(rmvpe_validation_evidence.get("ready") and mir_st500_report_evidence.get("ready")),
+            kind="runtime_and_benchmark_report",
+            reason=(
+                None
+                if rmvpe_validation_evidence.get("ready") and mir_st500_report_evidence.get("ready")
+                else "requires a successful RMVPE runtime validation report and MIR-ST500 vocal benchmark report"
+            ),
+            runtime=rmvpe_runtime,
+            runtime_evidence=rmvpe_validation_evidence,
+            mir_st500=mir_st500,
+            benchmark_evidence=mir_st500_report_evidence,
+        ),
+        "adtof_external_runtime": gate(
+            bool(adtof_validation_evidence.get("ready")),
+            kind="runtime_validation_report",
+            reason=(
+                None
+                if adtof_validation_evidence.get("ready")
+                else "requires a successful ADTOF runtime validation report with drum events"
+            ),
+            runtime=adtof_runtime,
+            evidence=adtof_validation_evidence,
+        ),
+        "drum_stemsep_external_runtime": gate(
+            bool(drum_stemsep_validation_evidence.get("ready")),
+            kind="runtime_validation_report",
+            reason=(
+                None
+                if drum_stemsep_validation_evidence.get("ready")
+                else "requires a successful DrumSep runtime validation report with drum events"
+            ),
+            runtime=drum_stemsep_runtime,
+            evidence=drum_stemsep_validation_evidence,
+        ),
+        "qmul_hr_guitar_external_runtime": gate(
+            bool(qmul_validation_evidence.get("ready")),
+            kind="runtime_validation_report",
+            reason=(
+                None
+                if qmul_validation_evidence.get("ready")
+                else "requires a successful QMUL guitar runtime validation report with notes"
+            ),
+            runtime=qmul_runtime,
+            evidence=qmul_validation_evidence,
+        ),
+    }
+    ready = sorted(name for name, item in gates.items() if item.get("ready"))
+    pending = sorted(name for name, item in gates.items() if not item.get("ready"))
+    evidence_root = _model_upgrade_evidence_root()
+    return {
+        "ok": not pending,
+        "exit_code_affects_runtime_check": False,
+        "evidence_root": str(evidence_root),
+        "evidence_root_env_var": MODEL_UPGRADE_EVIDENCE_ROOT_ENV,
+        "evidence_checklist": str(evidence_root / MODEL_UPGRADE_GATE_EVIDENCE_CHECKLIST),
+        "evidence_checklist_relative_path": MODEL_UPGRADE_GATE_EVIDENCE_CHECKLIST.as_posix(),
+        "ready": ready,
+        "pending": pending,
+        "gates": gates,
+    }
+
+
 def _mt3_runtime_snapshot() -> dict[str, Any]:
     import numpy as np
 
@@ -2944,9 +5477,16 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
         payload["ok"] = True
         return payload
 
+    def simple_asset_payload(path_value: Path | str | None, *, kind: str, required: bool) -> dict[str, Any]:
+        return asset_payload(path_value, kind=kind, required=required)
+
     basic_pitch_model = resolve_basic_pitch_model_path(_default_basic_pitch_model_roots())
     ffmpeg_path = _resolve_ffmpeg_path()
     demucs_modelpack_path, demucs_modelpack_manifest, demucs_modelpack_error = _resolve_demucs_modelpack({})
+    demucs_ft_modelpack_path, demucs_ft_modelpack_manifest, demucs_ft_modelpack_error = _resolve_demucs_modelpack(
+        {"stem_separation_modelpack_id": DEMUCS_FT_DRUMS_MODELPACK_ID}
+    )
+    roformer_status = roformer_runtime_status({})
 
     payload = {
         "ok": True,
@@ -2969,6 +5509,19 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
                 kind="demucs-modelpack",
                 required=False,
             ),
+            "demucs_ft_drums_modelpack": asset_payload(
+                demucs_ft_modelpack_path,
+                kind="demucs-modelpack",
+                required=False,
+            ),
+        },
+        "runtime_features": {
+            "roformer": {
+                "enabled": bool(roformer_status.get("configured")),
+                "provider": ROFORMER_PROVIDER,
+                "runtime": roformer_status,
+                "fallback_behavior": "auto separation uses Demucs when available; explicit RoFormer requests skip when runtime is unconfigured",
+            }
         },
     }
     payload["stages"] = _runtime_stage_snapshot(
@@ -2984,23 +5537,26 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
         }
     if demucs_modelpack_error:
         payload["assets"]["demucs_modelpack"]["error"] = demucs_modelpack_error
+    if demucs_ft_modelpack_manifest is not None:
+        payload["assets"]["demucs_ft_drums_modelpack"]["manifest"] = {
+            "id": demucs_ft_modelpack_manifest.get("id"),
+            "version": demucs_ft_modelpack_manifest.get("version"),
+        }
+    if demucs_ft_modelpack_error:
+        payload["assets"]["demucs_ft_drums_modelpack"]["error"] = demucs_ft_modelpack_error
 
     for module_name, dependency_policy in RUNTIME_DEPENDENCY_POLICIES.items():
-        try:
-            module = __import__(module_name)
-            payload["dependencies"][module_name] = {
-                "ok": True,
-                "version": getattr(module, "__version__", "unknown"),
-                **dependency_policy,
-            }
-        except Exception as exc:
-            payload["dependencies"][module_name] = {
-                "ok": False,
-                "error": str(exc),
-                **dependency_policy,
-            }
-            if dependency_policy.get("required"):
-                payload["ok"] = False
+        dependency_payload = _runtime_dependency_snapshot(module_name, dependency_policy)
+        payload["dependencies"][module_name] = dependency_payload
+        if dependency_policy.get("required") and not dependency_payload.get("ok"):
+            payload["ok"] = False
+
+    payload["runtime_features"]["basic_pitch"] = _basic_pitch_runtime_feature(
+        payload["assets"]["basic_pitch_model"],
+        payload["dependencies"],
+    )
+    if not payload["runtime_features"]["basic_pitch"]["enabled"]:
+        payload["ok"] = False
 
     mt3_module = sys.modules.get("mt3_infer")
     mt3_load_model = getattr(mt3_module, "load_model", None) if mt3_module is not None else None
@@ -3061,6 +5617,13 @@ def _mt3_runtime_snapshot() -> dict[str, Any]:
             asset["modelpack_version"] = engine_info.get("modelpack_version")
         mt3_assets[engine_id] = asset
     payload["assets"]["mt3_checkpoints"] = mt3_assets
+    payload["model_upgrade_gates"] = _model_upgrade_gates_snapshot(
+        demucs_ft_modelpack_path=demucs_ft_modelpack_path,
+        demucs_ft_modelpack_manifest=demucs_ft_modelpack_manifest,
+        demucs_ft_modelpack_error=demucs_ft_modelpack_error,
+        roformer_status=roformer_status,
+        asset_payload=simple_asset_payload,
+    )
 
     if not payload["assets"]["basic_pitch_model"].get("ok"):
         payload["ok"] = False
@@ -3078,6 +5641,19 @@ def cmd_runtime_check(args: argparse.Namespace) -> int:
         warnings.simplefilter("ignore")
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             payload = _mt3_runtime_snapshot()
+    if getattr(args, "require_model_upgrade_gates", False):
+        model_upgrade_gates = payload.get("model_upgrade_gates")
+        if not isinstance(model_upgrade_gates, dict):
+            payload["ok"] = False
+            payload.setdefault("errors", []).append("model-upgrade gate snapshot missing or malformed")
+        else:
+            model_upgrade_gates["exit_code_affects_runtime_check"] = True
+            gate_ok = model_upgrade_gates.get("ok")
+            if gate_ok is not True:
+                pending = model_upgrade_gates.get("pending")
+                pending_text = ", ".join(str(item) for item in pending) if isinstance(pending, list) else "unknown"
+                payload["ok"] = False
+                payload.setdefault("errors", []).append(f"model-upgrade gates pending: {pending_text}")
     print(json.dumps(payload, sort_keys=True))
     return 0 if payload["ok"] else 1
 
@@ -3143,6 +5719,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     out = Path(args.out)
     profile = args.profile
     config = _parse_config_arg(args.config)
+    config = _config_with_cli_demucs_modelpack_options(args, config)
     tr_opts, tr_err = _resolve_transcription_options(args, config)
     if tr_opts is None:
         log(tr_err or "invalid transcription options")
@@ -3277,7 +5854,7 @@ def cmd_import(args: argparse.Namespace) -> int:
 
     mix_sha256 = _sha256_file(dst_wav)
 
-    # Stage 4: separate_stems (Demucs htdemucs_6s)
+    # Stage 4: separate_stems (Demucs modelpack-gated)
     stems_dir = out / "audio" / "stems"
     _mkdir(stems_dir)
     copied_input_stems = _copy_input_stems_from_config(stems_dir, config)
@@ -3298,7 +5875,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             type="stage_progress",
             id="separate_stems",
             progress=0.73,
-            message="separating stems with htdemucs_6s",
+            message="separating stems with Demucs",
         )
     )
     try:
@@ -3315,9 +5892,9 @@ def cmd_import(args: argparse.Namespace) -> int:
                 else None
             ),
             # Don't let Demucs overwrite stems the user already supplied --
-            # the user's Suno-exported (Keyboard).wav is cleaner than what
-            # htdemucs_6s would route to its piano head from the synthesized
-            # mix, so any role in copied_input_stems is left as-is on disk.
+            # the user's Suno-exported (Keyboard).wav can be cleaner than a
+            # stem separated from the synthesized mix, so any role in
+            # copied_input_stems is left as-is on disk.
             protected_roles=copied_input_stems.keys(),
         )
     except Exception as exc:
@@ -3600,6 +6177,9 @@ def cmd_import(args: argparse.Namespace) -> int:
     keys_stem = stems_dir / "keys.wav"
     if keys_stem.is_file():
         instrument_stems["keys"] = keys_stem
+    vocals_stem = stems_dir / "vocals.wav"
+    if vocals_stem.is_file():
+        instrument_stems["vocals"] = vocals_stem
 
     instrument_results = None
     if instrument_stems:
@@ -3656,6 +6236,20 @@ def cmd_import(args: argparse.Namespace) -> int:
         )
     (out / "features" / "notes.mid").write_bytes(notes_mid)
     emit(ProgressEvent(type="stage_done", id="transcribe_drums", progress=0.97, artifact="features/notes.mid"))
+
+    fingering_tracks = inst_tracks if instrument_results else {"melodic": melodic_result.notes}
+    fingering_paths = _write_fingering_sidecars(out, fingering_tracks)
+    if fingering_paths:
+        manifest["assets"].setdefault("features", {})["fingering_paths"] = fingering_paths
+    if instrument_results:
+        vocal_pitch_path = _write_vocal_pitch_sidecar(out, instrument_results)
+        if vocal_pitch_path is not None:
+            manifest["assets"].setdefault("features", {})["vocal_pitch_path"] = vocal_pitch_path
+        vocal_pitch_contour_path = _write_vocal_pitch_contour_sidecar(out, instrument_results)
+        if vocal_pitch_contour_path is not None:
+            manifest["assets"].setdefault("features", {})[
+                "vocal_pitch_contour_path"
+            ] = vocal_pitch_contour_path
 
     # Pitch-aligned CQT spectrogram artifacts (one per melodic stem) for the
     # interactive guided-edit overlay. Best-effort: never fail import over it.
@@ -3884,6 +6478,8 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
             beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
             stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),
             stem_separation_provider_path=getattr(args, "stem_separation_provider_path", None),
+            stem_separation_modelpack_id=getattr(args, "stem_separation_modelpack_id", None),
+            demucs_modelpack_zip_path=getattr(args, "demucs_modelpack_zip_path", None),
             shifts=getattr(args, "shifts", 1),
             multi_filter=bool(getattr(args, "multi_filter", False)),
         )
@@ -3976,7 +6572,8 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
     """Build the CQT spectrogram overlay artifact(s) for an existing AuralSong.
 
     Mirrors the spectrogram stage of import, but on-demand: for each requested
-    melodic stem at ``audio/stems/<role>.wav`` (drums/vocals excluded), compute
+    melodic stem at ``audio/stems/<role>.wav`` (drums excluded by default),
+    compute
     the pitch-aligned CQT and write ``features/spectrogram/<role>/``. The Studio
     Refine (cleanup) workspace consumes those tiles + spectrogram.json.
 
@@ -3999,13 +6596,10 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
     # Manifest-driven stem resolution (feedpak/sloppak stems[] first, then a
     # glob fallback for legacy .auralsong packs). Handles sloppak stems/*.ogg.
     # Drums are excluded from the melodic default but buildable on explicit
-    # request (`--instrument drums`) for the Studio drum-cleanup overlay;
-    # vocals have no overlay at all.
-    default_excluded = {"drums", "vocals"}
+    # request (`--instrument drums`) for the Studio drum-cleanup overlay.
+    default_excluded = {"drums"}
     present: dict[str, Path] = {}
     for role, stem_path in resolve_stem_paths(auralsong).items():
-        if role == "vocals":
-            continue
         present[role] = stem_path
 
     requested = list(args.instrument or [])
@@ -4106,19 +6700,82 @@ def _load_case_ids(path) -> set[str]:
     return ids
 
 
+def _case_ids_from_args(args: argparse.Namespace) -> set[str] | None:
+    case_id_file = getattr(args, "case_id_file", None)
+    if not case_id_file:
+        return None
+    cif = Path(case_id_file)
+    if not cif.is_file():
+        raise FileNotFoundError(f"case-id-file not found: {cif}")
+    case_ids = _load_case_ids(cif)
+    if not case_ids:
+        raise ValueError(f"no case ids in {cif}")
+    return case_ids
+
+
+def _filter_cases_by_id(cases: list[Any], case_ids: set[str] | None) -> list[Any]:
+    if not case_ids:
+        return cases
+    return [case for case in cases if str(getattr(case, "case_id", "")) in case_ids]
+
+
+def _case_adapter_limit(limit: int | None, case_ids: set[str] | None) -> int | None:
+    return None if case_ids else limit
+
+
+def _limit_cases(cases: list[Any], limit: int | None) -> list[Any]:
+    if limit is None:
+        return cases
+    return cases[: max(0, int(limit))]
+
+
+def _filter_cases_by_duration(
+    cases: list[Any],
+    *,
+    min_duration_sec: float | None = None,
+    max_duration_sec: float | None = None,
+) -> list[Any]:
+    if min_duration_sec is None and max_duration_sec is None:
+        return cases
+    if min_duration_sec is not None and min_duration_sec < 0:
+        raise ValueError("min-duration-sec must be >= 0")
+    if max_duration_sec is not None and max_duration_sec < 0:
+        raise ValueError("max-duration-sec must be >= 0")
+    if (
+        min_duration_sec is not None
+        and max_duration_sec is not None
+        and min_duration_sec > max_duration_sec
+    ):
+        raise ValueError("min-duration-sec must be <= max-duration-sec")
+
+    out: list[Any] = []
+    for case in cases:
+        try:
+            duration = float(getattr(case, "duration_sec"))
+        except (TypeError, ValueError):
+            continue
+        if min_duration_sec is not None and duration < min_duration_sec:
+            continue
+        if max_duration_sec is not None and duration > max_duration_sec:
+            continue
+        out.append(case)
+    return out
+
+
 def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
     """Snap the pack's drum-tab hit times onto the drums-stem audio transients.
 
-    Reads ``drum_tab.json`` (pack root) + ``audio/stems/drums.wav``, refines each
-    hit's time to the nearest real transient in its voice's frequency band (see
-    ``drum_onset_align``), writes ``drum_tab.json`` back in place, and prints a
+    Reads the manifest-declared ``drum_tab`` artifact (falling back to pack-root
+    ``drum_tab.json``) plus the drums stem, refines each hit's time to the
+    nearest real transient in its voice's frequency band (see
+    ``drum_onset_align``), writes the same artifact back in place, and prints a
     JSON status line so the Studio button / import step can report the result.
     """
     from aural_ingest.drum_onset_align import align_drum_tab_to_onsets
-    from aural_ingest.pack_paths import resolve_stem_paths
+    from aural_ingest.pack_paths import resolve_drum_tab_path, resolve_stem_paths
 
     pack = Path(args.auralsong_dir)
-    tab_path = pack / "drum_tab.json"
+    tab_path = resolve_drum_tab_path(pack)
     # Manifest-driven so a sloppak's stems/drums.ogg resolves; fall back to the
     # historical audio/stems/drums.wav for a legacy pack.
     drums = resolve_stem_paths(pack).get("drums")
@@ -4126,7 +6783,7 @@ def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
         legacy = pack / "audio" / "stems" / "drums.wav"
         drums = legacy if legacy.is_file() else None
     if not tab_path.is_file():
-        print(json.dumps({"ok": False, "error": f"no drum_tab.json in {pack}"}, sort_keys=True))
+        print(json.dumps({"ok": False, "error": f"no drum tab at {tab_path}"}, sort_keys=True))
         return 1
     if drums is None or not drums.is_file():
         print(json.dumps({"ok": False, "error": f"no drums stem in {pack}"}, sort_keys=True))
@@ -4134,7 +6791,7 @@ def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
     try:
         tab = json.loads(tab_path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        print(json.dumps({"ok": False, "error": f"failed to read drum_tab.json: {exc}"}, sort_keys=True))
+        print(json.dumps({"ok": False, "error": f"failed to read {tab_path}: {exc}"}, sort_keys=True))
         return 1
     aligned, stats = align_drum_tab_to_onsets(tab, drums)
     tab_path.write_text(json.dumps(aligned, indent=2), encoding="utf-8")
@@ -4144,16 +6801,23 @@ def cmd_align_drum_onsets(args: argparse.Namespace) -> int:
 
 def _pack_audio_for_analysis(pack: Path) -> tuple[Path, bool]:
     """Return an audio file to analyze for a pack, plus whether it is a temp file
-    to clean up. Prefers a manifest-resolved full mix (feedpak/sloppak
-    default-flagged/full stem, or a legacy audio/mix.*); otherwise sums the
-    non-derived stems into a temp wav. Manifest-driven so a sloppak's OGG stems
-    (stems/*.ogg) resolve just like feedpak WAVs.
+    to clean up. Prefers an explicit ``audio/mix.*`` file, then a
+    manifest-resolved full mix (feedpak/sloppak default-flagged/full stem);
+    otherwise sums the non-derived stems into a temp wav. The explicit mix
+    check comes first because older feedpaks can carry stale/non-full
+    ``default: true`` flags on an instrument stem, and meter analysis needs the
+    full song mix when it is present.
 
     Stems are loaded at a common sample rate + mono via librosa, so mixed-rate
     stems can never produce a time-warped sum. The temp file is cleaned up on a
     write failure here (the caller also unlinks it in its finally block).
     """
     from aural_ingest.pack_paths import resolve_mix_path, resolve_stem_paths
+
+    for ext in ("wav", "ogg", "mp3", "flac"):
+        explicit_mix = pack / "audio" / f"mix.{ext}"
+        if explicit_mix.is_file():
+            return explicit_mix.resolve(), False
 
     mix = resolve_mix_path(pack)
     if mix is not None and mix.is_file():
@@ -4287,6 +6951,7 @@ def cmd_refresh_meter(args: argparse.Namespace) -> int:
             {
                 "ok": True,
                 "beat_source": meta.get("beat_source"),
+                "postprocessor": meta.get("postprocessor"),
                 "bpm": meta.get("estimated_bpm"),
                 "time_signature": meta.get("time_signature"),
                 "beats_per_bar": meta.get("beats_per_bar"),
@@ -4348,28 +7013,24 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
         )
         return 1
 
+    try:
+        requested_case_ids = _case_ids_from_args(args)
+    except (FileNotFoundError, ValueError) as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    adapter_limit = _case_adapter_limit(args.limit, requested_case_ids)
+
     if dataset == "egmd":
         from aural_ingest.dataset_adapters.egmd import yield_cases
 
-        case_ids = None
-        case_id_file = getattr(args, "case_id_file", None)
-        if case_id_file:
-            cif = _Path(case_id_file)
-            if not cif.is_file():
-                print(json.dumps({"ok": False, "error": f"case-id-file not found: {cif}"}))
-                return 1
-            case_ids = _load_case_ids(cif)
-            if not case_ids:
-                print(json.dumps({"ok": False, "error": f"no case ids in {cif}"}))
-                return 1
         style_filter = getattr(args, "style_filter", None) or None
         cases = list(
             yield_cases(
                 corpus_root,
                 split=args.split,
                 style_filter=style_filter,
-                case_ids=case_ids,
-                limit=args.limit,
+                case_ids=requested_case_ids,
+                limit=adapter_limit,
             )
         )
         family = "drums"
@@ -4377,8 +7038,9 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
         from aural_ingest.dataset_adapters.guitarset import yield_cases as _yc
 
         cases = list(
-            _yc(corpus_root, variant=args.variant or "mic", limit=args.limit)
+            _yc(corpus_root, variant=args.variant or "mic", limit=adapter_limit)
         )
+        cases = _filter_cases_by_id(cases, requested_case_ids)
         family = "melodic"
     elif dataset == "guitarset_bass":
         from aural_ingest.dataset_adapters.guitarset import yield_low_string_cases
@@ -4387,30 +7049,59 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
             yield_low_string_cases(
                 corpus_root,
                 variant=args.variant or "hex_debleeded",
-                limit=args.limit,
+                limit=adapter_limit,
             )
         )
+        cases = _filter_cases_by_id(cases, requested_case_ids)
         family = "melodic"
     elif dataset == "guitar_techs":
         from aural_ingest.dataset_adapters.guitar_techs import yield_cases as _yc
 
         cases = list(
-            _yc(corpus_root, signal=args.variant or "directinput", limit=args.limit)
+            _yc(corpus_root, signal=args.variant or "directinput", limit=adapter_limit)
         )
+        cases = _filter_cases_by_id(cases, requested_case_ids)
         family = "melodic"
     elif dataset == "piano_synthetic":
         from aural_ingest.dataset_adapters.piano_synthetic import yield_cases as _yc
 
-        cases = list(_yc(corpus_root, limit=args.limit))
+        cases = list(_yc(corpus_root, limit=adapter_limit))
+        cases = _filter_cases_by_id(cases, requested_case_ids)
         family = "melodic"
     elif dataset == "maestro":
         from aural_ingest.dataset_adapters.maestro import yield_cases as _yc
 
-        cases = list(_yc(corpus_root, split=args.split, limit=args.limit))
+        cases = list(_yc(corpus_root, split=args.split, limit=adapter_limit))
+        cases = _filter_cases_by_id(cases, requested_case_ids)
+        family = "melodic"
+    elif dataset == "mir_st500":
+        from aural_ingest.dataset_adapters.mir_st500 import yield_cases as _yc
+
+        cases = list(
+            _yc(
+                corpus_root,
+                split=args.split,
+                variant=args.variant or "vocal",
+                case_ids=requested_case_ids,
+                limit=adapter_limit,
+            )
+        )
         family = "melodic"
     else:
         print(json.dumps({"ok": False, "error": f"unknown dataset: {dataset}"}))
         return 1
+
+    try:
+        cases = _filter_cases_by_duration(
+            cases,
+            min_duration_sec=getattr(args, "min_duration_sec", None),
+            max_duration_sec=getattr(args, "max_duration_sec", None),
+        )
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    if requested_case_ids is not None:
+        cases = _limit_cases(cases, args.limit)
 
     if not cases:
         print(json.dumps({"ok": False, "error": "no cases yielded"}))
@@ -4446,6 +7137,8 @@ def cmd_gt_benchmark(args: argparse.Namespace) -> int:
             "split": args.split,
             "variant": args.variant,
             "limit": args.limit,
+            "min_duration_sec": getattr(args, "min_duration_sec", None),
+            "max_duration_sec": getattr(args, "max_duration_sec", None),
             "tolerance_ms": args.tolerance_ms,
             "pitch_tolerance_semitones": args.pitch_tolerance_semitones,
         },
@@ -4507,6 +7200,11 @@ def build_parser() -> argparse.ArgumentParser:
     s_audit_drums.set_defaults(func=cmd_audit_drums)
 
     s_runtime = sub.add_parser("runtime-check")
+    s_runtime.add_argument(
+        "--require-model-upgrade-gates",
+        action="store_true",
+        help="Fail if any model-upgrade promotion gate in model_upgrade_gates is still pending.",
+    )
     s_runtime.set_defaults(func=cmd_runtime_check)
 
     s_benchmark = sub.add_parser("benchmark-drums")
@@ -4581,7 +7279,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_refine_candidates.add_argument(
         "--instrument",
         action="append",
-        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "melodic"]),
+        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "vocals", "melodic"]),
         help="Instrument to precompute. May be repeated. Defaults to 'keys' if omitted.",
     )
     s_refine_candidates.set_defaults(func=cmd_refine_candidates)
@@ -4597,7 +7295,18 @@ def build_parser() -> argparse.ArgumentParser:
     s_spectrogram.add_argument(
         "--instrument",
         action="append",
-        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "drums", "melodic"]),
+        choices=sorted(
+            [
+                "keys",
+                "bass",
+                "guitar",
+                "lead_guitar",
+                "rhythm_guitar",
+                "drums",
+                "melodic",
+                "vocals",
+            ]
+        ),
         help=(
             "Stem to build. May be repeated. Defaults to all melodic stems present; "
             "'drums' (8-octave overlay for the drum-cleanup editor) is built only on explicit request."
@@ -4654,7 +7363,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_bench_overlay.add_argument(
         "--instrument",
         default="keys",
-        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "melodic"]),
+        choices=sorted(["keys", "bass", "guitar", "lead_guitar", "rhythm_guitar", "vocals", "melodic"]),
         help="Instrument stem to benchmark. Defaults to 'keys'.",
     )
     s_bench_overlay.add_argument(
@@ -4674,13 +7383,21 @@ def build_parser() -> argparse.ArgumentParser:
         "gt-benchmark",
         help=(
             "Sweep transcription algorithms across an annotated ground-truth "
-            "dataset (E-GMD / GuitarSet / Guitar-TECHS) and emit a JSON report."
+            "dataset (E-GMD / GuitarSet / Guitar-TECHS / MIR-ST500) and emit a JSON report."
         ),
     )
     s_gt_benchmark.add_argument(
         "--dataset",
         required=True,
-        choices=sorted(["egmd", "guitarset", "guitarset_bass", "guitar_techs", "piano_synthetic", "maestro"]),
+        choices=sorted([
+            "egmd",
+            "guitarset",
+            "guitarset_bass",
+            "guitar_techs",
+            "piano_synthetic",
+            "maestro",
+            "mir_st500",
+        ]),
         help=(
             "Annotated corpus to sweep. ``guitarset_bass`` is the low-string"
             " filter of GuitarSet for bass-pitch benchmarks."
@@ -4715,10 +7432,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Cap the number of cases (useful for smoke runs).",
     )
     s_gt_benchmark.add_argument(
+        "--min-duration-sec",
+        type=float,
+        default=None,
+        help="Keep only cases whose annotated duration is at least this many seconds.",
+    )
+    s_gt_benchmark.add_argument(
+        "--max-duration-sec",
+        type=float,
+        default=None,
+        help="Keep only cases whose annotated duration is at most this many seconds.",
+    )
+    s_gt_benchmark.add_argument(
         "--case-id-file",
         default=None,
         help=(
-            "E-GMD only: path to a stratified-sample JSON (``{cases:[{case_id}]}``) "
+            "Path to a stratified-sample JSON (``{cases:[{case_id}]}``) "
             "or newline-delimited case-id list. Only listed cases are swept, so "
             "``--limit`` no longer collapses onto the first-N (single-groove) rows."
         ),
@@ -4746,7 +7475,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Dataset-specific variant: GuitarSet (mic/pickup_mix/hex_*); "
-            "Guitar-TECHS (directinput/micamp)."
+            "Guitar-TECHS (directinput/micamp); MIR-ST500 (vocal/mixture)."
         ),
     )
     s_gt_benchmark.add_argument(

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { extractKeyModeFromManifest, formatKeyMode } from "../src/hud";
+import { extractKeyModeFromManifest, formatKeyMode, hasExplicitKeyModeInManifest } from "../src/hud";
 
 describe("HUD key/mode", () => {
   it("falls back to placeholder when manifest has no key/mode", () => {
@@ -17,5 +17,34 @@ describe("HUD key/mode", () => {
   it("normalizes common shorthand and formats key/mode text", () => {
     expect(extractKeyModeFromManifest({ key: "A", mode: "min" })).toEqual({ key: "A", mode: "minor" });
     expect(formatKeyMode({ key: "D", mode: "dorian" })).toBe("D dorian");
+  });
+
+  it("detects whether key/mode was explicitly provided", () => {
+    expect(hasExplicitKeyModeInManifest({})).toBe(false);
+    expect(hasExplicitKeyModeInManifest({ harmony: { key: "G", mode: "major" } })).toBe(true);
+    expect(hasExplicitKeyModeInManifest({ mode: "minor" })).toBe(true);
+  });
+
+  it("extracts key/mode from loaded harmony and keys artifacts", () => {
+    expect(
+      extractKeyModeFromManifest(
+        { harmony: "harmony.json" },
+        { harmony: { key: "Bb", mode: "min", confidence: 0.8 } },
+      ),
+    ).toEqual({ key: "Bb", mode: "minor" });
+
+    expect(
+      extractKeyModeFromManifest(
+        {},
+        { keys: { version: 1, events: [{ t: 0, key: "D", scale: "major" }] } },
+      ),
+    ).toEqual({ key: "D", mode: "major" });
+
+    expect(
+      hasExplicitKeyModeInManifest(
+        {},
+        { keys: { version: 1, events: [{ t: 0, key: "A", scale: "minor" }] } },
+      ),
+    ).toBe(true);
   });
 });

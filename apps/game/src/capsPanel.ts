@@ -39,6 +39,13 @@ export type CapsAuralSongDetails = {
   has_events?: boolean;
   has_lyrics?: boolean;
   has_notes_mid?: boolean;
+  has_drum_tab?: boolean;
+  has_song_timeline?: boolean;
+  has_keys?: boolean;
+  has_harmony?: boolean;
+  has_vocal_pitch?: boolean;
+  has_vocal_pitch_contour?: boolean;
+  has_aural_fingering?: boolean;
   has_mix_wav?: boolean;
   has_mix_mp3?: boolean;
   has_mix_ogg?: boolean;
@@ -52,6 +59,13 @@ export type SongCapabilities = {
     events: boolean;
     lyrics: boolean;
     notes_mid: boolean;
+    drum_tab: boolean;
+    song_timeline: boolean;
+    keys: boolean;
+    harmony: boolean;
+    vocal_pitch: boolean;
+    vocal_pitch_contour: boolean;
+    aural_fingering: boolean;
   };
   audio: { wav: boolean; mp3: boolean; ogg: boolean };
   charts: { any: boolean; byInstrument: InstrumentFlags };
@@ -130,6 +144,13 @@ export function initCapsPanel(deps: CapsPanelDeps): CapsPanelHandle {
         events: Boolean(details?.has_events),
         lyrics: Boolean(details?.has_lyrics),
         notes_mid: Boolean(details?.has_notes_mid),
+        drum_tab: Boolean(details?.has_drum_tab),
+        song_timeline: Boolean(details?.has_song_timeline),
+        keys: Boolean(details?.has_keys),
+        harmony: Boolean(details?.has_harmony),
+        vocal_pitch: Boolean(details?.has_vocal_pitch),
+        vocal_pitch_contour: Boolean(details?.has_vocal_pitch_contour),
+        aural_fingering: Boolean(details?.has_aural_fingering),
       },
       audio: {
         wav: Boolean(details?.has_mix_wav),
@@ -160,10 +181,19 @@ export function initCapsPanel(deps: CapsPanelDeps): CapsPanelHandle {
       pill("events", caps.features.events, "aural/notes.mid (drums ch10 + melodic ch1 notes)"),
       pill("lyrics", caps.features.lyrics, "manifest lyrics pointer"),
       pill("midi", caps.features.notes_mid, "aural/notes.mid"),
+      pill("drum tab", caps.features.drum_tab, "drum_tab.json"),
+      pill("timeline", caps.features.song_timeline, "song_timeline.json"),
+      pill("keys", caps.features.keys, "keys.json"),
+      pill("harmony", caps.features.harmony, "harmony.json"),
+      pill("vocal pitch", caps.features.vocal_pitch, "vocal_pitch.json"),
+      pill("vocal contour", caps.features.vocal_pitch_contour, "vocal_pitch_contour.json"),
+      pill("fingering", caps.features.aural_fingering, "aural/fingering.<role>.json"),
     ].join("\n");
 
     const drumHint = drumSelection
-      ? `aural/notes.mid (${drumSelection.mode}, ${drumSelection.reason}, events=${drumSelection.events.length})`
+      ? drumSelection.reason === "drum_tab"
+        ? `drum_tab.json (${drumSelection.mode}, events=${drumSelection.events.length})`
+        : `aural/notes.mid (${drumSelection.mode}, ${drumSelection.reason}, events=${drumSelection.events.length})`
       : "chart availability (heuristic)";
     const chartPills = (Object.keys(INSTRUMENT_LABELS) as Instrument[])
       .map((inst) => {

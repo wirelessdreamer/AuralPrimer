@@ -81,6 +81,21 @@ describe("selectDrumChart", () => {
     expect(selection.events.map((event) => event.trackName)).toEqual(["Drums", "Drums"]);
     expect(selection.events.map((event) => event.lane)).toEqual(["BD", "SD"]);
   });
+
+  it("preserves note velocity on selected drum events", () => {
+    const selection = selectDrumChart([
+      {
+        index: 0,
+        name: "Drums",
+        notes: [
+          { t: 0.0, midi: 36, channel: 9, velocity: 37 },
+          { t: 0.5, midi: 38, channel: 9, velocity: 111 },
+        ],
+      },
+    ]);
+
+    expect(selection.events.map((event) => event.velocity)).toEqual([37, 111]);
+  });
 });
 
 describe("selectMelodicTracksFromMidiBytes", () => {
@@ -157,6 +172,19 @@ describe("selectMelodicTracks (pure)", () => {
     expect(out[0].channel).toBe(0);
   });
 
+  it("infers vocals from ingest channel 5", () => {
+    const out = selectMelodicTracks([melodicTrack("Untitled", 5, 64)]);
+    expect(out).toHaveLength(1);
+    expect(out[0].role).toBe("vocals");
+    expect(out[0].channel).toBe(5);
+  });
+
+  it("infers vocals from vocal track names", () => {
+    const out = selectMelodicTracks([melodicTrack("Lead Vocal", 4, 64)]);
+    expect(out).toHaveLength(1);
+    expect(out[0].role).toBe("vocals");
+  });
+
   it("dedups repeated roles (keeps the first)", () => {
     const out = selectMelodicTracks([
       melodicTrack("Bass", 0, 40),
@@ -180,13 +208,14 @@ describe("selectMelodicTracks (pure)", () => {
     expect(out).toHaveLength(0);
   });
 
-  it("sorts output bass, rhythm, lead, keys, melodic", () => {
+  it("sorts output bass, rhythm, lead, keys, melodic, vocals", () => {
     const out = selectMelodicTracks([
+      melodicTrack("Vocals", 5),
       melodicTrack("Keys", 3),
       melodicTrack("Bass", 0),
       melodicTrack("Lead Guitar", 2),
     ]);
-    expect(out.map((t) => t.role)).toEqual(["bass", "lead_guitar", "keys"]);
+    expect(out.map((t) => t.role)).toEqual(["bass", "lead_guitar", "keys", "vocals"]);
   });
 });
 

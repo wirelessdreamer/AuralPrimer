@@ -187,6 +187,16 @@ class QualityCase:
     offset_sec: float = 0.0
 
 
+@dataclass(frozen=True)
+class MusdbTrack:
+    track_id: str
+    name: str
+    split: str | None
+    root: Path
+    mixture_path: Path
+    reference_stems: Mapping[str, Path]
+
+
 def _safe_mean(values: Iterable[float | None]) -> float | None:
     usable = [float(v) for v in values if v is not None]
     return round(float(statistics.fmean(usable)), 6) if usable else None
@@ -277,6 +287,183 @@ def inspect_quality_dataset_sources() -> dict[str, dict[str, Any]]:
     return out
 
 
+MUSDB18_ROLES: tuple[str, ...] = ("vocals", "drums", "bass", "other")
+MUSDB_OTHER_ESTIMATE_ROLES: tuple[str, ...] = ("other", "guitar", "keys")
+
+
+def _musdb_track_from_dir(track_dir: Path, *, split: str | None) -> MusdbTrack | None:
+    mixture = track_dir / "mixture.wav"
+    if not mixture.is_file():
+        return None
+    stems = {role: track_dir / f"{role}.wav" for role in MUSDB18_ROLES}
+    if not all(path.is_file() for path in stems.values()):
+        return None
+    track_id = f"{split}/{track_dir.name}" if split else track_dir.name
+    return MusdbTrack(
+        track_id=track_id,
+        name=track_dir.name,
+        split=split,
+        root=track_dir,
+        mixture_path=mixture,
+        reference_stems=stems,
+    )
+
+
+def discover_musdb18_tracks(
+    root: Path | str,
+    *,
+    split: str | None = None,
+    limit: int | None = None,
+) -> list[MusdbTrack]:
+    """Discover MUSDB18/MUSDB18-HQ track directories on disk.
+
+    Supports both canonical ``root/train/<track>/mixture.wav`` /
+    ``root/test/<track>/mixture.wav`` layout and a direct ``root/<track>``
+    layout for smaller extracted samples.
+    """
+    root = Path(root).expanduser()
+    if not root.is_dir():
+        raise FileNotFoundError(f"MUSDB root not found: {root}")
+    split_filter = split.strip().lower() if isinstance(split, str) and split.strip() else None
+    tracks: list[MusdbTrack] = []
+
+    split_dirs = [d for d in (root / "train", root / "test") if d.is_dir()]
+    if split_dirs:
+        for split_dir in sorted(split_dirs):
+            split_name = split_dir.name.lower()
+            if split_filter and split_name != split_filter:
+                continue
+            for track_dir in sorted(p for p in split_dir.iterdir() if p.is_dir()):
+                track = _musdb_track_from_dir(track_dir, split=split_name)
+                if track is not None:
+                    tracks.append(track)
+                    if limit is not None and len(tracks) >= limit:
+                        return tracks
+        return tracks
+
+    for track_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        track = _musdb_track_from_dir(track_dir, split=None)
+        if track is not None:
+            tracks.append(track)
+            if limit is not None and len(tracks) >= limit:
+                return tracks
+    return tracks
+
+
+def _as_stem_path(value: Path | str, *, stems_dir: Path | None = None) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    if stems_dir is not None:
+        candidate = stems_dir / path.name
+        if candidate.exists():
+            return candidate
+        candidate = stems_dir / path
+        if candidate.exists():
+            return candidate
+    return path
+
+
+def prepare_musdb_estimate_stems(
+    estimated_stems: Mapping[str, Path | str],
+    output_dir: Path | str,
+    *,
+    stems_dir: Path | str | None = None,
+) -> dict[str, Path]:
+    """Map AuralPrimer provider stems to MUSDB's 4-role reference format.
+
+    Direct roles (vocals/drums/bass) pass through. MUSDB's ``other`` estimate
+    is the sum of AuralPrimer ``other`` + ``guitar`` + ``keys`` when multiple
+    roles exist, matching the model-upgrade plan's 6-role-to-4-role mapping.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stems_root = Path(stems_dir) if stems_dir is not None else None
+    normalized = {str(k).strip().lower(): v for k, v in estimated_stems.items()}
+    out: dict[str, Path] = {}
+    for role in ("vocals", "drums", "bass"):
+        if role in normalized:
+            out[role] = _as_stem_path(normalized[role], stems_dir=stems_root)
+
+    other_paths = [
+        _as_stem_path(normalized[role], stems_dir=stems_root)
+        for role in MUSDB_OTHER_ESTIMATE_ROLES
+        if role in normalized
+    ]
+    if len(other_paths) == 1:
+        out["other"] = other_paths[0]
+    elif len(other_paths) > 1:
+        if importlib.util.find_spec("soundfile") is None:
+            raise RuntimeError("soundfile is required to sum MUSDB 'other' estimate stems")
+        import numpy as np
+        import soundfile as sf
+
+        audios = []
+        sample_rate: int | None = None
+        max_frames = 0
+        channels = 0
+        for path in other_paths:
+            audio, sr = sf.read(str(path), always_2d=True)
+            if sample_rate is None:
+                sample_rate = int(sr)
+            elif int(sr) != sample_rate:
+                raise ValueError(f"sample-rate mismatch while summing MUSDB other stems: {path}")
+            audios.append(audio)
+            max_frames = max(max_frames, int(audio.shape[0]))
+            channels = max(channels, int(audio.shape[1]))
+        summed = np.zeros((max_frames, channels), dtype=np.float32)
+        for audio in audios:
+            padded = np.zeros((max_frames, channels), dtype=np.float32)
+            padded[: audio.shape[0], : audio.shape[1]] = audio.astype(np.float32, copy=False)
+            summed += padded
+        other_path = output_dir / "other.wav"
+        sf.write(str(other_path), summed, int(sample_rate or 44100))
+        out["other"] = other_path
+    return out
+
+
+def summarize_museval_separation_runs(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    role_sdr: dict[str, list[float]] = {role: [] for role in MUSDB18_ROLES}
+    ok_tracks = 0
+    failed_tracks = 0
+    skipped_tracks = 0
+    for item in results:
+        evaluation = item.get("evaluation") if isinstance(item, Mapping) else None
+        if not isinstance(evaluation, Mapping):
+            skipped_tracks += 1
+            continue
+        status = evaluation.get("status")
+        if status == "ok":
+            ok_tracks += 1
+        elif status == "failed":
+            failed_tracks += 1
+        else:
+            skipped_tracks += 1
+        for metric in evaluation.get("role_metrics") or []:
+            if not isinstance(metric, Mapping):
+                continue
+            role = str(metric.get("role", "")).strip().lower()
+            value = metric.get("sdr_median")
+            if role in role_sdr and value is not None:
+                role_sdr[role].append(float(value))
+    role_summary = {
+        role: {"median_sdr_mean": _safe_mean(values), "track_count": len(values)}
+        for role, values in role_sdr.items()
+    }
+    return {
+        "tracks": len(results),
+        "tracks_ok": ok_tracks,
+        "tracks_failed": failed_tracks,
+        "tracks_skipped": skipped_tracks,
+        "role_summary": role_summary,
+        "median_sdr_mean": _safe_mean(
+            metric["median_sdr_mean"]
+            for metric in role_summary.values()
+            if metric["median_sdr_mean"] is not None
+        ),
+    }
+
+
 def evaluate_museval_separation(
     reference_stems: Mapping[str, Path | str],
     estimated_stems: Mapping[str, Path | str],
@@ -307,6 +494,16 @@ def evaluate_museval_separation(
     roles = [role for role in reference_stems if role in estimated_stems]
     missing_reference = sorted(set(estimated_stems) - set(reference_stems))
     missing_estimate = sorted(set(reference_stems) - set(estimated_stems))
+    if missing_estimate:
+        return {
+            "available": True,
+            "backend": "museval",
+            "protocol": "BSSEval v4 / museval.evaluate",
+            "status": "failed",
+            "reason": "missing estimate stem roles",
+            "missing_reference_roles": missing_reference,
+            "missing_estimate_roles": missing_estimate,
+        }
     if not roles:
         return {
             "available": True,
@@ -347,6 +544,20 @@ def evaluate_museval_separation(
         except Exception as exc:
             errors[role] = str(exc)
 
+    if errors:
+        return {
+            "available": True,
+            "backend": "museval",
+            "protocol": "BSSEval v4 / museval.evaluate",
+            "status": "failed",
+            "reason": "stem audio load failures",
+            "roles": loaded_roles,
+            "failed_roles": sorted(errors),
+            "errors": errors,
+            "missing_reference_roles": missing_reference,
+            "missing_estimate_roles": missing_estimate,
+        }
+
     if not loaded_roles:
         return {
             "available": True,
@@ -356,10 +567,35 @@ def evaluate_museval_separation(
             "errors": errors,
         }
 
-    references_arr = np.stack(references, axis=0)
-    estimates_arr = np.stack(estimates, axis=0)
+    common_frames = min(
+        [int(audio.shape[0]) for audio in references]
+        + [int(audio.shape[0]) for audio in estimates]
+    )
+    if common_frames <= 0:
+        return {
+            "available": True,
+            "backend": "museval",
+            "protocol": "BSSEval v4 / museval.evaluate",
+            "status": "failed",
+            "roles": loaded_roles,
+            "errors": {**errors, "audio": "no common audio frames across stems"},
+        }
+
     try:
-        scores = museval.evaluate(references_arr, estimates_arr, win=1.0, hop=1.0)
+        references_arr = np.stack([audio[:common_frames] for audio in references], axis=0)
+        estimates_arr = np.stack([audio[:common_frames] for audio in estimates], axis=0)
+    except Exception as exc:
+        return {
+            "available": True,
+            "backend": "museval",
+            "protocol": "BSSEval v4 / museval.evaluate",
+            "status": "failed",
+            "roles": loaded_roles,
+            "errors": {**errors, "audio_stack": str(exc)},
+        }
+    eval_window = max(1, int(target_rate or 44100))
+    try:
+        scores = museval.evaluate(references_arr, estimates_arr, win=eval_window, hop=eval_window)
     except Exception as exc:
         return {
             "available": True,
@@ -371,6 +607,8 @@ def evaluate_museval_separation(
         }
 
     sdr = getattr(scores, "sdr", None)
+    if sdr is None and isinstance(scores, (tuple, list)) and scores:
+        sdr = scores[0]
     role_metrics: list[dict[str, Any]] = []
     if sdr is not None:
         for idx, role in enumerate(loaded_roles):

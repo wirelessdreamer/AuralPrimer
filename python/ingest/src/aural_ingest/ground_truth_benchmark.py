@@ -52,6 +52,16 @@ MelodicTranscribeFn = Callable[[Path], list[MelodicNote]]
 # so a diagnostic reads "which of the 5 classes collapses" without the noise
 # of which particular tom.
 FIVE_CLASS_DRUM_LABELS: tuple[str, ...] = ("kick", "snare", "hi_hat", "toms", "cymbals")
+FINE_CLASS_DRUM_LABELS: tuple[str, ...] = (
+    "kick",
+    "snare",
+    "hi_hat",
+    "tom1",
+    "tom2",
+    "tom3",
+    "crash",
+    "ride",
+)
 
 _BENCHMARK_CLASS_TO_5CLASS: dict[str, str] = {
     "kick": "kick",
@@ -74,6 +84,12 @@ def _midi_note_to_5class(note: int) -> str | None:
     if fine is None:
         return None
     return _BENCHMARK_CLASS_TO_5CLASS.get(fine)
+
+
+def _midi_note_to_fine_class(note: int) -> str | None:
+    from .transcription import _midi_note_to_benchmark_class
+
+    return _midi_note_to_benchmark_class(note)
 
 
 def get_drum_algorithm(algorithm_id: str) -> DrumTranscribeFn:
@@ -196,6 +212,10 @@ class CaseScore:
     # Per-5-class TP/FP/FN, e.g. {"kick": {"tp": 4, "fp": 0, "fn": 1}, ...}.
     # Only populated for drum cases; empty for melodic.
     per_class: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Fine GM-derived drum class TP/FP/FN, e.g. crash vs ride and tom1/2/3.
+    # Kept separate so the historical per_class block remains the 5-class
+    # cross-engine diagnostic used by existing reports.
+    per_fine_class: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @property
     def precision(self) -> float:
@@ -232,9 +252,42 @@ class CaseScore:
             d["per_class"] = {
                 cls: dict(counts) for cls, counts in self.per_class.items()
             }
+        if self.per_fine_class:
+            d["per_fine_class"] = {
+                cls: dict(counts) for cls, counts in self.per_fine_class.items()
+            }
         if self.error:
             d["error"] = self.error
         return d
+
+
+def _score_drum_class_breakdown(
+    reference: Sequence[DrumEvent],
+    predicted: Sequence[DrumEvent],
+    labels: Sequence[str],
+    mapper: Callable[[int], str | None],
+    tolerance_sec: float,
+) -> dict[str, dict[str, int]]:
+    ref_by_class: dict[str, list[float]] = defaultdict(list)
+    pred_by_class: dict[str, list[float]] = defaultdict(list)
+    for ev in reference:
+        cls = mapper(ev.note)
+        if cls is not None:
+            ref_by_class[cls].append(ev.time)
+    for ev in predicted:
+        cls = mapper(ev.note)
+        if cls is not None:
+            pred_by_class[cls].append(ev.time)
+
+    per_class: dict[str, dict[str, int]] = {}
+    for cls in labels:
+        r = ref_by_class.get(cls, [])
+        p = pred_by_class.get(cls, [])
+        if not r and not p:
+            continue
+        matches, ref_unmatched, pred_unmatched = _greedy_match_onsets(r, p, tolerance_sec)
+        per_class[cls] = {"tp": len(matches), "fp": len(pred_unmatched), "fn": len(ref_unmatched)}
+    return per_class
 
 
 def score_drum_case(
@@ -296,24 +349,20 @@ def score_drum_case(
     # kept on the fine benchmark taxonomy so overall numbers are unchanged).
     # Notes outside the 5-class vocabulary are dropped from this diagnostic --
     # they neither help nor hurt any of the 5 buckets.
-    ref_5: dict[str, list[float]] = defaultdict(list)
-    pred_5: dict[str, list[float]] = defaultdict(list)
-    for ev in case.drum_events:
-        c5 = _midi_note_to_5class(ev.note)
-        if c5 is not None:
-            ref_5[c5].append(ev.time)
-    for ev in predicted:
-        c5 = _midi_note_to_5class(ev.note)
-        if c5 is not None:
-            pred_5[c5].append(ev.time)
-    per_class: dict[str, dict[str, int]] = {}
-    for c5 in FIVE_CLASS_DRUM_LABELS:
-        r = ref_5.get(c5, [])
-        p = pred_5.get(c5, [])
-        if not r and not p:
-            continue
-        m, ref_un, pred_un = _greedy_match_onsets(r, p, tolerance_sec)
-        per_class[c5] = {"tp": len(m), "fp": len(pred_un), "fn": len(ref_un)}
+    per_class = _score_drum_class_breakdown(
+        case.drum_events,
+        predicted,
+        FIVE_CLASS_DRUM_LABELS,
+        _midi_note_to_5class,
+        tolerance_sec,
+    )
+    per_fine_class = _score_drum_class_breakdown(
+        case.drum_events,
+        predicted,
+        FINE_CLASS_DRUM_LABELS,
+        _midi_note_to_fine_class,
+        tolerance_sec,
+    )
 
     return CaseScore(
         case_id=case.case_id,
@@ -325,6 +374,7 @@ def score_drum_case(
         onset_mae_sec=onset_mae,
         metadata=dict(case.metadata),
         per_class=per_class,
+        per_fine_class=per_fine_class,
     )
 
 
@@ -456,6 +506,37 @@ def _summarise_per_class(scores: Sequence[CaseScore]) -> dict[str, dict[str, Any
     return result
 
 
+def _summarise_per_fine_class(scores: Sequence[CaseScore]) -> dict[str, dict[str, Any]]:
+    agg: dict[str, dict[str, int]] = {}
+    for score in scores:
+        for cls, counts in score.per_fine_class.items():
+            bucket = agg.setdefault(cls, {"tp": 0, "fp": 0, "fn": 0})
+            bucket["tp"] += counts.get("tp", 0)
+            bucket["fp"] += counts.get("fp", 0)
+            bucket["fn"] += counts.get("fn", 0)
+
+    result: dict[str, dict[str, Any]] = {}
+    for cls in FINE_CLASS_DRUM_LABELS:
+        if cls not in agg:
+            continue
+        tp = agg[cls]["tp"]
+        fp = agg[cls]["fp"]
+        fn = agg[cls]["fn"]
+        p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+        result[cls] = {
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "support": tp + fn,
+            "precision": round(p, 6),
+            "recall": round(r, 6),
+            "f1": round(f1, 6),
+        }
+    return result
+
+
 def aggregate(
     scores: Sequence[CaseScore],
     *,
@@ -498,6 +579,9 @@ def aggregate(
         per_class = _summarise_per_class(ok)
         if per_class:
             out["per_class"] = per_class
+        per_fine_class = _summarise_per_fine_class(ok)
+        if per_fine_class:
+            out["per_fine_class"] = per_fine_class
         return out
 
     by_alg: dict[str, list[CaseScore]] = defaultdict(list)
@@ -612,14 +696,129 @@ def write_report(
     Returns the report dict.
     """
     summary = aggregate(scores)
+    case_count = len({s.case_id for s in scores})
+    overall = summary.get("overall", {})
     report = {
+        "ok": case_count > 0 and int(overall.get("cases_err") or 0) == 0,
         "dataset": dataset,
         "family": family,
         "extra": dict(extra) if extra else {},
-        "case_count": len({s.case_id for s in scores}),
+        "case_count": case_count,
         "summary": summary,
         "cases": [s.as_dict() for s in scores],
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
+
+
+def case_score_from_report_row(row: Mapping[str, Any]) -> CaseScore:
+    """Rehydrate a saved report case row for cross-shard aggregation."""
+    return CaseScore(
+        case_id=str(row.get("case_id", "")),
+        algorithm_id=str(row.get("algorithm_id", "")),
+        runtime_sec=float(row.get("runtime_sec") or 0.0),
+        tp=int(row.get("tp") or 0),
+        fp=int(row.get("fp") or 0),
+        fn=int(row.get("fn") or 0),
+        onset_mae_sec=(
+            float(row["onset_mae_sec"])
+            if row.get("onset_mae_sec") is not None
+            else None
+        ),
+        metadata={
+            str(key): str(value)
+            for key, value in (row.get("metadata") or {}).items()
+            if value is not None
+        },
+        error=str(row["error"]) if row.get("error") else None,
+        per_class={
+            str(cls): {
+                "tp": int(counts.get("tp") or 0),
+                "fp": int(counts.get("fp") or 0),
+                "fn": int(counts.get("fn") or 0),
+            }
+            for cls, counts in (row.get("per_class") or {}).items()
+            if isinstance(counts, Mapping)
+        },
+        per_fine_class={
+            str(cls): {
+                "tp": int(counts.get("tp") or 0),
+                "fp": int(counts.get("fp") or 0),
+                "fn": int(counts.get("fn") or 0),
+            }
+            for cls, counts in (row.get("per_fine_class") or {}).items()
+            if isinstance(counts, Mapping)
+        },
+    )
+
+
+def combine_report_payloads(
+    reports: Sequence[Mapping[str, Any]],
+    *,
+    source_reports: Sequence[str] = (),
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Combine saved ``gt-benchmark`` JSON payloads into one aggregate report.
+
+    Reports must describe the same dataset/family and must not contain duplicate
+    ``(case_id, algorithm_id)`` rows. Duration shards should be non-overlapping,
+    so duplicates usually mean an accidental double-count.
+    """
+    if not reports:
+        raise ValueError("at least one report is required")
+
+    dataset = str(reports[0].get("dataset", ""))
+    family = str(reports[0].get("family", ""))
+    scores: list[CaseScore] = []
+    seen: set[tuple[str, str]] = set()
+    for report in reports:
+        if str(report.get("dataset", "")) != dataset:
+            raise ValueError("cannot combine reports from different datasets")
+        if str(report.get("family", "")) != family:
+            raise ValueError("cannot combine reports from different families")
+        rows = report.get("cases")
+        if not isinstance(rows, Sequence):
+            raise ValueError("report is missing cases[]")
+        for row in rows:
+            if not isinstance(row, Mapping):
+                raise ValueError("report cases[] must contain objects")
+            score = case_score_from_report_row(row)
+            key = (score.case_id, score.algorithm_id)
+            if key in seen:
+                raise ValueError(f"duplicate case/algorithm in combined reports: {key[0]} / {key[1]}")
+            seen.add(key)
+            scores.append(score)
+
+    combined_extra = dict(extra or {})
+    if source_reports:
+        combined_extra["source_reports"] = list(source_reports)
+    return {
+        "dataset": dataset,
+        "family": family,
+        "extra": combined_extra,
+        "case_count": len({score.case_id for score in scores}),
+        "summary": aggregate(scores),
+        "cases": [score.as_dict() for score in scores],
+    }
+
+
+def combine_report_files(
+    report_paths: Sequence[Path | str],
+    *,
+    out_path: Path | str | None = None,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Load and optionally write a combined ``gt-benchmark`` report."""
+    paths = [Path(path) for path in report_paths]
+    payloads = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+    combined = combine_report_payloads(
+        payloads,
+        source_reports=[str(path) for path in paths],
+        extra=extra,
+    )
+    if out_path is not None:
+        output = Path(out_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(combined, indent=2), encoding="utf-8")
+    return combined

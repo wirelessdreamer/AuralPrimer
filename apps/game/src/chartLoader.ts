@@ -39,6 +39,7 @@ type StrictSource = "named" | "channel9";
 type DrumEvent = {
   t: number;
   midi: number;
+  velocity?: number;
   lane: DrumLane;
   trackIndex: number;
   trackName?: string;
@@ -95,6 +96,7 @@ function collectStrictEvents(tracks: MidiTrackLike[]): DrumEvent[] {
       out.push({
         t: note.t,
         midi: note.midi,
+        velocity: note.velocity,
         lane,
         trackIndex: track.index,
         trackName: track.name,
@@ -115,6 +117,7 @@ function collectRelaxedEvents(tracks: MidiTrackLike[]): DrumEvent[] {
       out.push({
         t: note.t,
         midi: note.midi,
+        velocity: note.velocity,
         lane,
         trackIndex: track.index,
         trackName: track.name
@@ -471,13 +474,17 @@ export function selectDrumChart(tracks: MidiTrackLike[]): DrumChartSelection {
 
 // ─── Melodic track extraction ─────────────────────────────────────────────────
 
-export type InstrumentRole = "bass" | "rhythm_guitar" | "lead_guitar" | "keys" | "melodic";
+export type InstrumentRole = "bass" | "rhythm_guitar" | "lead_guitar" | "keys" | "vocals" | "melodic";
 
 export type MelodicNote = {
   t_on: number;
   t_off: number;
   pitch: number;
   velocity: number;
+  string?: number;
+  fret?: number;
+  s?: number;
+  f?: number;
 };
 
 export type MelodicTrackSelection = {
@@ -539,6 +546,7 @@ const CHANNEL_TO_ROLE: Record<number, InstrumentRole> = {
   2: "lead_guitar",
   3: "keys",
   4: "melodic",
+  5: "vocals",
 };
 
 const MELODIC_TRACK_NAME_RE: Record<InstrumentRole, RegExp> = {
@@ -546,6 +554,7 @@ const MELODIC_TRACK_NAME_RE: Record<InstrumentRole, RegExp> = {
   rhythm_guitar: /\brhythm\s*guitar\b/i,
   lead_guitar: /\blead\s*guitar\b/i,
   keys: /\bkeys?\b|\bsynth\b|\bpiano\b/i,
+  vocals: /\b(vocals?|vox|voice|lead\s*vocal)\b/i,
   melodic: /\bmelodic\b/i,
 };
 
@@ -616,8 +625,8 @@ export function selectMelodicTracks(tracks: MidiTrackLike[]): MelodicTrackSelect
     });
   }
 
-  // Sort: bass, rhythm_guitar, lead_guitar, keys, melodic.
-  const order: InstrumentRole[] = ["bass", "rhythm_guitar", "lead_guitar", "keys", "melodic"];
+  // Sort by the ingest pipeline's canonical melodic channel order.
+  const order: InstrumentRole[] = ["bass", "rhythm_guitar", "lead_guitar", "keys", "melodic", "vocals"];
   out.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
   return out;
 }

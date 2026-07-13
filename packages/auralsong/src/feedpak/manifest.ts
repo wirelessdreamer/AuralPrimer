@@ -81,6 +81,9 @@ export interface FeedpakManifest {
 
   lyrics?: string;
   lyric_tracks?: FeedpakLyricTrack[];
+  vocal_pitch?: string;
+  pitch_extraction?: Record<string, unknown>;
+  vocal_pitch_contour?: string;
   drum_tab?: string;
   keys?: string;
   harmony?: string;
@@ -92,6 +95,8 @@ export interface FeedpakManifest {
   aural_spectrogram?: string;
   /** Map of refine role -> relative candidate path. */
   aural_refine_candidates?: Record<string, string>;
+  /** Map of fretted role -> relative fingering metadata path. */
+  aural_fingering?: Record<string, string>;
   /** Relative path to a benchmark/eval artifact. */
   aural_benchmark?: string;
   /** Embedded pipeline-config object. */

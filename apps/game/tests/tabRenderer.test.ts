@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { inferKeySignature, midiToNoteName } from "../src/tabRenderer";
+import {
+  inferKeySignature,
+  midiToNoteName,
+  noteToFretPosition,
+  TUNING_GUITAR_STANDARD,
+} from "../src/tabRenderer";
 
 describe("tabRenderer theory helpers", () => {
   it("infers a flat key signature from Bb-major note content", () => {
@@ -26,5 +31,23 @@ describe("tabRenderer theory helpers", () => {
     expect(midiToNoteName(70, "flat")).toBe("Bb4");
     expect(midiToNoteName(70, "sharp")).toBe("A#4");
     expect(midiToNoteName(61, "dual")).toBe("C#/Db4");
+  });
+
+  it("prefers explicit string/fret metadata over pitch-derived fingering", () => {
+    const note = { t_on: 0, t_off: 0.5, pitch: 64, velocity: 0.7, string: 0, fret: 24 };
+
+    expect(noteToFretPosition(note, TUNING_GUITAR_STANDARD)).toEqual({ string: 0, fret: 24 });
+  });
+
+  it("accepts compact s/f fingering metadata", () => {
+    const note = { t_on: 0, t_off: 0.5, pitch: 64, velocity: 0.7, s: 2, f: 14 };
+
+    expect(noteToFretPosition(note, TUNING_GUITAR_STANDARD)).toEqual({ string: 2, fret: 14 });
+  });
+
+  it("falls back to pitch-derived fingering when explicit metadata is invalid", () => {
+    const note = { t_on: 0, t_off: 0.5, pitch: 64, velocity: 0.7, string: 99, fret: 24 };
+
+    expect(noteToFretPosition(note, TUNING_GUITAR_STANDARD)).toEqual({ string: 5, fret: 0 });
   });
 });

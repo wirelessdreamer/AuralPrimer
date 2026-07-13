@@ -14,12 +14,15 @@ import struct
 import wave
 from pathlib import Path
 
+import pytest
+
 from aural_ingest.dataset_adapters.common import GroundTruthCase
 from aural_ingest.dataset_adapters.egmd import yield_cases
 from aural_ingest.ground_truth_benchmark import (
     _midi_note_to_5class,
     _summarise_per_class,
     aggregate,
+    combine_report_payloads,
     score_drum_case,
 )
 from aural_ingest.transcription import DrumEvent
@@ -210,6 +213,32 @@ def test_score_drum_case_per_class_breakdown() -> None:
     assert "toms" not in cs.per_class  # absent class omitted
 
 
+def test_score_drum_case_fine_class_breakdown_splits_cymbals_and_toms() -> None:
+    ref = [
+        DrumEvent(0.0, 49, 100),  # crash
+        DrumEvent(0.5, 51, 100),  # ride
+        DrumEvent(1.0, 48, 100),  # tom1
+        DrumEvent(1.5, 41, 100),  # tom3
+    ]
+    pred = [
+        DrumEvent(0.01, 49, 100),  # crash hit
+        DrumEvent(0.51, 49, 100),  # predicted crash where ride ref lives
+        DrumEvent(1.02, 48, 100),  # tom1 hit
+        DrumEvent(1.52, 47, 100),  # predicted tom2 where tom3 ref lives
+    ]
+    cs = score_drum_case(
+        _case(ref), pred, algorithm_id="x", runtime_sec=0.1, tolerance_sec=0.05
+    )
+
+    assert cs.per_class["cymbals"] == {"tp": 2, "fp": 0, "fn": 0}
+    assert cs.per_class["toms"] == {"tp": 2, "fp": 0, "fn": 0}
+    assert cs.per_fine_class["crash"] == {"tp": 1, "fp": 1, "fn": 0}
+    assert cs.per_fine_class["ride"] == {"tp": 0, "fp": 0, "fn": 1}
+    assert cs.per_fine_class["tom1"] == {"tp": 1, "fp": 0, "fn": 0}
+    assert cs.per_fine_class["tom2"] == {"tp": 0, "fp": 1, "fn": 0}
+    assert cs.per_fine_class["tom3"] == {"tp": 0, "fp": 0, "fn": 1}
+
+
 def test_score_drum_case_onset_only_ignores_class() -> None:
     # A kick predicted where the reference has a snare should MISS under
     # class-aware scoring but MATCH under onset-only.
@@ -256,3 +285,79 @@ def test_aggregate_includes_per_class_block() -> None:
     per_class = report["per_algorithm"]["alg1"]["per_class"]
     assert per_class["kick"]["f1"] == 1.0
     assert per_class["snare"]["f1"] == 1.0
+    assert report["per_algorithm"]["alg1"]["per_fine_class"]["kick"]["f1"] == 1.0
+
+
+def test_combine_report_payloads_reaggregates_non_overlapping_shards() -> None:
+    report_a = {
+        "dataset": "guitar_techs",
+        "family": "melodic",
+        "cases": [
+            {
+                "case_id": "case-a",
+                "algorithm_id": "alg1",
+                "runtime_sec": 1.0,
+                "tp": 3,
+                "fp": 1,
+                "fn": 2,
+                "onset_mae_sec": 0.01,
+                "metadata": {"category": "music", "signal": "directinput"},
+            },
+            {
+                "case_id": "case-a",
+                "algorithm_id": "alg2",
+                "runtime_sec": 2.0,
+                "tp": 1,
+                "fp": 3,
+                "fn": 4,
+                "onset_mae_sec": 0.03,
+                "metadata": {"category": "music", "signal": "directinput"},
+            },
+        ],
+    }
+    report_b = {
+        "dataset": "guitar_techs",
+        "family": "melodic",
+        "cases": [
+            {
+                "case_id": "case-b",
+                "algorithm_id": "alg1",
+                "runtime_sec": 3.0,
+                "tp": 2,
+                "fp": 2,
+                "fn": 1,
+                "onset_mae_sec": 0.02,
+                "metadata": {"category": "techniques", "signal": "directinput"},
+            }
+        ],
+    }
+
+    combined = combine_report_payloads(
+        [report_a, report_b],
+        source_reports=["a.json", "b.json"],
+        extra={"shard": "synthetic"},
+    )
+
+    assert combined["case_count"] == 2
+    assert combined["extra"]["source_reports"] == ["a.json", "b.json"]
+    assert combined["extra"]["shard"] == "synthetic"
+    alg1 = combined["summary"]["per_algorithm"]["alg1"]
+    assert alg1["tp"] == 5
+    assert alg1["fp"] == 3
+    assert alg1["fn"] == 3
+    assert alg1["f1"] == 0.625
+    assert alg1["buckets"]["category"]["music"]["tp"] == 3
+    assert combined["summary"]["per_algorithm"]["alg2"]["cases"] == 1
+
+
+def test_combine_report_payloads_rejects_duplicate_case_algorithm() -> None:
+    report = {
+        "dataset": "guitar_techs",
+        "family": "melodic",
+        "cases": [
+            {"case_id": "case-a", "algorithm_id": "alg1", "tp": 1, "fp": 0, "fn": 0},
+        ],
+    }
+
+    with pytest.raises(ValueError, match="duplicate case/algorithm"):
+        combine_report_payloads([report, report])

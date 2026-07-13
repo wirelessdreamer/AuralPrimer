@@ -18,4 +18,29 @@ describe("HUD key/mode", () => {
     expect(extractKeyModeFromManifest({ key: "A", mode: "min" })).toEqual({ key: "A", mode: "minor" });
     expect(formatKeyMode({ key: "D", mode: "dorian" })).toBe("D dorian");
   });
+
+  it("uses loaded harmony and keys artifacts when manifest only has pointers", () => {
+    expect(
+      extractKeyModeFromManifest(
+        { harmony: "harmony.json", keys: "keys.json" },
+        { harmony: { tonic: "Bb", mode: "min" } },
+      ),
+    ).toEqual({ key: "Bb", mode: "minor" });
+
+    expect(
+      extractKeyModeFromManifest(
+        { keys: "keys.json" },
+        { keys: { events: [{ t: 0, key: "G", scale: "major" }] } },
+      ),
+    ).toEqual({ key: "G", mode: "major" });
+  });
+
+  it("prefers explicit manifest metadata over artifact metadata", () => {
+    expect(
+      extractKeyModeFromManifest(
+        { key: "E", mode: "major" },
+        { harmony: { tonic: "Bb", mode: "minor" } },
+      ),
+    ).toEqual({ key: "E", mode: "major" });
+  });
 });

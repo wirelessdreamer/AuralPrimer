@@ -1,0 +1,387 @@
+{
+  "dataset": "guitar_techs",
+  "family": "melodic",
+  "extra": {
+    "split": "test",
+    "variant": "directinput",
+    "limit": null,
+    "min_duration_sec": 360.0,
+    "max_duration_sec": null,
+    "tolerance_ms": 50.0,
+    "pitch_tolerance_semitones": 0
+  },
+  "case_count": 7,
+  "summary": {
+    "overall": {
+      "cases": 14,
+      "cases_ok": 14,
+      "cases_err": 0,
+      "tp": 775,
+      "fp": 1974,
+      "fn": 1103,
+      "precision": 0.281921,
+      "recall": 0.412673,
+      "f1": 0.33499,
+      "onset_mae_sec": 0.020765,
+      "mean_runtime_sec": 261.5074
+    },
+    "per_algorithm": {
+      "yourmt3_guitar": {
+        "cases": 7,
+        "cases_ok": 7,
+        "cases_err": 0,
+        "tp": 27,
+        "fp": 626,
+        "fn": 912,
+        "precision": 0.041348,
+        "recall": 0.028754,
+        "f1": 0.03392,
+        "onset_mae_sec": 0.029374,
+        "mean_runtime_sec": 164.705,
+        "buckets": {
+          "category": {
+            "singlenotes": {
+              "cases": 2,
+              "cases_ok": 2,
+              "cases_err": 0,
+              "tp": 10,
+              "fp": 257,
+              "fn": 269,
+              "precision": 0.037453,
+              "recall": 0.035842,
+              "f1": 0.03663,
+              "onset_mae_sec": 0.025065,
+              "mean_runtime_sec": 181.6119
+            },
+            "techniques": {
+              "cases": 5,
+              "cases_ok": 5,
+              "cases_err": 0,
+              "tp": 17,
+              "fp": 369,
+              "fn": 643,
+              "precision": 0.044041,
+              "recall": 0.025758,
+              "f1": 0.032505,
+              "onset_mae_sec": 0.031529,
+              "mean_runtime_sec": 157.9422
+            }
+          },
+          "signal": {
+            "directinput": {
+              "cases": 7,
+              "cases_ok": 7,
+              "cases_err": 0,
+              "tp": 27,
+              "fp": 626,
+              "fn": 912,
+              "precision": 0.041348,
+              "recall": 0.028754,
+              "f1": 0.03392,
+              "onset_mae_sec": 0.029374,
+              "mean_runtime_sec": 164.705
+            }
+          }
+        }
+      },
+      "melodic_combined_guitar": {
+        "cases": 7,
+        "cases_ok": 7,
+        "cases_err": 0,
+        "tp": 748,
+        "fp": 1348,
+        "fn": 191,
+        "precision": 0.35687,
+        "recall": 0.796592,
+        "f1": 0.492916,
+        "onset_mae_sec": 0.013385,
+        "mean_runtime_sec": 358.3098,
+        "buckets": {
+          "category": {
+            "singlenotes": {
+              "cases": 2,
+              "cases_ok": 2,
+              "cases_err": 0,
+              "tp": 260,
+              "fp": 72,
+              "fn": 19,
+              "precision": 0.783133,
+              "recall": 0.9319,
+              "f1": 0.851064,
+              "onset_mae_sec": 0.007403,
+              "mean_runtime_sec": 367.5766
+            },
+            "techniques": {
+              "cases": 5,
+              "cases_ok": 5,
+              "cases_err": 0,
+              "tp": 488,
+              "fp": 1276,
+              "fn": 172,
+              "precision": 0.276644,
+              "recall": 0.739394,
+              "f1": 0.40264,
+              "onset_mae_sec": 0.015778,
+              "mean_runtime_sec": 354.6031
+            }
+          },
+          "signal": {
+            "directinput": {
+              "cases": 7,
+              "cases_ok": 7,
+              "cases_err": 0,
+              "tp": 748,
+              "fp": 1348,
+              "fn": 191,
+              "precision": 0.35687,
+              "recall": 0.796592,
+              "f1": 0.492916,
+              "onset_mae_sec": 0.013385,
+              "mean_runtime_sec": 358.3098
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "guitar_techs:P1_singlenotes:midi_allsinglenotes:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 157.5931,
+      "tp": 8,
+      "fp": 127,
+      "fn": 134,
+      "precision": 0.059259,
+      "recall": 0.056338,
+      "f1": 0.057762,
+      "onset_mae_sec": 0.023568,
+      "metadata": {
+        "player": "P1",
+        "category": "singlenotes",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P1_singlenotes:midi_allsinglenotes:directinput",
+      "algorithm_id": "melodic_combined_guitar",
+      "runtime_sec": 351.4007,
+      "tp": 128,
+      "fp": 17,
+      "fn": 14,
+      "precision": 0.882759,
+      "recall": 0.901408,
+      "f1": 0.891986,
+      "onset_mae_sec": 0.00807,
+      "metadata": {
+        "player": "P1",
+        "category": "singlenotes",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P1_techniques:midi_PalmMute:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 91.9488,
+      "tp": 0,
+      "fp": 1,
+      "fn": 148,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "onset_mae_sec": null,
+      "metadata": {
+        "player": "P1",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P1_techniques:midi_PalmMute:directinput",
+      "algorithm_id": "melodic_combined_guitar",
+      "runtime_sec": 385.0138,
+      "tp": 110,
+      "fp": 15,
+      "fn": 38,
+      "precision": 0.88,
+      "recall": 0.743243,
+      "f1": 0.805861,
+      "onset_mae_sec": 0.015663,
+      "metadata": {
+        "player": "P1",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P1_techniques:midi_Vibrato:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 135.7195,
+      "tp": 7,
+      "fp": 113,
+      "fn": 134,
+      "precision": 0.058333,
+      "recall": 0.049645,
+      "f1": 0.05364,
+      "onset_mae_sec": 0.043006,
+      "metadata": {
+        "player": "P1",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P1_techniques:midi_Vibrato:directinput",
+      "algorithm_id": "melodic_combined_guitar",
+      "runtime_sec": 355.0656,
+      "tp": 129,
+      "fp": 190,
+      "fn": 12,
+      "precision": 0.404389,
+      "recall": 0.914894,
+      "f1": 0.56087,
+      "onset_mae_sec": 0.01147,
+      "metadata": {
+        "player": "P1",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_singlenotes:midi_allsinglenotes:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 205.6307,
+      "tp": 2,
+      "fp": 130,
+      "fn": 135,
+      "precision": 0.015152,
+      "recall": 0.014599,
+      "f1": 0.01487,
+      "onset_mae_sec": 0.026562,
+      "metadata": {
+        "player": "P2",
+        "category": "singlenotes",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_singlenotes:midi_allsinglenotes:directinput",
+      "algorithm_id": "melodic_combined_guitar",
+      "runtime_sec": 383.7525,
+      "tp": 132,
+      "fp": 55,
+      "fn": 5,
+      "precision": 0.705882,
+      "recall": 0.963504,
+      "f1": 0.814815,
+      "onset_mae_sec": 0.006736,
+      "metadata": {
+        "player": "P2",
+        "category": "singlenotes",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_techniques:midi_PalmMute:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 162.4751,
+      "tp": 2,
+      "fp": 1,
+      "fn": 132,
+      "precision": 0.666667,
+      "recall": 0.014925,
+      "f1": 0.029197,
+      "onset_mae_sec": 0.027604,
+      "metadata": {
+        "player": "P2",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_techniques:midi_PalmMute:directinput",
+      "algorithm_id": "melodic_combined_guitar",
+      "runtime_sec": 399.4489,
+      "tp": 114,
+      "fp": 31,
+      "fn": 20,
+      "precision": 0.786207,
+      "recall": 0.850746,
+      "f1": 0.817204,
+      "onset_mae_sec": 0.009114,
+      "metadata": {
+        "player": "P2",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_techniques:midi_PinchHarmonics:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 225.1993,
+      "tp": 1,
+      "fp": 91,
+      "fn": 118,
+      "precision": 0.01087,
+      "recall": 0.008403,
+      "f1": 0.009479,
+      "onset_mae_sec": 0.028125,
+      "metadata": {
+        "player": "P2",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_techniques:midi_PinchHarmonics:directinput",
+      "algorithm_id": "melodic_combined_guitar",
+      "runtime_sec": 342.9951,
+      "tp": 30,
+      "fp": 717,
+      "fn": 89,
+      "precision": 0.040161,
+      "recall": 0.252101,
+      "f1": 0.069284,
+      "onset_mae_sec": 0.036646,
+      "metadata": {
+        "player": "P2",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_techniques:midi_Vibrato:directinput",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 174.3683,
+      "tp": 7,
+      "fp": 163,
+      "fn": 111,
+      "precision": 0.041176,
+      "recall": 0.059322,
+      "f1": 0.048611,
+      "onset_mae_sec": 0.027381,
+      "metadata": {
+        "player": "P2",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    },
+    {
+      "case_id": "guitar_techs:P2_techniques:midi_Vibrato:directinput",
+      "algorithm_id": "melodic_combined_guitar",
+      "runtime_sec": 290.492,
+      "tp": 105,
+      "fp": 323,
+      "fn": 13,
+      "precision": 0.245327,
+      "recall": 0.889831,
+      "f1": 0.384615,
+      "onset_mae_sec": 0.005998,
+      "metadata": {
+        "player": "P2",
+        "category": "techniques",
+        "signal": "directinput"
+      }
+    }
+  ]
+}

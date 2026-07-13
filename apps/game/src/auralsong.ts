@@ -12,6 +12,13 @@ export type AuralSongDetails = {
   has_events: boolean;
   has_lyrics?: boolean;
   has_notes_mid?: boolean;
+  has_song_timeline?: boolean;
+  has_drum_tab?: boolean;
+  has_keys?: boolean;
+  has_harmony?: boolean;
+  has_vocal_pitch?: boolean;
+  has_vocal_pitch_contour?: boolean;
+  has_aural_fingering?: boolean;
   has_mix_mp3: boolean;
   has_mix_ogg: boolean;
   has_mix_wav?: boolean;

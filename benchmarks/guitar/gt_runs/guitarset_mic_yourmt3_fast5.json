@@ -1,0 +1,179 @@
+{
+  "dataset": "guitarset",
+  "family": "melodic",
+  "extra": {
+    "split": "test",
+    "variant": "mic",
+    "limit": null,
+    "tolerance_ms": 50.0,
+    "pitch_tolerance_semitones": 0
+  },
+  "case_count": 5,
+  "summary": {
+    "overall": {
+      "cases": 5,
+      "cases_ok": 5,
+      "cases_err": 0,
+      "tp": 397,
+      "fp": 113,
+      "fn": 214,
+      "precision": 0.778431,
+      "recall": 0.649755,
+      "f1": 0.708296,
+      "onset_mae_sec": 0.008441,
+      "mean_runtime_sec": 7.2458
+    },
+    "per_algorithm": {
+      "yourmt3_guitar": {
+        "cases": 5,
+        "cases_ok": 5,
+        "cases_err": 0,
+        "tp": 397,
+        "fp": 113,
+        "fn": 214,
+        "precision": 0.778431,
+        "recall": 0.649755,
+        "f1": 0.708296,
+        "onset_mae_sec": 0.008441,
+        "mean_runtime_sec": 7.2458,
+        "buckets": {
+          "style": {
+            "comp": {
+              "cases": 3,
+              "cases_ok": 3,
+              "cases_err": 0,
+              "tp": 276,
+              "fp": 98,
+              "fn": 198,
+              "precision": 0.737968,
+              "recall": 0.582278,
+              "f1": 0.650943,
+              "onset_mae_sec": 0.009625,
+              "mean_runtime_sec": 8.4223
+            },
+            "solo": {
+              "cases": 2,
+              "cases_ok": 2,
+              "cases_err": 0,
+              "tp": 121,
+              "fp": 15,
+              "fn": 16,
+              "precision": 0.889706,
+              "recall": 0.883212,
+              "f1": 0.886447,
+              "onset_mae_sec": 0.006664,
+              "mean_runtime_sec": 5.481
+            }
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_comp:mic",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 16.498,
+      "tp": 81,
+      "fp": 45,
+      "fn": 83,
+      "precision": 0.642857,
+      "recall": 0.493902,
+      "f1": 0.558621,
+      "onset_mae_sec": 0.008711,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:00_Jazz1-200-B_solo:mic",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 7.9084,
+      "tp": 44,
+      "fp": 8,
+      "fn": 9,
+      "precision": 0.846154,
+      "recall": 0.830189,
+      "f1": 0.838095,
+      "onset_mae_sec": 0.007419,
+      "metadata": {
+        "player": "00",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:01_Jazz1-200-B_comp:mic",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 1.4282,
+      "tp": 94,
+      "fp": 11,
+      "fn": 26,
+      "precision": 0.895238,
+      "recall": 0.783333,
+      "f1": 0.835556,
+      "onset_mae_sec": 0.006793,
+      "metadata": {
+        "player": "01",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:01_Jazz1-200-B_solo:mic",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 3.0537,
+      "tp": 77,
+      "fp": 7,
+      "fn": 7,
+      "precision": 0.916667,
+      "recall": 0.916667,
+      "f1": 0.916667,
+      "onset_mae_sec": 0.005909,
+      "metadata": {
+        "player": "01",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "solo",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    },
+    {
+      "case_id": "guitarset:02_Jazz1-200-B_comp:mic",
+      "algorithm_id": "yourmt3_guitar",
+      "runtime_sec": 7.3407,
+      "tp": 101,
+      "fp": 42,
+      "fn": 89,
+      "precision": 0.706294,
+      "recall": 0.531579,
+      "f1": 0.606607,
+      "onset_mae_sec": 0.013372,
+      "metadata": {
+        "player": "02",
+        "progression": "Jazz1",
+        "bpm": "200",
+        "key": "B",
+        "style": "comp",
+        "variant": "mic",
+        "string_filter": "all"
+      }
+    }
+  ]
+}

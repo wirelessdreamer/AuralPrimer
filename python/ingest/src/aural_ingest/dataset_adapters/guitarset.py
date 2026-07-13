@@ -31,7 +31,13 @@ from typing import Iterator, Sequence
 
 from aural_ingest.transcription import MelodicNote
 
-from .common import GroundTruthCase, GroundTruthInstrument
+from .common import (
+    GroundTruthCase,
+    GroundTruthChordEvent,
+    GroundTruthInstrument,
+    GroundTruthKeyEvent,
+    GroundTruthScalar,
+)
 
 
 # String indices in GuitarSet JAMS annotations: 0 = low E (E2), 5 = high E (E4).
@@ -100,6 +106,105 @@ def _parse_jams_note_midi(
     return [notes[i] for i in order], [string_indices[i] for i in order]
 
 
+def _note_metadata_for_strings(
+    notes: Sequence[MelodicNote],
+    string_indices: Sequence[int],
+) -> tuple[dict[str, GroundTruthScalar], ...]:
+    out: list[dict[str, GroundTruthScalar]] = []
+    for note, string_idx in zip(notes, string_indices, strict=False):
+        open_midi = GUITARSET_OPEN_STRING_MIDI[string_idx]
+        out.append({
+            "string": string_idx,
+            "fret": int(note.pitch) - int(open_midi),
+            "open_midi": open_midi,
+        })
+    return tuple(out)
+
+
+def _confidence(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_bounds(obs: dict[str, object]) -> tuple[float, float]:
+    t_on = float(obs.get("time", 0.0) or 0.0)
+    duration = float(obs.get("duration", 0.0) or 0.0)
+    return t_on, t_on + duration
+
+
+def _parse_jams_chords(jams_obj: dict[str, object]) -> tuple[GroundTruthChordEvent, ...]:
+    events: list[GroundTruthChordEvent] = []
+    chord_idx = 0
+    annotations = jams_obj.get("annotations", [])
+    if not isinstance(annotations, list):
+        return ()
+    for ann in annotations:
+        if not isinstance(ann, dict) or ann.get("namespace") != "chord":
+            continue
+        source = "mireval" if chord_idx == 0 else "pretty_midi"
+        chord_idx += 1
+        data = ann.get("data", [])
+        if not isinstance(data, list):
+            continue
+        for obs in data:
+            if not isinstance(obs, dict):
+                continue
+            label = str(obs.get("value", "")).strip()
+            if not label:
+                continue
+            t_on, t_off = _event_bounds(obs)
+            if t_off <= t_on:
+                continue
+            events.append(
+                GroundTruthChordEvent(
+                    t_on=t_on,
+                    t_off=t_off,
+                    label=label,
+                    source=source,
+                    confidence=_confidence(obs.get("confidence")),
+                )
+            )
+    return tuple(events)
+
+
+def _parse_jams_keys(jams_obj: dict[str, object]) -> tuple[GroundTruthKeyEvent, ...]:
+    events: list[GroundTruthKeyEvent] = []
+    annotations = jams_obj.get("annotations", [])
+    if not isinstance(annotations, list):
+        return ()
+    for ann in annotations:
+        if not isinstance(ann, dict) or ann.get("namespace") != "key_mode":
+            continue
+        data = ann.get("data", [])
+        if not isinstance(data, list):
+            continue
+        for obs in data:
+            if not isinstance(obs, dict):
+                continue
+            label = str(obs.get("value", "")).strip()
+            if not label:
+                continue
+            key, _, mode = label.partition(":")
+            t_on, t_off = _event_bounds(obs)
+            if t_off <= t_on:
+                continue
+            events.append(
+                GroundTruthKeyEvent(
+                    t_on=t_on,
+                    t_off=t_off,
+                    key=key,
+                    mode=mode,
+                    label=label,
+                    confidence=_confidence(obs.get("confidence")),
+                )
+            )
+    return tuple(events)
+
+
 def _scan_pairs(
     corpus_root: Path,
     *,
@@ -157,7 +262,7 @@ def yield_cases(
     count = 0
     for jams_path, audio_path in pairs:
         try:
-            notes, _str_idx = _parse_jams_note_midi(
+            notes, string_indices = _parse_jams_note_midi(
                 jams_path, string_filter=string_filter,
             )
         except Exception:
@@ -168,6 +273,9 @@ def yield_cases(
         # Read duration from JAMS metadata (cheap; we already opened it).
         j = json.loads(jams_path.read_text(encoding="utf-8"))
         duration_sec = float(j.get("file_metadata", {}).get("duration", 0.0) or 0.0)
+        note_metadata = _note_metadata_for_strings(notes, string_indices)
+        chord_events = _parse_jams_chords(j)
+        key_events = _parse_jams_keys(j)
 
         # Style hint from the file basename, which follows a known
         # naming convention: e.g. "00_BN1-129-Eb_comp.jams" =
@@ -182,6 +290,9 @@ def yield_cases(
             audio_path=audio_path,
             duration_sec=duration_sec,
             melodic_notes=tuple(notes),
+            melodic_note_metadata=note_metadata,
+            chord_events=chord_events,
+            key_events=key_events,
             metadata=meta,
         )
         count += 1

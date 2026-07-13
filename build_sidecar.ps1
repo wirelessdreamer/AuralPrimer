@@ -57,6 +57,41 @@ function Get-PropertyValue([object]$Obj, [string]$Name) {
   return $prop.Value
 }
 
+function Get-IngestSourceFreshness([string]$IngestRootAbs) {
+  $files = @()
+  foreach ($relRoot in @("src/aural_ingest", "scripts")) {
+    $root = Join-Path $IngestRootAbs $relRoot
+    if (Test-Path -LiteralPath $root -PathType Container) {
+      $files += Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {
+        $_.FullName -notmatch '\\__pycache__\\' -and
+        $_.FullName -notmatch '\\\.pytest_cache\\' -and
+        $_.FullName -notmatch '\\aural_ingest\.egg-info\\'
+      }
+    }
+  }
+  foreach ($relFile in @("aural_ingest.spec", "pyproject.toml", "requirements-runtime.txt")) {
+    $path = Join-Path $IngestRootAbs $relFile
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+      $files += Get-Item -LiteralPath $path
+    }
+  }
+
+  if ($files.Count -eq 0) {
+    return [pscustomobject]@{
+      file_count = 0
+      latest_path = $null
+      last_write_utc = $null
+    }
+  }
+
+  $newest = $files | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+  return [pscustomobject]@{
+    file_count = $files.Count
+    latest_path = $newest.FullName
+    last_write_utc = $newest.LastWriteTimeUtc.ToString("o")
+  }
+}
+
 function Get-PythonCommand([string]$RepoRootAbs) {
   $venvCandidates = @(
     (Join-Path $RepoRootAbs "python/ingest/.venv/Scripts/python.exe"),
@@ -204,6 +239,19 @@ function Get-FileNameWithoutExe([string]$Name) {
   return $Name
 }
 
+function Test-IsWindowsHost() {
+  return [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    [System.Runtime.InteropServices.OSPlatform]::Windows
+  )
+}
+
+function Get-SidecarExecutableName() {
+  if (Test-IsWindowsHost) {
+    return "aural_ingest.exe"
+  }
+  return "aural_ingest"
+}
+
 function Get-ExpectedExternalBinaryName([string]$TargetTripleValue, [string]$SourceAbs) {
   $sourceLeaf = Split-Path -Leaf $SourceAbs
   $baseName = Get-FileNameWithoutExe $sourceLeaf
@@ -304,13 +352,19 @@ New-Item -ItemType Directory -Path $outDirAbs -Force | Out-Null
 
 $ingestRoot = Join-Path $repoRootAbs "python/ingest"
 $specPath = Join-Path $ingestRoot "aural_ingest.spec"
+$runtimeRequirementsPath = Join-Path $ingestRoot "requirements-runtime.txt"
+$ingestSourceFreshness = Get-IngestSourceFreshness $ingestRoot
 if (-not (Test-Path -LiteralPath $specPath -PathType Leaf)) {
   throw "Missing PyInstaller spec: $specPath"
+}
+if (-not (Test-Path -LiteralPath $runtimeRequirementsPath -PathType Leaf)) {
+  throw "Missing sidecar runtime requirements: $runtimeRequirementsPath"
 }
 
 $pythonCommand = Get-PythonCommand $repoRootAbs
 $pythonDisplay = ($pythonCommand -join " ")
 $resolvedTargetTriple = Get-TargetTriple $TargetTriple $repoRootAbs
+$sidecarExecutableName = Get-SidecarExecutableName
 
 $sourceAbs = Resolve-AbsolutePath $repoRootAbs $SourceExePath
 if ($sourceAbs -and -not (Test-Path -LiteralPath $sourceAbs -PathType Leaf)) {
@@ -318,7 +372,7 @@ if ($sourceAbs -and -not (Test-Path -LiteralPath $sourceAbs -PathType Leaf)) {
 }
 
 if (-not $sourceAbs) {
-  $defaultBuiltSidecar = Join-Path $ingestRoot "dist/aural_ingest.exe"
+  $defaultBuiltSidecar = Join-Path $ingestRoot ("dist/" + $sidecarExecutableName)
   if ($SkipBuild) {
     if (-not (Test-Path -LiteralPath $defaultBuiltSidecar -PathType Leaf)) {
       throw "SkipBuild requested but built sidecar not found: $defaultBuiltSidecar"
@@ -327,7 +381,9 @@ if (-not $sourceAbs) {
   } else {
     Invoke-Checked $pythonCommand @("-m", "pip", "install", "--upgrade", "pip") "pip upgrade" $ingestRoot
     Invoke-Checked $pythonCommand @("-m", "pip", "install", "--upgrade", "pyinstaller") "install pyinstaller" $ingestRoot
-    Invoke-Checked $pythonCommand @("-m", "pip", "install", "--no-deps", "-e", ".") "install ingest sidecar package" $ingestRoot
+    Invoke-Checked $pythonCommand @("-m", "pip", "install", "--no-deps", "basic-pitch>=0.4.0") "install Basic Pitch without TensorFlow transitive dependency" $ingestRoot
+    Invoke-Checked $pythonCommand @("-m", "pip", "install", "-r", $runtimeRequirementsPath) "install ingest sidecar runtime dependencies" $ingestRoot
+    Invoke-Checked $pythonCommand @("-m", "pip", "install", "--no-deps", "-e", ".") "install ingest sidecar package after runtime dependencies" $ingestRoot
     Invoke-Checked $pythonCommand @("-m", "PyInstaller", "--noconfirm", "--clean", $specPath) "PyInstaller build" $ingestRoot
 
     if (-not (Test-Path -LiteralPath $defaultBuiltSidecar -PathType Leaf)) {
@@ -339,6 +395,19 @@ if (-not $sourceAbs) {
 
 if (-not $sourceAbs) {
   throw "No sidecar executable available. Provide -SourceExePath, or run without -SkipBuild."
+}
+
+$sourceItemForFreshness = Get-Item -LiteralPath $sourceAbs
+if ($SkipBuild -and [string]::IsNullOrWhiteSpace($SourceExePath) -and $null -ne $ingestSourceFreshness.last_write_utc) {
+  $ingestSourceLastWriteUtc = [DateTime]::Parse([string]$ingestSourceFreshness.last_write_utc).ToUniversalTime()
+  if ($sourceItemForFreshness.LastWriteTimeUtc -lt $ingestSourceLastWriteUtc) {
+    throw (
+      "SkipBuild requested but ingest source is newer than the built sidecar: " +
+      "source='$($ingestSourceFreshness.latest_path)' (LastWrite $($ingestSourceLastWriteUtc.ToString('o'))) " +
+      "exe='$sourceAbs' (LastWrite $($sourceItemForFreshness.LastWriteTimeUtc.ToString('o'))). " +
+      "Run build_sidecar.ps1 without -SkipBuild."
+    )
+  }
 }
 
 $runtimeCheck = Invoke-CapturedCommand $sourceAbs @("runtime-check") "runtime-check" $repoRootAbs $RuntimeCheckTimeoutSec
@@ -363,10 +432,12 @@ if ($null -eq $runtimeAssets) {
 
 $basicPitchAsset = Get-PropertyValue $runtimeAssets "basic_pitch_model"
 $demucsModelpackAsset = Get-PropertyValue $runtimeAssets "demucs_modelpack"
+$demucsFtDrumsModelpackAsset = Get-PropertyValue $runtimeAssets "demucs_ft_drums_modelpack"
 $mt3CheckpointAssets = Get-PropertyValue $runtimeAssets "mt3_checkpoints"
 
 Assert-RuntimeAsset $basicPitchAsset "basic_pitch_model" $false
 Assert-RuntimeAsset $demucsModelpackAsset "demucs_modelpack" $false
+Assert-RuntimeAsset $demucsFtDrumsModelpackAsset "demucs_ft_drums_modelpack" $false
 if ($null -ne $mt3CheckpointAssets) {
   foreach ($engineAssetProp in @($mt3CheckpointAssets.PSObject.Properties)) {
     if ($null -ne $engineAssetProp) {
@@ -375,7 +446,7 @@ if ($null -ne $mt3CheckpointAssets) {
   }
 }
 
-$packagedSidecar = Join-Path $outDirAbs "aural_ingest.exe"
+$packagedSidecar = Join-Path $outDirAbs $sidecarExecutableName
 Copy-Item -LiteralPath $sourceAbs -Destination $packagedSidecar -Force
 
 $sourceItem = Get-Item -LiteralPath $sourceAbs
@@ -428,7 +499,7 @@ foreach ($appRootAbs in $resolvedAppRoots) {
 
 $manifest = [ordered]@{
   schema_version = 3
-  sidecar_name = "aural_ingest.exe"
+  sidecar_name = $sidecarExecutableName
   tauri_sidecar_name = $ExternalBinName
   tauri_external_bin = $ExternalBinContract
   tauri_target_triple = $resolvedTargetTriple
@@ -441,6 +512,9 @@ $manifest = [ordered]@{
   packaged_size_bytes = [int64]$packagedItem.Length
   packaged_last_write_utc = $packagedItem.LastWriteTimeUtc.ToString("o")
   sha256 = $sha
+  ingest_source_file_count = [int]$ingestSourceFreshness.file_count
+  ingest_source_latest_path = $ingestSourceFreshness.latest_path
+  ingest_source_last_write_utc = $ingestSourceFreshness.last_write_utc
   python_command = $pythonDisplay
   skip_build = [bool]$SkipBuild
   synced_tauri_binaries = $syncedTauriBinaries
@@ -448,6 +522,7 @@ $manifest = [ordered]@{
   model_assets = [ordered]@{
     basic_pitch_model = $basicPitchAsset
     demucs_modelpack = $demucsModelpackAsset
+    demucs_ft_drums_modelpack = $demucsFtDrumsModelpackAsset
     mt3_checkpoints = $mt3CheckpointAssets
   }
 }

@@ -78,7 +78,7 @@ CHORD_MAX_SUS_SEC = 0.25
 CONSTANT_BPM = 120.0
 
 # CONTRACT C3: melodic role -> (track name, insertion order). Instruments are
-# inserted in this order so pretty_midi assigns program/channels 0..4 (skipping
+# inserted in this order so pretty_midi assigns program/channels 0..5 (skipping
 # the drum channel 9) and the game's CHANNEL_TO_ROLE fallback lines up, while
 # the track NAME is the primary detection key.
 ROLE_TRACK_NAME: dict[str, str] = {
@@ -87,8 +87,9 @@ ROLE_TRACK_NAME: dict[str, str] = {
     "lead_guitar": "Lead Guitar",
     "keys": "Keys",
     "melodic": "Melodic",
+    "vocals": "Vocals",
 }
-ROLE_ORDER: list[str] = ["bass", "rhythm_guitar", "lead_guitar", "keys", "melodic"]
+ROLE_ORDER: list[str] = ["bass", "rhythm_guitar", "lead_guitar", "keys", "melodic", "vocals"]
 
 
 # ---------------------------------------------------------------------------
@@ -275,12 +276,12 @@ def assign_roles(
       * ``piano`` | ``keys``      -> ``keys``
       * ``combo``                 -> first empty of lead_guitar/rhythm_guitar,
                                      else ``melodic``
-      * ``vocals``                -> skipped (no melodic highway)
+      * ``vocals``                -> ``vocals``
       * anything else             -> first empty of lead/rhythm, else ``melodic``
 
     Returns ``[(role, manifest_entry, wire_json)]`` in arrangement order.
-    Vocals are dropped. Roles already taken are skipped (the arrangement is
-    dropped rather than merged).
+    Roles already taken are skipped (the arrangement is dropped rather than
+    merged).
     """
     taken: set[str] = set()
     result: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
@@ -295,8 +296,8 @@ def assign_roles(
         kind = _arrangement_kind(entry, arr)
         role: str | None = None
         if "vocal" in kind:
-            continue
-        if "bass" in kind:
+            role = "vocals"
+        elif "bass" in kind:
             role = "bass"
         elif "rhythm" in kind:
             role = "rhythm_guitar"
@@ -328,9 +329,10 @@ def build_notes_mid(
     """Build a PrettyMIDI with one named Instrument per melodic role (CONTRACT C3).
 
     Instruments are inserted in ROLE_ORDER (bass, rhythm_guitar, lead_guitar,
-    keys, melodic) — only for roles present in ``assigned`` — each named
-    "Bass"/"Rhythm Guitar"/"Lead Guitar"/"Keys"/"Melodic". No drum track;
-    single constant tempo. Returns ``None`` when nothing melodic is present.
+    keys, melodic, vocals) — only for roles present in ``assigned`` — each
+    named "Bass"/"Rhythm Guitar"/"Lead Guitar"/"Keys"/"Melodic"/"Vocals".
+    No drum track; single constant tempo. Returns ``None`` when nothing
+    melodic is present.
     """
     import pretty_midi  # lazy: keeps the pure helpers importable without it.
 
@@ -384,7 +386,6 @@ def build_song_timeline(arr: dict[str, Any]) -> dict[str, Any]:
     raw_beats = arr.get("beats") if isinstance(arr.get("beats"), list) else []
     beats: list[dict[str, Any]] = []
     current_measure = 1
-    have_seen_real = False
     for row in raw_beats:
         if not isinstance(row, dict):
             continue
@@ -394,7 +395,6 @@ def build_song_timeline(arr: dict[str, Any]) -> dict[str, Any]:
         m = row.get("measure")
         if isinstance(m, int) and m != -1:
             current_measure = m
-            have_seen_real = True
         beats.append({"time": float(t), "measure": int(current_measure)})
 
     # Derive downbeats (a measure-value change) to compute meter + tempo.

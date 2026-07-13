@@ -11,9 +11,10 @@ can adjust on the fly.
 > The shot above is the in-game **Band Setup** view of the Keys/Synth lane
 > for a real Suno piano stem the pipeline transcribed. Notes fall toward
 > the "PLAY HERE" line; the bright cap at the bottom of each pill is the
-> attack, the fading tail above is the sustain. The detected key signature
-> (`F# minor, 3 sharps`) is read straight off the note distribution by
-> the in-process Krumhansl–Schmuckler analyzer in `viz-tab`. Press
+> attack, the fading tail above is the sustain. The displayed key signature
+> (`F# minor, 3 sharps`) comes from manifest key artifacts when present, with
+> the in-process Krumhansl–Schmuckler analyzer as the note-distribution
+> fallback. Press
 > <kbd>[</kbd> / <kbd>]</kbd> in-game to spread / compress the falling
 > notes StepMania-style.
 
@@ -40,7 +41,7 @@ that feed them.
 ```sh
 git clone https://github.com/wirelessdreamer/AuralPrimer.git
 cd AuralPrimer
-npm ci              # installs the JS workspace + downloads model packs that ship in CI
+npm ci              # installs the JS workspace
 cargo test --workspace
 npm test
 python -m pip install -e python/ingest    # only needed if you want to call the pipeline from source
@@ -62,8 +63,9 @@ OS-level prerequisites.
   restart.
 - **Deterministic imports.** Cacheable, reproducible, versioned outputs.
 - **Local-first shipping.** Required tooling lives in the desktop
-  artifact. ML model weights are NOT bundled in the installer — they
-  download/import into `assets/models/` on first use.
+  artifact. ML model weights are not auto-fetched by packaging; reviewed,
+  pinned modelpacks/checkpoints may be staged into portable/release artifacts,
+  and otherwise download/import into `assets/models/` after install.
 - **Plugin-first visualization.** Visualizers stay decoupled from the
   runtime via the `viz-sdk` plugin SDK.
 - **Rights-neutral importer scope.** PRs for source-specific proprietary
@@ -98,17 +100,31 @@ shell, and native audio/MIDI:
 | Model | **Meta AI · FAIR** — Défossez et al. | [**Demucs**](https://github.com/facebookresearch/demucs) — stem separation | MIT (code + weights) |
 | Model | **Sony AI** — Tan · Cheuk · Mitsufuji | [**MR-MT3**](https://github.com/gudgud96/MR-MT3) — neural drum transcription (+ [`mt3-infer`](https://github.com/openmirlab/mt3-infer) wrapper) | MIT (code + weights) |
 | Model | **Google Research · Magenta** | [**MT3**](https://github.com/magenta/mt3) — the architecture MR-MT3 is fine-tuned from | Apache-2.0 |
+| Model | **mimbres / YourMT3 authors** | [**YourMT3**](https://github.com/mimbres/yourmt3) — MT3-family research/A-B transcription candidate, with the reviewed [Hugging Face checkpoint](https://huggingface.co/mimbres/YourMT3) staged as a modelpack | GPL-3.0 code / Apache-2.0 weights |
 | Model | **Spotify · Audio Intelligence Lab** | [**Basic Pitch**](https://github.com/spotify/basic-pitch) — piano / polyphonic melodic transcription | Apache-2.0 |
+| Model | **Qiuqiang Kong / ByteDance + Edwards et al.** | [**piano_transcription_inference**](https://github.com/qiuqiangkong/piano_transcription_inference) plus Edwards robust piano checkpoint — optional PTI piano cleanup path | MIT code / CC BY 4.0 checkpoint |
+| Model | **Kim · Kwon · Nam** | [**D3RM**](https://github.com/hanshounsu/d3rm) — optional external piano transcription research candidate | MIT code / checkpoint license per artifact |
 | Model | **CPJKU · JKU Linz** — Foscarin · Schlüter · Widmer | [**Beat This!**](https://github.com/CPJKU/beat_this) — beat / downbeat / meter (drives the editor grid) | MIT (code + weights) |
+| Model | **Dream-High / RMVPE contributors** | [**RMVPE**](https://github.com/Dream-High/RMVPE) — optional external vocal F0 scaffold; checkpoint not bundled | Apache-2.0 code / checkpoint license pending review |
+| Model | **MZehren / ADTOF contributors** | [**ADTOF**](https://github.com/MZehren/ADTOF) — optional external drum benchmark engine; not sidecar-bundled | CC BY-NC-SA 4.0 |
+| Runtime | **ZFTurbo / MSST contributors** | [**Music-Source-Separation-Training**](https://github.com/ZFTurbo/Music-Source-Separation-Training) — optional external RoFormer/MSST separation command wrapper | MIT code / checkpoint license per artifact |
+| Model | **Riley / Edwards / Dixon** | [**High-Resolution Guitar Transcription**](https://xavriley.github.io/HighResolutionGuitarTranscription/) — optional external guitar benchmark adapter; runtime/checkpoint not bundled | license review required before use |
+| Runtime | **CPJKU · JKU Linz** — Böck et al. | [**madmom**](https://github.com/CPJKU/madmom) — DBN beat/downbeat post-processing for Beat This! | BSD-3-Clause code path |
 | Model | **NYU MARL · Northwestern** — Kim · Salamon · Bello · Morrison | [**CREPE**](https://github.com/marl/crepe) + [**torchcrepe**](https://github.com/maxrmorrison/torchcrepe) — bass / guitar pitch | MIT |
 | Runtime | **Meta Platforms** — PyTorch project | [**PyTorch**](https://github.com/pytorch/pytorch) (`torch` · `torchaudio` · `torchvision`) — ML runtime | BSD |
 | Runtime | **Hugging Face** | [**transformers**](https://github.com/huggingface/transformers) — model architectures | Apache-2.0 |
 | Runtime | **Lightning AI** — William Falcon | [**PyTorch Lightning**](https://github.com/Lightning-AI/pytorch-lightning) — inference scaffolding | Apache-2.0 |
 | Runtime | **Phil Wang** (lucidrains) | [**x-transformers**](https://github.com/lucidrains/x-transformers) · [**rotary-embedding-torch**](https://github.com/lucidrains/rotary-embedding-torch) | MIT |
 | Runtime | **NumFOCUS community** — Brian McFee et al. | [**NumPy**](https://github.com/numpy/numpy) · [**SciPy**](https://github.com/scipy/scipy) · [**scikit-learn**](https://github.com/scikit-learn/scikit-learn) · [**librosa**](https://github.com/librosa/librosa) (onset / CQT / tempo) | BSD · ISC |
+| Runtime | **python-jsonschema project** — Julian Berman et al. | [**jsonschema**](https://github.com/python-jsonschema/jsonschema) — feedpak JSON Schema validation | MIT |
 | Runtime | **Bastian Bechtold** · libsndfile team | [**soundfile**](https://github.com/bastibe/python-soundfile) — audio I/O | BSD (LGPL backend, dynamic) |
+| Runtime | **Colin Raffel / pretty_midi project** | [**pretty_midi**](https://github.com/craffel/pretty-midi) — MIDI read/write for FeedPak and benchmark artifacts | MIT |
+| Runtime | **Mido contributors** | [**mido**](https://github.com/mido/mido) — MIDI decoding for MT3-family outputs | MIT |
+| Runtime | **PyYAML project** | [**PyYAML**](https://pyyaml.org/) — YAML manifest read/write | MIT |
+| Runtime | **MIR Evaluation project** | [**mir_eval**](https://github.com/mir-evaluation/mir_eval) — transcription and music-evaluation metrics | MIT |
+| Runtime | **SigSep community** | [**museval**](https://github.com/sigsep/sigsep-mus-eval) — internal MUSDB source-separation SDR benchmark | MIT |
 | Runtime | **The FFmpeg project** | [**ffmpeg**](https://ffmpeg.org) — decode binary | LGPL-2.1+ (dynamic) |
-| Runtime | **Microsoft** · **ONNX / LF AI & Data** | [**onnxruntime**](https://github.com/microsoft/onnxruntime) + [**onnx**](https://github.com/onnx/onnx) — opt-in drum-CRNN inference / export | MIT · Apache-2.0 |
+| Runtime | **Microsoft** · **ONNX / LF AI & Data** | [**onnxruntime**](https://github.com/microsoft/onnxruntime) + [**onnx**](https://github.com/onnx/onnx) — Basic Pitch ONNX inference and opt-in drum-CRNN inference / export | MIT · Apache-2.0 |
 | App | **Tauri WG · Commons Conservancy** | [**Tauri v2**](https://github.com/tauri-apps/tauri) — desktop shell + dialog/shell plugins | MIT / Apache-2.0 |
 | App | **VoidZero** — Evan You · Anthony Fu | [**Vite**](https://github.com/vitejs/vite) · [**Vitest**](https://github.com/vitest-dev/vitest) — build & test | MIT |
 | App | **Microsoft** | [**TypeScript**](https://github.com/microsoft/TypeScript) · [**Playwright**](https://github.com/microsoft/playwright) | Apache-2.0 |
@@ -125,10 +141,18 @@ below.*
 | [**Demucs**](https://github.com/facebookresearch/demucs) (`htdemucs_6s`) | Stem separation (vocals/drums/bass/guitar/keys/other) | Meta AI / FAIR — Alexandre Défossez | MIT / **MIT** |
 | [**MR-MT3**](https://github.com/gudgud96/MR-MT3) (`mr_mt3` ckpt) + [**mt3-infer**](https://github.com/openmirlab/mt3-infer) | Neural drum transcription (which drum + velocity) | Sony AI — Hao Hao Tan, Kin Wai Cheuk, Yuki Mitsufuji et al.; wrapper by *openmirlab* | MIT / **MIT** |
 | [**MT3**](https://github.com/magenta/mt3) (lineage) | Base multi-track transcription architecture MR-MT3 derives from | Google Research · Magenta | Apache-2.0 / Apache-2.0 |
+| [**YourMT3**](https://github.com/mimbres/yourmt3) + [checkpoint](https://huggingface.co/mimbres/YourMT3) (`yourmt3` ckpt) | Research/A-B drum and guitar transcription candidate; not the gameplay default | mimbres / YourMT3 authors | GPL-3.0 / **Apache-2.0** |
 | [**Basic Pitch**](https://github.com/spotify/basic-pitch) | Piano / polyphonic melodic transcription | Spotify — Audio Intelligence Lab | Apache-2.0 / Apache-2.0 |
+| [**piano_transcription_inference**](https://github.com/qiuqiangkong/piano_transcription_inference) + [Edwards robust checkpoint](https://zenodo.org/records/10610212) | PTI piano transcription and cleanup fallback for keys | Qiuqiang Kong / ByteDance; Edwards et al. robust checkpoint | MIT / **CC BY 4.0** |
+| [**D3RM**](https://github.com/hanshounsu/d3rm) | Optional external piano transcription research candidate; not required for default imports | Kim, Kwon, Nam | MIT / checkpoint license per artifact |
 | [**Beat This!**](https://github.com/CPJKU/beat_this) | Beat / downbeat / **meter** tracking (drives the editor grid) | CPJKU, JKU Linz — Foscarin, Schlüter, Widmer | MIT / **MIT** |
+| [**madmom**](https://github.com/CPJKU/madmom) | Beat This! DBN post-processing (no madmom model files loaded) | CPJKU, JKU Linz — Sebastian Böck et al. | BSD-3-Clause / n/a |
 | [**torchcrepe**](https://github.com/maxrmorrison/torchcrepe) + [**CREPE**](https://github.com/marl/crepe) | Monophonic bass / guitar pitch tracking | Max Morrison (Northwestern) · CREPE by NYU MARL (Kim, Salamon, Bello) | MIT / **MIT** |
 | [**librosa**](https://github.com/librosa/librosa) | DSP: onset detection, CQT/spectrogram, tempo analysis | librosa dev team (Brian McFee, NYU) | ISC |
+| [**RMVPE**](https://github.com/Dream-High/RMVPE) | Optional external vocal pitch/F0 scaffold; no checkpoint is bundled or hardcoded | Dream-High / RMVPE contributors | Apache-2.0 / checkpoint source license must be reviewed |
+| [**ADTOF**](https://github.com/MZehren/ADTOF) | Optional external automatic drum transcription benchmark engine; not part of the frozen sidecar | MZehren / ADTOF contributors | CC BY-NC-SA 4.0 / CC BY-NC-SA 4.0 |
+| [**Music-Source-Separation-Training**](https://github.com/ZFTurbo/Music-Source-Separation-Training) | Optional external RoFormer/MSST source-separation provider for MUSDB benchmarking | ZFTurbo / MSST contributors | MIT / checkpoint license per artifact |
+| [**High-Resolution Guitar Transcription**](https://xavriley.github.io/HighResolutionGuitarTranscription/) | Optional external guitar transcription benchmark adapter; no runtime/checkpoint is bundled | Riley, Edwards, Dixon | license review required before use |
 
 ### ML runtime & Python libraries
 
@@ -137,11 +161,17 @@ below.*
 | [**PyTorch**](https://github.com/pytorch/pytorch) (`torch`, `torchaudio`, `torchvision`) | Meta Platforms (PyTorch project) | BSD-2/3-Clause |
 | [**PyTorch Lightning**](https://github.com/Lightning-AI/pytorch-lightning) | Lightning AI (William Falcon) | Apache-2.0 |
 | [**transformers**](https://github.com/huggingface/transformers) | Hugging Face, Inc. | Apache-2.0 |
-| [**onnxruntime**](https://github.com/microsoft/onnxruntime) (opt-in drum-CRNN inference) | Microsoft | MIT |
+| [**onnxruntime**](https://github.com/microsoft/onnxruntime) (Basic Pitch ONNX inference; opt-in drum-CRNN inference) | Microsoft | MIT |
 | [**onnx**](https://github.com/onnx/onnx) (drum-CRNN ONNX export; pinned 1.18.0 for ml-dtypes compat) | ONNX community (LF AI & Data Foundation) | Apache-2.0 |
 | [**x-transformers**](https://github.com/lucidrains/x-transformers), [**rotary-embedding-torch**](https://github.com/lucidrains/rotary-embedding-torch) | Phil Wang (lucidrains) | MIT |
 | [**NumPy**](https://github.com/numpy/numpy), [**SciPy**](https://github.com/scipy/scipy), [**scikit-learn**](https://github.com/scikit-learn/scikit-learn) | NumFOCUS-sponsored communities | BSD-3-Clause |
+| [**jsonschema**](https://github.com/python-jsonschema/jsonschema) | python-jsonschema project (Julian Berman et al.) | MIT |
 | [**soundfile**](https://github.com/bastibe/python-soundfile) (+ [**libsndfile**](https://github.com/libsndfile/libsndfile)) | Bastian Bechtold · libsndfile team | BSD-3-Clause (LGPL backend, dynamic) |
+| [**pretty_midi**](https://github.com/craffel/pretty-midi) | Colin Raffel / pretty_midi contributors | MIT |
+| [**mido**](https://github.com/mido/mido) | Ole Martin Bjørndalen / Mido contributors | MIT |
+| [**PyYAML**](https://pyyaml.org/) | PyYAML project | MIT |
+| [**mir_eval**](https://github.com/mir-evaluation/mir_eval) | MIR Evaluation project | MIT |
+| [**museval**](https://github.com/sigsep/sigsep-mus-eval) | SigSep community | MIT |
 | [**beartype**](https://github.com/beartype/beartype) | Cecil Curry | MIT |
 | [**ffmpeg**](https://ffmpeg.org) (bundled binary) | The FFmpeg project | LGPL-2.1+ (dynamic) |
 | [**PyInstaller**](https://github.com/pyinstaller/pyinstaller) (build tool) | PyInstaller Development Team | GPL-2.0+ w/ bootloader exception |
@@ -174,9 +204,11 @@ below.*
 > third-party repackagings conflates them with the 2019 Conv-TasNet research
 > models); (2) `madmom`'s trained models are CC-BY-NC-SA — that once
 > disqualified them under the project's former commercial gate, but under the
-> current policy (open source, non-commercial acceptable) they are admissible;
-> Beat This! (MIT) remains the meter-tracking choice on quality and
-> maintenance grounds, not licensing. Pin exact model revisions
+> current policy (open source, non-commercial acceptable) they are admissible.
+> The Beat This! DBN path uses madmom's BSD-licensed processor code and does
+> not load those madmom model files. Beat This! (MIT) remains the
+> meter-tracking choice on quality and maintenance grounds, not licensing.
+> Pin exact model revisions
 > (HF/checkpoint) so a future card relicense can't change terms silently.
 
 ## Research & methodology — first class
@@ -187,21 +219,47 @@ alongside the code. The work directly informs production defaults —
 nothing in the ingest pipeline is shipped without head-to-head benchmark
 evidence captured in a document below.
 
+### Transcription performance snapshot
+
+Current headline results from the checked-in benchmark evidence. F1 is the
+greedy onset-matching transcription score used by
+`aural_ingest gt-benchmark`; `P` and `R` are precision and recall. Some best
+scores are research-only because model licensing, runtime packaging, or
+human gameplay/listening review is still pending.
+
+| Area | Best current result | Corpus / split | Cases | P | R | F1 | Status |
+|---|---|---:|---:|---:|---:|---:|---|
+| Keys / piano | [`piano_chord_supplement`](benchmarks/melodic/gt_runs/piano_synthetic_chord_supp_v1.json) | `piano_synthetic` | 4 | 0.981 | 0.880 | **0.928** | strongest scored piano path; small synthetic corpus |
+| Guitar | [`qmul_hr_guitar`](benchmarks/guitar/gt_runs/guitarset_mic_limit40_qmul_hr_guitar.json) | GuitarSet mic test | 40 | 0.866 | 0.894 | **0.880** | best guitar F1; external research runtime |
+| Guitar | [`qmul_hr_guitar`](benchmarks/guitar/gt_runs/guitar_techs_directinput_qmul_hr_guitar.json) | Guitar-TECHS direct-input | 104 | 0.908 | 0.819 | **0.861** | full-suite confirmation; external research runtime |
+| Guitar | [`yourmt3_guitar`](benchmarks/guitar/gt_runs/guitarset_mic_limit40_yourmt3_vs_baselines.json) | GuitarSet mic test | 40 | 0.723 | 0.657 | **0.688** | available in `research_ab`, not default |
+| Drums | [`yourmt3_drums`](benchmarks/drums/gt_runs/yourmt3_mr_mt3_test30.json) | E-GMD test | 30 | 0.619 | 0.564 | **0.590** | best drum corpus F1; still needs gameplay/listening review |
+| Drums | [`drum_crnn` run-4](benchmarks/drums/gt_runs/egmd_stratified_30_drum_crnn_run4_calibrated.json) | E-GMD stratified test | 30 | 0.741 | 0.473 | **0.577** | best local neural reference; promotion still gated |
+| Drums | [`adtof_drums`](benchmarks/drums/gt_runs/adtof_test30.json) | E-GMD test | 30 | 0.487 | 0.372 | **0.422** | runtime validated; research-only |
+| Bass | [`melodic_torchcrepe`](benchmarks/bass/gt_runs/bass_hexdebleed_60_strict.json) | GuitarSet low-string strict | 60 | 0.452 | 0.140 | **0.214** | best strict-pitch bass proxy |
+| Bass | [`melodic_combined`](benchmarks/bass/gt_runs/bass_hexdebleed_60_octaveforgiving.json) | GuitarSet low-string octave-forgiving | 60 | 0.326 | 0.538 | **0.406** | useful octave-forgiving sanity check |
+| Vocals | `melodic_rmvpe` | MIR-ST500 test/vocal | pending | - | - | - | runtime/checkpoint ready; benchmark blocked on reviewed test audio |
+
+Source-separation quality uses SDR rather than F1: default Demucs reaches
+7.324 median SDR on the 10-track MUSDB test sample, while RoFormer reaches
+9.027 and beats that baseline by 1.703 SDR. Those reports live under
+[`benchmarks/quality/runs`](benchmarks/quality/runs).
+
 ### Top-tier transcription stack (per instrument)
 
 Ingest auto-selects a **primary transcriber per instrument** — the
 `gameplay_default` profile (`transcription.py`) — backed by a fail-safe
 fallback chain so machines without the neural checkpoints still import.
-The current production picks:
+The current production picks and research challengers:
 
 | Instrument | Top-tier transcriber | Why it leads | Fallback chain |
 |------------|----------------------|--------------|----------------|
-| **Drums** | **`mr_mt3_drums`** — neural MT3 ADT (GPU/CPU auto) | catches the dense hi-hats / ghost notes the DSP engines miss (their E-GMD recall collapses to F1 ≈ 0.13) | beat-conditioned multiband → spectral-flux multiband → adaptive-beat-grid → DSP bandpass — used when the MT3 checkpoint/runtime is absent |
-| **Bass** | **`torchcrepe`** — neural monophonic pitch (MIT) | octave-clean (~0.3% octave jumps vs ~45% for Basic Pitch), tighter low register, ~9× faster | YIN octave+HPS fix → adaptive → YIN-bass80 → octave-fix |
-| **Guitar — lead** | **`torchcrepe`** — monophonic | octave-clean, ~6–8× faster than the DSP chain | melodic-adaptive → octave-fix → combined → Basic Pitch |
-| **Guitar — rhythm** | **`melodic_hpss_combined`** — HPSS + onset (polyphonic) | keeps the chord voices a monophonic tracker drops | melodic-adaptive → octave-fix → combined |
+| **Drums** | **`beat_conditioned_multiband_decoder`** — safe local gameplay default | stable density and no external checkpoint requirement; YourMT3 now leads the E-GMD test-30 corpus at **F1 0.590**, but profile/default promotion still needs psalm gameplay + listening review | spectral-flux multiband → adaptive-beat-grid → combined filter → DSP bandpass; YourMT3, MR-MT3, ADTOF, and drum-CRNN remain explicitly selectable for A/B |
+| **Bass** | **`torchcrepe`** — neural monophonic pitch (MIT) | octave-clean and best strict low-string proxy among current bass candidates (**F1 0.214** strict; `melodic_combined` reaches **F1 0.406** only in octave-forgiving scoring) | YIN octave+HPS fix → adaptive → YIN-bass80 → octave-fix |
+| **Guitar — lead** | **`torchcrepe`** — monophonic gameplay default | fast, local, and license-clean; `qmul_hr_guitar` is the current benchmark leader (**F1 0.880** GuitarSet, **0.861** Guitar-TECHS) but remains external/research-only | melodic-adaptive → octave-fix → combined → Basic Pitch; QMUL/YourMT3 are selectable for A/B |
+| **Guitar — rhythm** | **`melodic_hpss_combined`** — HPSS + onset gameplay default | keeps the chord voices a monophonic tracker drops; external QMUL is the current quality leader where its runtime is configured | melodic-adaptive → octave-fix → combined |
 | **Keys / piano** | **`piano_auto`** — scored gate: Basic Pitch → PTI (Edwards/Kong) cleanup | picks the best-scoring engine per stem; the tuned `piano_chord_supplement` path benchmarks **F1 0.928 / precision 0.981** on the synthetic piano corpus | PTI-consensus-clean → PTI-clean → polyphonic-clean |
-| **Vocals** | *(no pitch transcription)* | vocals drive lyric alignment, not a note chart | — |
+| **Vocals** | **`melodic_rmvpe`** scaffold *(runtime/checkpoint validated; MIR-ST500 F1 pending)* | first pass at a karaoke-useful vocal pitch lane; lyrics remain the primary vocal surface; the strict gate is waiting on reviewed MIR-ST500 test audio and a full test/vocal benchmark | torchcrepe → pyin when RMVPE assets are absent |
 
 Alternate profiles are selectable per import: `fidelity_midi` (denser
 symbolic output for A/B review) and `research_ab` (every local candidate,
@@ -292,8 +350,9 @@ separation SDR) and the harness to run them are specced in the
    a JSON report under `benchmarks/{drums,melodic}/gt_runs/`.
 3. Read the per-case breakdown. If a variant Pareto-dominates the
    production default (every case strictly improves or stays unchanged
-   on F1 / precision / recall), promote it; otherwise ship it as a
-   workspace candidate.
+   on F1 / precision / recall), mark it as a candidate; default/profile
+   promotion still requires the relevant gameplay metrics and human
+   in-game/listening review.
 4. Append the round's results table + reproducibility command + the
    "what didn't work" log to
    `docs/research-ground-truth-benchmarks-<date>.md` and update the
@@ -346,19 +405,19 @@ Process, tooling, packaging:
     /ingest                 # Python extraction pipeline (built into sidecars)
       /src/aural_ingest
         /algorithms         # per-instrument transcribers + the new piano cleanup family
-        /dataset_adapters   # E-GMD / GuitarSet / Guitar-TECHS / piano_synthetic
+        /dataset_adapters   # E-GMD / GuitarSet / Guitar-TECHS / MIR-ST500 / piano_synthetic
         /ground_truth_benchmark.py
   /visualizers
     /viz-beats              # beat/section grid
     /viz-drum-highway       # drum lanes from host-provided MIDI events
-    /viz-fretboard          # fretboard cursor placeholder
+    /viz-fretboard          # fretboard view using host-provided fingering metadata
     /viz-lyrics             # data-driven karaoke lyrics
-    /viz-nashville          # chord-lane placeholder
+    /viz-nashville          # chord/key lane from host-provided harmony artifacts
     /viz-tab                # piano-roll + tab renderer for keys/bass/guitar
   /benchmarks               # frontend/python/rust benches + thresholds.yml + reports
   /scripts                  # Node + PowerShell launchers for build/bench/portable
   /assets
-    /models                 # downloaded on first use; NOT bundled in installer
+    /models                 # reviewed local modelpacks/checkpoints; normally populated post-install
     /test_fixtures
   /docs
     /assets/screenshots
@@ -371,8 +430,9 @@ install:
 
 - ingest tools ship as PyInstaller sidecar executables
 - decoder binaries are bundled when needed
-- ML model packs download / import post-install into `assets/models/`
-  (never bundled in the installer)
+- ML model packs normally download / import post-install into `assets/models/`;
+  reviewed, pinned packs can be staged into portable/release artifacts with
+  id/version/hash/license metadata in the packaging manifest
 
 See [`docs/packaging-ci.md`](docs/packaging-ci.md) for the full CI build
 matrix.

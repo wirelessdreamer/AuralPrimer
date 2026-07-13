@@ -98,7 +98,7 @@ describe("playersPanel", () => {
       ["rhythm_guitar", "rhythm_guitar"],
       ["lead_guitar", "lead_guitar"],
       ["keys", "keys"],
-      ["vocals", "melodic"],
+      ["vocals", "vocals"],
       ["drums", null],
     ];
     for (const [inst, expected] of cases) {

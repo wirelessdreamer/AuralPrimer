@@ -76,6 +76,7 @@ vi.mock("../src/refineCandidatesIo", async (importOriginal) => {
 });
 
 import { initRefineWorkspace, type RefineWorkspaceDeps } from "../src/refineWorkspace";
+import { _resetReadinessCachesForTest } from "../src/cleanupReadiness";
 import type { RefineSession } from "../src/refineCandidatesIo";
 
 const REQUIRED_IDS: ReadonlyArray<readonly [string, string]> = [
@@ -300,6 +301,7 @@ async function open(container = "/songs/x.auralsong"): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _resetReadinessCachesForTest();
   lastSpectroOpts = null;
   editorNotes = [];
   auditionInstance.isPlaying.mockReturnValue(false);
@@ -391,6 +393,184 @@ describe("initRefineWorkspace", () => {
     await flush();
     expect(relPaths).toContain("aural/spectrogram/keys/spectrogram.json");
     expect(relPaths).toContain("aural/spectrogram/keys/tile0.png");
+  });
+
+  it("offers vocals in the Refine picker when vocal candidates exist", async () => {
+    const session = makeSession();
+    session.instrument = "vocals";
+    session.candidates.instrument = "vocals";
+    loadSessionMock.mockResolvedValue(session);
+    const geom = {
+      fmin_midi: 24,
+      bins_per_octave: 12,
+      bins_per_semitone: 1,
+      n_bins: 84,
+      n_frames: 100,
+      frames_per_sec: 10,
+      duration_sec: 30,
+      db_floor: -80,
+      db_ceil: 0,
+      bit_depth: 16,
+      packing: "rg16",
+      row_0_is: "lowest_pitch",
+      tile_width: 4096,
+      tiles: [{ file: "tile0.png", col_start: 0, col_end: 100 }],
+    };
+    invokeMock.mockImplementation((cmd: string, args: { relPath?: string }) => {
+      if (cmd === "get_auralsong_details") {
+        return Promise.resolve({
+          manifest_raw: {
+            stems: [{ id: "vocals", file: "audio/stems/vocals.wav", default: true }],
+          },
+        });
+      }
+      if (cmd === "read_auralsong_json") {
+        const rel = args.relPath ?? "";
+        if (rel.includes("/vocals/")) return Promise.resolve(geom);
+        if (rel.endsWith("refine_candidates.vocals.json")) return Promise.resolve({});
+        if (rel === "song_timeline.json") return Promise.resolve({ beats: [], time_signatures: [] });
+        return Promise.reject(new Error(`not found: ${rel}`));
+      }
+      if (cmd === "read_auralsong_bytes") return Promise.resolve([1, 2, 3]);
+      if (cmd === "native_audio_load_pack_audio") {
+        return Promise.resolve({ mime: "audio/wav", duration_sec: 30, roles: ["vocals"] });
+      }
+      if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
+      if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
+      return Promise.reject(new Error(`unexpected ${cmd}`));
+    });
+
+    const h = initRefineWorkspace(makeDeps());
+    await h.openForAuralSong("/songs/vocals.feedpak");
+    await flush();
+
+    const options = Array.from((el("refineInstrumentSelect") as HTMLSelectElement).options);
+    expect(options.map((option) => option.value)).toContain("vocals");
+    expect((el("refineInstrumentSelect") as HTMLSelectElement).value).toBe("vocals");
+    expect(el("refineInstLabel").textContent).toBe("Vocals");
+  });
+
+  it("loads the beat grid through the manifest song_timeline pointer", async () => {
+    loadSessionMock.mockResolvedValue(makeSession());
+    const relPaths: string[] = [];
+    const geom = {
+      fmin_midi: 24,
+      bins_per_octave: 12,
+      bins_per_semitone: 1,
+      n_bins: 84,
+      n_frames: 100,
+      frames_per_sec: 10,
+      duration_sec: 30,
+      db_floor: -80,
+      db_ceil: 0,
+      bit_depth: 16,
+      packing: "rg16",
+      row_0_is: "lowest_pitch",
+      tile_width: 4096,
+      tiles: [{ file: "tile0.png", col_start: 0, col_end: 100 }],
+    };
+    invokeMock.mockImplementation((cmd: string, args: { relPath?: string }) => {
+      if (args?.relPath) relPaths.push(args.relPath);
+      if (cmd === "get_auralsong_details") {
+        return Promise.resolve({
+          manifest_raw: {
+            song_timeline: "custom/timeline.json",
+            stems: [{ id: "keys", file: "audio/stems/keys.wav", default: true }],
+          },
+        });
+      }
+      if (cmd === "read_auralsong_json") {
+        if (args.relPath === "custom/timeline.json") {
+          return Promise.resolve({
+            beats: [
+              { time: 0.5, measure: 1 },
+              { time: 1.0, measure: 1 },
+            ],
+            time_signatures: [{ ts: [4, 4] }],
+          });
+        }
+        if (args.relPath === "song_timeline.json") return Promise.reject(new Error("wrong timeline path"));
+        return Promise.resolve(geom);
+      }
+      if (cmd === "read_auralsong_bytes") return Promise.resolve([1, 2, 3]);
+      if (cmd === "native_audio_load_pack_audio") {
+        return Promise.resolve({ mime: "audio/wav", duration_sec: 30, roles: ["keys"] });
+      }
+      if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
+      if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
+      return Promise.reject(new Error(`unexpected ${cmd}`));
+    });
+
+    const h = initRefineWorkspace(makeDeps());
+    await h.openForAuralSong("/songs/x.feedpak");
+    await flush();
+
+    expect(relPaths).toContain("custom/timeline.json");
+    expect(relPaths).not.toContain("song_timeline.json");
+    expect(spectroInstance.setBeatGrid).toHaveBeenCalledWith([0.5, 1.0], [0.5]);
+  });
+
+  it("loads and saves drums through the manifest drum_tab pointer", async () => {
+    const relPaths: string[] = [];
+    const writes: Array<{ relPath?: string; value?: unknown }> = [];
+    const geom = {
+      fmin_midi: 24,
+      bins_per_octave: 12,
+      bins_per_semitone: 1,
+      n_bins: 16,
+      n_frames: 20,
+      frames_per_sec: 10,
+      duration_sec: 4,
+      db_floor: -80,
+      db_ceil: 0,
+      bit_depth: 16,
+      packing: "rg16",
+      row_0_is: "lowest_pitch",
+      tile_width: 4096,
+      tiles: [{ file: "tile0.png", col_start: 0, col_end: 20 }],
+    };
+    const tab = {
+      version: 1,
+      kit: [{ id: "kick" }],
+      hits: [{ t: 0.5, p: "kick", v: 96 }],
+    };
+    invokeMock.mockImplementation((cmd: string, args: { relPath?: string; value?: unknown }) => {
+      if (args?.relPath) relPaths.push(args.relPath);
+      if (cmd === "get_auralsong_details") {
+        return Promise.resolve({
+          manifest_raw: {
+            drum_tab: "custom/drums.json",
+            stems: [{ id: "drums", file: "audio/stems/drums.wav" }],
+          },
+        });
+      }
+      if (cmd === "read_auralsong_json") {
+        if (args.relPath === "custom/drums.json") return Promise.resolve(tab);
+        if (args.relPath === "aural/spectrogram/drums/spectrogram.json") return Promise.resolve(geom);
+        return Promise.reject(new Error(`not found: ${args.relPath}`));
+      }
+      if (cmd === "read_auralsong_bytes") return Promise.resolve([1, 2, 3]);
+      if (cmd === "write_auralsong_features_json") {
+        writes.push(args);
+        return Promise.resolve(null);
+      }
+      if (cmd === "native_audio_load_pack_audio") {
+        return Promise.resolve({ mime: "audio/wav", duration_sec: 4, roles: ["drums"] });
+      }
+      if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
+      if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
+      return Promise.reject(new Error(`unexpected ${cmd}`));
+    });
+
+    const h = initRefineWorkspace(makeDeps());
+    await h.openForAuralSong("/songs/x.feedpak");
+    await flush();
+    el("refineSaveBtn").dispatchEvent(new MouseEvent("click"));
+    await flush();
+
+    expect(relPaths).toContain("custom/drums.json");
+    expect(relPaths).not.toContain("drum_tab.json");
+    expect(writes[0]?.relPath).toBe("custom/drums.json");
   });
 
   it("surfaces load errors as the error empty state", async () => {

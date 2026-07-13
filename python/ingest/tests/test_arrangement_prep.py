@@ -19,6 +19,7 @@ import pytest
 from aural_ingest.arrangement_prep import (
     STANDARD,
     assign_roles,
+    build_notes_mid,
     build_role_notes,
     build_song_timeline,
     note_midi,
@@ -206,10 +207,10 @@ def test_assign_roles_lead_and_bass_first_wins():
     assert roles == ["lead_guitar", "bass"]
 
 
-def test_assign_roles_vocals_skipped():
+def test_assign_roles_vocals_kept():
     assigned = assign_roles([({"id": "vocals"}, {}), ({"id": "bass"}, {})])
     roles = [r for r, _, _ in assigned]
-    assert roles == ["bass"]
+    assert roles == ["vocals", "bass"]
 
 
 def test_assign_roles_duplicate_role_dropped():
@@ -227,6 +228,15 @@ def test_assign_roles_rhythm_lead_keys():
     ]
     assigned = assign_roles(entries)
     assert [r for r, _, _ in assigned] == ["rhythm_guitar", "lead_guitar", "keys"]
+
+
+def test_build_notes_mid_keeps_vocals_track():
+    arr = {"notes": [{"t": 0.1, "s": 0, "f": 5, "sus": 0.25}]}
+    pm = build_notes_mid([("vocals", {"id": "vocals"}, arr)])
+
+    assert pm is not None
+    assert [inst.name for inst in pm.instruments] == ["Vocals"]
+    assert [note.pitch for note in pm.instruments[0].notes] == [45]
 
 
 # --- end-to-end (needs pretty_midi) ----------------------------------------
@@ -297,9 +307,9 @@ def test_prep_skips_existing_without_force(tmp_path: Path):
     assert notes_mid.stat().st_mtime_ns == mtime
 
 
-def test_prep_drums_only_skips_notes_mid(tmp_path: Path):
-    # A pack with only a vocals arrangement (no melodic) -> no notes.mid, no
-    # bogus aural_notes_mid key, but timeline still written.
+def test_prep_empty_vocals_skips_notes_mid(tmp_path: Path):
+    # A pack with an empty vocals arrangement recognizes the role but still
+    # writes no bogus notes.mid / aural_notes_mid key.
     pack = tmp_path / "drumsonly.sloppak"
     (pack / "arrangements").mkdir(parents=True)
     (pack / "arrangements" / "vox.json").write_text(
@@ -318,8 +328,8 @@ def test_prep_drums_only_skips_notes_mid(tmp_path: Path):
     )
     status = prep_arrangements(pack)
     assert status["ok"] is True
-    assert status["roles"] == {}
-    assert status["notes_mid"] == "skipped_no_melodic"
+    assert status["roles"] == {"vocals": "Vocals"}
+    assert status["notes_mid"] == "skipped_no_notes"
     assert not (pack / "aural" / "notes.mid").exists()
     from aural_ingest.pack_paths import load_pack_manifest
 

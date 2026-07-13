@@ -172,8 +172,113 @@ describe("readSongChartSelection", () => {
     );
     expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
       containerPath: "/c",
+      relPath: "features/notes.mid",
+    });
+  });
+
+  it("falls back to feedpak aural/notes.mid when legacy features/notes.mid is absent", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid" && args.relPath === "features/notes.mid") {
+        throw new Error("not found");
+      }
+      if (cmd === "read_auralsong_mid" && args.relPath === "aural/notes.mid") {
+        return { bytes: midiBytesArray() };
+      }
+      return undefined;
+    });
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: { has_notes_mid: true },
+      consoleBridge: makeBridge(),
+    });
+
+    expect(out.melodicTracks.map((t) => t.role)).toContain("keys");
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
+      containerPath: "/c",
+      relPath: "features/notes.mid",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
+      containerPath: "/c",
       relPath: "aural/notes.mid",
     });
+  });
+
+  it("uses manifest-declared notes MIDI and drum_tab paths", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid" && args.relPath === "custom/notes.mid") {
+        return { bytes: midiBytesArray() };
+      }
+      if (cmd === "read_auralsong_json" && args.relPath === "custom/drums.json") {
+        return { version: 1, name: "drums", kit: [], hits: [{ t: 0, p: "ride" }] };
+      }
+      throw new Error(`unexpected ${cmd}:${args.relPath}`);
+    });
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: {
+        has_notes_mid: true,
+        manifest_raw: { aural_notes_mid: "custom/notes.mid", drum_tab: "custom/drums.json" },
+      },
+      consoleBridge: makeBridge(),
+    });
+
+    expect(out.melodicTracks.map((t) => t.role)).toContain("keys");
+    expect(out.drumSelection?.reason).toBe("drum_tab");
+    expect(out.drumSelection?.events.map((e) => e.lane)).toEqual(["RD"]);
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
+      containerPath: "/c",
+      relPath: "custom/notes.mid",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_json", {
+      containerPath: "/c",
+      relPath: "custom/drums.json",
+    });
+  });
+
+  it("falls back to manifest drum_tab when all notes MIDI candidates fail", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid") {
+        throw new Error(`missing midi: ${args.relPath}`);
+      }
+      if (cmd === "read_auralsong_json" && args.relPath === "custom/drums.json") {
+        return { version: 1, name: "drums", kit: [], hits: [{ t: 0, p: "ride" }] };
+      }
+      throw new Error(`unexpected ${cmd}:${args.relPath}`);
+    });
+    const bridge = makeBridge();
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: {
+        has_notes_mid: true,
+        manifest_raw: { aural_notes_mid: "custom/notes.mid", drum_tab: "custom/drums.json" },
+      },
+      consoleBridge: bridge,
+    });
+
+    expect(out.melodicTracks).toEqual([]);
+    expect(out.drumSelection?.reason).toBe("drum_tab");
+    expect(out.drumSelection?.events.map((e) => e.lane)).toEqual(["RD"]);
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
+      containerPath: "/c",
+      relPath: "custom/notes.mid",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
+      containerPath: "/c",
+      relPath: "features/notes.mid",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_mid", {
+      containerPath: "/c",
+      relPath: "aural/notes.mid",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_json", {
+      containerPath: "/c",
+      relPath: "custom/drums.json",
+    });
+    expect(bridge.warn).toHaveBeenCalledWith(
+      "debugging",
+      expect.stringContaining("trying drum_tab fallback"),
+      expect.anything(),
+    );
   });
 
   it("prefers drum_tab.json over the notes.mid drum selection when present", async () => {
@@ -235,6 +340,104 @@ describe("readSongChartSelection", () => {
     );
   });
 
+  it("applies fingering sidecars to parsed melodic tracks", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid") return { bytes: midiBytesArray() };
+      if (cmd === "read_auralsong_json" && args.relPath === "aural/fingering.keys.json") {
+        return {
+          version: "1.0.0",
+          instrument: "keys",
+          notes: [{ t_on: 0, t_off: 0.25, pitch: 60, velocity: 100, string: 1, fret: 5 }],
+        };
+      }
+      return undefined;
+    });
+    const bridge = makeBridge();
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: { has_notes_mid: true, has_aural_fingering: true },
+      consoleBridge: bridge,
+    });
+
+    const keysTrack = out.melodicTracks.find((track) => track.role === "keys");
+    expect(keysTrack?.notes[0]).toMatchObject({ pitch: 60, string: 1, fret: 5 });
+    expect(bridge.log).toHaveBeenCalledWith(
+      "play",
+      expect.stringContaining("fingering: keys"),
+    );
+  });
+
+  it("loads fingering from manifest aural_fingering paths", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid") return { bytes: midiBytesArray() };
+      if (cmd === "read_auralsong_json" && args.relPath === "custom/keys-fingering.json") {
+        return {
+          version: "1.0.0",
+          instrument: "keys",
+          notes: [{ t_on: 0, t_off: 0.25, pitch: 60, velocity: 100, string: 2, fret: 7 }],
+        };
+      }
+      throw new Error(`unexpected ${cmd}:${args.relPath}`);
+    });
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: {
+        has_notes_mid: true,
+        manifest_raw: { aural_fingering: { keys: "custom/keys-fingering.json" } },
+      },
+      consoleBridge: makeBridge(),
+    });
+
+    const keysTrack = out.melodicTracks.find((track) => track.role === "keys");
+    expect(keysTrack?.notes[0]).toMatchObject({ pitch: 60, string: 2, fret: 7 });
+    expect(invokeMock).toHaveBeenCalledWith("read_auralsong_json", {
+      containerPath: "/c",
+      relPath: "custom/keys-fingering.json",
+    });
+  });
+
+  it("charts melodic tracks from aural_fingering sidecars when notes.mid is absent", async () => {
+    invokeMock.mockImplementation(async (cmd: string, args: { relPath: string }) => {
+      if (cmd === "read_auralsong_mid") throw new Error("should not read MIDI");
+      if (cmd === "read_auralsong_json" && args.relPath === "drum_tab.json") {
+        throw new Error("no drum tab");
+      }
+      if (cmd === "read_auralsong_json" && args.relPath === "custom/fingering.guitar.json") {
+        return {
+          version: "1.0.0",
+          instrument: "guitar",
+          notes: [{ t_on: 0.5, pitch: 55, velocity: 100, string: 3, fret: 0 }],
+        };
+      }
+      throw new Error(`unexpected ${cmd}:${args.relPath}`);
+    });
+    const bridge = makeBridge();
+
+    const out = await readSongChartSelection({
+      containerPath: "/c",
+      details: {
+        has_notes_mid: false,
+        has_aural_fingering: true,
+        manifest_raw: { aural_fingering: { guitar: "custom/fingering.guitar.json" } },
+      },
+      consoleBridge: bridge,
+    });
+
+    expect(out.drumSelection).toBeNull();
+    expect(out.melodicTracks).toHaveLength(1);
+    expect(out.melodicTracks[0]).toMatchObject({
+      role: "lead_guitar",
+      trackName: "Guitar",
+      channel: 2,
+      notes: [{ t_on: 0.5, t_off: 0.65, pitch: 55, velocity: 100 / 127, string: 3, fret: 0 }],
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("read_auralsong_mid", expect.anything());
+    expect(bridge.log).toHaveBeenCalledWith(
+      "play",
+      expect.stringContaining("charting melodic tracks from fingering: lead_guitar"),
+    );
+  });
+
   it("forwards a warn callback to the refinement loader", async () => {
     invokeMock.mockResolvedValueOnce({ bytes: midiBytesArray() });
     let captured: { warn: (c: string, m: string, d?: unknown) => void } | undefined;
@@ -263,7 +466,7 @@ describe("readSongChartSelection", () => {
     expect(out).toEqual({ drumSelection: null, melodicTracks: [] });
     expect(bridge.warn).toHaveBeenCalledWith(
       "debugging",
-      expect.stringContaining("failed to load/parse"),
+      expect.stringContaining("failed to load notes MIDI"),
       expect.anything(),
     );
   });

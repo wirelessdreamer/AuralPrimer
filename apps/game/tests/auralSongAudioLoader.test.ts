@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { loadAuralSongAudioIntoTransport, type AuralSongAudioLoadTransport } from "../src/auralSongAudioLoader";
+import { loadAuralSongAudioIntoTransport, type AuralSongAudioLoadTransport } from "../src/auralsongAudioLoader";
 import type { TransportTimebase } from "../src/audioBackend";
 
 function makeTimebase(withDirectLoad: boolean): TransportTimebase {
@@ -90,4 +90,3 @@ describe("auralsongAudioLoader", () => {
     expect(transport.setPlaybackRate).toHaveBeenCalledWith(0.9);
   });
 });
-

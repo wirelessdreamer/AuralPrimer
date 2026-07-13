@@ -1,7 +1,9 @@
 import json
+import hashlib
 import math
 import struct
 import wave
+import zipfile
 from array import array
 from pathlib import Path
 
@@ -413,11 +415,13 @@ def test_import_reuses_configured_input_stems_for_analysis(
     lead_stem = tmp_path / "lead.wav"
     rhythm_stem = tmp_path / "rhythm.wav"
     keys_stem = tmp_path / "keys.wav"
+    vocal_stem = tmp_path / "vocals.wav"
     _write_clicktrack_wav(drum_stem, sr=48_000, duration_sec=2.0, bpm=90.0)
     _write_clicktrack_wav(bass_stem, sr=48_000, duration_sec=2.0, bpm=60.0)
     _write_dual_tone_wav(lead_stem, sr=48_000, duration_sec=2.0)
     _write_dual_tone_wav(rhythm_stem, sr=48_000, duration_sec=2.0)
     _write_dual_tone_wav(keys_stem, sr=48_000, duration_sec=2.0)
+    _write_dual_tone_wav(vocal_stem, sr=48_000, duration_sec=2.0)
     out = tmp_path / "InputStems.auralsong"
 
     from aural_ingest import cli
@@ -451,16 +455,34 @@ def test_import_reuses_configured_input_stems_for_analysis(
         logger: object = None,
     ) -> list[InstrumentTranscriptionResult]:
         seen["instrument_stems"] = {role: Path(path) for role, path in stems.items()}
-        note = MelodicNote(t_on=0.0, t_off=0.2, pitch=48, velocity=90, instrument="bass")
+        bass_note = MelodicNote(t_on=0.0, t_off=0.2, pitch=48, velocity=90, instrument="bass")
+        vocal_note = MelodicNote(t_on=0.5, t_off=0.8, pitch=69, velocity=88, instrument="vocals")
         return [
             InstrumentTranscriptionResult(
                 instrument="bass",
-                notes=[note],
+                notes=[bass_note],
                 used_method=requested_method,
                 attempted_methods=[requested_method or "auto"],
                 warnings=[],
                 stem_path=str(stems["bass"]),
-            )
+            ),
+            InstrumentTranscriptionResult(
+                instrument="vocals",
+                notes=[vocal_note],
+                used_method="melodic_rmvpe",
+                attempted_methods=["melodic_rmvpe"],
+                warnings=[],
+                stem_path=str(stems["vocals"]),
+                meta={
+                    "vocal_pitch_contour": {
+                        "version": 1,
+                        "samples": [
+                            {"t": 0.5, "hz": 440.0, "confidence": 0.9},
+                            {"t": 0.52, "hz": 441.0, "confidence": 0.8},
+                        ],
+                    },
+                },
+            ),
         ]
 
     def fake_transcribe_melodic(*_args: object, **_kwargs: object) -> MelodicTranscriptionResult:
@@ -488,6 +510,7 @@ def test_import_reuses_configured_input_stems_for_analysis(
                 "lead_guitar": str(lead_stem),
                 "rhythm_guitar": str(rhythm_stem),
                 "keys": str(keys_stem),
+                "vocals": str(vocal_stem),
             },
         }
     )
@@ -507,6 +530,7 @@ def test_import_reuses_configured_input_stems_for_analysis(
         "lead_guitar": out / "audio" / "stems" / "lead_guitar.wav",
         "rhythm_guitar": out / "audio" / "stems" / "rhythm_guitar.wav",
         "keys": out / "audio" / "stems" / "keys.wav",
+        "vocals": out / "audio" / "stems" / "vocals.wav",
     }
 
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
@@ -516,6 +540,7 @@ def test_import_reuses_configured_input_stems_for_analysis(
         "keys",
         "lead_guitar",
         "rhythm_guitar",
+        "vocals",
     ]
     assert manifest["pipeline"]["guitar_split"]["status"] == "reused"
     assert manifest["pipeline"]["guitar_split"]["source_kind"] == "provided_split"
@@ -525,6 +550,131 @@ def test_import_reuses_configured_input_stems_for_analysis(
     assert stems_assets["lead_guitar_path"] == "audio/stems/lead_guitar.wav"
     assert stems_assets["rhythm_guitar_path"] == "audio/stems/rhythm_guitar.wav"
     assert stems_assets["keys_path"] == "audio/stems/keys.wav"
+    assert stems_assets["vocals_path"] == "audio/stems/vocals.wav"
+    assert manifest["assets"]["features"]["vocal_pitch_path"] == "features/vocal_pitch.json"
+    assert json.loads((out / "features" / "vocal_pitch.json").read_text("utf-8")) == {
+        "version": 1,
+        "notes": [{"t": 0.5, "d": 0.3, "midi": 69}],
+    }
+    assert manifest["assets"]["features"]["vocal_pitch_contour_path"] == "features/vocal_pitch_contour.json"
+    assert json.loads((out / "features" / "vocal_pitch_contour.json").read_text("utf-8")) == {
+        "version": 1,
+        "samples": [
+            {"t": 0.5, "hz": 440.0, "confidence": 0.9},
+            {"t": 0.52, "hz": 441.0, "confidence": 0.8},
+        ],
+    }
+
+
+def test_import_feedpak_emits_inferred_guitar_fingering_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src_mix = tmp_path / "mix.wav"
+    guitar_stem = tmp_path / "lead.wav"
+    _write_clicktrack_wav(src_mix, sr=48_000, duration_sec=2.0, bpm=120.0)
+    _write_dual_tone_wav(guitar_stem, sr=48_000, duration_sec=2.0)
+    out = tmp_path / "GuitarFallback.feedpak"
+
+    from aural_ingest import cli
+    from aural_ingest.transcription import (
+        DrumTranscriptionResult,
+        InstrumentTranscriptionResult,
+        MelodicNote,
+        MelodicTranscriptionResult,
+    )
+
+    monkeypatch.setattr(cli, "IMPORT_EMIT_FEEDPAK", True)
+
+    def fake_transcribe_drums(*_args: object, **_kwargs: object) -> DrumTranscriptionResult:
+        return DrumTranscriptionResult(
+            events=[],
+            used_algorithm="combined_filter",
+            attempted_algorithms=["combined_filter"],
+            warnings=[],
+        )
+
+    def fake_transcribe_all_melodic_stems(
+        stems: dict[str, Path],
+        requested_method: str | None,
+        logger: object = None,
+    ) -> list[InstrumentTranscriptionResult]:
+        note = MelodicNote(
+            t_on=0.5,
+            t_off=0.8,
+            pitch=64,
+            velocity=96,
+            instrument="lead_guitar",
+        )
+        return [
+            InstrumentTranscriptionResult(
+                instrument="lead_guitar",
+                notes=[note],
+                used_method=requested_method,
+                attempted_methods=[requested_method or "auto"],
+                warnings=[],
+                stem_path=str(stems["lead_guitar"]),
+            )
+        ]
+
+    def fake_transcribe_melodic(*_args: object, **_kwargs: object) -> MelodicTranscriptionResult:
+        return MelodicTranscriptionResult(
+            notes=[],
+            used_method="melodic_adaptive",
+            attempted_methods=["melodic_adaptive"],
+            warnings=[],
+        )
+
+    monkeypatch.setattr(cli, "transcribe_drums", fake_transcribe_drums)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", fake_transcribe_all_melodic_stems)
+    monkeypatch.setattr(cli, "transcribe_melodic", fake_transcribe_melodic)
+
+    args = type("Args", (), {})()
+    args.input_audio_path = str(src_mix)
+    args.out = str(out)
+    args.profile = "full"
+    args.config = json.dumps(
+        {
+            "disable_stem_separation": True,
+            "input_stem_paths": {"lead_guitar": str(guitar_stem)},
+        }
+    )
+    args.title = "GuitarFallback"
+    args.artist = ""
+    args.duration_sec = None
+    args.drum_filter = "combined_filter"
+    args.drum_stem_path = None
+    args.melodic_method = "melodic_adaptive"
+    args.beat_analysis_mode = "standard"
+    args.stem_separation_provider = "none"
+    args.stem_separation_provider_path = None
+    args.shifts = 1
+    args.multi_filter = False
+
+    assert cli.cmd_import(args) == 0
+
+    import yaml
+
+    manifest = yaml.safe_load((out / "manifest.yaml").read_text("utf-8"))
+    assert manifest["aural_fingering"] == {
+        "lead_guitar": "aural/fingering.lead_guitar.json"
+    }
+    lead_arr = next(arr for arr in manifest["arrangements"] if arr["id"] == "lead_guitar")
+    assert lead_arr["file"] == "arrangements/tab_lead_guitar.json"
+    assert lead_arr["tuning"] == [40, 45, 50, 55, 59, 64]
+    fingering = json.loads((out / "aural" / "fingering.lead_guitar.json").read_text("utf-8"))
+    assert fingering["notes"] == [
+        {
+            "fret": 0,
+            "pitch": 64,
+            "string": 5,
+            "t_off": 0.8,
+            "t_on": 0.5,
+            "velocity": 96,
+        }
+    ]
+    tab = json.loads((out / "arrangements" / "tab_lead_guitar.json").read_text("utf-8"))
+    assert tab["notes"] == [{"t": 0.5, "s": 5, "f": 0, "sus": 0.3, "midi": 64, "v": 96}]
 
 
 def test_import_dir_reuses_configured_input_stems_without_existing_mix(
@@ -1107,6 +1257,8 @@ def test_demucs_modelpack_auto_discovery_supports_portable_layout(
     (sidecar_dir / "aural_ingest.exe").write_bytes(b"")
     expected = modelpack_dir / "demucs_6.zip"
     expected.write_bytes(b"")
+    expected_ft = modelpack_dir / "demucs_ft_drums.zip"
+    expected_ft.write_bytes(b"")
 
     from aural_ingest import cli
 
@@ -1116,6 +1268,416 @@ def test_demucs_modelpack_auto_discovery_supports_portable_layout(
 
     candidates = cli._default_demucs_modelpack_candidates()
     assert expected in candidates
+    assert expected_ft in candidates
+
+
+def _write_demucs_modelpack_zip(
+    path: Path,
+    *,
+    modelpack_id: str,
+    architecture: str,
+    license_name: str | None = None,
+    include_license_file: bool = True,
+    weight_sha256: str | None = None,
+) -> None:
+    weight_bytes = b"weights"
+    checksum = weight_sha256 or hashlib.sha256(weight_bytes).hexdigest()
+    stems = ["drums"] if modelpack_id == "demucs_ft_drums" else ["keys", "drums", "guitar", "bass", "vocals"]
+    manifest = {
+        "id": modelpack_id,
+        "version": "test",
+        "provider": "demucs",
+        "architecture": architecture,
+        "stems": stems,
+        "weights": [
+            {
+                "path": "files/model.th",
+                "sha256": checksum,
+                "source_url": "https://example.invalid/model.th",
+                "format": "pytorch",
+            }
+        ],
+    }
+    if license_name is not None:
+        manifest["license"] = license_name
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("modelpack.json", json.dumps(manifest))
+        zf.writestr("files/model.th", weight_bytes)
+        if include_license_file:
+            zf.writestr("LICENSE", "test license\n")
+
+
+def test_resolve_demucs_modelpack_accepts_configured_ft_drums_zip(tmp_path: Path) -> None:
+    from aural_ingest import cli
+
+    modelpack_zip = tmp_path / "demucs_ft_drums.zip"
+    _write_demucs_modelpack_zip(
+        modelpack_zip,
+        modelpack_id="demucs_ft_drums",
+        architecture="htdemucs_ft_drums",
+        license_name="MIT",
+    )
+
+    resolved, manifest, err = cli._resolve_demucs_modelpack({"demucs_modelpack_zip_path": str(modelpack_zip)})
+
+    assert err is None
+    assert resolved == modelpack_zip
+    assert manifest is not None
+    assert manifest["id"] == "demucs_ft_drums"
+
+
+def test_resolve_demucs_modelpack_supports_htdemucs_ft_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aural_ingest import cli
+
+    modelpack_zip = tmp_path / "demucs_ft_drums.zip"
+    _write_demucs_modelpack_zip(
+        modelpack_zip,
+        modelpack_id="demucs_ft_drums",
+        architecture="htdemucs_ft_drums",
+        license_name="MIT",
+    )
+    monkeypatch.setattr(cli, "_default_demucs_modelpack_candidates", lambda _ids=None: [modelpack_zip])
+
+    resolved, manifest, err = cli._resolve_demucs_modelpack({"stem_separation_modelpack_id": "htdemucs_ft"})
+
+    assert err is None
+    assert resolved == modelpack_zip
+    assert manifest is not None
+    assert manifest["id"] == "demucs_ft_drums"
+
+
+def test_resolve_demucs_modelpack_rejects_missing_weight_sha(tmp_path: Path) -> None:
+    from aural_ingest import cli
+
+    modelpack_zip = tmp_path / "demucs_6.zip"
+    with zipfile.ZipFile(modelpack_zip, "w") as zf:
+        zf.writestr(
+            "modelpack.json",
+            json.dumps(
+                {
+                    "id": "demucs_6",
+                    "version": "test",
+                    "provider": "demucs",
+                    "architecture": "htdemucs_6s",
+                    "stems": ["keys", "drums", "guitar", "bass", "vocals"],
+                    "weights": [
+                        {
+                            "path": "files/model.th",
+                            "source_url": "https://example.invalid/model.th",
+                        }
+                    ],
+                }
+            ),
+        )
+        zf.writestr("files/model.th", b"weights")
+
+    resolved, manifest, err = cli._resolve_demucs_modelpack({"demucs_modelpack_zip_path": str(modelpack_zip)})
+
+    assert resolved is None
+    assert manifest is None
+    assert err is not None
+    assert "weights[0].sha256 missing" in err
+
+
+def test_resolve_demucs_modelpack_rejects_weight_hash_mismatch(tmp_path: Path) -> None:
+    from aural_ingest import cli
+
+    modelpack_zip = tmp_path / "demucs_6.zip"
+    _write_demucs_modelpack_zip(
+        modelpack_zip,
+        modelpack_id="demucs_6",
+        architecture="htdemucs_6s",
+        weight_sha256="0" * 64,
+    )
+
+    resolved, manifest, err = cli._resolve_demucs_modelpack({"demucs_modelpack_zip_path": str(modelpack_zip)})
+
+    assert resolved is None
+    assert manifest is None
+    assert err is not None
+    assert "modelpack weight sha256 mismatch" in err
+
+
+def test_resolve_demucs_ft_drums_requires_license_metadata(tmp_path: Path) -> None:
+    from aural_ingest import cli
+
+    missing_license = tmp_path / "demucs_ft_drums_missing_license.zip"
+    _write_demucs_modelpack_zip(
+        missing_license,
+        modelpack_id="demucs_ft_drums",
+        architecture="htdemucs_ft_drums",
+    )
+
+    resolved, manifest, err = cli._resolve_demucs_modelpack({"demucs_modelpack_zip_path": str(missing_license)})
+
+    assert resolved is None
+    assert manifest is None
+    assert err is not None
+    assert "missing license" in err
+
+    missing_license_file = tmp_path / "demucs_ft_drums_missing_license_file.zip"
+    _write_demucs_modelpack_zip(
+        missing_license_file,
+        modelpack_id="demucs_ft_drums",
+        architecture="htdemucs_ft_drums",
+        license_name="MIT",
+        include_license_file=False,
+    )
+
+    resolved, manifest, err = cli._resolve_demucs_modelpack(
+        {"demucs_modelpack_zip_path": str(missing_license_file)}
+    )
+
+    assert resolved is None
+    assert manifest is None
+    assert err is not None
+    assert "missing LICENSE file" in err
+
+
+def test_resolved_demucs_stage_requirement_uses_selected_modelpack_id(tmp_path: Path) -> None:
+    from aural_ingest import cli
+
+    req = cli._resolved_demucs_stage_requirement(
+        tmp_path / "demucs_ft_drums.zip",
+        {"id": "demucs_ft_drums", "version": "ft-test"},
+        None,
+    )
+
+    assert req["model_id"] == "demucs_ft_drums"
+    assert req["modelpack_id"] == "demucs_ft_drums"
+    assert req["version"] == "ft-test"
+
+
+def test_demucs_separation_cache_key_includes_modelpack_id() -> None:
+    from aural_ingest import cli
+
+    weight_sha = hashlib.sha256(b"weights").hexdigest()
+    common = {
+        "mix_sha256": "abcdef0123456789abcdef0123456789",
+        "version": "same-version",
+        "weight_sha": weight_sha,
+        "shifts": 1,
+    }
+
+    default_dir = cli._demucs_separation_cache_dir(modelpack_id="demucs_6", **common)
+    ft_dir = cli._demucs_separation_cache_dir(modelpack_id="demucs_ft_drums", **common)
+
+    assert default_dir != ft_dir
+    assert "demucs_6" in default_dir.name
+    assert "demucs_ft_drums" in ft_dir.name
+
+
+def test_demucs_separation_cache_key_requires_weight_sha() -> None:
+    from aural_ingest import cli
+
+    with pytest.raises(ValueError, match="verified weight sha256"):
+        cli._demucs_separation_cache_dir(
+            mix_sha256="abcdef0123456789abcdef0123456789",
+            modelpack_id="demucs_6",
+            version="test",
+            weight_sha="",
+            shifts=1,
+        )
+
+
+def test_demucs_ft_drums_composes_default_stems_with_refined_drums(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aural_ingest import cli
+
+    mix = tmp_path / "mix.wav"
+    mix.write_bytes(b"mix")
+    stems_dir = tmp_path / "stems"
+    default_manifest = {"id": "demucs_6", "version": "base-test", "architecture": "htdemucs_6s"}
+    ft_manifest = {
+        "id": "demucs_ft_drums",
+        "version": "ft-test",
+        "architecture": "htdemucs_ft_drums",
+    }
+    default_zip = tmp_path / "demucs_6.zip"
+    ft_zip = tmp_path / "demucs_ft_drums.zip"
+    calls: list[str] = []
+
+    def fake_resolve(config: dict[str, object]):
+        requested = cli._requested_demucs_modelpack_id(config)
+        if requested == "demucs_ft_drums":
+            return ft_zip, ft_manifest, None
+        return default_zip, default_manifest, None
+
+    def fake_single_model(
+        mix_wav,
+        stems,
+        *,
+        mix_sha256,
+        shifts,
+        modelpack_zip,
+        modelpack_manifest,
+        protected_roles=None,
+    ):
+        calls.append(modelpack_manifest["id"])
+        if modelpack_manifest["id"] == "demucs_6":
+            return {
+                "ok": True,
+                "status": "cached",
+                "provider": "demucs",
+                "modelpack_id": "demucs_6",
+                "modelpack_version": "base-test",
+                "stem_paths": {
+                    "bass": "audio/stems/bass.wav",
+                    "drums": "audio/stems/drums.wav",
+                    "guitar": "audio/stems/guitar.wav",
+                    "keys": "audio/stems/keys.wav",
+                    "vocals": "audio/stems/vocals.wav",
+                },
+            }
+        return {
+            "ok": True,
+            "status": "fresh",
+            "provider": "demucs",
+            "modelpack_id": "demucs_ft_drums",
+            "modelpack_version": "ft-test",
+            "stem_paths": {"drums": "audio/stems/drums.wav"},
+        }
+
+    monkeypatch.setattr(cli, "_resolve_demucs_modelpack", fake_resolve)
+    monkeypatch.setattr(cli, "_separate_stems_with_demucs_single_model", fake_single_model)
+
+    result = cli._separate_stems_with_demucs(
+        mix,
+        stems_dir,
+        mix_sha256="abc123",
+        shifts=2,
+        config={"stem_separation_modelpack_id": "demucs_ft_drums"},
+    )
+
+    assert calls == ["demucs_6", "demucs_ft_drums"]
+    assert result["ok"] is True
+    assert result["modelpack_id"] == "demucs_ft_drums"
+    assert result["composite"] is True
+    assert result["refinement_role"] == "drums"
+    assert result["baseline_modelpack_id"] == "demucs_6"
+    assert result["stem_paths"] == {
+        "bass": "audio/stems/bass.wav",
+        "drums": "audio/stems/drums.wav",
+        "guitar": "audio/stems/guitar.wav",
+        "keys": "audio/stems/keys.wav",
+        "vocals": "audio/stems/vocals.wav",
+    }
+
+
+def test_demucs_ft_drums_fails_when_refinement_has_no_drums(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aural_ingest import cli
+
+    default_manifest = {"id": "demucs_6", "version": "base-test", "architecture": "htdemucs_6s"}
+    ft_manifest = {
+        "id": "demucs_ft_drums",
+        "version": "ft-test",
+        "architecture": "htdemucs_ft_drums",
+    }
+
+    def fake_resolve(config: dict[str, object]):
+        requested = cli._requested_demucs_modelpack_id(config)
+        if requested == "demucs_ft_drums":
+            return tmp_path / "demucs_ft_drums.zip", ft_manifest, None
+        return tmp_path / "demucs_6.zip", default_manifest, None
+
+    def fake_single_model(
+        mix_wav,
+        stems,
+        *,
+        mix_sha256,
+        shifts,
+        modelpack_zip,
+        modelpack_manifest,
+        protected_roles=None,
+    ):
+        if modelpack_manifest["id"] == "demucs_6":
+            return {
+                "ok": True,
+                "status": "cached",
+                "provider": "demucs",
+                "modelpack_id": "demucs_6",
+                "stem_paths": {"drums": "audio/stems/drums.wav", "bass": "audio/stems/bass.wav"},
+            }
+        return {
+            "ok": True,
+            "status": "fresh",
+            "provider": "demucs",
+            "modelpack_id": "demucs_ft_drums",
+            "stem_paths": {},
+        }
+
+    monkeypatch.setattr(cli, "_resolve_demucs_modelpack", fake_resolve)
+    monkeypatch.setattr(cli, "_separate_stems_with_demucs_single_model", fake_single_model)
+
+    result = cli._separate_stems_with_demucs(
+        tmp_path / "mix.wav",
+        tmp_path / "stems",
+        mix_sha256="abc123",
+        shifts=1,
+        config={"stem_separation_modelpack_id": "demucs_ft_drums"},
+    )
+
+    assert result["ok"] is False
+    assert result["modelpack_id"] == "demucs_ft_drums"
+    assert "did not produce a drums stem" in result["reason"]
+
+
+def test_demucs_cache_meta_requires_current_inputs_and_safe_stems(tmp_path: Path) -> None:
+    from aural_ingest import cli
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "drums.wav").write_bytes(b"wav")
+    weight_sha = hashlib.sha256(b"weights").hexdigest()
+    meta = {
+        "provider": "demucs",
+        "mix_sha256": "mix-a",
+        "modelpack_id": "demucs_6",
+        "modelpack_version": "test",
+        "architecture": "htdemucs_6s",
+        "weight_sha256": weight_sha,
+        "shifts": 1,
+        "stem_files": {"drums": "drums.wav"},
+    }
+
+    assert cli._demucs_cache_meta_matches(
+        meta,
+        cache_dir=cache_dir,
+        mix_sha256="mix-a",
+        modelpack_id="demucs_6",
+        version="test",
+        architecture="htdemucs_6s",
+        weight_sha=weight_sha,
+        shifts=1,
+    )
+    assert not cli._demucs_cache_meta_matches(
+        {**meta, "mix_sha256": "mix-b"},
+        cache_dir=cache_dir,
+        mix_sha256="mix-a",
+        modelpack_id="demucs_6",
+        version="test",
+        architecture="htdemucs_6s",
+        weight_sha=weight_sha,
+        shifts=1,
+    )
+    assert not cli._demucs_cache_meta_matches(
+        {**meta, "stem_files": {"drums": "../drums.wav"}},
+        cache_dir=cache_dir,
+        mix_sha256="mix-a",
+        modelpack_id="demucs_6",
+        version="test",
+        architecture="htdemucs_6s",
+        weight_sha=weight_sha,
+        shifts=1,
+    )
 
 
 def test_validate_passes_on_generated_auralsong(tmp_path: Path) -> None:
@@ -1301,7 +1863,7 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
     _write_clicktrack_wav(src, sr=48_000, duration_sec=2.0, bpm=120.0)
     out = tmp_path / "ProfileDrums.auralsong"
 
-    from aural_ingest import cli, transcription
+    from aural_ingest import cli
     from aural_ingest.transcription import DrumEvent
 
     calls: list[str] = []
@@ -1322,16 +1884,6 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
             "combined_filter": combined,
         },
     )
-
-    # The gameplay_default profile now leads with the neural mr_mt3 engine,
-    # which gracefully falls through to the DSP chain when its checkpoint is
-    # absent. Force it unavailable so this test deterministically exercises
-    # the fall-through into the classic registry regardless of whether an
-    # mr_mt3 checkpoint happens to be installed on the test machine.
-    def unavailable_mt3(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError("mr_mt3 checkpoint unavailable (test)")
-
-    monkeypatch.setattr(transcription, "_transcribe_drums_mt3_events", unavailable_mt3)
 
     args = type("Args", (), {})()
     args.input_audio_path = str(src)
@@ -1358,11 +1910,8 @@ def test_import_auto_drum_filter_uses_transcription_profile_chain(
     assert tr["drum_filter_requested"] == "auto"
     assert tr["drum_filter"] == "profile"
     assert tr["drum_filter_used"] == "beat_conditioned_multiband_decoder"
-    # Profile is neural-first: mr_mt3 leads, the classic DSP engines follow.
-    # With mr_mt3 forced unavailable above, the chain falls through to the
-    # first registry-backed engine (beat_conditioned_multiband_decoder).
-    assert tr["drum_profile_engines"][0] == "mr_mt3_drums"
-    assert tr["drum_profile_engines"][1] == "beat_conditioned_multiband_decoder"
+    assert tr["drum_profile_engines"][0] == "beat_conditioned_multiband_decoder"
+    assert tr["drum_profile_engines"][1] == "spectral_flux_multiband"
     assert manifest["recognition"]["drums"]["normalized_engine"] == "profile"
     assert manifest["recognition"]["drums"]["used_engine"] == "beat_conditioned_multiband_decoder"
 

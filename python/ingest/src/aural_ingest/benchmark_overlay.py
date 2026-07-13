@@ -54,6 +54,7 @@ DEFAULT_ROSTER: dict[str, list[str]] = {
     "bass": ["melodic_basic_pitch", "melodic_torchcrepe", "melodic_yin_octave_hps_fix"],
     "lead_guitar": ["melodic_basic_pitch", "melodic_hpss_combined", "melodic_crepe"],
     "rhythm_guitar": ["melodic_basic_pitch", "melodic_hpss_combined", "melodic_crepe"],
+    "vocals": ["melodic_rmvpe", "melodic_torchcrepe", "melodic_basic_pitch"],
     "melodic": ["melodic_basic_pitch", "melodic_torchcrepe"],
 }
 

@@ -53,6 +53,7 @@ const ROLE_COLORS: Record<InstrumentRole, string> = {
   rhythm_guitar: "#20c997",
   lead_guitar: "#ff5f7a",
   keys: "#ffd166",
+  vocals: "#c084fc",
   melodic: "#9dd7ff",
 };
 
@@ -61,6 +62,7 @@ const ROLE_GLOW_COLORS: Record<InstrumentRole, string> = {
   rhythm_guitar: "rgba(32, 201, 151, 0.40)",
   lead_guitar: "rgba(255, 95, 122, 0.40)",
   keys: "rgba(255, 209, 102, 0.36)",
+  vocals: "rgba(192, 132, 252, 0.34)",
   melodic: "rgba(157, 215, 255, 0.34)",
 };
 

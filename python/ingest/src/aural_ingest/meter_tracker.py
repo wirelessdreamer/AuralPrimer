@@ -10,8 +10,9 @@ to produce real joint beats + downbeats, from which the true bar structure
 (measure starts + beats-per-bar) falls out. The heavy model is optional and
 modelpack-gated exactly like mr_mt3: absent checkpoint / missing package / any
 inference error => ``track_meter`` returns ``None`` and the caller keeps the
-librosa path. Only ``dbn=False`` is used (the ``--dbn`` path pulls madmom, whose
-model files are CC BY-NC-SA and non-shippable).
+librosa path. Beat This!'s madmom DBN post-processor is enabled by default for
+better downbeat phase; if madmom is missing, the same Beat This! model is
+retried with its minimal post-processor instead of falling back to librosa.
 
 The pure derivation helpers (bar assignment, beats-per-bar, bpm) take plain
 lists and are unit-tested without the model.
@@ -29,6 +30,7 @@ BEAT_THIS_MODELPACK_ID = "beat_this"
 BEAT_THIS_CHECKPOINT_ENV = "AURALPRIMER_BEAT_THIS_CHECKPOINT_PATH"
 _MODELS_SUBDIR = "assets/models"
 _DEV_CACHE_CKPT = "~/.cache/torch/hub/checkpoints/beat_this-final0.ckpt"
+METER_DBN_ENV = "AURALPRIMER_METER_DBN"
 
 
 def _search_roots() -> list[Path]:
@@ -94,6 +96,33 @@ def available(config: dict[str, Any] | None = None) -> bool:
     except Exception:
         return False
     return True
+
+
+def _parse_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on", "dbn"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "minimal"}:
+            return False
+    return default
+
+
+def _meter_dbn_enabled(config: dict[str, Any] | None = None) -> bool:
+    """Whether to request Beat This!'s madmom DBN post-processor.
+
+    Explicit ``config["meter_dbn"]`` wins over the environment; the default is
+    enabled because the DBN gate has passed on the supported ingest runtime.
+    """
+    if config and "meter_dbn" in config:
+        return _parse_bool(config.get("meter_dbn"), default=True)
+    return _parse_bool(os.getenv(METER_DBN_ENV), default=True)
 
 
 # --------------------------------------------------------------------------
@@ -220,13 +249,27 @@ def track_meter(
         return None
     try:
         from beat_this.inference import File2Beats  # heavy import guarded here
-
-        f2b = File2Beats(checkpoint_path=str(checkpoint), device="cpu", dbn=False)
-        beats_arr, downbeats_arr = f2b(str(wav_path))
-        beat_times = [float(t) for t in list(beats_arr)]
-        downbeat_times = [float(t) for t in list(downbeats_arr)]
     except Exception:
         return None
+
+    use_dbn = _meter_dbn_enabled(config)
+    postprocessor = "dbn" if use_dbn else "minimal"
+    try:
+        f2b = File2Beats(checkpoint_path=str(checkpoint), device="cpu", dbn=use_dbn)
+        beats_arr, downbeats_arr = f2b(str(wav_path))
+    except (ImportError, ModuleNotFoundError):
+        if not use_dbn:
+            return None
+        try:
+            f2b = File2Beats(checkpoint_path=str(checkpoint), device="cpu", dbn=False)
+            beats_arr, downbeats_arr = f2b(str(wav_path))
+            postprocessor = "minimal"
+        except Exception:
+            return None
+    except Exception:
+        return None
+    beat_times = [float(t) for t in list(beats_arr)]
+    downbeat_times = [float(t) for t in list(downbeats_arr)]
 
     if not beat_times:
         return None
@@ -265,6 +308,7 @@ def track_meter(
         "tempo_source": "beat_this.median_ibi",
         "beat_source": "beat_this",
         "meter_source": "beat_this_downbeats",
+        "postprocessor": postprocessor,
         "estimated_bpm": bpm,
         "beats_per_bar": beats_per_bar,
         "time_signature": ts,

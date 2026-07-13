@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "gate": "beat_this_barline_listening_review",
+  "reviewed_by": "TODO",
+  "reviewed_at_utc": "TODO",
+  "source_smoke_report": "benchmarks/meter/beat_this_dbn_refresh_meter_smoke.md",
+  "cases": {
+    "psalm_121_my_help.feedpak": {
+      "barlines_ok": false,
+      "listening_ok": false,
+      "notes": ""
+    },
+    "psalm_130_please_hear_me.feedpak": {
+      "barlines_ok": false,
+      "listening_ok": false,
+      "notes": ""
+    },
+    "psalm_5_every_morning.feedpak": {
+      "barlines_ok": false,
+      "listening_ok": false,
+      "notes": ""
+    }
+  }
+}

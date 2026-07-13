@@ -16,7 +16,7 @@
         "additionalProperties": true,
         "properties": {
           "t": { "type": "number" },
-          "d": { "type": "number" },
+          "d": { "type": "number", "exclusiveMinimum": 0 },
           "midi": { "type": "integer", "minimum": 0, "maximum": 127 }
         }
       }

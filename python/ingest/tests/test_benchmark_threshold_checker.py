@@ -79,3 +79,110 @@ def test_hardware_threshold_checker_reports_below_baseline(tmp_path: Path) -> No
     assert "logical CPUs" in violations[0]
     assert "GB RAM" in violations[1]
     assert "outside" in violations[2]
+
+
+def test_model_upgrade_decision_checker_accepts_matching_report(tmp_path: Path) -> None:
+    checker = _load_threshold_checker()
+    report = tmp_path / "model-report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "dataset": "example",
+                "summary": {
+                    "per_algorithm": {
+                        "candidate": {
+                            "cases_ok": 10,
+                            "cases_err": 0,
+                            "f1": 0.72,
+                            "per_class": {
+                                "kick": {"f1": 0.8},
+                                "snare": {"f1": 0.6},
+                            },
+                        },
+                        "baseline": {"f1": 0.41},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    violations = checker._check_model_upgrade_decisions(
+        {
+            "decisions": [
+                {
+                    "id": "example_decision",
+                    "report": str(report),
+                    "checks": [
+                        {"id": "dataset", "path": "dataset", "equals": "example"},
+                        {"id": "cases_ok", "path": "summary.per_algorithm.candidate.cases_ok", "min": 10},
+                        {"id": "cases_err", "path": "summary.per_algorithm.candidate.cases_err", "equals": 0},
+                        {
+                            "id": "beats_baseline",
+                            "path": "summary.per_algorithm.candidate.f1",
+                            "min_delta_over_path": 0.25,
+                            "over_path": "summary.per_algorithm.baseline.f1",
+                        },
+                        {
+                            "id": "macro_cap",
+                            "average_of": [
+                                "summary.per_algorithm.candidate.per_class.kick.f1",
+                                "summary.per_algorithm.candidate.per_class.snare.f1",
+                            ],
+                            "max": 0.71,
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert violations == []
+
+
+def test_model_upgrade_decision_checker_reports_contradictions(tmp_path: Path) -> None:
+    checker = _load_threshold_checker()
+    report = tmp_path / "model-report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "dataset": "wrong",
+                "summary": {
+                    "per_algorithm": {
+                        "candidate": {"cases_ok": 9, "cases_err": 1, "f1": 0.50},
+                        "baseline": {"f1": 0.49},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    violations = checker._check_model_upgrade_decisions(
+        {
+            "decisions": [
+                {
+                    "id": "example_decision",
+                    "report": str(report),
+                    "checks": [
+                        {"id": "dataset", "path": "dataset", "equals": "example"},
+                        {"id": "cases_ok", "path": "summary.per_algorithm.candidate.cases_ok", "min": 10},
+                        {"id": "cases_err", "path": "summary.per_algorithm.candidate.cases_err", "equals": 0},
+                        {
+                            "id": "beats_baseline",
+                            "path": "summary.per_algorithm.candidate.f1",
+                            "min_delta_over_path": 0.25,
+                            "over_path": "summary.per_algorithm.baseline.f1",
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert len(violations) == 4
+    assert all("example_decision:" in violation for violation in violations)
+    assert "expected 'example'" in violations[0]
+    assert "expected min" in violations[1]
+    assert "expected 0" in violations[2]
+    assert "expected delta" in violations[3]

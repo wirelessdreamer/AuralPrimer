@@ -45,6 +45,15 @@ def test_bass_fmin_clamped_to_model_floor(monkeypatch):
     assert captured["fmin"] >= 32.70319566 - 1e-9
 
 
+def test_bass_fmax_is_clamped_to_benchmark_tuned_range(monkeypatch):
+    captured: dict = {}
+    _install_fake_torchcrepe(monkeypatch, captured)
+
+    mtc.transcribe("dummy.wav", instrument="bass")
+
+    assert captured["fmax"] == pytest.approx(200.0)
+
+
 def test_keys_fmin_clamped_too(monkeypatch):
     captured: dict = {}
     _install_fake_torchcrepe(monkeypatch, captured)
@@ -59,3 +68,4 @@ def test_inrange_fmin_is_left_untouched(monkeypatch):
     # rhythm_guitar starts at 75 Hz, comfortably above the floor — no clamp.
     mtc.transcribe("dummy.wav", instrument="rhythm_guitar")
     assert captured["fmin"] == pytest.approx(75.0)
+    assert captured["fmax"] == pytest.approx(1400.0)

@@ -1,0 +1,661 @@
+{
+  "config": {
+    "stem_separation_provider": "roformer"
+  },
+  "dataset": "musdb18_or_musdb18_hq",
+  "limit": 10,
+  "musdb_root": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq",
+  "ok": true,
+  "promotion_min_tracks": 10,
+  "promotion_usable": true,
+  "provider": "roformer",
+  "provider_path": null,
+  "split": "test",
+  "summary": {
+    "median_sdr_mean": 9.026921,
+    "role_summary": {
+      "bass": {
+        "median_sdr_mean": 7.940417,
+        "track_count": 10
+      },
+      "drums": {
+        "median_sdr_mean": 10.490148,
+        "track_count": 10
+      },
+      "other": {
+        "median_sdr_mean": 6.656345,
+        "track_count": 10
+      },
+      "vocals": {
+        "median_sdr_mean": 11.020774,
+        "track_count": 10
+      }
+    },
+    "tracks": 10,
+    "tracks_failed": 0,
+    "tracks_ok": 10,
+    "tracks_skipped": 0
+  },
+  "tracks": [
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 189,
+            "role": "vocals",
+            "sdr_mean": 10.537536,
+            "sdr_median": 10.783029
+          },
+          {
+            "frame_count": 189,
+            "role": "drums",
+            "sdr_mean": 8.515495,
+            "sdr_median": 8.678651
+          },
+          {
+            "frame_count": 189,
+            "role": "bass",
+            "sdr_mean": 10.329185,
+            "sdr_median": 10.553133
+          },
+          {
+            "frame_count": 189,
+            "role": "other",
+            "sdr_mean": 6.136562,
+            "sdr_median": 6.442367
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Al James - Schoolboy Facination\\mixture.wav",
+      "name": "Al James - Schoolboy Facination",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/Al James - Schoolboy Facination"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 210,
+            "role": "vocals",
+            "sdr_mean": 9.484715,
+            "sdr_median": 12.676316
+          },
+          {
+            "frame_count": 210,
+            "role": "drums",
+            "sdr_mean": 11.609051,
+            "sdr_median": 10.500538
+          },
+          {
+            "frame_count": 210,
+            "role": "bass",
+            "sdr_mean": -25.314326,
+            "sdr_median": -2.162071
+          },
+          {
+            "frame_count": 210,
+            "role": "other",
+            "sdr_mean": 1.707,
+            "sdr_median": 0.448017
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\AM Contra - Heart Peripheral\\mixture.wav",
+      "name": "AM Contra - Heart Peripheral",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/AM Contra - Heart Peripheral"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 179,
+            "role": "vocals",
+            "sdr_mean": 9.423717,
+            "sdr_median": 12.313129
+          },
+          {
+            "frame_count": 179,
+            "role": "drums",
+            "sdr_mean": 9.378554,
+            "sdr_median": 9.292255
+          },
+          {
+            "frame_count": 179,
+            "role": "bass",
+            "sdr_mean": 9.255798,
+            "sdr_median": 9.594662
+          },
+          {
+            "frame_count": 179,
+            "role": "other",
+            "sdr_mean": 9.90382,
+            "sdr_median": 9.722758
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Angels In Amplifiers - I'm Alright\\mixture.wav",
+      "name": "Angels In Amplifiers - I'm Alright",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/Angels In Amplifiers - I'm Alright"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 193,
+            "role": "vocals",
+            "sdr_mean": 12.212225,
+            "sdr_median": 14.441617
+          },
+          {
+            "frame_count": 193,
+            "role": "drums",
+            "sdr_mean": 4.877231,
+            "sdr_median": 6.29009
+          },
+          {
+            "frame_count": 193,
+            "role": "bass",
+            "sdr_mean": 0.473028,
+            "sdr_median": 0.294778
+          },
+          {
+            "frame_count": 193,
+            "role": "other",
+            "sdr_mean": 0.577236,
+            "sdr_median": 0.525792
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Arise - Run Run Run\\mixture.wav",
+      "name": "Arise - Run Run Run",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/Arise - Run Run Run"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 119,
+            "role": "vocals",
+            "sdr_mean": 7.254576,
+            "sdr_median": 7.786251
+          },
+          {
+            "frame_count": 119,
+            "role": "drums",
+            "sdr_mean": 11.80678,
+            "sdr_median": 11.315861
+          },
+          {
+            "frame_count": 119,
+            "role": "bass",
+            "sdr_mean": 12.143316,
+            "sdr_median": 12.087888
+          },
+          {
+            "frame_count": 119,
+            "role": "other",
+            "sdr_mean": 8.014844,
+            "sdr_median": 7.483581
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Ben Carrigan - We'll Talk About It All Tonight\\mixture.wav",
+      "name": "Ben Carrigan - We'll Talk About It All Tonight",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/Ben Carrigan - We'll Talk About It All Tonight"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 337,
+            "role": "vocals",
+            "sdr_mean": 6.705263,
+            "sdr_median": 6.838352
+          },
+          {
+            "frame_count": 337,
+            "role": "drums",
+            "sdr_mean": 14.41925,
+            "sdr_median": 14.215209
+          },
+          {
+            "frame_count": 337,
+            "role": "bass",
+            "sdr_mean": 11.044591,
+            "sdr_median": 11.401732
+          },
+          {
+            "frame_count": 337,
+            "role": "other",
+            "sdr_mean": 9.262972,
+            "sdr_median": 8.761192
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\BKS - Bulldozer\\mixture.wav",
+      "name": "BKS - Bulldozer",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/BKS - Bulldozer"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 148,
+            "role": "vocals",
+            "sdr_mean": 13.5602,
+            "sdr_median": 14.296134
+          },
+          {
+            "frame_count": 148,
+            "role": "drums",
+            "sdr_mean": 12.252039,
+            "sdr_median": 11.79553
+          },
+          {
+            "frame_count": 148,
+            "role": "bass",
+            "sdr_mean": 15.086363,
+            "sdr_median": 15.040174
+          },
+          {
+            "frame_count": 148,
+            "role": "other",
+            "sdr_mean": 8.219544,
+            "sdr_median": 8.232662
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\BKS - Too Much\\mixture.wav",
+      "name": "BKS - Too Much",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/BKS - Too Much"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 168,
+            "role": "vocals",
+            "sdr_mean": 12.505886,
+            "sdr_median": 12.756384
+          },
+          {
+            "frame_count": 168,
+            "role": "drums",
+            "sdr_mean": 9.551677,
+            "sdr_median": 9.33566
+          },
+          {
+            "frame_count": 168,
+            "role": "bass",
+            "sdr_mean": 10.457142,
+            "sdr_median": 10.919529
+          },
+          {
+            "frame_count": 168,
+            "role": "other",
+            "sdr_mean": 7.66865,
+            "sdr_median": 6.90661
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Bobby Nobody - Stitch Up\\mixture.wav",
+      "name": "Bobby Nobody - Stitch Up",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/Bobby Nobody - Stitch Up"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 202,
+            "role": "vocals",
+            "sdr_mean": 9.001672,
+            "sdr_median": 8.86462
+          },
+          {
+            "frame_count": 202,
+            "role": "drums",
+            "sdr_mean": 15.62911,
+            "sdr_median": 15.781753
+          },
+          {
+            "frame_count": 202,
+            "role": "bass",
+            "sdr_mean": 11.670717,
+            "sdr_median": 11.604375
+          },
+          {
+            "frame_count": 202,
+            "role": "other",
+            "sdr_mean": 8.607654,
+            "sdr_median": 8.789184
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Buitraker - Revo X\\mixture.wav",
+      "name": "Buitraker - Revo X",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/Buitraker - Revo X"
+    },
+    {
+      "evaluation": {
+        "available": true,
+        "backend": "museval",
+        "errors": {},
+        "missing_estimate_roles": [],
+        "missing_reference_roles": [],
+        "protocol": "BSSEval v4 / museval.evaluate",
+        "role_metrics": [
+          {
+            "frame_count": 250,
+            "role": "vocals",
+            "sdr_mean": 5.74532,
+            "sdr_median": 9.45191
+          },
+          {
+            "frame_count": 250,
+            "role": "drums",
+            "sdr_mean": 6.388433,
+            "sdr_median": 7.695933
+          },
+          {
+            "frame_count": 250,
+            "role": "bass",
+            "sdr_mean": -1.078266,
+            "sdr_median": 0.06997
+          },
+          {
+            "frame_count": 250,
+            "role": "other",
+            "sdr_mean": 10.789523,
+            "sdr_median": 9.251285
+          }
+        ],
+        "roles": [
+          "vocals",
+          "drums",
+          "bass",
+          "other"
+        ],
+        "sample_rate": 44100,
+        "status": "ok"
+      },
+      "mixture": "E:\\AudioSourceOfTruthData\\extracted\\musdb18_hq\\test\\Carlos Gonzalez - A Place For Us\\mixture.wav",
+      "name": "Carlos Gonzalez - A Place For Us",
+      "separation": {
+        "cache_hit": false,
+        "ok": true,
+        "provider": "roformer",
+        "repo_path": "D:\\AuralPrimer\\.external\\msst\\Music-Source-Separation-Training",
+        "shifts": 1,
+        "status": "fresh",
+        "stem_paths": {
+          "bass": "audio/stems/bass.wav",
+          "drums": "audio/stems/drums.wav",
+          "other": "audio/stems/other.wav",
+          "vocals": "audio/stems/vocals.wav"
+        }
+      },
+      "split": "test",
+      "track_id": "test/Carlos Gonzalez - A Place For Us"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invokeMock
 
 import {
   featureDir,
+  drumTabRelPath,
   getRoleReadiness,
   melodicStemRoles,
   detectMelodicStems,
@@ -35,14 +36,19 @@ function res(partial: Partial<SidecarRunResult>): SidecarRunResult {
 }
 
 /** Mock the existence probes (read_auralsong_json) + manifest (get_auralsong_details). */
-function mockBackend(opts: { exists?: (rel: string) => boolean; stems?: string[] }): void {
+function mockBackend(opts: { exists?: (rel: string) => boolean; stems?: string[]; drumTabRel?: string }): void {
   invokeMock.mockImplementation((cmd: string, args: { relPath?: string }) => {
     if (cmd === "read_auralsong_json") {
       const ok = opts.exists ? opts.exists(args.relPath ?? "") : false;
       return ok ? Promise.resolve({}) : Promise.reject(new Error("not found"));
     }
     if (cmd === "get_auralsong_details") {
-      return Promise.resolve({ manifest_raw: { stems: (opts.stems ?? []).map((id) => ({ id })) } });
+      return Promise.resolve({
+        manifest_raw: {
+          stems: (opts.stems ?? []).map((id) => ({ id })),
+          ...(opts.drumTabRel ? { drum_tab: opts.drumTabRel } : {}),
+        },
+      });
     }
     return Promise.reject(new Error(`unexpected ${cmd}`));
   });
@@ -185,6 +191,23 @@ describe("getRoleReadiness", () => {
     expect(seen).toContain("aural/refine_candidates.keys.json");
   });
 
+  it("probes vocal spectrogram and refine-candidate artifacts", async () => {
+    const seen: string[] = [];
+    invokeMock.mockImplementation((_cmd: string, args: { relPath?: string }) => {
+      const rel = args.relPath ?? "";
+      seen.push(rel);
+      return rel.includes("spectrogram/vocals/") || rel.endsWith("refine_candidates.vocals.json")
+        ? Promise.resolve({})
+        : Promise.reject(new Error("nf"));
+    });
+
+    const r = await getRoleReadiness("/x.feedpak", "vocals");
+
+    expect(r).toEqual({ spectrogram: true, candidates: true });
+    expect(seen).toContain("aural/spectrogram/vocals/spectrogram.json");
+    expect(seen).toContain("aural/refine_candidates.vocals.json");
+  });
+
   it("for drums, the drum_tab.json plays the 'candidates' role (no refine_candidates file)", async () => {
     const seen: string[] = [];
     invokeMock.mockImplementation((_cmd: string, args: { relPath?: string }) => {
@@ -197,6 +220,25 @@ describe("getRoleReadiness", () => {
     const r = await getRoleReadiness("/x.feedpak", "drums");
     expect(r).toEqual({ spectrogram: true, candidates: true });
     expect(seen).toContain("drum_tab.json");
+    expect(seen).not.toContain("aural/refine_candidates.drums.json");
+  });
+
+  it("for drums, manifest drum_tab paths play the 'candidates' role", async () => {
+    const seen: string[] = [];
+    mockBackend({
+      drumTabRel: "custom/drums.json",
+      exists: (rel) => {
+        seen.push(rel);
+        return rel === "custom/drums.json" || rel.includes("spectrogram/drums/");
+      },
+    });
+
+    expect(await drumTabRelPath("/x.feedpak")).toBe("custom/drums.json");
+    const r = await getRoleReadiness("/x.feedpak", "drums");
+
+    expect(r).toEqual({ spectrogram: true, candidates: true });
+    expect(seen).toContain("custom/drums.json");
+    expect(seen).not.toContain("drum_tab.json");
     expect(seen).not.toContain("aural/refine_candidates.drums.json");
   });
 
@@ -214,8 +256,8 @@ describe("getRoleReadiness", () => {
 describe("melodicStemRoles", () => {
   it("returns only the melodic roles present in the manifest stems", async () => {
     mockBackend({ stems: ["guitar", "lead_guitar", "rhythm_guitar", "guitar_split_source", "drums", "vocals"] });
-    // Collapsed to a single guitar; the legacy lead/rhythm splits aren't melodic roles anymore.
-    expect(await melodicStemRoles("/x.feedpak")).toEqual(["guitar"]);
+    // Collapsed to a single guitar; the legacy lead/rhythm splits aren't probed.
+    expect(await melodicStemRoles("/x.feedpak")).toEqual(["guitar", "vocals"]);
   });
   it("is empty for a mix-only pack", async () => {
     mockBackend({ stems: ["mix"] });
@@ -270,5 +312,16 @@ describe("detectMelodicStems", () => {
     expect(roles).toContain("keys");
     expect(roles).toContain("drums");
     expect(primary).toBe("keys"); // melodic stays the default; drums is a switch in the editor
+  });
+
+  it("offers vocals when vocal cleanup artifacts are present", async () => {
+    mockBackend({
+      exists: (rel) => rel.includes("/vocals/") || rel.includes(".vocals."),
+      stems: ["vocals"],
+    });
+    const { roles, primary, readiness } = await detectMelodicStems("/vocals.feedpak");
+    expect(roles).toContain("vocals");
+    expect(primary).toBe("vocals");
+    expect(readiness.get("vocals")).toEqual({ spectrogram: true, candidates: true });
   });
 });

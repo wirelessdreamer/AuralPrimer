@@ -81,6 +81,7 @@ export function applyInstrumentHintsFromMappedRole(roleRaw: string, byInstrument
     case "bass":
       byInstrument.bass = true;
       break;
+    case "guitar":
     case "lead_guitar":
       byInstrument.lead_guitar = true;
       break;

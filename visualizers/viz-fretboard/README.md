@@ -2,20 +2,20 @@
 
 Reference visualization plugin for a **guitar-style fretboard** view.
 
-## Current behavior (MVP)
+## Current behavior
 
-- Renders a 6-string fretboard (frets 0–12) on Canvas2D.
-- Since the host does not yet provide note/chord events to plugins, it uses a **placeholder “note cursor”**
-  that moves deterministically over time.
+- Renders a 6-string fretboard (frets 0-12) on Canvas2D.
+- Reads host-provided melodic notes from `ctx.song.notes`.
+- Uses explicit `string`/`fret` metadata, including compact `s`/`f` aliases,
+  when the feedpak provides fingering sidecars or authored tab metadata.
+- Shows active and upcoming fretted notes against the host transport time.
 
 ## Planned upgrades
 
-Once the Viz SDK exposes song queries (e.g. events/notes), this plugin should render:
+Next useful upgrades:
 
-- detected notes (string + fret)
 - chord shapes (boxes / intervals)
 - current key/mode overlays
 
 Lifecycle contract validated:
 `init → onResize → update → render → dispose`.
-

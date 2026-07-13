@@ -8,6 +8,12 @@
   "additionalProperties": true,
   "properties": {
     "version": { "type": "integer", "minimum": 1 },
+    "key": { "$ref": "#/$defs/nonEmptyString" },
+    "tonic": { "$ref": "#/$defs/nonEmptyString" },
+    "mode": { "$ref": "#/$defs/nonEmptyString" },
+    "scale": { "$ref": "#/$defs/nonEmptyString" },
+    "confidence": { "type": "number" },
+    "score": { "type": "number" },
     "events": {
       "type": "array",
       "items": {
@@ -16,15 +22,24 @@
         "additionalProperties": true,
         "properties": {
           "t": { "type": "number" },
+          "duration": { "type": "number", "exclusiveMinimum": 0 },
           "root": {
             "type": ["string", "null"],
             "$comment": "Absolute chord root note name (e.g. \"G\", \"F#\", \"Bb\"); null marks a no-chord (N.C.) event."
           },
           "quality": { "type": "string" },
           "rn": { "type": "string" },
-          "bass": { "type": "string" }
+          "bass": { "type": "string" },
+          "confidence": { "type": "number" },
+          "score": { "type": "number" }
         }
       }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "pattern": "\\S"
     }
   }
 }

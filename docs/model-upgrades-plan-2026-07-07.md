@@ -6,6 +6,17 @@ grounded file-by-file (6-agent code sweep, run `wf_4dab9c4c-a0b`). Written to
 be executed item-by-item by an implementation session. Each plan states its
 goal, steps with anchors, verification, and its ship gate.
 
+> Status note, 2026-07-08: this is the original execution plan, not the live
+> source of truth. Several items below have since been implemented, benchmarked,
+> or deliberately left review-gated. Use
+> [model-upgrades-progress-2026-07-07.md](model-upgrades-progress-2026-07-07.md)
+> for current status, remaining external/runtime gates, and any profile-default
+> decisions; use
+> [model_upgrade_gate_evidence.md](../benchmarks/runtime/model_upgrade_gate_evidence.md)
+> plus `npm run ci:verify:model-upgrade-gates` and
+> `runtime-check --require-model-upgrade-gates` for promotion evidence and
+> release gating.
+
 ## Shared conventions (read first, apply to every item)
 
 - **Worktree trap:** the shared venv's editable install points at MAIN's

@@ -232,4 +232,22 @@ describe("TransportController", () => {
     expect(tc.getState().isPlaying).toBe(false);
     tc.dispose();
   });
+
+  it("setSongMeter applies real tempo + time signature", () => {
+    const tc = new TransportController(new FakeTimebase());
+
+    tc.setSongMeter(103.4, [6, 8]);
+
+    expect(tc.getState().bpm).toBe(103.4);
+    expect(tc.getState().timeSignature).toEqual([6, 8]);
+  });
+
+  it("setSongMeter ignores invalid values and keeps the current meter", () => {
+    const tc = new TransportController(new FakeTimebase(), { bpm: 90, timeSignature: [3, 4] });
+    tc.setSongMeter(0, [0, 0]);
+    expect(tc.getState()).toMatchObject({ bpm: 90, timeSignature: [3, 4] });
+
+    tc.setSongMeter(NaN, [4] as unknown as [number, number]);
+    expect(tc.getState()).toMatchObject({ bpm: 90, timeSignature: [3, 4] });
+  });
 });

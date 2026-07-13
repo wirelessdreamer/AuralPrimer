@@ -3,6 +3,7 @@ param(
   [string]$RepoRoot = "",
   [string]$PortableRoot = "D:/AuralPrimer/AuralPrimerPortable",
   [string]$Demucs6ModelPackZipPath = "",
+  [string]$DemucsFtDrumsModelPackZipPath = "",
   [string]$FfmpegExePath = "",
   [string]$GameExePath = "",
   # Legacy alias for GameExePath.
@@ -135,6 +136,22 @@ function Resolve-DefaultDemucs6ModelPackZipPath([string]$BasePath) {
   return ""
 }
 
+function Resolve-DefaultDemucsFtDrumsModelPackZipPath([string]$BasePath) {
+  $candidates = @(
+    "dist/modelpacks/demucs_ft_drums.zip",
+    "assets/modelpacks/demucs_ft_drums.zip",
+    "modelpacks/demucs_ft_drums.zip",
+    "demucs_ft_drums.zip"
+  )
+  foreach ($candidate in $candidates) {
+    $abs = Resolve-AbsolutePath $BasePath $candidate
+    if (Test-Path -LiteralPath $abs -PathType Leaf) {
+      return $abs
+    }
+  }
+  return ""
+}
+
 function Get-PropertyValue([object]$Obj, [string]$Name) {
   if ($null -eq $Obj) {
     return $null
@@ -169,6 +186,128 @@ function Read-ZipJsonEntry([string]$ZipPath, [string]$EntryName) {
     }
   } finally {
     $zip.Dispose()
+  }
+}
+
+function Test-SafeZipRelativePath([string]$EntryName) {
+  if ([string]::IsNullOrWhiteSpace($EntryName)) {
+    return $false
+  }
+  if ($EntryName.Contains("\") -or $EntryName.Contains(":") -or $EntryName.StartsWith("/") -or $EntryName.Contains("//")) {
+    return $false
+  }
+  foreach ($part in @($EntryName -split "/")) {
+    if ([string]::IsNullOrWhiteSpace($part) -or $part -eq "." -or $part -eq "..") {
+      return $false
+    }
+  }
+  return $true
+}
+
+function Test-Sha256Hex([string]$Value) {
+  return (-not [string]::IsNullOrWhiteSpace($Value)) -and ($Value -match "^[0-9a-fA-F]{64}$")
+}
+
+function Get-ZipEntryByDeclaredPath([object]$Zip, [string]$EntryName) {
+  $entry = $Zip.GetEntry($EntryName)
+  if ($null -ne $entry) {
+    return $entry
+  }
+  $windowsEntryName = $EntryName.Replace("/", "\")
+  if ($windowsEntryName -ne $EntryName) {
+    return $Zip.GetEntry($windowsEntryName)
+  }
+  return $null
+}
+
+function Get-ZipEntrySha256Lower([string]$ZipPath, [string]$EntryName) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+  try {
+    $entry = Get-ZipEntryByDeclaredPath -Zip $zip -EntryName $EntryName
+    if ($null -eq $entry) {
+      throw "zip missing ${EntryName}: $ZipPath"
+    }
+    $stream = $entry.Open()
+    try {
+      $sha = [System.Security.Cryptography.SHA256]::Create()
+      try {
+        $hashBytes = $sha.ComputeHash($stream)
+      } finally {
+        $sha.Dispose()
+      }
+      return (($hashBytes | ForEach-Object { $_.ToString("x2") }) -join "")
+    } finally {
+      $stream.Dispose()
+    }
+  } finally {
+    $zip.Dispose()
+  }
+}
+
+function Test-ZipEntryNameExists([string]$ZipPath, [string]$EntryName) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+  try {
+    return ($null -ne (Get-ZipEntryByDeclaredPath -Zip $zip -EntryName $EntryName))
+  } finally {
+    $zip.Dispose()
+  }
+}
+
+function Test-ZipHasLicenseFile([string]$ZipPath) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+  try {
+    foreach ($entry in $zip.Entries) {
+      if ([string]::IsNullOrWhiteSpace($entry.Name)) {
+        continue
+      }
+      $name = $entry.Name.ToLowerInvariant()
+      if ($name -in @("license", "license.txt", "license.md")) {
+        return $true
+      }
+    }
+    return $false
+  } finally {
+    $zip.Dispose()
+  }
+}
+
+function Assert-DemucsModelPackWeights([string]$ZipPath, [object]$Manifest) {
+  $weights = @(Get-PropertyValue $Manifest "weights")
+  if ($weights.Count -ne 1) {
+    throw "modelpack.json in $ZipPath must declare exactly one Demucs weight"
+  }
+  $weight = $weights[0]
+  $weightPath = [string](Get-PropertyValue $weight "path")
+  if (-not (Test-SafeZipRelativePath $weightPath)) {
+    throw "modelpack.json weights[0].path is not a safe zip-relative path in $ZipPath"
+  }
+  if (-not (Test-ZipEntryNameExists -ZipPath $ZipPath -EntryName $weightPath)) {
+    throw "modelpack weight missing from zip: $weightPath ($ZipPath)"
+  }
+  $expectedSha = ([string](Get-PropertyValue $weight "sha256")).ToLowerInvariant()
+  if (-not (Test-Sha256Hex $expectedSha)) {
+    throw "modelpack.json weights[0].sha256 missing or invalid in $ZipPath"
+  }
+  $sourceUrl = [string](Get-PropertyValue $weight "source_url")
+  if ([string]::IsNullOrWhiteSpace($sourceUrl)) {
+    throw "modelpack.json weights[0].source_url missing in $ZipPath"
+  }
+  $actualSha = Get-ZipEntrySha256Lower -ZipPath $ZipPath -EntryName $weightPath
+  if ($actualSha -ne $expectedSha) {
+    throw "modelpack weight sha256 mismatch for '$weightPath' in ${ZipPath}: expected $expectedSha got $actualSha"
+  }
+}
+
+function Assert-DemucsModelPackLicense([string]$ZipPath, [object]$Manifest, [bool]$RequireLicense) {
+  $licenseName = [string](Get-PropertyValue $Manifest "license")
+  if ($RequireLicense -and [string]::IsNullOrWhiteSpace($licenseName)) {
+    throw "modelpack.json missing license in $ZipPath"
+  }
+  if ($RequireLicense -and -not (Test-ZipHasLicenseFile $ZipPath)) {
+    throw "modelpack zip missing LICENSE file: $ZipPath"
   }
 }
 
@@ -288,6 +427,14 @@ if ([string]::IsNullOrWhiteSpace($Demucs6ModelPackZipPath)) {
   $demucs6ZipAbs = Resolve-AbsolutePath $repoRootAbs $Demucs6ModelPackZipPath
 }
 
+$demucsFtDrumsZipAbs = ""
+$demucsFtDrumsExplicit = -not [string]::IsNullOrWhiteSpace($DemucsFtDrumsModelPackZipPath)
+if ($demucsFtDrumsExplicit) {
+  $demucsFtDrumsZipAbs = Resolve-AbsolutePath $repoRootAbs $DemucsFtDrumsModelPackZipPath
+} else {
+  $demucsFtDrumsZipAbs = Resolve-DefaultDemucsFtDrumsModelPackZipPath $repoRootAbs
+}
+
 Assert-NotBlank $gameExeAbs "GameExePath"
 Assert-NotBlank $studioExeAbs "StudioExePath"
 Assert-NotBlank $portableRootAbs "PortableRoot"
@@ -307,9 +454,16 @@ $demucs6ModelPackVersion = [string](Get-PropertyValue $demucs6ModelPackManifest 
 if ([string]::IsNullOrWhiteSpace($demucs6ModelPackVersion)) {
   throw "modelpack.json missing version in $demucs6ZipAbs"
 }
+$demucs6ModelPackLicense = [string](Get-PropertyValue $demucs6ModelPackManifest "license")
+if ([string]::IsNullOrWhiteSpace($demucs6ModelPackLicense)) {
+  # The canonical htdemucs_6s modelpack predates the license metadata field.
+  # It is reviewed as MIT (see README attribution) and remains the default
+  # portable separator until a manifest-bearing replacement is staged.
+  $demucs6ModelPackLicense = "MIT"
+}
 
 $requiredStemRoles = @("keys", "drums", "guitar", "bass", "vocals")
-$declaredStemRoles = Get-DeclaredStemRoles $demucs6ModelPackManifest
+$declaredStemRoles = @(Get-DeclaredStemRoles $demucs6ModelPackManifest)
 if ($declaredStemRoles.Count -eq 0) {
   throw "modelpack.json in $demucs6ZipAbs does not declare any stem roles (expected keys/drums/guitar/bass/vocals)"
 }
@@ -317,6 +471,48 @@ if ($declaredStemRoles.Count -eq 0) {
 $missingStemRoles = @($requiredStemRoles | Where-Object { $declaredStemRoles -notcontains $_ })
 if ($missingStemRoles.Count -gt 0) {
   throw "demucs_6 modelpack missing required stem roles: $($missingStemRoles -join ', ') (declared: $($declaredStemRoles -join ', '))"
+}
+Assert-DemucsModelPackWeights -ZipPath $demucs6ZipAbs -Manifest $demucs6ModelPackManifest
+Assert-DemucsModelPackLicense -ZipPath $demucs6ZipAbs -Manifest $demucs6ModelPackManifest -RequireLicense $false
+
+$demucsFtDrumsModelPackManifest = $null
+$demucsFtDrumsModelPackVersion = ""
+$demucsFtDrumsModelPackLicense = ""
+$demucsFtDrumsDeclaredStemRoles = @()
+if (-not [string]::IsNullOrWhiteSpace($demucsFtDrumsZipAbs)) {
+  if (-not (Test-Path -LiteralPath $demucsFtDrumsZipAbs -PathType Leaf)) {
+    if ($demucsFtDrumsExplicit) {
+      throw "demucs_ft_drums modelpack zip not found: $demucsFtDrumsZipAbs (set -DemucsFtDrumsModelPackZipPath to an existing zip)"
+    }
+    $demucsFtDrumsZipAbs = ""
+  }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($demucsFtDrumsZipAbs)) {
+  $demucsFtDrumsModelPackManifest = Read-ZipJsonEntry -ZipPath $demucsFtDrumsZipAbs -EntryName "modelpack.json"
+  $demucsFtDrumsModelPackId = [string](Get-PropertyValue $demucsFtDrumsModelPackManifest "id")
+  if ($demucsFtDrumsModelPackId -ne "demucs_ft_drums") {
+    throw "modelpack.json id must be 'demucs_ft_drums' (got '$demucsFtDrumsModelPackId' from $demucsFtDrumsZipAbs)"
+  }
+
+  $demucsFtDrumsModelPackVersion = [string](Get-PropertyValue $demucsFtDrumsModelPackManifest "version")
+  if ([string]::IsNullOrWhiteSpace($demucsFtDrumsModelPackVersion)) {
+    throw "modelpack.json missing version in $demucsFtDrumsZipAbs"
+  }
+  $demucsFtDrumsModelPackLicense = [string](Get-PropertyValue $demucsFtDrumsModelPackManifest "license")
+  if ([string]::IsNullOrWhiteSpace($demucsFtDrumsModelPackLicense)) {
+    throw "modelpack.json missing license in $demucsFtDrumsZipAbs"
+  }
+
+  $demucsFtDrumsDeclaredStemRoles = @(Get-DeclaredStemRoles $demucsFtDrumsModelPackManifest)
+  if ($demucsFtDrumsDeclaredStemRoles.Count -eq 0) {
+    throw "modelpack.json in $demucsFtDrumsZipAbs does not declare any stem roles (expected drums)"
+  }
+  if ($demucsFtDrumsDeclaredStemRoles -notcontains "drums") {
+    throw "demucs_ft_drums modelpack missing required drums stem role (declared: $($demucsFtDrumsDeclaredStemRoles -join ', '))"
+  }
+  Assert-DemucsModelPackWeights -ZipPath $demucsFtDrumsZipAbs -Manifest $demucsFtDrumsModelPackManifest
+  Assert-DemucsModelPackLicense -ZipPath $demucsFtDrumsZipAbs -Manifest $demucsFtDrumsModelPackManifest -RequireLicense $true
 }
 
 if ($SkipDesktopBuild) {
@@ -458,6 +654,7 @@ $portableRootSidecarExe = Join-Path $portableRootAbs "aural_ingest.exe"
 $portableSidecarExe = Join-Path $portableSidecarDir "aural_ingest.exe"
 $portableSidecarManifest = Join-Path $portableSidecarDir "build_manifest.json"
 $portableDemucs6ModelPackZip = Join-Path $portableModelPacksDir "demucs_6.zip"
+$portableDemucsFtDrumsModelPackZip = Join-Path $portableModelPacksDir "demucs_ft_drums.zip"
 
 Copy-Item -LiteralPath $gameExeAbs -Destination $portableGameExe -Force
 Copy-Item -LiteralPath $studioExeAbs -Destination $portableStudioExe -Force
@@ -465,12 +662,29 @@ Copy-Item -LiteralPath $sidecarBuiltExe -Destination $portableRootSidecarExe -Fo
 Copy-Item -LiteralPath $sidecarBuiltExe -Destination $portableSidecarExe -Force
 Copy-Item -LiteralPath $sidecarBuiltManifest -Destination $portableSidecarManifest -Force
 Copy-Item -LiteralPath $demucs6ZipAbs -Destination $portableDemucs6ModelPackZip -Force
+if (-not [string]::IsNullOrWhiteSpace($demucsFtDrumsZipAbs)) {
+  Copy-Item -LiteralPath $demucsFtDrumsZipAbs -Destination $portableDemucsFtDrumsModelPackZip -Force
+} elseif (Test-Path -LiteralPath $portableDemucsFtDrumsModelPackZip -PathType Leaf) {
+  Remove-Item -LiteralPath $portableDemucsFtDrumsModelPackZip -Force
+}
 
 # Piano transcription checkpoints (piano_pti = Edwards-robust Kong, piano_d3rm
 # placeholder for ICASSP 2025 model). Flat directory copies — no modelpack.json
 # wrapper. Auto-discovered at runtime by aural_ingest.transcription helpers via
 # resolve_piano_pti_checkpoint_path / resolve_piano_d3rm_checkpoint_path.
 $pianoModelDirs = @("piano_pti", "piano_d3rm")
+$pianoModelMetadata = @{
+  piano_pti = [ordered]@{
+    license = "CC-BY-4.0"
+    source_url = "https://zenodo.org/records/10610212"
+    license_review_required = $false
+  }
+  piano_d3rm = [ordered]@{
+    license = "checkpoint-license-per-artifact"
+    source_url = "https://github.com/hanshounsu/d3rm"
+    license_review_required = $true
+  }
+}
 $portablePianoModelpacks = @()
 foreach ($pianoDirName in $pianoModelDirs) {
   $sourcePianoDir = Join-Path $repoRootAbs ("assets/models/" + $pianoDirName)
@@ -509,6 +723,9 @@ foreach ($pianoDirName in $pianoModelDirs) {
 
   $portablePianoModelpacks += [ordered]@{
     id = $pianoDirName
+    license = [string]$pianoModelMetadata[$pianoDirName].license
+    source_url = [string]$pianoModelMetadata[$pianoDirName].source_url
+    license_review_required = [bool]$pianoModelMetadata[$pianoDirName].license_review_required
     source_path = $sourcePianoDir
     portable_path = $portablePianoDir
     checkpoints = $pianoCheckpoints
@@ -557,6 +774,11 @@ foreach ($modelpackId in $mt3ModelpackIds) {
     if ($manifestVersion -ne $versionDir.Name) {
       throw "modelpack.json version '$manifestVersion' does not match directory name '$($versionDir.Name)' at $manifestPath"
     }
+    $manifestLicense = [string](Get-PropertyValue $manifestObj "license")
+    if ([string]::IsNullOrWhiteSpace($manifestLicense)) {
+      throw "modelpack.json missing license at $manifestPath"
+    }
+    $manifestLicenseUrl = [string](Get-PropertyValue $manifestObj "license_url")
 
     $manifestSha256 = Get-Sha256Lower $manifestPath
     $checkpointEntries = @()
@@ -586,6 +808,7 @@ foreach ($modelpackId in $mt3ModelpackIds) {
         path = $cpRel
         portable_path = $cpAbs
         format = [string](Get-PropertyValue $cp "format")
+        source_url = [string](Get-PropertyValue $cp "source_url")
         size_bytes = $cpSize
         sha256 = $cpActualSha
       }
@@ -596,6 +819,8 @@ foreach ($modelpackId in $mt3ModelpackIds) {
       version = $manifestVersion
       manifest_path = $manifestPath
       manifest_sha256 = $manifestSha256
+      license = $manifestLicense
+      license_url = $manifestLicenseUrl
       provider = [string](Get-PropertyValue $manifestObj "provider")
       engine = [string](Get-PropertyValue $manifestObj "engine")
       checkpoints = $checkpointEntries
@@ -645,8 +870,19 @@ if ([string]$portableSidecarManifestObj.sha256 -ne $portableSidecarHash) {
 $portableSidecarManifestHash = Get-Sha256Lower $portableSidecarManifest
 
 $sourceLastWriteUtc = [DateTime]::Parse([string]$sidecarInfo.source_last_write_utc).ToUniversalTime()
+$ingestSourceLastWriteUtc = $null
+if ($null -ne (Get-PropertyValue $sidecarInfo "ingest_source_last_write_utc")) {
+  $ingestSourceLastWriteUtc = [DateTime]::Parse([string]$sidecarInfo.ingest_source_last_write_utc).ToUniversalTime()
+}
 $portableRootLastWriteUtc = $portableRootSidecarItem.LastWriteTimeUtc
 $portableLastWriteUtc = (Get-Item -LiteralPath $portableSidecarExe).LastWriteTimeUtc
+if ($null -ne $ingestSourceLastWriteUtc -and $sourceLastWriteUtc -lt $ingestSourceLastWriteUtc) {
+  throw (
+    "Built sidecar is older than ingest source (source=$ingestSourceLastWriteUtc " +
+    "sidecar=$sourceLastWriteUtc latest_source=$($sidecarInfo.ingest_source_latest_path)). " +
+    "Run create_portable.ps1 without -SkipSidecarBuild."
+  )
+}
 if ($portableRootLastWriteUtc -lt $sourceLastWriteUtc) {
   throw "Portable root sidecar timestamp is older than source sidecar (source=$sourceLastWriteUtc portable=$portableRootLastWriteUtc)"
 }
@@ -658,6 +894,16 @@ $demucs6SourceSha256 = Get-Sha256Lower $demucs6ZipAbs
 $demucs6PortableSha256 = Get-Sha256Lower $portableDemucs6ModelPackZip
 if ($demucs6SourceSha256 -ne $demucs6PortableSha256) {
   throw "Portable demucs_6 modelpack hash mismatch: expected $demucs6SourceSha256 got $demucs6PortableSha256"
+}
+
+$demucsFtDrumsSourceSha256 = ""
+$demucsFtDrumsPortableSha256 = ""
+if (-not [string]::IsNullOrWhiteSpace($demucsFtDrumsZipAbs)) {
+  $demucsFtDrumsSourceSha256 = Get-Sha256Lower $demucsFtDrumsZipAbs
+  $demucsFtDrumsPortableSha256 = Get-Sha256Lower $portableDemucsFtDrumsModelPackZip
+  if ($demucsFtDrumsSourceSha256 -ne $demucsFtDrumsPortableSha256) {
+    throw "Portable demucs_ft_drums modelpack hash mismatch: expected $demucsFtDrumsSourceSha256 got $demucsFtDrumsPortableSha256"
+  }
 }
 
 # --- ffmpeg bundling ---
@@ -748,7 +994,55 @@ if ($ffmpegSourceSha256 -ne $ffmpegPortableSha256) {
   throw "Portable ffmpeg hash mismatch: expected $ffmpegSourceSha256 got $ffmpegPortableSha256"
 }
 
+$projectLicenseSource = Join-Path $repoRootAbs "LICENSE"
+if (-not (Test-Path -LiteralPath $projectLicenseSource -PathType Leaf)) {
+  throw "LICENSE is required for portable packaging"
+}
+$portableProjectLicense = Join-Path $portableRootAbs "LICENSE"
+Copy-Item -LiteralPath $projectLicenseSource -Destination $portableProjectLicense -Force
+$projectLicenseSha256 = Get-Sha256Lower $portableProjectLicense
+
+$thirdPartyNoticesSource = Join-Path $repoRootAbs "THIRD_PARTY_NOTICES.md"
+if (-not (Test-Path -LiteralPath $thirdPartyNoticesSource -PathType Leaf)) {
+  throw "THIRD_PARTY_NOTICES.md is required when bundling ffmpeg"
+}
+$thirdPartyNoticesText = Get-Content -LiteralPath $thirdPartyNoticesSource -Raw
+if ($thirdPartyNoticesText -notmatch "FFmpeg" -or $thirdPartyNoticesText -notmatch "ffmpeg\.org") {
+  throw "THIRD_PARTY_NOTICES.md must include an FFmpeg notice"
+}
+$portableThirdPartyNotices = Join-Path $portableRootAbs "THIRD_PARTY_NOTICES.md"
+Copy-Item -LiteralPath $thirdPartyNoticesSource -Destination $portableThirdPartyNotices -Force
+$thirdPartyNoticesSha256 = Get-Sha256Lower $portableThirdPartyNotices
+
 $portableManifestPath = Join-Path $portableRootAbs "portable_manifest.json"
+$portableDemucsModelpacks = @(
+  [ordered]@{
+    id = "demucs_6"
+    version = $demucs6ModelPackVersion
+    license = $demucs6ModelPackLicense
+    required_stems = $requiredStemRoles
+    declared_stems = $declaredStemRoles
+    source_path = $demucs6ZipAbs
+    source_sha256 = $demucs6SourceSha256
+    portable_path = $portableDemucs6ModelPackZip
+    portable_sha256 = $demucs6PortableSha256
+  }
+)
+if (-not [string]::IsNullOrWhiteSpace($demucsFtDrumsZipAbs)) {
+  $portableDemucsModelpacks += [ordered]@{
+    id = "demucs_ft_drums"
+    version = $demucsFtDrumsModelPackVersion
+    license = $demucsFtDrumsModelPackLicense
+    required_stems = @("drums")
+    declared_stems = $demucsFtDrumsDeclaredStemRoles
+    source_path = $demucsFtDrumsZipAbs
+    source_sha256 = $demucsFtDrumsSourceSha256
+    portable_path = $portableDemucsFtDrumsModelPackZip
+    portable_sha256 = $demucsFtDrumsPortableSha256
+    optional = $true
+  }
+}
+
 $portableManifest = [ordered]@{
   schema_version = 1
   built_at_utc = [DateTime]::UtcNow.ToString("o")
@@ -772,6 +1066,9 @@ $portableManifest = [ordered]@{
     source_path = [string]$sidecarInfo.source_path
     source_last_write_utc = [string]$sidecarInfo.source_last_write_utc
     source_sha256 = $sidecarBuiltHash
+    ingest_source_last_write_utc = [string](Get-PropertyValue $sidecarInfo "ingest_source_last_write_utc")
+    ingest_source_latest_path = [string](Get-PropertyValue $sidecarInfo "ingest_source_latest_path")
+    ingest_source_file_count = [int](Get-PropertyValue $sidecarInfo "ingest_source_file_count")
     build_manifest_path = $portableSidecarManifest
     build_manifest_sha256 = $portableSidecarManifestHash
     tauri_target_triple = [string]$portableSidecarManifestObj.tauri_target_triple
@@ -785,7 +1082,7 @@ $portableManifest = [ordered]@{
     model_assets = $portableSidecarManifestObj.model_assets
     freshness_guard = @{
       hash_match = $true
-      timestamp_check = "portable_last_write_utc>=source_last_write_utc and tauri_runtime_last_write_utc>=source_last_write_utc"
+      timestamp_check = "sidecar source_last_write_utc>=ingest_source_last_write_utc and portable_last_write_utc>=source_last_write_utc and tauri_runtime_last_write_utc>=source_last_write_utc"
     }
   }
   ffmpeg = @{
@@ -796,18 +1093,17 @@ $portableManifest = [ordered]@{
     portable_path = $portableFfmpegExe
     portable_sha256 = $ffmpegPortableSha256
   }
-  modelpacks = @(
-    [ordered]@{
-      id = "demucs_6"
-      version = $demucs6ModelPackVersion
-      required_stems = $requiredStemRoles
-      declared_stems = $declaredStemRoles
-      source_path = $demucs6ZipAbs
-      source_sha256 = $demucs6SourceSha256
-      portable_path = $portableDemucs6ModelPackZip
-      portable_sha256 = $demucs6PortableSha256
-    }
-  ) + $portableMt3Modelpacks + $portablePianoModelpacks
+  project_license = @{
+    source_path = $projectLicenseSource
+    portable_path = $portableProjectLicense
+    sha256 = $projectLicenseSha256
+  }
+  third_party_notices = @{
+    source_path = $thirdPartyNoticesSource
+    portable_path = $portableThirdPartyNotices
+    sha256 = $thirdPartyNoticesSha256
+  }
+  modelpacks = $portableDemucsModelpacks + $portableMt3Modelpacks + $portablePianoModelpacks
 }
 $portableManifest | ConvertTo-Json -Depth 8 | Set-Content -Path $portableManifestPath -Encoding UTF8
 
@@ -820,6 +1116,11 @@ if ($ZipOutput) {
   Compress-Archive -Path (Join-Path $portableRootAbs "*") -DestinationPath $zipPath
 }
 
+$portableDemucsFtDrumsModelPackZipForOutput = ""
+if (-not [string]::IsNullOrWhiteSpace($demucsFtDrumsZipAbs)) {
+  $portableDemucsFtDrumsModelPackZipForOutput = $portableDemucsFtDrumsModelPackZip
+}
+
 [pscustomobject]@{
   portable_root = $portableRootAbs
   game_exe = $portableGameExe
@@ -827,6 +1128,7 @@ if ($ZipOutput) {
   portable_manifest = $portableManifestPath
   sidecar_hash = $portableSidecarHash
   demucs6_modelpack_zip = $portableDemucs6ModelPackZip
+  demucs_ft_drums_modelpack_zip = $portableDemucsFtDrumsModelPackZipForOutput
   ffmpeg_exe = $portableFfmpegExe
   zip_path = $zipPath
 } | Write-Output

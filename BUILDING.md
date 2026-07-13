@@ -123,6 +123,9 @@ What this does:
 - writes two launchers:
   - `AuralPrimer.exe` (game / play songs)
   - `AuralStudio.exe` (content creation)
+- model weights normally remain post-install assets under `assets/models/`;
+  portable/release builds may stage reviewed, pinned modelpacks/checkpoints
+  when their id/version/hash/license metadata can be recorded in the packaging manifest
 - stages `demucs_6.zip` into `D:\AuralPrimer\AuralPrimerPortable\modelpacks\demucs_6.zip`
   - default lookup order:
     - `dist/modelpacks/demucs_6.zip`
@@ -130,6 +133,10 @@ What this does:
     - `modelpacks/demucs_6.zip`
     - `demucs_6.zip` (repo root)
   - packaging fails if `modelpack.json` is missing/invalid, if `id != demucs_6`, or if required stems (`keys, drums, guitar, bass, vocals`) are not declared
+- optionally stages `demucs_ft_drums.zip` beside it when supplied or discovered
+  through the same lookup order; packaging requires `id == demucs_ft_drums`,
+  a declared drums stem role, a safe single weight path, source/hash metadata,
+  license metadata, and a bundled `LICENSE`
 - fails if portable sidecar hash/timestamp do not match the fresh sidecar
 - writes:
   - `dist/sidecar/build_manifest.json`
@@ -146,6 +153,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -SkipD
 
 # Provide explicit demucs_6 modelpack location
 powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -Demucs6ModelPackZipPath C:\path\to\demucs_6.zip
+
+# Provide optional fine-tuned drums separator modelpack location
+powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -DemucsFtDrumsModelPackZipPath C:\path\to\demucs_ft_drums.zip
 
 # Also create zip output
 powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -ZipOutput
@@ -178,5 +188,5 @@ If you are picking the repo back up:
 3. Development is **TDD-first** (see `spec.md §2.0` and `docs/testing-strategy.md`). Add or update tests before code; if a behavior intentionally changes, refresh the relevant golden fixture in the same change.
 4. After completing any implementation task, **update `wip.md`** to keep checkboxes and the snapshot honest. This is restated at the bottom of `wip.md`.
 5. Benchmarks live under `benchmarks/` and run via `npm run bench:frontend|python|rust|hardware`. Threshold policy is defined in `benchmarks/thresholds.yml` and is currently warn-only — see `docs/research-decision-gates.md`.
-6. The portable build is the canonical end-to-end smoke (`npm run portable:build`); it enforces a sidecar-freshness guard and stages the `demucs_6` modelpack with manifest validation.
+6. The portable build is the canonical end-to-end smoke (`npm run portable:build`); it enforces a sidecar-freshness guard and stages the `demucs_6` modelpack, plus optional `demucs_ft_drums` when present, with manifest validation.
 7. App boundaries: `apps/desktop` is AuralStudio (authoring/import), `apps/game` is AuralPrimer (gameplay/runtime). `spec.md §1.1` defines the non-negotiable split — flag any change that crosses it.

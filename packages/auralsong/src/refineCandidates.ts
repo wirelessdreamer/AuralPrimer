@@ -76,6 +76,7 @@ const VALID_INSTRUMENTS: ReadonlySet<RefinementInstrument> = new Set([
   "lead_guitar",
   "rhythm_guitar",
   "drums",
+  "vocals",
   "melodic",
 ]);
 
@@ -91,6 +92,18 @@ function validateNote(x: unknown, path: string, errors: ValidationError[]): void
   for (const k of ["t_on", "t_off", "pitch", "velocity"] as const) {
     if (typeof x[k] !== "number") {
       errors.push({ path: `${path}.${k}`, message: "expected number" });
+    }
+  }
+  for (const [k, min, max] of [
+    ["string", 0, 8],
+    ["fret", 0, 36],
+    ["s", 0, 8],
+    ["f", 0, 36],
+  ] as const) {
+    const value = x[k];
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+      errors.push({ path: `${path}.${k}`, message: `expected integer ${min}..${max}` });
     }
   }
 }

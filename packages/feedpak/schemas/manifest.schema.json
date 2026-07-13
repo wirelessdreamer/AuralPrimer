@@ -48,7 +48,16 @@
     "song_timeline": { "$ref": "#/$defs/relpath" },
     "drum_tab": { "$ref": "#/$defs/relpath" },
     "keys": { "$ref": "#/$defs/relpath" },
-    "harmony": { "$ref": "#/$defs/relpath" }
+    "harmony": { "$ref": "#/$defs/relpath" },
+    "aural_notes_mid": { "$ref": "#/$defs/relpath" },
+    "aural_spectrogram": { "$ref": "#/$defs/relpath" },
+    "aural_refine_candidates": { "$ref": "#/$defs/relpathMap" },
+    "aural_fingering": { "$ref": "#/$defs/fingeringRelpathMap" },
+    "aural_benchmark": { "$ref": "#/$defs/relpath" },
+    "aural_pipeline": {
+      "type": "object",
+      "additionalProperties": true
+    }
   },
   "$defs": {
     "semver": {
@@ -58,8 +67,21 @@
     "relpath": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!/)(?!.*//)(?!.*:)(?!.*\\\\)(?!.*(^|/)\\.\\.(/|$)).+$",
-      "description": "POSIX relative path inside the package: no leading slash, no backslash, no drive letter / colon, no empty segment ('//'), no '..' segment."
+      "pattern": "^(?!/)(?!.*//)(?!.*:)(?!.*\\\\)(?!.*(^|/)\\.(/|$))(?!.*(^|/)\\.\\.(/|$)).+$",
+      "description": "POSIX relative path inside the package: no leading slash, no backslash, no drive letter / colon, no empty segment ('//'), no '.' segment, no '..' segment."
+    },
+    "relpathMap": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/relpath" }
+    },
+    "fingeringRole": {
+      "type": "string",
+      "enum": ["bass", "guitar", "rhythm_guitar", "lead_guitar", "keys", "vocals", "melodic"]
+    },
+    "fingeringRelpathMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/fingeringRole" },
+      "additionalProperties": { "$ref": "#/$defs/relpath" }
     },
     "bcp47": {
       "type": "string",

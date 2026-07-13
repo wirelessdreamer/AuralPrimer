@@ -1,0 +1,58 @@
+{
+  "dataset": "guitar_techs",
+  "task": "adapter_validation",
+  "corpus_root": "E:\\AudioSourceOfTruthData\\extracted\\guitar_techs",
+  "signal": "all",
+  "generated_at": "2026-07-08T12:53:06.269247+00:00",
+  "summary": {
+    "ok": true,
+    "signal_count": 2,
+    "case_count": 208,
+    "note_count": 37882,
+    "invalid_item_count": 0
+  },
+  "signals": {
+    "directinput": {
+      "ok": true,
+      "case_count": 104,
+      "note_count": 18941,
+      "invalid_item_count": 0,
+      "duration_min_sec": 20.83534,
+      "duration_max_sec": 549.571875,
+      "category_counts": {
+        "chords": 56,
+        "music": 12,
+        "scales": 24,
+        "singlenotes": 2,
+        "techniques": 10
+      },
+      "player_counts": {
+        "P1": 46,
+        "P2": 46,
+        "P3": 12
+      },
+      "invalid_examples": []
+    },
+    "micamp": {
+      "ok": true,
+      "case_count": 104,
+      "note_count": 18941,
+      "invalid_item_count": 0,
+      "duration_min_sec": 20.83534,
+      "duration_max_sec": 549.571875,
+      "category_counts": {
+        "chords": 56,
+        "music": 12,
+        "scales": 24,
+        "singlenotes": 2,
+        "techniques": 10
+      },
+      "player_counts": {
+        "P1": 46,
+        "P2": 46,
+        "P3": 12
+      },
+      "invalid_examples": []
+    }
+  }
+}

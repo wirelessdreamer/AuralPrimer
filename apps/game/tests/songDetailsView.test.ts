@@ -9,10 +9,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const extractKeyModeFromManifest = vi.fn();
+const hasExplicitKeyModeInManifest = vi.fn();
 const inferKeySignature = vi.fn();
 
 vi.mock("../src/hud", () => ({
   extractKeyModeFromManifest: (...a: unknown[]) => extractKeyModeFromManifest(...a),
+  hasExplicitKeyModeInManifest: (...a: unknown[]) => hasExplicitKeyModeInManifest(...a),
 }));
 vi.mock("../src/tabRenderer", () => ({
   inferKeySignature: (...a: unknown[]) => inferKeySignature(...a),
@@ -53,6 +55,13 @@ function fullDetails(over: Record<string, unknown> = {}) {
     has_sections: true,
     has_events: false,
     has_lyrics: true,
+    has_song_timeline: true,
+    has_drum_tab: true,
+    has_keys: true,
+    has_harmony: true,
+    has_vocal_pitch: true,
+    has_vocal_pitch_contour: false,
+    has_aural_fingering: true,
     has_mix_mp3: true,
     has_mix_ogg: false,
     has_mix_wav: true,
@@ -68,6 +77,8 @@ describe("initSongDetailsView", () => {
   beforeEach(() => {
     stageDom();
     extractKeyModeFromManifest.mockReset();
+    hasExplicitKeyModeInManifest.mockReset();
+    hasExplicitKeyModeInManifest.mockReturnValue(false);
     inferKeySignature.mockReset();
   });
 
@@ -86,12 +97,37 @@ describe("initSongDetailsView", () => {
     expect(extractKeyModeFromManifest).not.toHaveBeenCalled();
   });
 
+  it("setHudKeyMode prefers explicit manifest metadata over inferred notes", () => {
+    hasExplicitKeyModeInManifest.mockReturnValue(true);
+    inferKeySignature.mockReturnValue({ label: "G major" });
+    extractKeyModeFromManifest.mockReturnValue({ key: "C", mode: "major" });
+    const { deps } = makeDeps();
+    const view = initSongDetailsView(deps);
+    view.setHudKeyMode({ key: "C" }, [{ t_on: 0, t_off: 1, pitch: 60, velocity: 1 }] as any);
+    expect(hud()).toBe("C major");
+    expect(inferKeySignature).not.toHaveBeenCalled();
+  });
+
+  it("setHudKeyMode treats loaded key/harmony artifacts as explicit metadata", () => {
+    hasExplicitKeyModeInManifest.mockReturnValue(true);
+    extractKeyModeFromManifest.mockReturnValue({ key: "Bb", mode: "minor" });
+    inferKeySignature.mockReturnValue({ label: "G major" });
+    const artifacts = { harmony: { key: "Bb", mode: "minor" } };
+    const { deps } = makeDeps();
+    const view = initSongDetailsView(deps);
+    view.setHudKeyMode({ harmony: "harmony.json" }, [{ t_on: 0, t_off: 1, pitch: 60, velocity: 1 }] as any, artifacts);
+    expect(hud()).toBe("Bb minor");
+    expect(hasExplicitKeyModeInManifest).toHaveBeenCalledWith({ harmony: "harmony.json" }, artifacts);
+    expect(extractKeyModeFromManifest).toHaveBeenCalledWith({ harmony: "harmony.json" }, artifacts);
+    expect(inferKeySignature).not.toHaveBeenCalled();
+  });
+
   it("setHudKeyMode falls back to manifest when inference returns null", () => {
     inferKeySignature.mockReturnValue(null);
     extractKeyModeFromManifest.mockReturnValue({ key: "C", mode: "major" });
     const { deps } = makeDeps();
     const view = initSongDetailsView(deps);
-    view.setHudKeyMode({ key: "C" }, [{ t_on: 0, t_off: 1, pitch: 60, velocity: 1 }] as any);
+    view.setHudKeyMode({}, [{ t_on: 0, t_off: 1, pitch: 60, velocity: 1 }] as any);
     expect(hud()).toBe("C major");
   });
 
@@ -123,6 +159,13 @@ describe("initSongDetailsView", () => {
     expect(html).toContain("drums");
     expect(html).toContain("beats: yes");
     expect(html).toContain("tempo_map: no");
+    expect(html).toContain("song_timeline: yes");
+    expect(html).toContain("drum_tab: yes");
+    expect(html).toContain("keys: yes");
+    expect(html).toContain("harmony: yes");
+    expect(html).toContain("vocal_pitch: yes");
+    expect(html).toContain("vocal_pitch_contour: no");
+    expect(html).toContain("aural_fingering: yes");
   });
 
   it("renderDetails handles missing title/artist/manifest/charts + error", () => {
@@ -141,7 +184,7 @@ describe("initSongDetailsView", () => {
     const html = setDetailsHTML.mock.calls[0][0] as string;
     expect(html).toContain("(missing title)");
     expect(html).toContain("(no manifest)");
-    expect(html).toContain("(derived from aural/notes.mid)");
+    expect(html).toContain("(from manifest model artifacts when available)");
     expect(html).toContain("boom");
   });
 

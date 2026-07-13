@@ -83,7 +83,7 @@ describe("dist bundle Play Songs runtime", () => {
     // the bundle's visualizer/audio-engine code does plenty of unrelated
     // background work in a real browser that won't fly in jsdom.
     dom.window.addEventListener("error", (e: ErrorEvent) => e.preventDefault());
-    dom.window.addEventListener("unhandledrejection", (e) =>
+    dom.window.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) =>
       (e as unknown as { preventDefault: () => void }).preventDefault()
     );
 

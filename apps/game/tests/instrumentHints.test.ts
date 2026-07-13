@@ -120,7 +120,7 @@ describe("instrumentHints", () => {
   describe("applyInstrumentHintsFromMappedRole", () => {
     it("maps each known role and ignores unknown", () => {
       const f: InstrumentFlags = {};
-      for (const r of ["drums", "bass", "lead_guitar", "rhythm_guitar", "keys", "vocals", "mystery"]) {
+      for (const r of ["drums", "bass", "guitar", "lead_guitar", "rhythm_guitar", "keys", "vocals", "mystery"]) {
         applyInstrumentHintsFromMappedRole(r, f);
       }
       expect(f).toEqual({

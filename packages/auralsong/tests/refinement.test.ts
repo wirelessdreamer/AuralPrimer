@@ -39,6 +39,11 @@ describe("validateRefinement", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("accepts vocals as a refinement instrument", () => {
+    const r = validateRefinement({ ...MIN_REFINEMENT, instrument: "vocals" });
+    expect(r.ok).toBe(true);
+  });
+
   it("rejects a non-object payload", () => {
     expect(validateRefinement(null).ok).toBe(false);
     expect(validateRefinement("nope").ok).toBe(false);
@@ -68,6 +73,37 @@ describe("validateRefinement", () => {
     };
     const r = validateRefinement(bad);
     expect(r.ok).toBe(false);
+  });
+
+  it("accepts optional string/fret metadata on notes", () => {
+    const r = validateRefinement({
+      ...MIN_REFINEMENT,
+      instrument: "lead_guitar",
+      regions: [
+        regionWith(1, 2, [
+          { t_on: 1.1, t_off: 1.4, pitch: 64, velocity: 80, string: 0, fret: 24 },
+          { t_on: 1.5, t_off: 1.8, pitch: 67, velocity: 82, s: 2, f: 17 },
+        ]),
+      ],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects out-of-range string/fret metadata", () => {
+    const r = validateRefinement({
+      ...MIN_REFINEMENT,
+      instrument: "lead_guitar",
+      regions: [
+        regionWith(1, 2, [
+          { t_on: 1.1, t_off: 1.4, pitch: 64, velocity: 80, string: -1, fret: 37 },
+        ]),
+      ],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errors.some((e) => e.path.endsWith(".string"))).toBe(true);
+      expect(r.errors.some((e) => e.path.endsWith(".fret"))).toBe(true);
+    }
   });
 
   it("rejects t_end <= t_start", () => {
@@ -213,6 +249,16 @@ describe("applyRefinementOverlay", () => {
     };
     const out = applyRefinementOverlay(ext, ref);
     expect(out[0].color).toBe("green");
+  });
+
+  it("preserves string/fret metadata from replacement notes", () => {
+    const ref: RefinementFile = {
+      ...MIN_REFINEMENT,
+      instrument: "lead_guitar",
+      regions: [regionWith(0.0, 1.0, [{ ...n(0.25, 0.5, 64), string: 0, fret: 24 }])],
+    };
+    const out = applyRefinementOverlay([n(2.0, 2.2, 67)], ref);
+    expect(out[0]).toMatchObject({ pitch: 64, string: 0, fret: 24 });
   });
 });
 

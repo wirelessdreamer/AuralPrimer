@@ -50,6 +50,16 @@ describe("drumChartFromTab", () => {
     expect(sel!.events.map((e) => e.lane)).toEqual(["SD", "SD"]);
   });
 
+  it("preserves authored hit velocity", () => {
+    const sel = drumChartFromTab(tab([
+      { t: 0, p: "kick", v: 42 },
+      { t: 1, p: "snare", v: 118 },
+    ]));
+
+    expect(sel).not.toBeNull();
+    expect(sel!.events.map((e) => e.velocity)).toEqual([42, 118]);
+  });
+
   it("skips malformed hits (non-finite t, empty/absent lane) but keeps the rest", () => {
     const sel = drumChartFromTab(
       tab([
@@ -122,6 +132,17 @@ describe("loadDrumChartFromTab", () => {
   it("returns null (no throw) when the read rejects — pack has no drum_tab.json", async () => {
     invoke.mockRejectedValue(new Error("not found"));
     await expect(loadDrumChartFromTab("/song.feedpak")).resolves.toBeNull();
+  });
+
+  it("reads a manifest-declared drum_tab path", async () => {
+    invoke.mockResolvedValue(tab([{ t: 0, p: "ride" }]));
+    const sel = await loadDrumChartFromTab("/song.feedpak", "custom/drums.json");
+    expect(invoke).toHaveBeenCalledWith("read_auralsong_json", {
+      containerPath: "/song.feedpak",
+      relPath: "custom/drums.json",
+    });
+    expect(sel).not.toBeNull();
+    expect(sel!.events.map((e) => e.lane)).toEqual(["RD"]);
   });
 
   it("returns null when the read yields null or an unusable document", async () => {

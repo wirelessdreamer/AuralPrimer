@@ -13,7 +13,7 @@
     },
     "instrument": {
       "type": "string",
-      "enum": ["keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "melodic"]
+      "enum": ["keys", "bass", "lead_guitar", "rhythm_guitar", "drums", "vocals", "melodic"]
     },
     "computed_at": {
       "type": "string",
@@ -44,7 +44,11 @@
         "t_on": { "type": "number", "minimum": 0 },
         "t_off": { "type": "number", "exclusiveMinimum": 0 },
         "pitch": { "type": "integer", "minimum": 0, "maximum": 127 },
-        "velocity": { "type": "integer", "minimum": 1, "maximum": 127 }
+        "velocity": { "type": "integer", "minimum": 1, "maximum": 127 },
+        "string": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "fret": { "type": "integer", "minimum": 0, "maximum": 36 },
+        "s": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "f": { "type": "integer", "minimum": 0, "maximum": 36 }
       }
     },
     "candidate_def": {
