@@ -19,6 +19,7 @@ import { Metronome } from "./metronome";
 // extractKeyModeFromManifest now consumed inside songDetailsView.ts.
 // Modelpack list/install wiring lives in modelsPanel.ts (Phase 2.K).
 import { initModelsPanel, type ModelsPanelHandle } from "./modelsPanel";
+import { initPendingModelInstallBanner } from "./pendingModelInstalls";
 // BUILTIN_PLUGINS + scanBundledPlugins + scanUserPlugins now live inside pluginsPanel.ts.
 import { type PluginDescriptor, loadPlugin } from "./plugins";
 import { listen } from "@tauri-apps/api/event";
@@ -1483,6 +1484,21 @@ const modelsPanel: ModelsPanelHandle = initModelsPanel({ escapeHtml });
 resizeVizCanvas();
 modelsPanel.renderPreferred();
 void modelsPanel.refresh();
+
+// Attention-grabbing launch notice when preferred model packs are missing,
+// leading to the Models install UI. Only meaningful in the desktop app
+// (list_installed_modelpacks needs Tauri); stays silent otherwise.
+const modelInstallBannerEl = document.getElementById("modelInstallBanner");
+if (modelInstallBannerEl && haveTauri()) {
+  void initPendingModelInstallBanner({
+    container: modelInstallBannerEl,
+    onOpenModels: () => {
+      const target =
+        document.getElementById("preferredModels") ?? document.getElementById("modelsStatus");
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+  });
+}
 
 // refresh function + refresh button listener + songs_folder_changed listen
 // block + setOverride/clearOverride handlers all live inside songLibraryPanel.ts.

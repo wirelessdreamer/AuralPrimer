@@ -79,6 +79,43 @@ main {
   display: block;
 }
 
+/* Launch-time "pending model installs" banner — deliberately prominent. */
+.modelInstallBanner[hidden] {
+  display: none;
+}
+.modelInstallBanner .modelInstallBannerInner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 190, 0, 0.55);
+  background: rgba(255, 165, 0, 0.18);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.95em;
+}
+.modelInstallBanner .modelInstallBannerInner .grow {
+  flex: 1;
+}
+.modelInstallBanner .modelInstallBannerIcon {
+  font-size: 1.15em;
+}
+.modelInstallBanner .modelInstallSetup {
+  background: rgba(255, 165, 0, 0.92);
+  color: #1a1300;
+  border: none;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.modelInstallBanner .modelInstallDismiss {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 1em;
+}
+
 .appHeader {
   position: sticky;
   top: 0;

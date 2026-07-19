@@ -8,6 +8,7 @@ export function appShellHtml(): string {
   return `
   <div class="appShell">
     <div id="runtimeBanner" class="runtimeBanner" aria-live="polite"></div>
+    <div id="modelInstallBanner" class="modelInstallBanner" role="alert" aria-live="assertive" hidden></div>
     <header class="appHeader">
       <button id="navHome" class="brandBtn" aria-label="AuralPrimer Home">
         <span class="logoMark" aria-hidden="true"></span>
