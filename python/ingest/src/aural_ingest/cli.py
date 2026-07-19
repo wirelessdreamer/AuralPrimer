@@ -55,6 +55,7 @@ from aural_ingest.transcription import (
     resolve_drum_engine,
     resolve_basic_pitch_model_path,
     DrumTranscriptionResult,
+    InstrumentTranscriptionResult,
     transcribe_all_melodic_stems,
     transcribe_melodic,
     transcribe_drums,
@@ -2954,6 +2955,15 @@ def _resolve_transcription_options(
             f"supported: {', '.join(KNOWN_MELODIC_METHODS)}"
         )
 
+    raw_wholemix = (
+        getattr(args, "wholemix_transcriber", None)
+        if getattr(args, "wholemix_transcriber", None) is not None
+        else config.get("wholemix_transcriber")
+    )
+    wholemix_transcriber = str(raw_wholemix).strip().lower() if raw_wholemix else ""
+    if wholemix_transcriber and wholemix_transcriber not in {"muscriptor"}:
+        return None, f"invalid --wholemix-transcriber '{raw_wholemix}'. supported: muscriptor"
+
     raw_transcription_profile = (
         getattr(args, "transcription_profile", None)
         or config.get("transcription_profile")
@@ -3097,6 +3107,7 @@ def _resolve_transcription_options(
         ),
         "warnings": warnings,
         "melodic_method": melodic_method,
+        "wholemix_transcriber": wholemix_transcriber,
         "transcription_profile": transcription_profile,
         "beat_analysis_mode": beat_analysis_mode,
         "shifts": shifts,
@@ -3111,6 +3122,17 @@ def _add_transcription_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--drum-filter", "--drum-engine", dest="drum_filter", default=None)
     p.add_argument("--drum-stem-path")
     p.add_argument("--melodic-method", default=DEFAULT_MELODIC_METHOD)
+    p.add_argument(
+        "--wholemix-transcriber",
+        dest="wholemix_transcriber",
+        default=None,
+        help=(
+            "Opt-in whole-mix multi-instrument engine (e.g. 'muscriptor'): "
+            "transcribes the full mix in one pass, replacing per-stem drum + "
+            "melodic transcription for the roles it covers. Falls back to the "
+            "per-stem pipeline when unset or the engine is unavailable."
+        ),
+    )
     p.add_argument("--transcription-profile", default=DEFAULT_TRANSCRIPTION_PROFILE)
     p.add_argument("--beat-analysis-mode", default=DEFAULT_BEAT_ANALYSIS_MODE)
     p.add_argument("--stem-separation-provider", default=DEFAULT_STEM_SEPARATION_PROVIDER)
@@ -6083,7 +6105,39 @@ def cmd_import(args: argparse.Namespace) -> int:
     manifest["assets"]["audio"]["stems"]["drum_transcription_source_kind"] = drum_source_kind
     _write_json(out / "manifest.json", manifest)
 
-    if is_mt3_drum_engine(tr_opts["drum_engine"]) and drum_source_kind == "mix_fallback":
+    # Whole-mix transcription (opt-in): run the full mix through a single
+    # multi-instrument engine and use its per-role output in place of per-stem
+    # drum + melodic transcription. Fail-safe: a None result (engine absent,
+    # gated weights unavailable, or inference error) falls through to the
+    # normal per-stem path.
+    wholemix_result = None
+    wholemix_active = False
+    if tr_opts.get("wholemix_transcriber") == "muscriptor":
+        from aural_ingest.algorithms import muscriptor as _muscriptor
+
+        if _muscriptor.available():
+            emit(
+                ProgressEvent(
+                    type="stage_progress",
+                    id="transcribe_drums",
+                    progress=0.90,
+                    message="whole-mix transcription (MuScriptor)",
+                )
+            )
+            wholemix_result = _muscriptor.transcribe_mix(dst_wav)
+        if wholemix_result is None:
+            log(
+                "whole-mix transcriber 'muscriptor' unavailable or produced nothing; "
+                "falling back to per-stem transcription"
+            )
+        else:
+            wholemix_active = True
+
+    if (
+        not wholemix_active
+        and is_mt3_drum_engine(tr_opts["drum_engine"])
+        and drum_source_kind == "mix_fallback"
+    ):
         log(
             f"requested MT3 drum engine '{tr_opts['drum_engine']}' requires an explicit or separated drum stem; mix fallback is not allowed"
         )
@@ -6094,7 +6148,15 @@ def cmd_import(args: argparse.Namespace) -> int:
         and drum_source_kind == "mix_fallback"
         and "drums" not in copied_input_stems
     )
-    if skip_synthetic_mix_drums:
+    if wholemix_active:
+        drum_result = DrumTranscriptionResult(
+            events=wholemix_result.drums,
+            used_algorithm="muscriptor_wholemix",
+            attempted_algorithms=["muscriptor"],
+            warnings=[],
+            meta={"backend": "muscriptor_wholemix", **wholemix_result.meta},
+        )
+    elif skip_synthetic_mix_drums:
         msg = "skipped drum transcription: synthesized input-stem mix has no drum source"
         log(msg)
         drum_result = DrumTranscriptionResult(
@@ -6120,7 +6182,11 @@ def cmd_import(args: argparse.Namespace) -> int:
                 algorithm_registry=drum_registry,
                 logger=log,
             )
-    if is_mt3_drum_engine(tr_opts["drum_filter_requested"]) and drum_result.used_algorithm is None:
+    if (
+        not wholemix_active
+        and is_mt3_drum_engine(tr_opts["drum_filter_requested"])
+        and drum_result.used_algorithm is None
+    ):
         log("requested MT3 drum engine did not produce a chart; aborting import")
         return 4
 
@@ -6191,7 +6257,18 @@ def cmd_import(args: argparse.Namespace) -> int:
         instrument_stems["vocals"] = vocals_stem
 
     instrument_results = None
-    if instrument_stems:
+    if wholemix_active:
+        instrument_results = [
+            InstrumentTranscriptionResult(
+                instrument=role,
+                notes=notes,
+                used_method="muscriptor_wholemix",
+                attempted_methods=["muscriptor"],
+                warnings=[],
+            )
+            for role, notes in wholemix_result.melodic.items()
+        ]
+    elif instrument_stems:
         emit(
             ProgressEvent(
                 type="stage_progress",
@@ -6212,7 +6289,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     # events.json/metadata -- a wasted full transcription -- so we skip it
     # and build everything from instrument_results instead.
     melodic_result = None
-    if not instrument_results:
+    if not instrument_results and not wholemix_active:
         melodic_source = lead_stem if lead_stem.is_file() else dst_wav
         emit(
             ProgressEvent(type="stage_progress", id="transcribe_drums", progress=0.94, message="analyzing melodic notes")
@@ -6226,8 +6303,8 @@ def cmd_import(args: argparse.Namespace) -> int:
         )
 
     # Build MIDI output.
-    if instrument_results:
-        inst_tracks = {r.instrument: r.notes for r in instrument_results}
+    if instrument_results or wholemix_active:
+        inst_tracks = {r.instrument: r.notes for r in (instrument_results or [])}
         notes_mid = _build_notes_mid_bytes(
             bpm=bpm,
             beats=beats["beats"],
@@ -6246,7 +6323,9 @@ def cmd_import(args: argparse.Namespace) -> int:
     (out / "features" / "notes.mid").write_bytes(notes_mid)
     emit(ProgressEvent(type="stage_done", id="transcribe_drums", progress=0.97, artifact="features/notes.mid"))
 
-    fingering_tracks = inst_tracks if instrument_results else {"melodic": melodic_result.notes}
+    fingering_tracks = (
+        inst_tracks if (instrument_results or wholemix_active) else {"melodic": melodic_result.notes}
+    )
     fingering_paths = _write_fingering_sidecars(out, fingering_tracks)
     if fingering_paths:
         manifest["assets"].setdefault("features", {})["fingering_paths"] = fingering_paths
