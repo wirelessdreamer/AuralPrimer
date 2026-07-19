@@ -1417,6 +1417,37 @@ async fn ingest_runtime_check(
 }
 
 #[tauri::command]
+async fn ingest_model_setup(
+    app: AppHandle,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("ingest model setup", move || {
+        ingest_sidecar::run_ingest_model_setup(Some(&app))
+    })
+    .await
+}
+
+/// Open an external http(s) URL in the user's default browser. Used by the
+/// "Model setup" surface to direct users to license-acceptance pages
+/// (a gated HuggingFace model page, or any other host). Only http(s) is
+/// allowed; everything else is refused.
+#[tauri::command]
+async fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        return Err(format!("refusing to open non-http(s) url: {trimmed}"));
+    }
+    // NOTE: tauri-plugin-shell's `open` is deprecated in favor of
+    // tauri-plugin-opener; kept here to avoid adding a plugin + capability
+    // surface for a single call. Migrate to `app.opener().open_url(..)` if we
+    // adopt tauri-plugin-opener elsewhere.
+    #[allow(deprecated)]
+    app.shell()
+        .open(trimmed.to_string(), None)
+        .map_err(|e| format!("failed to open url: {e}"))
+}
+
+#[tauri::command]
 async fn ingest_refine_candidates(
     app: AppHandle,
     req: ingest_sidecar::RefineCandidatesRequest,
@@ -2633,6 +2664,8 @@ pub fn run() {
             stem_midi_create_auralsong,
             ingest_import,
             ingest_runtime_check,
+            ingest_model_setup,
+            open_external_url,
             ingest_refine_candidates,
             ingest_spectrogram,
             ingest_align_drum_onsets,

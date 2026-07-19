@@ -17,6 +17,7 @@ import {
 import { Metronome } from "./metronome";
 import { extractKeyModeFromManifest } from "./hud";
 import { ingestImport, type IngestImportRequest, type IngestSubcommand } from "./ingestClient";
+import { initModelSetupPanel } from "./modelSetupPanel";
 import { buildIngestRequestFromForm, inferIngestTitleArtistFromSourcePath } from "./ingestUi";
 import { PREFERRED_MODEL_PACKS } from "./models/preferredModelPacks";
 import {
@@ -644,6 +645,12 @@ root.innerHTML = `
                 </div>
                 <div id="ingestRuntimeStatus" class="mt3RuntimeStatus meta">Checking MT3 runtime…</div>
               </div>
+              <div class="mt3RuntimePanel">
+                <div class="row mt3RuntimeHeader">
+                  <div class="meta"><strong>Model setup</strong> — optional external engines &amp; their licenses</div>
+                </div>
+                <div id="modelSetupPanel" class="mt3RuntimeStatus meta">Checking model setup…</div>
+              </div>
               <div class="row">
                 <label class="meta">Config JSON/path (optional)</label>
                 <input id="ingestConfig" class="grow" type="text" placeholder='{"ingest_timestamp":"..."} or C:\\cfg.json' />
@@ -1114,6 +1121,12 @@ const ingestLogPanelEl = document.getElementById("ingestLogPanel") as HTMLDetail
 const ingestStatusEl = document.getElementById("ingestStatus") as HTMLPreElement;
 const ingestRuntimeRefreshBtn = document.getElementById("ingestRuntimeRefresh") as HTMLButtonElement;
 const ingestRuntimeStatusEl = document.getElementById("ingestRuntimeStatus") as HTMLDivElement;
+const modelSetupPanelEl = document.getElementById("modelSetupPanel") as HTMLDivElement;
+if (haveTauri()) {
+  void initModelSetupPanel(modelSetupPanelEl);
+} else {
+  modelSetupPanelEl.innerHTML = `<div class="meta">Model setup is available in the desktop app.</div>`;
+}
 
 const stemMidiPickFolderBtn = document.getElementById("stemMidiPickFolderMake") as HTMLButtonElement;
 const stemMidiImportBtn = document.getElementById("stemMidiImportMake") as HTMLButtonElement;

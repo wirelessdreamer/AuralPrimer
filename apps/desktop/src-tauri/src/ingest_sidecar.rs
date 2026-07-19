@@ -635,6 +635,19 @@ pub fn run_ingest_runtime_check(
     run_tauri_sidecar_capture(app, &args)
 }
 
+pub fn run_ingest_model_setup(
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let args = vec!["model-setup".to_string()];
+    let app = app.ok_or_else(|| {
+        format!(
+            "Tauri AppHandle required for sidecar execution to run {} model-setup",
+            INGEST_SIDECAR_NAME
+        )
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RefineCandidatesRequest {
     /// Path to the AuralSong directory (must end with `.auralsong` and be a
