@@ -317,6 +317,9 @@ type LyricsFile = {
 
 type IngestRuntimeDependencyStatus = {
   ok: boolean;
+  required?: boolean;
+  role?: string;
+  missing_behavior?: string;
   version?: string;
   error?: string;
 };
@@ -1495,11 +1498,27 @@ function renderMt3RuntimeState(
   const depsHtml = dependencyEntries.length
     ? dependencyEntries
         .map(([name, dep]) => {
-          const note = dep.version ? `v${dep.version}` : dep.error ? dep.error : "";
+          // An optional backend that isn't installed is expected, not a
+          // failure — e.g. Basic Pitch's TensorFlow backend when we ship and
+          // run the ONNX one. Only a MISSING REQUIRED dependency earns the red
+          // badge; optional ones read as informational so the panel doesn't
+          // cry wolf about something we deliberately don't bundle.
+          const optional = dep.required === false;
+          const badgeFound = dep.ok || optional;
+          const badgeLabel = dep.ok
+            ? "Detected"
+            : optional
+              ? "Optional — not installed"
+              : "Missing";
+          const note = dep.version
+            ? `v${dep.version}`
+            : !dep.ok && optional && dep.missing_behavior
+              ? dep.missing_behavior
+              : dep.error ?? "";
           return `
             <div class="mt3RuntimeRow">
               <div class="mt3RuntimeLabel">${escapeHtml(name)}</div>
-              <div>${runtimeBadge(dep.ok ? "Detected" : "Missing", dep.ok)}</div>
+              <div>${runtimeBadge(badgeLabel, badgeFound)}</div>
               <div class="meta">${escapeHtml(note)}</div>
             </div>
           `;
