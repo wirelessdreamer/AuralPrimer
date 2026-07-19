@@ -648,12 +648,6 @@ root.innerHTML = `
                 </div>
                 <div id="ingestRuntimeStatus" class="mt3RuntimeStatus meta">Checking MT3 runtime…</div>
               </div>
-              <div class="mt3RuntimePanel">
-                <div class="row mt3RuntimeHeader">
-                  <div class="meta"><strong>Model setup</strong> — optional external engines &amp; their licenses</div>
-                </div>
-                <div id="modelSetupPanel" class="mt3RuntimeStatus meta">Checking model setup…</div>
-              </div>
               <div class="row">
                 <label class="meta">Config JSON/path (optional)</label>
                 <input id="ingestConfig" class="grow" type="text" placeholder='{"ingest_timestamp":"..."} or C:\\cfg.json' />
@@ -711,6 +705,10 @@ root.innerHTML = `
 
             <h3>Models</h3>
             <p class="meta">Model packs install into <code>assets/models/&lt;id&gt;/&lt;version&gt;/</code> under the app data directory.</p>
+
+            <h4>Needs setup — external engines &amp; licenses</h4>
+            <p class="meta">Optional engines you install yourself. Gated models need their license accepted on the provider's site before the weights can be downloaded.</p>
+            <div id="modelSetupPanel" class="mt3RuntimeStatus meta">Checking model setup…</div>
 
             <div class="row">
               <button id="modelsRefresh">Refresh</button>
