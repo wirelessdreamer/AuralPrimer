@@ -62,7 +62,7 @@ import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
-import { loadAuralSongAudioIntoTransport } from "./auralsongAudioLoader";
+import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
 import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 
