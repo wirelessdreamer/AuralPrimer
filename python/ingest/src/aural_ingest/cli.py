@@ -5658,6 +5658,15 @@ def cmd_runtime_check(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def cmd_model_setup(args: argparse.Namespace) -> int:
+    """Emit per-external-model setup descriptors (install + license-accept URLs)
+    for the AuralStudio "Model setup" surface to render."""
+    from aural_ingest.model_setup import model_setup_snapshot
+
+    print(json.dumps(model_setup_snapshot(), sort_keys=True))
+    return 0
+
+
 def _convert_auralsong_to_feedpak(working_dir: Path) -> Path:
     """Convert a finished ``.auralsong`` working dir in place to a ``.feedpak``.
 
@@ -7206,6 +7215,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fail if any model-upgrade promotion gate in model_upgrade_gates is still pending.",
     )
     s_runtime.set_defaults(func=cmd_runtime_check)
+
+    s_model_setup = sub.add_parser("model-setup")
+    s_model_setup.set_defaults(func=cmd_model_setup)
 
     s_benchmark = sub.add_parser("benchmark-drums")
     s_benchmark.add_argument("stem_path")
