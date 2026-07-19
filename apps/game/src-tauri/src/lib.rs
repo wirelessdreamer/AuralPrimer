@@ -961,6 +961,21 @@ fn native_audio_set_output_host_and_persist(
     set_native_audio_output_device_selection(&app, None)
 }
 
+/// Run the packaged sidecar's `runtime-check` and return its parsed payload.
+/// Used at launch to detect genuinely-missing required models/dependencies.
+/// Runs on a blocking thread — the check shells out and takes seconds, which
+/// would otherwise stall the UI on startup.
+#[tauri::command]
+async fn ingest_runtime_check(
+    app: AppHandle,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ingest_sidecar::run_ingest_runtime_check(Default::default(), Some(&app))
+    })
+    .await
+    .map_err(|e| format!("runtime-check task failed: {e}"))?
+}
+
 #[tauri::command]
 fn native_audio_get_selected_output_device(
     state: tauri::State<NativeAudioState>,
@@ -2342,6 +2357,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping,
             frontend_log,
+            ingest_runtime_check,
             get_songs_folder_paths,
             get_songs_folder,
             set_songs_folder_override,

@@ -1,39 +1,87 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  computeMissingModelPacks,
+  computeMissingRequirements,
   initPendingModelInstallBanner,
+  type RuntimeCheckPayload,
 } from "../src/pendingModelInstalls";
 
-const preferred = [
-  { id: "demucs_6", version: "0.0.0" },
-  { id: "basic-transcription", version: "0.0.0" },
-];
-
-describe("computeMissingModelPacks", () => {
-  it("returns preferred packs with no installed match", () => {
-    const missing = computeMissingModelPacks(
-      [{ id: "demucs_6", version: "0.0.0", root_dir: "", manifest_path: "", ok: true }],
-      preferred,
-    );
-    expect(missing.map((p) => p.id)).toEqual(["basic-transcription"]);
+describe("computeMissingRequirements", () => {
+  it("reports a required asset that is not ok", () => {
+    const payload: RuntimeCheckPayload = {
+      assets: { basic_pitch_model: { ok: false, required: true, error: "not found" } },
+    };
+    expect(computeMissingRequirements(payload)).toEqual([
+      { id: "basic_pitch_model", label: "Basic pitch model", detail: "not found" },
+    ]);
   });
 
-  it("returns empty when all preferred packs are installed", () => {
-    const installed = preferred.map((p) => ({
-      ...p,
-      root_dir: "",
-      manifest_path: "",
+  it("IGNORES optional assets/dependencies that are not ok", () => {
+    // The bug this whole design exists to avoid: nagging about things that are
+    // deliberately not installed (an optional backend) or resolved elsewhere.
+    const payload: RuntimeCheckPayload = {
+      assets: { demucs_modelpack: { ok: false, required: false } },
+      dependencies: {
+        tensorflow: { ok: false, required: false, missing_behavior: "ONNX remains usable" },
+      },
+    };
+    expect(computeMissingRequirements(payload)).toEqual([]);
+  });
+
+  it("walks nested asset groups like mt3_checkpoints", () => {
+    const payload: RuntimeCheckPayload = {
+      assets: {
+        mt3_checkpoints: {
+          mr_mt3_drums: { ok: true, required: true },
+          yourmt3_drums: { ok: false, required: true, error: "checkpoint missing" },
+        },
+      },
+    };
+    const missing = computeMissingRequirements(payload);
+    expect(missing).toHaveLength(1);
+    expect(missing[0].id).toBe("mt3_checkpoints.yourmt3_drums");
+    expect(missing[0].detail).toBe("checkpoint missing");
+  });
+
+  it("reports a required dependency with its missing_behavior as detail", () => {
+    const payload: RuntimeCheckPayload = {
+      dependencies: {
+        basic_pitch: { ok: false, required: true, missing_behavior: "auto profiles fall back" },
+      },
+    };
+    expect(computeMissingRequirements(payload)[0]).toMatchObject({
+      id: "basic_pitch",
+      detail: "auto profiles fall back",
+    });
+  });
+
+  it("returns nothing for a healthy real-world payload", () => {
+    // Trimmed from an actual `runtime-check` on a working install: every
+    // required item ok, TensorFlow absent but optional. Must be silent.
+    const payload: RuntimeCheckPayload = {
       ok: true,
-    }));
-    expect(computeMissingModelPacks(installed, preferred)).toEqual([]);
+      assets: {
+        basic_pitch_model: { ok: true, required: true },
+        ffmpeg: { ok: true, required: false },
+        demucs_modelpack: { ok: true, required: false },
+        mt3_checkpoints: {
+          mr_mt3_drums: { ok: true, required: true },
+          yourmt3_drums: { ok: true, required: true },
+        },
+      },
+      dependencies: {
+        basic_pitch: { ok: true, required: true },
+        onnxruntime: { ok: true, required: false },
+        tensorflow: { ok: false, required: false, missing_behavior: "ONNX remains usable" },
+        torch: { ok: true, required: false },
+      },
+    };
+    expect(computeMissingRequirements(payload)).toEqual([]);
   });
 
-  it("treats an installed-but-not-ok pack as missing", () => {
-    const missing = computeMissingModelPacks(
-      [{ id: "demucs_6", version: "0.0.0", root_dir: "", manifest_path: "", ok: false }],
-      preferred,
-    );
-    expect(missing.map((p) => p.id)).toContain("demucs_6");
+  it("tolerates missing/empty payloads", () => {
+    expect(computeMissingRequirements(undefined)).toEqual([]);
+    expect(computeMissingRequirements(null)).toEqual([]);
+    expect(computeMissingRequirements({})).toEqual([]);
   });
 });
 
@@ -58,30 +106,32 @@ function memStorage() {
   };
 }
 
+const missingPayload: RuntimeCheckPayload = {
+  assets: { basic_pitch_model: { ok: false, required: true, error: "not found" } },
+};
+
 describe("initPendingModelInstallBanner", () => {
-  it("renders an attention banner listing missing packs", async () => {
+  it("renders an attention banner naming the missing requirement", async () => {
     const { container } = fakeContainer();
     const missing = await initPendingModelInstallBanner({
       container,
       onOpenModels: () => {},
-      listInstalled: async () => [],
-      preferred,
+      fetchRuntimeCheck: async () => ({ ok: true, payload: missingPayload }),
       storage: memStorage(),
     });
-    expect(missing.map((p) => p.id)).toEqual(["demucs_6", "basic-transcription"]);
+    expect(missing).toHaveLength(1);
     expect(container.hidden).toBe(false);
-    expect(container.innerHTML).toContain("2 model packs not installed");
+    expect(container.innerHTML).toContain("1 required model missing");
+    expect(container.innerHTML).toContain("Basic pitch model");
     expect(container.innerHTML).toContain("Set up models");
   });
 
-  it("stays hidden when nothing is missing", async () => {
+  it("stays hidden when everything required is present", async () => {
     const { container } = fakeContainer();
-    const installed = preferred.map((p) => ({ ...p, root_dir: "", manifest_path: "", ok: true }));
     await initPendingModelInstallBanner({
       container,
       onOpenModels: () => {},
-      listInstalled: async () => installed,
-      preferred,
+      fetchRuntimeCheck: async () => ({ ok: true, payload: { assets: {}, dependencies: {} } }),
       storage: memStorage(),
     });
     expect(container.hidden).toBe(true);
@@ -94,62 +144,59 @@ describe("initPendingModelInstallBanner", () => {
     await initPendingModelInstallBanner({
       container,
       onOpenModels,
-      listInstalled: async () => [],
-      preferred,
+      fetchRuntimeCheck: async () => ({ ok: true, payload: missingPayload }),
       storage: memStorage(),
     });
     handlers["modelInstallSetup"]?.();
     expect(onOpenModels).toHaveBeenCalledTimes(1);
   });
 
-  it("stays dismissed for the same missing set, re-shows when the set changes", async () => {
+  it("stays dismissed for the same set, returns when the set changes", async () => {
     const storage = memStorage();
-    // First launch: render + dismiss.
     const first = fakeContainer();
     await initPendingModelInstallBanner({
       container: first.container,
       onOpenModels: () => {},
-      listInstalled: async () => [],
-      preferred,
+      fetchRuntimeCheck: async () => ({ ok: true, payload: missingPayload }),
       storage,
     });
     first.handlers["modelInstallDismiss"]?.();
 
-    // Second launch, same missing set -> stays hidden.
     const second = fakeContainer();
     await initPendingModelInstallBanner({
       container: second.container,
       onOpenModels: () => {},
-      listInstalled: async () => [],
-      preferred,
+      fetchRuntimeCheck: async () => ({ ok: true, payload: missingPayload }),
       storage,
     });
     expect(second.container.hidden).toBe(true);
 
-    // Set changes (one now installed) -> banner returns.
     const third = fakeContainer();
     await initPendingModelInstallBanner({
       container: third.container,
       onOpenModels: () => {},
-      listInstalled: async () => [
-        { id: "demucs_6", version: "0.0.0", root_dir: "", manifest_path: "", ok: true },
-      ],
-      preferred,
+      fetchRuntimeCheck: async () => ({
+        ok: true,
+        payload: {
+          assets: {
+            basic_pitch_model: { ok: false, required: true },
+            mt3_checkpoints: { mr_mt3_drums: { ok: false, required: true } },
+          },
+        },
+      }),
       storage,
     });
     expect(third.container.hidden).toBe(false);
-    expect(third.container.innerHTML).toContain("basic-transcription");
   });
 
-  it("stays silent if the install status can't be read", async () => {
+  it("stays silent when the runtime check can't be run", async () => {
     const { container } = fakeContainer();
     await initPendingModelInstallBanner({
       container,
       onOpenModels: () => {},
-      listInstalled: async () => {
+      fetchRuntimeCheck: async () => {
         throw new Error("no tauri");
       },
-      preferred,
       storage: memStorage(),
     });
     expect(container.hidden).toBe(true);
