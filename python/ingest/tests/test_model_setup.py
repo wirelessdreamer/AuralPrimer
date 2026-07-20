@@ -2,6 +2,8 @@
 license-acceptance / setup surface."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from aural_ingest import model_setup
 from aural_ingest.model_setup import ExternalModelSetup, model_setup_snapshot
 
@@ -85,8 +87,70 @@ def test_snapshot_has_muscriptor_with_hf_accept_url() -> None:
     # The engine now ships with the sidecar, so the remaining step is the
     # gated weights -- never "pip install" (invisible to a frozen sidecar).
     assert "pip install" not in ms["install_hint"]
+    # NB: package_installed is deliberately not asserted -- it probes the
+    # *running* interpreter, and the lightweight CI job has no muscriptor.
+    assert ms["next_step"] in ("install_package", "accept_license", "ready")
+
+
+def test_snapshot_muscriptor_next_step_tracks_the_bundled_engine(monkeypatch) -> None:
+    # What we can assert hermetically: given the engine present and the weights
+    # absent, the registry entry routes the user to the license/download step.
+    monkeypatch.setattr(model_setup, "_spec_available", lambda _module: True)
+    monkeypatch.setattr(model_setup, "_hf_file_cached", lambda *_a, **_k: False)
+    ms = {m["id"]: m for m in model_setup_snapshot()["external_models"]}["muscriptor"]
     assert ms["package_installed"] is True
-    assert ms["next_step"] in ("accept_license", "ready")
+    assert ms["weights_present"] is False
+    assert ms["next_step"] == "accept_license"
+
+
+def test_hf_cache_roots_cover_every_variable_huggingface_hub_honours(monkeypatch, tmp_path) -> None:
+    # Regression: an earlier probe honoured only HF_HUB_CACHE/HF_HOME, so a user
+    # who had relocated their cache with the legacy HUGGINGFACE_HUB_CACHE (or
+    # XDG_CACHE_HOME) was told the weights were missing after a good download.
+    for var in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "HF_HOME", "XDG_CACHE_HOME"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HUGGINGFACE_HUB_CACHE", str(tmp_path / "legacy"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    roots = model_setup._hf_cache_roots()
+    assert tmp_path / "legacy" in roots
+    assert tmp_path / "xdg" / "huggingface" / "hub" in roots
+
+
+def test_hf_cache_roots_expand_user_and_vars(monkeypatch) -> None:
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setenv("HF_HOME", "~/hfhome")
+    assert Path.home() / "hfhome" / "hub" in model_setup._hf_cache_roots()
+
+
+def test_hf_file_cached_finds_the_named_file_in_a_snapshot(monkeypatch, tmp_path) -> None:
+    # Fallback path (no huggingface_hub): only the *specific* weights file
+    # counts, so a cache holding just a README never reads as "downloaded".
+    monkeypatch.setattr(model_setup, "_hf_cache_roots", lambda: [tmp_path])
+    snapshot = tmp_path / "models--MuScriptor--muscriptor-medium" / "snapshots" / "abc"
+    snapshot.mkdir(parents=True)
+    (snapshot / "README.md").write_text("hi", encoding="utf-8")
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _no_hf(name, *args, **kwargs):
+        if name == "huggingface_hub":
+            raise ImportError("simulated: huggingface_hub unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_hf)
+
+    assert model_setup._hf_file_cached("MuScriptor/muscriptor-medium", "model.safetensors") is False
+    (snapshot / "model.safetensors").write_text("weights", encoding="utf-8")
+    assert model_setup._hf_file_cached("MuScriptor/muscriptor-medium", "model.safetensors") is True
+
+
+def test_hf_file_cached_never_raises() -> None:
+    assert model_setup._hf_file_cached("", "model.safetensors") is False
+    assert model_setup._hf_file_cached("no-slash", "model.safetensors") is False
 
 
 def test_snapshot_is_json_safe() -> None:

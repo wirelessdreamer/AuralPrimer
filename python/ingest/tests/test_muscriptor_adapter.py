@@ -65,9 +65,14 @@ def test_available_false_when_package_absent(monkeypatch) -> None:
     assert muscriptor.available() is False
 
 
-def test_available_true_when_bundled(monkeypatch) -> None:
+def test_available_true_when_spec_resolves(monkeypatch) -> None:
+    # Must not assert on the *running* interpreter: `available()` resolves via
+    # find_spec, and the lightweight CI job installs only requirements-dev.txt.
+    # Bundling into aural_ingest.spec ships the engine to the frozen sidecar,
+    # which says nothing about whatever interpreter runs pytest.
     monkeypatch.delenv(muscriptor._DISABLED_ENV, raising=False)
-    assert muscriptor.available() is True  # bundled with the sidecar
+    monkeypatch.setattr(muscriptor.importlib.util, "find_spec", lambda _name: object())
+    assert muscriptor.available() is True
 
 
 def test_available_false_when_disabled(monkeypatch) -> None:

@@ -93,33 +93,67 @@ def _spec_available(module: str) -> bool:
         return False
 
 
-def _hf_repo_cached(repo_id: str) -> bool:
-    """Whether a HuggingFace repo's weights are already in the local cache.
+def _hf_cache_roots() -> list[Path]:
+    """Fallback hub-cache locations, for when ``huggingface_hub`` can't be
+    imported (the lightweight CI env). Deliberately checks *every* variable
+    huggingface_hub honours rather than guessing which one wins: this is only
+    ever used to answer "are the weights somewhere on disk", so a superset of
+    candidate roots is the safe shape.
+    """
+    def _expand(value: str) -> Path:
+        return Path(os.path.expandvars(os.path.expanduser(value)))
 
-    Purely a filesystem probe -- it must never trigger a download, and must
-    never raise. ``hf_hub_download`` stores gated repos under the standard hub
-    cache as ``models--<org>--<name>/snapshots/<rev>/...``; we treat the repo
-    as cached once a snapshot contains at least one real file.
+    roots: list[Path] = []
+    for var in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        value = os.environ.get(var, "").strip()
+        if value:
+            roots.append(_expand(value))
+    home = os.environ.get("HF_HOME", "").strip()
+    if home:
+        roots.append(_expand(home) / "hub")
+    xdg = os.environ.get("XDG_CACHE_HOME", "").strip()
+    if xdg:
+        roots.append(_expand(xdg) / "huggingface" / "hub")
+    roots.append(Path.home() / ".cache" / "huggingface" / "hub")
+    return roots
+
+
+def _hf_file_cached(repo_id: str, filename: str) -> bool:
+    """Whether one file of a HuggingFace repo is already in the local cache.
+
+    Purely a lookup -- it must never trigger a download, and must never raise.
+
+    Resolution is delegated to ``huggingface_hub`` itself wherever possible.
+    Reimplementing its cache-dir precedence is a trap: it honours HF_HUB_CACHE,
+    the legacy HUGGINGFACE_HUB_CACHE, HF_HOME and XDG_CACHE_HOME (expanding ~
+    and $VARs in each), so a hand-rolled subset reports "not downloaded" for a
+    user who has simply relocated their cache -- stranding them in the setup
+    dialog re-downloading weights they already have.
+
+    Checking a *specific* file also avoids the false positive where the cache
+    holds only a README or a ``.no_exist`` marker for the repo.
     """
     try:
+        try:
+            from huggingface_hub import try_to_load_from_cache
+
+            resolved = try_to_load_from_cache(repo_id=repo_id, filename=filename)
+            # Returns a str path when cached; a sentinel object for a known-absent
+            # file; None when simply not cached.
+            return isinstance(resolved, str) and Path(resolved).is_file()
+        except ImportError:
+            pass
+
         org, _, name = repo_id.partition("/")
         if not org or not name:
             return False
-        # Mirrors huggingface_hub's own precedence.
-        hub_cache = os.environ.get("HF_HUB_CACHE", "").strip()
-        home = os.environ.get("HF_HOME", "").strip()
-        if hub_cache:
-            hub = Path(hub_cache)
-        elif home:
-            hub = Path(home) / "hub"
-        else:
-            hub = Path.home() / ".cache" / "huggingface" / "hub"
-        snapshots = hub / f"models--{org}--{name}" / "snapshots"
-        if not snapshots.is_dir():
-            return False
-        for snapshot in snapshots.iterdir():
-            if snapshot.is_dir() and any(p.is_file() for p in snapshot.rglob("*")):
-                return True
+        for root in _hf_cache_roots():
+            snapshots = root / f"models--{org}--{name}" / "snapshots"
+            if not snapshots.is_dir():
+                continue
+            for snapshot in snapshots.iterdir():
+                if snapshot.is_dir() and (snapshot / filename).is_file():
+                    return True
         return False
     except Exception:
         return False
@@ -146,7 +180,12 @@ EXTERNAL_MODEL_SETUPS: tuple[ExternalModelSetup, ...] = (
         docs_url="https://github.com/muscriptor/muscriptor",
         requires_license_acceptance=True,
         probe=lambda: _spec_available("muscriptor"),
-        weights_probe=lambda: _hf_repo_cached("MuScriptor/muscriptor-medium"),
+        # muscriptor pulls hf://MuScriptor/muscriptor-<size>/model.safetensors
+        # (see muscriptor.transcription_model), so that is what "downloaded"
+        # means here.
+        weights_probe=lambda: _hf_file_cached(
+            "MuScriptor/muscriptor-medium", "model.safetensors"
+        ),
     ),
 )
 
