@@ -14,6 +14,11 @@ dependencies = [
   "mido>=1.3.3",
   "mir_eval>=0.8.2",
   "mt3-infer[torch]==0.1.3",
+  # MIT-licensed whole-mix transcription engine. The CODE ships with the
+  # sidecar (a pip install would be invisible to the frozen binary); its
+  # CC-BY-NC-4.0 weights are gated and fetched per user after they accept the
+  # license -- we never bundle those.
+  "muscriptor>=0.2.1",
   "museval>=0.4.1",
   "numpy>=2.0.0",
   # ONNX drum-CRNN engine (opt-in): onnxruntime runs inference in-process,

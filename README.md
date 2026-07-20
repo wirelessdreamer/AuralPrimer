@@ -109,7 +109,7 @@ shell, and native audio/MIDI:
 | Model | **MZehren / ADTOF contributors** | [**ADTOF**](https://github.com/MZehren/ADTOF) — optional external drum benchmark engine; not sidecar-bundled | CC BY-NC-SA 4.0 |
 | Runtime | **ZFTurbo / MSST contributors** | [**Music-Source-Separation-Training**](https://github.com/ZFTurbo/Music-Source-Separation-Training) — optional external RoFormer/MSST separation command wrapper | MIT code / checkpoint license per artifact |
 | Model | **Riley / Edwards / Dixon** | [**High-Resolution Guitar Transcription**](https://xavriley.github.io/HighResolutionGuitarTranscription/) — optional external guitar benchmark adapter; runtime/checkpoint not bundled | license review required before use |
-| Model | **Kyutai × Mirelo** | [**MuScriptor**](https://github.com/muscriptor/muscriptor) — optional external whole-mix multi-instrument transcription engine; gated weights not bundled | MIT code / CC BY-NC-4.0 weights (gated) |
+| Model | **Kyutai × Mirelo** | [**MuScriptor**](https://github.com/muscriptor/muscriptor) — opt-in whole-mix multi-instrument transcription; MIT engine ships in the sidecar, gated weights are **not** bundled (fetched after the user accepts the license) | MIT code / CC BY-NC-4.0 weights (gated) |
 | Runtime | **CPJKU · JKU Linz** — Böck et al. | [**madmom**](https://github.com/CPJKU/madmom) — DBN beat/downbeat post-processing for Beat This! | BSD-3-Clause code path |
 | Model | **NYU MARL · Northwestern** — Kim · Salamon · Bello · Morrison | [**CREPE**](https://github.com/marl/crepe) + [**torchcrepe**](https://github.com/maxrmorrison/torchcrepe) — bass / guitar pitch | MIT |
 | Runtime | **Meta Platforms** — PyTorch project | [**PyTorch**](https://github.com/pytorch/pytorch) (`torch` · `torchaudio` · `torchvision`) — ML runtime | BSD |
@@ -154,7 +154,7 @@ below.*
 | [**ADTOF**](https://github.com/MZehren/ADTOF) | Optional external automatic drum transcription benchmark engine; not part of the frozen sidecar | MZehren / ADTOF contributors | CC BY-NC-SA 4.0 / CC BY-NC-SA 4.0 |
 | [**Music-Source-Separation-Training**](https://github.com/ZFTurbo/Music-Source-Separation-Training) | Optional external RoFormer/MSST source-separation provider for MUSDB benchmarking | ZFTurbo / MSST contributors | MIT / checkpoint license per artifact |
 | [**High-Resolution Guitar Transcription**](https://xavriley.github.io/HighResolutionGuitarTranscription/) | Optional external guitar transcription benchmark adapter; no runtime/checkpoint is bundled | Riley, Edwards, Dixon | license review required before use |
-| [**MuScriptor**](https://github.com/muscriptor/muscriptor) | Optional external whole-mix multi-instrument transcription (one pass over the full mix → per-instrument notes); weights gated on HuggingFace, not bundled | Kyutai × Mirelo | MIT / **CC BY-NC-4.0** (gated) |
+| [**MuScriptor**](https://github.com/muscriptor/muscriptor) | Opt-in whole-mix multi-instrument transcription (one pass over the full mix → per-instrument notes). The MIT engine is bundled in the sidecar; its **weights are gated on HuggingFace and never bundled** — each user accepts the license, then the weights download to their own HF cache | Kyutai × Mirelo | MIT / **CC BY-NC-4.0** (gated) |
 
 ### ML runtime & Python libraries
 

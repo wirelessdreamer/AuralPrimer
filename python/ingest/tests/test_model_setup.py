@@ -6,7 +6,7 @@ from aural_ingest import model_setup
 from aural_ingest.model_setup import ExternalModelSetup, model_setup_snapshot
 
 
-def _mk(probe, *, requires=True) -> ExternalModelSetup:
+def _mk(probe, *, requires=True, weights_probe=None) -> ExternalModelSetup:
     return ExternalModelSetup(
         id="x",
         name="X",
@@ -18,6 +18,7 @@ def _mk(probe, *, requires=True) -> ExternalModelSetup:
         docs_url="https://example.com/docs",
         requires_license_acceptance=requires,
         probe=probe,
+        weights_probe=weights_probe,
     )
 
 
@@ -49,18 +50,43 @@ def test_describe_probe_exception_is_treated_as_not_installed() -> None:
     assert d["next_step"] == "install_package"
 
 
+def test_describe_accept_license_when_code_present_but_weights_missing() -> None:
+    # The bundled-engine case: MIT code ships with the sidecar, but the gated
+    # weights still have to be downloaded after the user accepts the license.
+    d = _mk(lambda: True, weights_probe=lambda: False).describe()
+    assert d["package_installed"] is True
+    assert d["weights_present"] is False
+    assert d["next_step"] == "accept_license"
+
+
+def test_describe_ready_when_code_and_weights_present() -> None:
+    d = _mk(lambda: True, weights_probe=lambda: True).describe()
+    assert d["weights_present"] is True
+    assert d["next_step"] == "ready"
+
+
+def test_describe_weights_probe_exception_counts_as_missing() -> None:
+    def _boom() -> bool:
+        raise RuntimeError("cache unreadable")
+
+    d = _mk(lambda: True, weights_probe=_boom).describe()
+    assert d["weights_present"] is False
+    assert d["next_step"] == "accept_license"
+
+
 def test_snapshot_has_muscriptor_with_hf_accept_url() -> None:
     snap = model_setup_snapshot()
     models = {m["id"]: m for m in snap["external_models"]}
     assert "muscriptor" in models
     ms = models["muscriptor"]
     assert ms["license_accept_url"] == "https://huggingface.co/MuScriptor/muscriptor-medium"
-    assert ms["install_hint"] == "pip install muscriptor"
     assert ms["requires_license_acceptance"] is True
     assert "CC-BY-NC-4.0" in ms["license"]
-    # muscriptor is not installed in this venv -> directs to install first.
-    assert ms["package_installed"] is False
-    assert ms["next_step"] == "install_package"
+    # The engine now ships with the sidecar, so the remaining step is the
+    # gated weights -- never "pip install" (invisible to a frozen sidecar).
+    assert "pip install" not in ms["install_hint"]
+    assert ms["package_installed"] is True
+    assert ms["next_step"] in ("accept_license", "ready")
 
 
 def test_snapshot_is_json_safe() -> None:
