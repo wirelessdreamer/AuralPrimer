@@ -111,11 +111,22 @@ export function modelSetupRowHtml(entry: ModelSetupEntry): string {
     </div>`;
 }
 
-export function modelSetupHtml(entries: ModelSetupEntry[], stale = false): string {
+/** `staleness`: "live" = just fetched, "checking" = cached while a refresh runs,
+ * "stale" = cached and the refresh failed. The last two must be distinguishable:
+ * a permanent "re-checking…" on a panel that has given up is a lie. */
+export function modelSetupHtml(
+  entries: ModelSetupEntry[],
+  staleness: "live" | "checking" | "stale" = "live",
+): string {
   if (!entries.length) {
     return `<div class="meta">No optional external models to set up.</div>`;
   }
-  const note = stale ? `<div class="meta">Last known status — re-checking…</div>` : "";
+  const note =
+    staleness === "checking"
+      ? `<div class="meta">Last known status — re-checking…</div>`
+      : staleness === "stale"
+        ? `<div class="meta">Last known status — could not reach the sidecar. Try Re-check.</div>`
+        : "";
   return note + entries.map(modelSetupRowHtml).join("\n");
 }
 
@@ -251,28 +262,38 @@ export async function initModelSetupPanel(
         : localStorage;
 
   let entries: ModelSetupEntry[] = [];
+  let inFlight: Promise<void> | null = null;
 
-  function paint(stale: boolean): void {
-    container.innerHTML = modelSetupHtml(entries, stale);
+  function paint(staleness: "live" | "checking" | "stale"): void {
+    container.innerHTML = modelSetupHtml(entries, staleness);
   }
 
-  async function refresh(): Promise<void> {
-    // Paint whatever we already know first; the sidecar's cold start is slow
-    // enough that a bare spinner reads as a hang.
-    const cached = entries.length ? entries : readCache(storage);
-    if (cached?.length) {
-      entries = cached;
-      paint(true);
-    } else {
-      container.innerHTML = `<div class="meta">Checking model setup…</div>`;
-    }
-    try {
-      entries = await fetchEntries();
-      writeCache(storage, entries);
-      paint(false);
-    } catch (e) {
-      if (!entries.length) container.innerHTML = `<pre class="error">${esc(String(e))}</pre>`;
-    }
+  function refresh(): Promise<void> {
+    // One sidecar run at a time: each costs a ~40s cold start, and two in
+    // flight can land out of order and paint the older answer last.
+    if (inFlight) return inFlight;
+    inFlight = (async () => {
+      // Paint whatever we already know first; the cold start is slow enough
+      // that a bare spinner reads as a hang.
+      const cached = entries.length ? entries : readCache(storage);
+      if (cached?.length) {
+        entries = cached;
+        paint("checking");
+      } else {
+        container.innerHTML = `<div class="meta">Checking model setup…</div>`;
+      }
+      try {
+        entries = await fetchEntries();
+        writeCache(storage, entries);
+        paint("live");
+      } catch (e) {
+        if (entries.length) paint("stale");
+        else container.innerHTML = `<pre class="error">${esc(String(e))}</pre>`;
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
   }
 
   function openSetupDialog(entry: ModelSetupEntry): void {

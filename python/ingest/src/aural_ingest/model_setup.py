@@ -159,6 +159,30 @@ def _hf_file_cached(repo_id: str, filename: str) -> bool:
         return False
 
 
+def _muscriptor_size() -> str:
+    """Which MuScriptor variant this run targets.
+
+    The adapter and the ``muscriptor-download`` command both honour
+    ``AURAL_MUSCRIPTOR_SIZE``, so the probe and the license URL have to follow
+    it too -- otherwise setting it makes the panel probe (and link to) a repo
+    the engine will never load.
+    """
+    return os.environ.get("AURAL_MUSCRIPTOR_SIZE", "").strip() or "medium"
+
+
+def _muscriptor_weights_present() -> bool:
+    # An explicit local weights file bypasses the hub entirely.
+    override = os.environ.get("AURAL_MUSCRIPTOR_WEIGHTS", "").strip()
+    if override:
+        try:
+            return Path(os.path.expandvars(os.path.expanduser(override))).is_file()
+        except Exception:
+            return False
+    return _hf_file_cached(
+        f"MuScriptor/muscriptor-{_muscriptor_size()}", "model.safetensors"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Registry. Add an entry per user-installed, license-gated external engine.
 # --------------------------------------------------------------------------- #
@@ -176,16 +200,14 @@ EXTERNAL_MODEL_SETUPS: tuple[ExternalModelSetup, ...] = (
         # to pip-install (and a pip install would be invisible to the frozen
         # sidecar anyway). Only the gated weights are fetched per user.
         install_hint="Bundled with AuralStudio — accept the license to download the weights",
-        license_accept_url="https://huggingface.co/MuScriptor/muscriptor-medium",
+        license_accept_url=f"https://huggingface.co/MuScriptor/muscriptor-{_muscriptor_size()}",
         docs_url="https://github.com/muscriptor/muscriptor",
         requires_license_acceptance=True,
         probe=lambda: _spec_available("muscriptor"),
         # muscriptor pulls hf://MuScriptor/muscriptor-<size>/model.safetensors
         # (see muscriptor.transcription_model), so that is what "downloaded"
         # means here.
-        weights_probe=lambda: _hf_file_cached(
-            "MuScriptor/muscriptor-medium", "model.safetensors"
-        ),
+        weights_probe=_muscriptor_weights_present,
     ),
 )
 

@@ -215,6 +215,53 @@ describe("initModelSetupPanel", () => {
     expect(store.get("auralstudio.modelSetup.snapshot.v1")).toContain("FreshEngine");
   });
 
+  it("does not leave a permanent 're-checking' note after a failed refresh", async () => {
+    const container = fakeContainer();
+    const store = new Map<string, string>([
+      ["auralstudio.modelSetup.snapshot.v1", JSON.stringify([entry({ name: "CachedEngine" })])],
+    ]);
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    } as unknown as Storage;
+
+    await initModelSetupPanel(container as unknown as HTMLElement, {
+      fetchEntries: async () => {
+        throw new Error("sidecar unavailable");
+      },
+      openUrl: async () => {},
+      copyText: async () => {},
+      storage,
+    });
+    expect(container.innerHTML).not.toContain("re-checking");
+    expect(container.innerHTML).toContain("could not reach the sidecar");
+  });
+
+  it("coalesces concurrent refreshes into one sidecar run", async () => {
+    const container = fakeContainer();
+    let release: (() => void) | null = null;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    const fetchEntries = vi.fn(async () => {
+      await pending;
+      return [entry()];
+    });
+
+    const init = initModelSetupPanel(container as unknown as HTMLElement, {
+      fetchEntries,
+      openUrl: async () => {},
+      copyText: async () => {},
+      storage: null,
+    });
+    // Hammer Re-check while the first run is still outstanding.
+    container.handler?.(clickEvent({ "data-ms-recheck": "1" }));
+    container.handler?.(clickEvent({ "data-ms-recheck": "1" }));
+    expect(fetchEntries).toHaveBeenCalledTimes(1);
+
+    release?.();
+    await init;
+    expect(fetchEntries).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps showing the cached rows if the refresh fails", async () => {
     const container = fakeContainer();
     const store = new Map<string, string>([
