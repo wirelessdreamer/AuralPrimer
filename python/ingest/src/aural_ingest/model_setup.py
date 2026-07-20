@@ -16,7 +16,9 @@ cheap and import-safe in the frozen sidecar.
 from __future__ import annotations
 
 import importlib.util
+import os
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 
@@ -41,6 +43,13 @@ class ExternalModelSetup:
     requires_license_acceptance: bool
     # Not serialized directly -- called by :func:`describe`.
     probe: Callable[[], bool] = field(default=lambda: False, repr=False, compare=False)
+    # Optional: whether the (separately-licensed) weights are already local.
+    # Engines whose CODE ships with the sidecar still need their gated weights
+    # downloaded once the user accepts the license, so "package present" is not
+    # the same as "ready".
+    weights_probe: Callable[[], bool] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def describe(self) -> dict[str, Any]:
         installed = False
@@ -48,16 +57,31 @@ class ExternalModelSetup:
             installed = bool(self.probe())
         except Exception:
             installed = False
+
+        weights_present: bool | None = None
+        if self.weights_probe is not None:
+            try:
+                weights_present = bool(self.weights_probe())
+            except Exception:
+                weights_present = False
+
         if not installed:
             next_step = "install_package"
-        elif self.requires_license_acceptance:
-            # Package present; we can't confirm the per-user license acceptance
-            # offline, so surface it as the next action with the accept URL.
+        elif weights_present is False:
+            # Code is present but the gated weights are not downloaded yet --
+            # the user must accept the license, then fetch them.
+            next_step = "accept_license"
+        elif self.requires_license_acceptance and weights_present is None:
+            # No weights probe available; acceptance can't be verified offline.
             next_step = "accept_license"
         else:
             next_step = "ready"
-        payload = {k: v for k, v in asdict(self).items() if k != "probe"}
+
+        payload = {
+            k: v for k, v in asdict(self).items() if k not in ("probe", "weights_probe")
+        }
         payload["package_installed"] = installed
+        payload["weights_present"] = weights_present
         payload["next_step"] = next_step
         return payload
 
@@ -67,6 +91,96 @@ def _spec_available(module: str) -> bool:
         return importlib.util.find_spec(module) is not None
     except Exception:
         return False
+
+
+def _hf_cache_roots() -> list[Path]:
+    """Fallback hub-cache locations, for when ``huggingface_hub`` can't be
+    imported (the lightweight CI env). Deliberately checks *every* variable
+    huggingface_hub honours rather than guessing which one wins: this is only
+    ever used to answer "are the weights somewhere on disk", so a superset of
+    candidate roots is the safe shape.
+    """
+    def _expand(value: str) -> Path:
+        return Path(os.path.expandvars(os.path.expanduser(value)))
+
+    roots: list[Path] = []
+    for var in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        value = os.environ.get(var, "").strip()
+        if value:
+            roots.append(_expand(value))
+    home = os.environ.get("HF_HOME", "").strip()
+    if home:
+        roots.append(_expand(home) / "hub")
+    xdg = os.environ.get("XDG_CACHE_HOME", "").strip()
+    if xdg:
+        roots.append(_expand(xdg) / "huggingface" / "hub")
+    roots.append(Path.home() / ".cache" / "huggingface" / "hub")
+    return roots
+
+
+def _hf_file_cached(repo_id: str, filename: str) -> bool:
+    """Whether one file of a HuggingFace repo is already in the local cache.
+
+    Purely a lookup -- it must never trigger a download, and must never raise.
+
+    Resolution is delegated to ``huggingface_hub`` itself wherever possible.
+    Reimplementing its cache-dir precedence is a trap: it honours HF_HUB_CACHE,
+    the legacy HUGGINGFACE_HUB_CACHE, HF_HOME and XDG_CACHE_HOME (expanding ~
+    and $VARs in each), so a hand-rolled subset reports "not downloaded" for a
+    user who has simply relocated their cache -- stranding them in the setup
+    dialog re-downloading weights they already have.
+
+    Checking a *specific* file also avoids the false positive where the cache
+    holds only a README or a ``.no_exist`` marker for the repo.
+    """
+    try:
+        try:
+            from huggingface_hub import try_to_load_from_cache
+
+            resolved = try_to_load_from_cache(repo_id=repo_id, filename=filename)
+            # Returns a str path when cached; a sentinel object for a known-absent
+            # file; None when simply not cached.
+            return isinstance(resolved, str) and Path(resolved).is_file()
+        except ImportError:
+            pass
+
+        org, _, name = repo_id.partition("/")
+        if not org or not name:
+            return False
+        for root in _hf_cache_roots():
+            snapshots = root / f"models--{org}--{name}" / "snapshots"
+            if not snapshots.is_dir():
+                continue
+            for snapshot in snapshots.iterdir():
+                if snapshot.is_dir() and (snapshot / filename).is_file():
+                    return True
+        return False
+    except Exception:
+        return False
+
+
+def _muscriptor_size() -> str:
+    """Which MuScriptor variant this run targets.
+
+    The adapter and the ``muscriptor-download`` command both honour
+    ``AURAL_MUSCRIPTOR_SIZE``, so the probe and the license URL have to follow
+    it too -- otherwise setting it makes the panel probe (and link to) a repo
+    the engine will never load.
+    """
+    return os.environ.get("AURAL_MUSCRIPTOR_SIZE", "").strip() or "medium"
+
+
+def _muscriptor_weights_present() -> bool:
+    # An explicit local weights file bypasses the hub entirely.
+    override = os.environ.get("AURAL_MUSCRIPTOR_WEIGHTS", "").strip()
+    if override:
+        try:
+            return Path(os.path.expandvars(os.path.expanduser(override))).is_file()
+        except Exception:
+            return False
+    return _hf_file_cached(
+        f"MuScriptor/muscriptor-{_muscriptor_size()}", "model.safetensors"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -82,11 +196,18 @@ EXTERNAL_MODEL_SETUPS: tuple[ExternalModelSetup, ...] = (
             "mix into per-instrument notes in one pass."
         ),
         license="MIT (code) / CC-BY-NC-4.0 (weights, gated)",
-        install_hint="pip install muscriptor",
-        license_accept_url="https://huggingface.co/MuScriptor/muscriptor-medium",
+        # The MIT-licensed engine ships inside the sidecar, so there is nothing
+        # to pip-install (and a pip install would be invisible to the frozen
+        # sidecar anyway). Only the gated weights are fetched per user.
+        install_hint="Bundled with AuralStudio — accept the license to download the weights",
+        license_accept_url=f"https://huggingface.co/MuScriptor/muscriptor-{_muscriptor_size()}",
         docs_url="https://github.com/muscriptor/muscriptor",
         requires_license_acceptance=True,
         probe=lambda: _spec_available("muscriptor"),
+        # muscriptor pulls hf://MuScriptor/muscriptor-<size>/model.safetensors
+        # (see muscriptor.transcription_model), so that is what "downloaded"
+        # means here.
+        weights_probe=_muscriptor_weights_present,
     ),
 )
 

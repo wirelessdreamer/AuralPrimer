@@ -1426,6 +1426,20 @@ async fn ingest_model_setup(
     .await
 }
 
+/// Download a license-gated engine's weights (MuScriptor) after the user has
+/// accepted its license. `hf_token` is forwarded to the sidecar's environment
+/// for that one run and is never stored.
+#[tauri::command]
+async fn ingest_muscriptor_download(
+    app: AppHandle,
+    hf_token: Option<String>,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("ingest muscriptor download", move || {
+        ingest_sidecar::run_ingest_muscriptor_download(hf_token.clone(), Some(&app))
+    })
+    .await
+}
+
 /// Open an external http(s) URL in the user's default browser. Used by the
 /// "Model setup" surface to direct users to license-acceptance pages
 /// (a gated HuggingFace model page, or any other host). Only http(s) is
@@ -2665,6 +2679,7 @@ pub fn run() {
             ingest_import,
             ingest_runtime_check,
             ingest_model_setup,
+            ingest_muscriptor_download,
             open_external_url,
             ingest_refine_candidates,
             ingest_spectrogram,

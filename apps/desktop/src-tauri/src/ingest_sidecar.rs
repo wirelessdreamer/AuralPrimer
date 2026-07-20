@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -548,8 +549,28 @@ fn run_tauri_sidecar_capture(
     app: &AppHandle,
     args: &[String],
 ) -> Result<IngestRuntimeCheckResult, String> {
+    run_tauri_sidecar_capture_env(app, args, Vec::new())
+}
+
+/// As [`run_tauri_sidecar_capture`], but with extra environment variables set
+/// on the child. Used for credential-bearing runs (e.g. a HuggingFace token for
+/// a gated weights download) so the secret is passed via the environment rather
+/// than a command line. Note the dev-only explicit-binary fallback does not
+/// receive `env`.
+fn run_tauri_sidecar_capture_env(
+    app: &AppHandle,
+    args: &[String],
+    env: Vec<(String, String)>,
+) -> Result<IngestRuntimeCheckResult, String> {
     let command = match app.shell().sidecar(INGEST_SIDECAR_NAME) {
-        Ok(command) => command.args(args.to_vec()),
+        Ok(command) => {
+            let command = command.args(args.to_vec());
+            if env.is_empty() {
+                command
+            } else {
+                command.envs(env.into_iter().collect::<HashMap<String, String>>())
+            }
+        }
         Err(error) => {
             let reason = format!("failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {error}");
             if let Some(result) = run_runtime_fallback_capture(args, &reason) {
@@ -646,6 +667,39 @@ pub fn run_ingest_model_setup(
         )
     })?;
     run_tauri_sidecar_capture(app, &args)
+}
+
+/// Download MuScriptor's gated weights into the user's HuggingFace cache.
+///
+/// The MIT-licensed engine ships inside the sidecar; only the CC-BY-NC-4.0
+/// weights are fetched here, and only after the user has accepted the license.
+/// The token is passed through the child's environment (never argv) and is not
+/// persisted anywhere.
+pub fn run_ingest_muscriptor_download(
+    hf_token: Option<String>,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let args = vec!["muscriptor-download".to_string()];
+    let app = app.ok_or_else(|| {
+        format!(
+            "Tauri AppHandle required for sidecar execution to run {} muscriptor-download",
+            INGEST_SIDECAR_NAME
+        )
+    })?;
+
+    let token = hf_token
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let env = match token {
+        // Both names are honoured by huggingface_hub; set both so the download
+        // works regardless of which the installed version reads.
+        Some(token) => vec![
+            ("HF_TOKEN".to_string(), token.clone()),
+            ("HUGGING_FACE_HUB_TOKEN".to_string(), token),
+        ],
+        None => Vec::new(),
+    };
+    run_tauri_sidecar_capture_env(app, &args, env)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

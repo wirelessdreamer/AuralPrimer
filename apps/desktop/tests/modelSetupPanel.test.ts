@@ -3,6 +3,9 @@ import {
   modelSetupStatus,
   modelSetupRowHtml,
   modelSetupHtml,
+  canRunSetupDialog,
+  setupDialogHtml,
+  downloadResultMessage,
   initModelSetupPanel,
   type ModelSetupEntry,
 } from "../src/modelSetupPanel";
@@ -26,12 +29,52 @@ function entry(over: Partial<ModelSetupEntry> = {}): ModelSetupEntry {
 
 describe("modelSetupStatus", () => {
   it("maps next_step to a label + tone", () => {
-    expect(modelSetupStatus(entry({ next_step: "install_package" }))).toEqual({
-      label: "Not installed",
-      ok: false,
-    });
+    expect(modelSetupStatus(entry({ next_step: "install_package" })).ok).toBe(false);
     expect(modelSetupStatus(entry({ next_step: "accept_license" })).ok).toBe(false);
     expect(modelSetupStatus(entry({ next_step: "ready" }))).toEqual({ label: "Ready", ok: true });
+  });
+
+  it("distinguishes missing weights from unverified license acceptance", () => {
+    expect(
+      modelSetupStatus(entry({ next_step: "accept_license", weights_present: false })).label,
+    ).toContain("Weights");
+    expect(
+      modelSetupStatus(entry({ next_step: "accept_license", weights_present: null })).label,
+    ).toContain("License");
+  });
+});
+
+describe("canRunSetupDialog", () => {
+  it("is true only when the engine ships but its weights are missing", () => {
+    expect(canRunSetupDialog(entry({ package_installed: true, weights_present: false }))).toBe(true);
+    expect(canRunSetupDialog(entry({ package_installed: true, weights_present: true }))).toBe(false);
+    expect(canRunSetupDialog(entry({ package_installed: false, weights_present: false }))).toBe(
+      false,
+    );
+  });
+});
+
+describe("setupDialogHtml", () => {
+  it("walks accept-license -> token -> download and wires the accept URL", () => {
+    const html = setupDialogHtml(entry({ package_installed: true, weights_present: false }));
+    expect(html).toContain('data-ms-open="https://huggingface.co/MuScriptor/muscriptor-medium"');
+    expect(html).toContain("data-ms-token");
+    expect(html).toContain('data-ms-download="muscriptor"');
+  });
+});
+
+describe("downloadResultMessage", () => {
+  it("points a refused download back at the license step", () => {
+    const msg = downloadResultMessage({ ok: false, needs_license_acceptance: true });
+    expect(msg.ok).toBe(false);
+    expect(msg.text).toContain("Accept the license");
+  });
+
+  it("surfaces the raw error otherwise, and confirms success", () => {
+    expect(downloadResultMessage({ ok: false, error: "connection reset" }).text).toBe(
+      "connection reset",
+    );
+    expect(downloadResultMessage({ ok: true }).ok).toBe(true);
   });
 });
 
@@ -39,6 +82,14 @@ describe("modelSetupRowHtml", () => {
   it("shows a copy-install button when the package is not installed", () => {
     const html = modelSetupRowHtml(entry({ package_installed: false }));
     expect(html).toContain('data-ms-copy="pip install muscriptor"');
+  });
+
+  it("offers the guided Set up dialog when only the gated weights are missing", () => {
+    const html = modelSetupRowHtml(
+      entry({ package_installed: true, weights_present: false, next_step: "accept_license" }),
+    );
+    expect(html).toContain('data-ms-setup="muscriptor"');
+    expect(html).not.toContain("data-ms-copy"); // never tell a frozen sidecar to pip install
   });
 
   it("shows an Accept-license button linking the accept URL when gated", () => {
@@ -94,6 +145,7 @@ describe("initModelSetupPanel", () => {
       fetchEntries: async () => [entry()],
       openUrl: async () => {},
       copyText: async () => {},
+      storage: null,
     });
     expect(container.innerHTML).toContain("MuScriptor");
   });
@@ -106,6 +158,7 @@ describe("initModelSetupPanel", () => {
       fetchEntries,
       openUrl,
       copyText: async () => {},
+      storage: null,
     });
     expect(fetchEntries).toHaveBeenCalledTimes(1);
 
@@ -127,5 +180,106 @@ describe("initModelSetupPanel", () => {
     });
     container.handler?.(clickEvent({ "data-ms-copy": "pip install muscriptor" }));
     expect(copyText).toHaveBeenCalledWith("pip install muscriptor");
+  });
+
+  it("paints the cached snapshot before the (slow) sidecar answers", async () => {
+    // A cold sidecar start costs ~40s; the panel must not sit blank until then.
+    const container = fakeContainer();
+    const store = new Map<string, string>([
+      ["auralstudio.modelSetup.snapshot.v1", JSON.stringify([entry({ name: "CachedEngine" })])],
+    ]);
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    } as unknown as Storage;
+
+    let release: (() => void) | null = null;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    const init = initModelSetupPanel(container as unknown as HTMLElement, {
+      fetchEntries: async () => {
+        await pending;
+        return [entry({ name: "FreshEngine" })];
+      },
+      openUrl: async () => {},
+      copyText: async () => {},
+      storage,
+    });
+
+    await Promise.resolve();
+    expect(container.innerHTML).toContain("CachedEngine");
+    expect(container.innerHTML).not.toContain("Checking model setup");
+
+    release?.();
+    await init;
+    expect(container.innerHTML).toContain("FreshEngine");
+    expect(store.get("auralstudio.modelSetup.snapshot.v1")).toContain("FreshEngine");
+  });
+
+  it("does not leave a permanent 're-checking' note after a failed refresh", async () => {
+    const container = fakeContainer();
+    const store = new Map<string, string>([
+      ["auralstudio.modelSetup.snapshot.v1", JSON.stringify([entry({ name: "CachedEngine" })])],
+    ]);
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    } as unknown as Storage;
+
+    await initModelSetupPanel(container as unknown as HTMLElement, {
+      fetchEntries: async () => {
+        throw new Error("sidecar unavailable");
+      },
+      openUrl: async () => {},
+      copyText: async () => {},
+      storage,
+    });
+    expect(container.innerHTML).not.toContain("re-checking");
+    expect(container.innerHTML).toContain("could not reach the sidecar");
+  });
+
+  it("coalesces concurrent refreshes into one sidecar run", async () => {
+    const container = fakeContainer();
+    let release: (() => void) | null = null;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    const fetchEntries = vi.fn(async () => {
+      await pending;
+      return [entry()];
+    });
+
+    const init = initModelSetupPanel(container as unknown as HTMLElement, {
+      fetchEntries,
+      openUrl: async () => {},
+      copyText: async () => {},
+      storage: null,
+    });
+    // Hammer Re-check while the first run is still outstanding.
+    container.handler?.(clickEvent({ "data-ms-recheck": "1" }));
+    container.handler?.(clickEvent({ "data-ms-recheck": "1" }));
+    expect(fetchEntries).toHaveBeenCalledTimes(1);
+
+    release?.();
+    await init;
+    expect(fetchEntries).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps showing the cached rows if the refresh fails", async () => {
+    const container = fakeContainer();
+    const store = new Map<string, string>([
+      ["auralstudio.modelSetup.snapshot.v1", JSON.stringify([entry({ name: "CachedEngine" })])],
+    ]);
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    } as unknown as Storage;
+
+    await initModelSetupPanel(container as unknown as HTMLElement, {
+      fetchEntries: async () => {
+        throw new Error("sidecar unavailable");
+      },
+      openUrl: async () => {},
+      copyText: async () => {},
+      storage,
+    });
+    expect(container.innerHTML).toContain("CachedEngine");
   });
 });
