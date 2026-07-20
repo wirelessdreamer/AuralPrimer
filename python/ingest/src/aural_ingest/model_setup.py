@@ -105,8 +105,15 @@ def _hf_repo_cached(repo_id: str) -> bool:
         org, _, name = repo_id.partition("/")
         if not org or not name:
             return False
-        base = os.environ.get("HF_HOME", "").strip()
-        hub = Path(base) / "hub" if base else Path.home() / ".cache" / "huggingface" / "hub"
+        # Mirrors huggingface_hub's own precedence.
+        hub_cache = os.environ.get("HF_HUB_CACHE", "").strip()
+        home = os.environ.get("HF_HOME", "").strip()
+        if hub_cache:
+            hub = Path(hub_cache)
+        elif home:
+            hub = Path(home) / "hub"
+        else:
+            hub = Path.home() / ".cache" / "huggingface" / "hub"
         snapshots = hub / f"models--{org}--{name}" / "snapshots"
         if not snapshots.is_dir():
             return False
