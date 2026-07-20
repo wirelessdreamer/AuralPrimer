@@ -17,6 +17,7 @@ src/aural_ingest/key_benchmark.py
 src/aural_ingest/melodic_benchmark.py
 src/aural_ingest/melodic_benchmark_suite.py
 src/aural_ingest/meter_tracker.py
+src/aural_ingest/model_setup.py
 src/aural_ingest/mt3_compat.py
 src/aural_ingest/pack_paths.py
 src/aural_ingest/piano_benchmark.py
@@ -83,6 +84,7 @@ src/aural_ingest/algorithms/mfcc_cepstral.py
 src/aural_ingest/algorithms/mr_mt3_drums.py
 src/aural_ingest/algorithms/multi_resolution.py
 src/aural_ingest/algorithms/multi_resolution_template.py
+src/aural_ingest/algorithms/muscriptor.py
 src/aural_ingest/algorithms/nmf_decomposition.py
 src/aural_ingest/algorithms/onset_aligned.py
 src/aural_ingest/algorithms/piano_basic_pitch_clean.py
@@ -173,8 +175,10 @@ tests/test_melodic_torchcrepe_fmin.py
 tests/test_meter_tracker.py
 tests/test_mir_st500_adapter.py
 tests/test_mir_st500_vocals_runner.py
+tests/test_model_setup.py
 tests/test_model_upgrade_evidence_writers.py
 tests/test_mt3_compat.py
+tests/test_muscriptor_adapter.py
 tests/test_musdb_separation_sdr_runner.py
 tests/test_pack_paths.py
 tests/test_piano_benchmark.py
@@ -195,5 +199,6 @@ tests/test_spectrogram_time_alignment.py
 tests/test_transcription_orchestration.py
 tests/test_transcription_resilience.py
 tests/test_transcription_scoring.py
+tests/test_wholemix_option.py
 tests/test_yourmt3_drums_adapter.py
 tests/test_yourmt3_guitar_adapter.py

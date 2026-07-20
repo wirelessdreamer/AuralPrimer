@@ -1576,8 +1576,26 @@ function renderMt3RuntimeState(
   `;
 }
 
+/**
+ * Last successful runtime-check, cached so the panel paints immediately.
+ * A cold sidecar start costs ~56s; without this the panel shows nothing but
+ * "Checking…" long enough that it reads as a hang.
+ */
+const INGEST_RUNTIME_CACHE_KEY = "auralstudio.ingestRuntimeCheck.v1";
+
+function readCachedRuntimeCheck(): IngestRuntimeCheckResult | null {
+  try {
+    const raw = localStorage.getItem(INGEST_RUNTIME_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as IngestRuntimeCheckResult) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function refreshIngestRuntimeStatus() {
-  renderMt3RuntimeState(null, { loading: true });
+  const cached = readCachedRuntimeCheck();
+  if (cached?.payload?.ok) renderMt3RuntimeState(cached);
+  else renderMt3RuntimeState(null, { loading: true });
   ingestRuntimeRefreshBtn.disabled = true;
   try {
     const result = await safeInvoke<IngestRuntimeCheckResult>("ingest_runtime_check");
@@ -1587,6 +1605,11 @@ async function refreshIngestRuntimeStatus() {
       return;
     }
     renderMt3RuntimeState(result);
+    try {
+      localStorage.setItem(INGEST_RUNTIME_CACHE_KEY, JSON.stringify(result));
+    } catch {
+      /* quota / private mode — the panel just loses its warm start */
+    }
   } catch (e) {
     renderMt3RuntimeState(null, { error: String(e) });
   } finally {

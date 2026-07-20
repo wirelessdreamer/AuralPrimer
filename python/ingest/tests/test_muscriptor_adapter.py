@@ -52,14 +52,22 @@ def _pair(pitch, t_on, t_off, index, instrument):
 # --------------------------------------------------------------------------- #
 
 def test_module_imports_without_muscriptor_installed() -> None:
-    # The muscriptor package is not a dependency of the ingest venv.
+    # Importing the adapter must never drag in the engine (or torch).
     assert "muscriptor" not in sys.modules or sys.modules.get("muscriptor") is not None
     assert hasattr(muscriptor, "transcribe_mix")
 
 
 def test_available_false_when_package_absent(monkeypatch) -> None:
+    # The engine now ships with the sidecar, so absence has to be simulated:
+    # `available()` must degrade cleanly wherever it is genuinely missing.
     monkeypatch.delenv(muscriptor._DISABLED_ENV, raising=False)
-    assert muscriptor.available() is False  # not installed in this venv
+    monkeypatch.setattr(muscriptor.importlib.util, "find_spec", lambda _name: None)
+    assert muscriptor.available() is False
+
+
+def test_available_true_when_bundled(monkeypatch) -> None:
+    monkeypatch.delenv(muscriptor._DISABLED_ENV, raising=False)
+    assert muscriptor.available() is True  # bundled with the sidecar
 
 
 def test_available_false_when_disabled(monkeypatch) -> None:

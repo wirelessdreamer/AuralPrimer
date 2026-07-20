@@ -5689,6 +5689,51 @@ def cmd_model_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_muscriptor_download(args: argparse.Namespace) -> int:
+    """Download MuScriptor's gated weights into the user's HuggingFace cache.
+
+    The engine itself ships with the sidecar; only the CC-BY-NC-4.0 weights are
+    fetched here, and only once the user has accepted the model license and is
+    authenticated (``HF_TOKEN`` / ``huggingface-cli login``). Emits a single
+    JSON line so the Studio setup dialog can show a precise next action --
+    notably distinguishing "you still need to accept the license / sign in"
+    from a generic network failure.
+    """
+    requested = getattr(args, "size", "") or os.environ.get("AURAL_MUSCRIPTOR_SIZE", "")
+    size = requested.strip() or "medium"
+    try:
+        from muscriptor import TranscriptionModel
+    except Exception as exc:  # engine missing from this build entirely
+        print(json.dumps({"ok": False, "size": size, "error": f"engine unavailable: {exc}"}))
+        return 1
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                TranscriptionModel.load_model(size, device="cpu")
+    except Exception as exc:
+        message = str(exc)
+        lowered = message.lower()
+        needs_auth = any(
+            token in lowered for token in ("license", "gated", "401", "403", "unauthorized", "authenticate")
+        )
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "size": size,
+                    "error": message,
+                    "needs_license_acceptance": needs_auth,
+                }
+            )
+        )
+        return 1
+
+    print(json.dumps({"ok": True, "size": size}))
+    return 0
+
+
 def _convert_auralsong_to_feedpak(working_dir: Path) -> Path:
     """Convert a finished ``.auralsong`` working dir in place to a ``.feedpak``.
 
@@ -7297,6 +7342,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     s_model_setup = sub.add_parser("model-setup")
     s_model_setup.set_defaults(func=cmd_model_setup)
+
+    s_ms_download = sub.add_parser("muscriptor-download")
+    s_ms_download.add_argument("--size", default="medium")
+    s_ms_download.set_defaults(func=cmd_muscriptor_download)
 
     s_benchmark = sub.add_parser("benchmark-drums")
     s_benchmark.add_argument("stem_path")
