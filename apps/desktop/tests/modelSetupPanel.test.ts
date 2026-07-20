@@ -6,6 +6,7 @@ import {
   canRunSetupDialog,
   setupDialogHtml,
   downloadResultMessage,
+  downloadProgressMessage,
   initModelSetupPanel,
   type ModelSetupEntry,
 } from "../src/modelSetupPanel";
@@ -313,5 +314,32 @@ describe("initModelSetupPanel", () => {
       storage,
     });
     expect(container.innerHTML).toContain("CachedEngine");
+  });
+});
+
+describe("downloadProgressMessage", () => {
+  it("announces the total up front so the user can judge the wait", () => {
+    expect(downloadProgressMessage({ event: "start", total_bytes: 5465642136 })).toBe(
+      "Starting download — 5.47 GB to fetch.",
+    );
+  });
+
+  it("reports bytes and percent as they arrive", () => {
+    const text = downloadProgressMessage({
+      downloaded_bytes: 1_200_000_000,
+      total_bytes: 5_465_642_136,
+      pct: 21.9,
+    });
+    expect(text).toContain("1.20 GB");
+    expect(text).toContain("5.47 GB");
+    expect(text).toContain("21.9%");
+  });
+
+  it("degrades to a bare byte count when the total is unknown", () => {
+    expect(downloadProgressMessage({ downloaded_bytes: 5_000_000 })).toBe("Downloading — 5 MB");
+  });
+
+  it("returns null for events with nothing to say, so the prior message stands", () => {
+    expect(downloadProgressMessage({ event: "noise" })).toBeNull();
   });
 });

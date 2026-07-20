@@ -185,6 +185,40 @@ export function setupDialogHtml(entry: ModelSetupEntry, downloadSize = "5.5 GB")
     </form>`;
 }
 
+/** A streamed line from the sidecar's download (`model_download_progress`). */
+export type DownloadProgressEvent = {
+  event?: string;
+  downloaded_bytes?: number;
+  total_bytes?: number | null;
+  pct?: number;
+  file?: string;
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
+  if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
+  return `${Math.round(bytes / 1e3)} kB`;
+}
+
+/**
+ * Progress line for the dialog. Returns null for events that carry nothing
+ * worth showing, so the caller can leave the previous message in place rather
+ * than blanking it.
+ */
+export function downloadProgressMessage(ev: DownloadProgressEvent): string | null {
+  if (ev.event === "start") {
+    return ev.total_bytes
+      ? `Starting download — ${formatBytes(ev.total_bytes)} to fetch.`
+      : "Starting download…";
+  }
+  if (typeof ev.downloaded_bytes !== "number") return null;
+  const done = formatBytes(ev.downloaded_bytes);
+  if (ev.total_bytes && typeof ev.pct === "number") {
+    return `Downloading — ${done} of ${formatBytes(ev.total_bytes)} (${ev.pct.toFixed(1)}%)`;
+  }
+  return `Downloading — ${done}`;
+}
+
 /** Message to show for a download or access-check outcome. */
 export function downloadResultMessage(result: WeightsDownloadResult): {
   text: string;
@@ -270,11 +304,23 @@ function writeCache(store: Storage | null, entries: ModelSetupEntry[]): void {
   }
 }
 
+/** Subscribe to streamed download progress; returns an unsubscribe fn. */
+export async function listenDownloadProgress(
+  onEvent: (ev: DownloadProgressEvent) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  const unlisten = await listen<DownloadProgressEvent>("model_download_progress", (e) =>
+    onEvent(e.payload),
+  );
+  return unlisten;
+}
+
 export type ModelSetupPanelDeps = {
   fetchEntries?: () => Promise<ModelSetupEntry[]>;
   openUrl?: (url: string) => Promise<void>;
   copyText?: (text: string) => Promise<void>;
   downloadWeights?: (token: string, checkOnly?: boolean) => Promise<WeightsDownloadResult>;
+  onProgress?: (cb: (ev: DownloadProgressEvent) => void) => Promise<() => void>;
   storage?: Storage | null;
 };
 
@@ -287,6 +333,7 @@ export async function initModelSetupPanel(
   const openUrl = deps.openUrl ?? openExternalUrl;
   const copyText = deps.copyText ?? ((t: string) => navigator.clipboard.writeText(t));
   const downloadWeights = deps.downloadWeights ?? downloadModelWeights;
+  const onProgress = deps.onProgress ?? listenDownloadProgress;
   const storage =
     deps.storage !== undefined
       ? deps.storage
@@ -355,10 +402,28 @@ export async function initModelSetupPanel(
       btn.setAttribute("disabled", "true");
       if (statusEl) {
         statusEl.className = "msDialogStatus";
-        statusEl.textContent = isCheck
-          ? "Checking access…"
-          : "Downloading weights… this can take a while.";
+        statusEl.textContent = isCheck ? "Checking access…" : "Contacting Hugging Face…";
       }
+
+      // Live byte counts for the duration of the transfer; a static "this can
+      // take a while" on a multi-GB download reads as a hang.
+      let stopProgress: (() => void) | null = null;
+      if (!isCheck) {
+        void onProgress((ev) => {
+          const text = downloadProgressMessage(ev);
+          if (text && statusEl) {
+            statusEl.className = "msDialogStatus";
+            statusEl.textContent = text;
+          }
+        })
+          .then((un) => {
+            stopProgress = un;
+          })
+          .catch(() => {
+            /* progress is a nicety; the download still completes without it */
+          });
+      }
+
       void downloadWeights(token, isCheck)
         .then((result) => {
           const message = downloadResultMessage(result);
@@ -377,7 +442,10 @@ export async function initModelSetupPanel(
             statusEl.textContent = String(e);
           }
         })
-        .finally(() => btn.removeAttribute("disabled"));
+        .finally(() => {
+          stopProgress?.();
+          btn.removeAttribute("disabled");
+        });
     });
 
     dialog.addEventListener("close", () => dialog.remove());

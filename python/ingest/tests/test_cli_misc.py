@@ -3739,3 +3739,55 @@ def test_muscriptor_needs_auth_uses_exception_type_when_available() -> None:
     gated = pytest.importorskip("huggingface_hub.errors").GatedRepoError
     # Message carries no auth keywords at all -- only the type identifies it.
     assert cli._muscriptor_needs_auth(gated("nondescript")) is True
+
+
+def test_muscriptor_progress_watcher_reports_incomplete_blob_growth(tmp_path, capsys) -> None:
+    """The download watcher polls huggingface_hub's `*.incomplete` blob.
+
+    Path contract (file_download.py): the partial file is `blob_path +
+    ".incomplete"` under `<cache>/models--<org>--<name>/blobs/`, i.e. inside the
+    repo dir this watches.
+    """
+    import threading
+    import time
+
+    from aural_ingest import cli
+
+    blobs = tmp_path / "blobs"
+    blobs.mkdir()
+    partial = blobs / "deadbeef.incomplete"
+    partial.write_bytes(b"x" * 250)
+
+    stop = threading.Event()
+    watcher = threading.Thread(
+        target=cli._watch_incomplete_downloads, args=(tmp_path, 1000, stop), daemon=True
+    )
+    watcher.start()
+    try:
+        deadline = time.time() + 6.0
+        while time.time() < deadline and "downloaded_bytes" not in capsys.readouterr().out:
+            time.sleep(0.2)
+    finally:
+        stop.set()
+        watcher.join(timeout=3.0)
+
+    assert not watcher.is_alive()  # stop event must actually end the thread
+
+
+def test_muscriptor_progress_watcher_survives_a_missing_dir() -> None:
+    """A cache dir that does not exist yet must not kill the watcher thread --
+    it is created partway through the first download."""
+    import threading
+
+    from aural_ingest import cli
+
+    stop = threading.Event()
+    watcher = threading.Thread(
+        target=cli._watch_incomplete_downloads,
+        args=(Path("no/such/dir"), None, stop),
+        daemon=True,
+    )
+    watcher.start()
+    stop.set()
+    watcher.join(timeout=3.0)
+    assert not watcher.is_alive()
