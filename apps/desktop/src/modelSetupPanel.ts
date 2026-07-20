@@ -39,11 +39,17 @@ export type ModelSetupEntry = {
 type ModelSetupSnapshot = { external_models: ModelSetupEntry[] };
 type SidecarCapture = { ok?: boolean; payload?: ModelSetupSnapshot };
 
-/** Result of the sidecar's `muscriptor-download`. */
+/** Result of the sidecar's `muscriptor-download` (with or without --check-only). */
 export type WeightsDownloadResult = {
   ok: boolean;
   error?: string;
   needs_license_acceptance?: boolean;
+  /** Only present on a --check-only run. */
+  check_only?: boolean;
+  authenticated?: boolean;
+  access_granted?: boolean;
+  repo?: string;
+  size?: string;
 };
 
 const CACHE_KEY = "auralstudio.modelSetup.snapshot.v1";
@@ -135,7 +141,7 @@ export function modelSetupHtml(
  * Rendered into a `<dialog>` so it reads as a guided flow rather than a row of
  * buttons the user has to sequence themselves.
  */
-export function setupDialogHtml(entry: ModelSetupEntry): string {
+export function setupDialogHtml(entry: ModelSetupEntry, downloadSize = "5.5 GB"): string {
   const acceptUrl = entry.license_accept_url ?? "";
   return `
     <form method="dialog" class="msDialogForm">
@@ -152,18 +158,25 @@ export function setupDialogHtml(entry: ModelSetupEntry): string {
           <button type="button" class="msBtn" data-ms-open="${esc(acceptUrl)}">Open model page</button>
         </li>
         <li>
-          <strong>Paste an access token</strong>
-          <div class="meta">A read token from your account's access-token settings.
-          It is passed to the downloader for this run only and is not stored.</div>
-          <input type="password" class="msToken" data-ms-token placeholder="hf_…" autocomplete="off" />
+          <strong>Check access</strong>
+          <div class="meta">Confirms the license is granted and you're signed in.
+          If you've logged in with the Hugging Face CLI, that's all you need.</div>
+          <button type="button" class="msBtn" data-ms-check="${esc(entry.id)}">Check access</button>
         </li>
         <li>
           <strong>Download the weights</strong>
-          <div class="meta">Several hundred MB — this runs in the background and can
-          take a few minutes.</div>
+          <div class="meta">About ${esc(downloadSize)} — runs in the background and
+          can take a while.</div>
           <button type="button" class="msBtn msBtn--primary" data-ms-download="${esc(entry.id)}">Download weights</button>
         </li>
       </ol>
+
+      <details class="msTokenFallback" data-ms-token-row>
+        <summary class="meta">Not signed in? Use an access token instead</summary>
+        <div class="meta">A read token from your account's access-token settings.
+        It is passed to the downloader for this run only and is never stored.</div>
+        <input type="password" class="msToken" data-ms-token placeholder="hf_…" autocomplete="off" />
+      </details>
 
       <div class="msDialogStatus" data-ms-status role="status"></div>
       <div class="msDialogActions">
@@ -172,23 +185,40 @@ export function setupDialogHtml(entry: ModelSetupEntry): string {
     </form>`;
 }
 
-/** Message to show for a download outcome. */
+/** Message to show for a download or access-check outcome. */
 export function downloadResultMessage(result: WeightsDownloadResult): {
   text: string;
   ok: boolean;
+  /** Reveal the token fallback: the user is not authenticated. */
+  needsToken?: boolean;
 } {
   if (result.ok) {
-    return { text: "Weights downloaded. This engine is ready to use.", ok: true };
+    return result.check_only
+      ? {
+          text: "Access granted and you're signed in — no token needed. Go ahead and download.",
+          ok: true,
+        }
+      : { text: "Weights downloaded. This engine is ready to use.", ok: true };
   }
   if (result.needs_license_acceptance) {
-    return {
-      text:
-        "The download was refused. Accept the license on the model page (step 1) " +
-        "with the same account your token belongs to, then try again.",
-      ok: false,
-    };
+    // Distinguish "no credential at all" from "signed in but not granted":
+    // telling a signed-in user to paste a token sends them the wrong way.
+    return result.authenticated === false
+      ? {
+          text:
+            "You're not signed in to Hugging Face. Either run `huggingface-cli login`, " +
+            "or paste an access token below and try again.",
+          ok: false,
+          needsToken: true,
+        }
+      : {
+          text:
+            "Access hasn't been granted yet. Open the model page (step 1), accept the " +
+            "license with the account you're signed in as, then check again.",
+          ok: false,
+        };
   }
-  return { text: result.error?.trim() || "Download failed.", ok: false };
+  return { text: result.error?.trim() || "Request failed.", ok: false };
 }
 
 // --- I/O (Tauri) --- //
@@ -204,11 +234,14 @@ export async function fetchModelSetup(): Promise<ModelSetupEntry[]> {
   return res?.payload?.external_models ?? [];
 }
 
-export async function downloadModelWeights(token: string): Promise<WeightsDownloadResult> {
+export async function downloadModelWeights(
+  token: string,
+  checkOnly = false,
+): Promise<WeightsDownloadResult> {
   const invoke = await getInvoke();
   const res = await invoke<{ ok?: boolean; payload?: WeightsDownloadResult; stderr?: string }>(
     "ingest_muscriptor_download",
-    { hfToken: token || null },
+    { hfToken: token || null, checkOnly },
   );
   return res?.payload ?? { ok: Boolean(res?.ok), error: res?.stderr };
 }
@@ -241,7 +274,7 @@ export type ModelSetupPanelDeps = {
   fetchEntries?: () => Promise<ModelSetupEntry[]>;
   openUrl?: (url: string) => Promise<void>;
   copyText?: (text: string) => Promise<void>;
-  downloadWeights?: (token: string) => Promise<WeightsDownloadResult>;
+  downloadWeights?: (token: string, checkOnly?: boolean) => Promise<WeightsDownloadResult>;
   storage?: Storage | null;
 };
 
@@ -305,6 +338,8 @@ export async function initModelSetupPanel(
     const statusEl = dialog.querySelector<HTMLElement>("[data-ms-status]");
     const tokenEl = dialog.querySelector<HTMLInputElement>("[data-ms-token]");
 
+    const tokenRow = dialog.querySelector<HTMLDetailsElement>("[data-ms-token-row]");
+
     dialog.addEventListener("click", (ev) => {
       const btn = (ev.target as HTMLElement)?.closest("button");
       if (!btn) return;
@@ -313,22 +348,28 @@ export async function initModelSetupPanel(
         void openUrl(open);
         return;
       }
-      if (!btn.getAttribute("data-ms-download")) return;
+      const isCheck = Boolean(btn.getAttribute("data-ms-check"));
+      if (!isCheck && !btn.getAttribute("data-ms-download")) return;
+
       const token = tokenEl?.value.trim() ?? "";
       btn.setAttribute("disabled", "true");
       if (statusEl) {
         statusEl.className = "msDialogStatus";
-        statusEl.textContent = "Downloading weights… this can take a few minutes.";
+        statusEl.textContent = isCheck
+          ? "Checking access…"
+          : "Downloading weights… this can take a while.";
       }
-      void downloadWeights(token)
+      void downloadWeights(token, isCheck)
         .then((result) => {
           const message = downloadResultMessage(result);
           if (statusEl) {
             statusEl.className = message.ok ? "msDialogStatus ok" : "msDialogStatus error";
             statusEl.textContent = message.text;
           }
-          if (result.ok && tokenEl) tokenEl.value = "";
-          return refresh();
+          // Only surface the token field when it's actually the way forward.
+          if (message.needsToken && tokenRow) tokenRow.open = true;
+          if (result.ok && !result.check_only && tokenEl) tokenEl.value = "";
+          return isCheck ? undefined : refresh();
         })
         .catch((e) => {
           if (statusEl) {

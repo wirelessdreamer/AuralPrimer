@@ -40,7 +40,10 @@ _WEIGHTS_ENV = "AURAL_MUSCRIPTOR_WEIGHTS"
 _ROLE_MAP_ENV = "AURAL_MUSCRIPTOR_ROLE_MAP_JSON"
 _INSTRUMENTS_ENV = "AURAL_MUSCRIPTOR_INSTRUMENTS"
 
-_DEFAULT_SIZE = "medium"
+# `large` (5.5 GB of weights) is the default: this is an opt-in engine the user
+# deliberately sets up, so accuracy beats download size. Override with
+# AURAL_MUSCRIPTOR_SIZE=medium (1.2 GB) or small (0.4 GB).
+_DEFAULT_SIZE = "large"
 _DEFAULT_VELOCITY = 100  # MuScriptor predicts no velocity; fabricate a constant.
 _DRUM_INSTRUMENT = "drums"
 _CATCHALL_ROLE = "keys"

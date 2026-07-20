@@ -154,7 +154,7 @@ below.*
 | [**ADTOF**](https://github.com/MZehren/ADTOF) | Optional external automatic drum transcription benchmark engine; not part of the frozen sidecar | MZehren / ADTOF contributors | CC BY-NC-SA 4.0 / CC BY-NC-SA 4.0 |
 | [**Music-Source-Separation-Training**](https://github.com/ZFTurbo/Music-Source-Separation-Training) | Optional external RoFormer/MSST source-separation provider for MUSDB benchmarking | ZFTurbo / MSST contributors | MIT / checkpoint license per artifact |
 | [**High-Resolution Guitar Transcription**](https://xavriley.github.io/HighResolutionGuitarTranscription/) | Optional external guitar transcription benchmark adapter; no runtime/checkpoint is bundled | Riley, Edwards, Dixon | license review required before use |
-| [**MuScriptor**](https://github.com/muscriptor/muscriptor) | Opt-in whole-mix multi-instrument transcription (one pass over the full mix → per-instrument notes). The MIT engine is bundled in the sidecar; its **weights are gated on HuggingFace and never bundled** — each user accepts the license, then the weights download to their own HF cache | Kyutai × Mirelo | MIT / **CC BY-NC-4.0** (gated) |
+| [**MuScriptor**](https://github.com/muscriptor/muscriptor) | Opt-in whole-mix multi-instrument transcription (one pass over the full mix → per-instrument notes). The MIT engine is bundled in the sidecar; its **weights are gated on HuggingFace and never bundled** — each user accepts the license, then the weights download to their own HF cache (defaults to the `large` variant, ~5.5 GB; set `AURAL_MUSCRIPTOR_SIZE=medium|small` for smaller) | Kyutai × Mirelo | MIT / **CC BY-NC-4.0** (gated) |
 
 ### ML runtime & Python libraries
 

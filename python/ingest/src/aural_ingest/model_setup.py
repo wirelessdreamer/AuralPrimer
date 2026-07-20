@@ -167,7 +167,9 @@ def _muscriptor_size() -> str:
     it too -- otherwise setting it makes the panel probe (and link to) a repo
     the engine will never load.
     """
-    return os.environ.get("AURAL_MUSCRIPTOR_SIZE", "").strip() or "medium"
+    from aural_ingest.algorithms.muscriptor import _DEFAULT_SIZE
+
+    return os.environ.get("AURAL_MUSCRIPTOR_SIZE", "").strip() or _DEFAULT_SIZE
 
 
 def _muscriptor_weights_present() -> bool:

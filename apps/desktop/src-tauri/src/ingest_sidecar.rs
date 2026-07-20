@@ -677,9 +677,15 @@ pub fn run_ingest_model_setup(
 /// persisted anywhere.
 pub fn run_ingest_muscriptor_download(
     hf_token: Option<String>,
+    check_only: bool,
     app: Option<&AppHandle>,
 ) -> Result<IngestRuntimeCheckResult, String> {
-    let args = vec!["muscriptor-download".to_string()];
+    let mut args = vec!["muscriptor-download".to_string()];
+    if check_only {
+        // Metadata-only probe: answers "am I signed in / has the license been
+        // granted" without starting a multi-GB download.
+        args.push("--check-only".to_string());
+    }
     let app = app.ok_or_else(|| {
         format!(
             "Tauri AppHandle required for sidecar execution to run {} muscriptor-download",

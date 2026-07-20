@@ -3704,3 +3704,38 @@ def test_cmd_import_dir_forwards_transcription_options(tmp_path: Path, monkeypat
         "shifts": 3,
         "multi_filter": True,
     }
+
+
+# --------------------------------------------------------------------------- #
+# MuScriptor gated-weights setup helpers
+# --------------------------------------------------------------------------- #
+
+def test_muscriptor_needs_auth_ignores_hex_request_ids() -> None:
+    """Hub errors carry a hex request id; a naive substring match on 401/403
+    flags a transport failure as "accept the license" and sends the user in
+    circles."""
+    from aural_ingest import cli
+
+    transport = Exception(
+        "Connection reset. (Request ID: Root=1-6a5e2725-5f4dc0bd403ae9e27596f70e)"
+    )
+    assert cli._muscriptor_needs_auth(transport) is False
+
+
+def test_muscriptor_needs_auth_detects_real_auth_failures() -> None:
+    from aural_ingest import cli
+
+    assert cli._muscriptor_needs_auth(Exception("401 Client Error.")) is True
+    assert cli._muscriptor_needs_auth(Exception("Access to model X is gated")) is True
+    assert (
+        cli._muscriptor_needs_auth(Exception("Cannot reach host: offline mode is enabled"))
+        is False
+    )
+
+
+def test_muscriptor_needs_auth_uses_exception_type_when_available() -> None:
+    from aural_ingest import cli
+
+    gated = pytest.importorskip("huggingface_hub.errors").GatedRepoError
+    # Message carries no auth keywords at all -- only the type identifies it.
+    assert cli._muscriptor_needs_auth(gated("nondescript")) is True

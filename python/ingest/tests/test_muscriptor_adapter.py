@@ -19,6 +19,18 @@ from aural_ingest.algorithms import muscriptor
 from aural_ingest.transcription import DrumEvent, MelodicNote
 
 
+@pytest.fixture(autouse=True)
+def _never_touch_the_hub(monkeypatch):
+    """Enforce this module's no-network promise.
+
+    The engine now ships with the sidecar, so any path that reaches a real
+    ``TranscriptionModel.load_model`` will happily download multi-GB weights.
+    A missed guard used to do exactly that; offline mode makes the failure
+    loud and instant instead of silently costing gigabytes.
+    """
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+
+
 # --- fake MuScriptor event objects (duck-typed to the real dataclasses) --- #
 
 class _FakeStart:
@@ -186,8 +198,15 @@ def test_negative_duration_note_clamped() -> None:
 # (d) transcribe_mix fail-safe
 # --------------------------------------------------------------------------- #
 
-def test_transcribe_mix_returns_none_when_unavailable(tmp_path) -> None:
-    # muscriptor not installed -> available() is False -> None, no raise.
+def test_transcribe_mix_returns_none_when_unavailable(monkeypatch, tmp_path) -> None:
+    # Engine unavailable -> None, no raise.
+    #
+    # Unavailability MUST be simulated. This test used to rely on muscriptor
+    # simply not being installed; once the engine started shipping with the
+    # sidecar, the same call sailed past that guard into a real
+    # `TranscriptionModel.load_model`, which downloads multi-GB weights from
+    # HuggingFace. A unit test must never touch the network.
+    monkeypatch.setenv(muscriptor._DISABLED_ENV, "1")
     assert muscriptor.transcribe_mix(tmp_path / "mix.wav") is None
 
 
@@ -221,7 +240,7 @@ def test_transcribe_mix_success_with_fake_model(monkeypatch, tmp_path) -> None:
     assert res.melodic["bass"][0].pitch == 40
     assert res.drums[0].note == 36
     assert res.meta["engine"] == "muscriptor"
-    assert res.meta["size"] == "medium"
+    assert res.meta["size"] == muscriptor._DEFAULT_SIZE
 
 
 def test_transcribe_mix_none_when_load_raises(monkeypatch, tmp_path) -> None:

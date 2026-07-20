@@ -81,7 +81,7 @@ def test_snapshot_has_muscriptor_with_hf_accept_url() -> None:
     models = {m["id"]: m for m in snap["external_models"]}
     assert "muscriptor" in models
     ms = models["muscriptor"]
-    assert ms["license_accept_url"] == "https://huggingface.co/MuScriptor/muscriptor-medium"
+    assert ms["license_accept_url"] == "https://huggingface.co/MuScriptor/muscriptor-large"
     assert ms["requires_license_acceptance"] is True
     assert "CC-BY-NC-4.0" in ms["license"]
     # The engine now ships with the sidecar, so the remaining step is the

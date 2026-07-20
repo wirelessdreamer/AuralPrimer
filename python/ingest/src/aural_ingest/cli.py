@@ -11,6 +11,7 @@ import inspect
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import stat
@@ -5689,6 +5690,88 @@ def cmd_model_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _muscriptor_needs_auth(exc: BaseException) -> bool:
+    """Whether a hub failure means "sign in / accept the license" rather than a
+    transport problem.
+
+    Type first: huggingface_hub raises GatedRepoError / RepositoryNotFoundError
+    for exactly this case. The string fallback only runs when those types can't
+    be imported, and matches 401/403 on word boundaries -- hub errors carry a
+    hex request id, so a naive substring match false-positives on it.
+    """
+    try:
+        from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+
+        if isinstance(exc, (GatedRepoError, RepositoryNotFoundError)):
+            return True
+    except Exception:
+        pass
+
+    lowered = str(exc).lower()
+    if re.search(r"(?<![0-9a-f])(401|403)(?![0-9a-f])", lowered):
+        return True
+    return any(
+        phrase in lowered
+        for phrase in ("gated", "awaiting a review", "access to model", "unauthorized",
+                       "authenticated", "accept the")
+    )
+
+
+def _muscriptor_check_access(*, repo_id: str, size: str) -> int:
+    """Report whether the weights can be fetched -- without fetching them.
+
+    This is what lets the setup dialog avoid demanding a pasted token: if the
+    user is already signed in (``huggingface-cli login`` leaves a stored
+    credential that ``huggingface_hub`` picks up on its own) and has accepted
+    the license, there is nothing left to type.
+
+    Deliberately NOT ``model_info``: a gated repo's metadata is public, so
+    ``model_info`` succeeds even with a junk token and would wave through a
+    user who cannot actually download. ``auth_check`` tests the entitlement
+    itself. Neither transfers weights.
+    """
+    payload: dict[str, Any] = {"ok": False, "size": size, "repo": repo_id, "check_only": True}
+    try:
+        from huggingface_hub import HfApi
+        from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+    except Exception as exc:
+        payload["error"] = f"huggingface_hub unavailable: {exc}"
+        print(json.dumps(payload))
+        return 1
+
+    api = HfApi()
+    # `whoami` validates the credential; a token merely *existing* says nothing
+    # about whether it still works, and that distinction decides whether the
+    # dialog asks for a token or tells the user to accept the license.
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            api.whoami()
+        payload["authenticated"] = True
+    except Exception:
+        payload["authenticated"] = False
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            api.auth_check(repo_id)
+    except (GatedRepoError, RepositoryNotFoundError) as exc:
+        payload["error"] = str(exc).splitlines()[0]
+        payload["needs_license_acceptance"] = True
+        print(json.dumps(payload))
+        return 1
+    except Exception as exc:  # transport / DNS / proxy -- not an entitlement problem
+        payload["error"] = str(exc).splitlines()[0]
+        payload["needs_license_acceptance"] = False
+        print(json.dumps(payload))
+        return 1
+
+    payload["ok"] = True
+    payload["access_granted"] = True
+    print(json.dumps(payload))
+    return 0
+
+
 def cmd_muscriptor_download(args: argparse.Namespace) -> int:
     """Download MuScriptor's gated weights into the user's HuggingFace cache.
 
@@ -5699,8 +5782,15 @@ def cmd_muscriptor_download(args: argparse.Namespace) -> int:
     notably distinguishing "you still need to accept the license / sign in"
     from a generic network failure.
     """
+    from aural_ingest.algorithms.muscriptor import _DEFAULT_SIZE
+
     requested = getattr(args, "size", "") or os.environ.get("AURAL_MUSCRIPTOR_SIZE", "")
-    size = requested.strip() or "medium"
+    size = requested.strip() or _DEFAULT_SIZE
+    repo_id = f"MuScriptor/muscriptor-{size}"
+
+    if getattr(args, "check_only", False):
+        return _muscriptor_check_access(repo_id=repo_id, size=size)
+
     try:
         from muscriptor import TranscriptionModel
     except Exception as exc:  # engine missing from this build entirely
@@ -5714,23 +5804,20 @@ def cmd_muscriptor_download(args: argparse.Namespace) -> int:
                 TranscriptionModel.load_model(size, device="cpu")
     except Exception as exc:
         message = str(exc)
-        lowered = message.lower()
-        needs_auth = any(
-            token in lowered for token in ("license", "gated", "401", "403", "unauthorized", "authenticate")
-        )
         print(
             json.dumps(
                 {
                     "ok": False,
                     "size": size,
+                    "repo": repo_id,
                     "error": message,
-                    "needs_license_acceptance": needs_auth,
+                    "needs_license_acceptance": _muscriptor_needs_auth(exc),
                 }
             )
         )
         return 1
 
-    print(json.dumps({"ok": True, "size": size}))
+    print(json.dumps({"ok": True, "size": size, "repo": repo_id}))
     return 0
 
 
@@ -7344,7 +7431,10 @@ def build_parser() -> argparse.ArgumentParser:
     s_model_setup.set_defaults(func=cmd_model_setup)
 
     s_ms_download = sub.add_parser("muscriptor-download")
-    s_ms_download.add_argument("--size", default="medium")
+    # Empty default so AURAL_MUSCRIPTOR_SIZE / _DEFAULT_SIZE can win; an
+    # argparse default would always shadow both.
+    s_ms_download.add_argument("--size", default="")
+    s_ms_download.add_argument("--check-only", action="store_true", dest="check_only")
     s_ms_download.set_defaults(func=cmd_muscriptor_download)
 
     s_benchmark = sub.add_parser("benchmark-drums")
