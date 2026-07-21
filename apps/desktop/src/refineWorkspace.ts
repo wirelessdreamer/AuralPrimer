@@ -817,10 +817,21 @@ let songTimelineRelPath = "song_timeline.json";
     instLabelEl!.textContent = instSelectEl!.options[instSelectEl!.selectedIndex]?.text ?? instrument;
   }
 
-  /** Rebuild the instrument dropdown to exactly the given roles. */
-  function populateInstrumentOptions(roles: string[]): void {
+  /**
+   * Rebuild the instrument dropdown to exactly the given roles.
+   *
+   * `needsPrecompute` roles are listed but flagged: they are openable (the
+   * editor shows a precise "precompute first" empty state), and hiding them
+   * outright made a freshly-imported song look like it had transcribed
+   * nothing but drums.
+   */
+  function populateInstrumentOptions(roles: string[], needsPrecompute?: Set<string>): void {
     instSelectEl!.innerHTML = roles
-      .map((r) => `<option value="${r}">${INSTRUMENT_LABELS[r] ?? r}</option>`)
+      .map((r) => {
+        const label = INSTRUMENT_LABELS[r] ?? r;
+        const suffix = needsPrecompute?.has(r) ? " — needs precompute" : "";
+        return `<option value="${r}">${label}${suffix}</option>`;
+      })
       .join("");
   }
 
@@ -832,16 +843,28 @@ let songTimelineRelPath = "song_timeline.json";
     stopTransport();
     setTransportEnabled(false);
 
-    // The dropdown should offer only this song's editable instruments — the
-    // melodic roles that actually have candidates, plus Drums when the pack
-    // carries a drum chart, which opens the lane editor instead of the
-    // candidates flow.
+    // The dropdown offers this song's editable instruments: every melodic role
+    // the pack actually carries, plus Drums when it has a drum chart (which
+    // opens the lane editor instead of the candidates flow).
+    //
+    // A spectrogram alone is enough to list a role. Requiring CANDIDATES here
+    // was stricter than detectMelodicStems' own notion of "present"
+    // (spectrogram || candidates), and candidates only exist after the
+    // separate precompute step — so a freshly imported song offered nothing
+    // but Drums and read as "the transcription only produced drums", even
+    // with bass and guitar sitting right there in the pack.
     let available: string[] = [];
+    const needsPrecompute = new Set<string>();
     let primary = "keys";
     try {
       const det = await detectMelodicStems(path);
       primary = det.primary;
-      available = MELODIC_PICK_ORDER.filter((r) => det.readiness.get(r)?.candidates);
+      available = MELODIC_PICK_ORDER.filter((r) => {
+        const readiness = det.readiness.get(r);
+        if (!readiness?.candidates && !readiness?.spectrogram) return false;
+        if (!readiness.candidates) needsPrecompute.add(r);
+        return true;
+      });
       drumTabRelPath = await resolveDrumTabRelPath(path);
       songTimelineRelPath = await resolveSongTimelineRelPath(path);
     } catch {
@@ -854,7 +877,7 @@ let songTimelineRelPath = "song_timeline.json";
     } catch {
       /* no drum option on probe failure */
     }
-    if (available.length) populateInstrumentOptions(available);
+    if (available.length) populateInstrumentOptions(available, needsPrecompute);
 
     if (opts?.instrument && (!available.length || available.includes(opts.instrument))) {
       instrument = opts.instrument as RefinementInstrument;
