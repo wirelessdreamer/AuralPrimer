@@ -104,6 +104,12 @@ pub struct IngestImportRequest {
     #[serde(default)]
     pub melodic_method: Option<String>,
 
+    /// Whole-mix transcriber (currently only `muscriptor`). Transcribes the
+    /// full mix in one pass, supplying BOTH the drum hits and every melodic
+    /// role, so it supersedes `drum_filter` / `melodic_method` when set.
+    #[serde(default)]
+    pub wholemix_transcriber: Option<String>,
+
     #[serde(default)]
     pub shifts: Option<i32>,
 
@@ -265,6 +271,10 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
     if let Some(melodic_method) = non_empty_opt(&req.melodic_method) {
         args.push("--melodic-method".to_string());
         args.push(melodic_method);
+    }
+    if let Some(wholemix) = non_empty_opt(&req.wholemix_transcriber) {
+        args.push("--wholemix-transcriber".to_string());
+        args.push(wholemix);
     }
     if let Some(shifts) = req.shifts {
         args.push("--shifts".to_string());

@@ -10,6 +10,8 @@ export type IngestFormState = {
   artist?: string;
   drumFilter?: string;
   melodicMethod?: string;
+  /** "muscriptor" to transcribe the whole mix in one pass instead. */
+  wholemixTranscriber?: string;
   shiftsText?: string;
   multiFilter: boolean;
 };
@@ -109,6 +111,7 @@ export function buildIngestRequestFromForm(state: IngestFormState): IngestImport
     artist: nonEmpty(state.artist),
     drum_filter: nonEmpty(state.drumFilter),
     melodic_method: nonEmpty(state.melodicMethod),
+    wholemix_transcriber: nonEmpty(state.wholemixTranscriber),
     shifts: parseShifts(state.shiftsText),
     multi_filter: state.multiFilter
   };

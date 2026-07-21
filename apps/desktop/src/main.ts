@@ -17,7 +17,7 @@ import {
 import { Metronome } from "./metronome";
 import { extractKeyModeFromManifest } from "./hud";
 import { ingestImport, type IngestImportRequest, type IngestSubcommand } from "./ingestClient";
-import { initModelSetupPanel } from "./modelSetupPanel";
+import { fetchModelSetup, initModelSetupPanel } from "./modelSetupPanel";
 import { buildIngestRequestFromForm, inferIngestTitleArtistFromSourcePath } from "./ingestUi";
 import { PREFERRED_MODEL_PACKS } from "./models/preferredModelPacks";
 import {
@@ -675,6 +675,19 @@ root.innerHTML = `
               <div class="importAdvancedBody">
 
                 <div class="importField">
+                  <label class="importLabel" for="ingestWholemix">Transcribe the whole mix in one pass</label>
+                  <select id="ingestWholemix">
+                    <option value="">Off &mdash; separate into stems first (default)</option>
+                    <option value="muscriptor">MuScriptor &mdash; one pass over the full mix</option>
+                  </select>
+                  <div class="meta" id="ingestWholemixNote">
+                    One model reads the whole mix and writes every instrument at once, instead of
+                    separating stems and running a detector per part. When this is on, the two
+                    engine choices below are not used.
+                  </div>
+                </div>
+
+                <div class="importField">
                   <label class="importLabel" for="ingestDrumFilter">How drum hits are found</label>
                   <select id="ingestDrumFilter">
                     <option value="auto" selected>Automatic (recommended)</option>
@@ -1201,6 +1214,43 @@ const ingestShiftsInput = document.getElementById("ingestShifts") as HTMLInputEl
 const ingestMultiFilterInput = document.getElementById("ingestMultiFilter") as HTMLInputElement;
 const ingestDrumFilterSelect = document.getElementById("ingestDrumFilter") as HTMLSelectElement;
 const ingestMelodicMethodSelect = document.getElementById("ingestMelodicMethod") as HTMLSelectElement;
+const ingestWholemixSelect = document.getElementById("ingestWholemix") as HTMLSelectElement;
+
+/**
+ * MuScriptor ships with the sidecar but its weights are gated and downloaded
+ * per user, so the option must not offer itself before it can actually run --
+ * picking it with no weights would fail minutes into an import.
+ */
+async function refreshWholemixAvailability(): Promise<void> {
+  const option = ingestWholemixSelect.querySelector<HTMLOptionElement>('option[value="muscriptor"]');
+  if (!option) return;
+  if (!haveTauri()) {
+    option.disabled = true;
+    option.textContent = "MuScriptor — needs the desktop app";
+    return;
+  }
+  try {
+    const entry = (await fetchModelSetup()).find((e) => e.id === "muscriptor");
+    const ready = entry?.next_step === "ready";
+    option.disabled = !ready;
+    option.textContent = ready
+      ? "MuScriptor — one pass over the full mix"
+      : "MuScriptor — needs setup in Configure › Models";
+    if (!ready && ingestWholemixSelect.value === "muscriptor") {
+      ingestWholemixSelect.value = "";
+      syncWholemixDependentControls();
+    }
+  } catch {
+    // Leave the option as-is: an import will still report a precise error.
+  }
+}
+
+/** Make "the two engine choices below are not used" visibly true. */
+function syncWholemixDependentControls(): void {
+  const on = ingestWholemixSelect.value !== "";
+  ingestDrumFilterSelect.disabled = on;
+  ingestMelodicMethodSelect.disabled = on;
+}
 const ingestConfigInput = document.getElementById("ingestConfig") as HTMLInputElement;
 const ingestTitleInput = document.getElementById("ingestTitle") as HTMLInputElement;
 const ingestArtistInput = document.getElementById("ingestArtist") as HTMLInputElement;
@@ -4075,6 +4125,7 @@ async function runIngestImport() {
         artist: ingestArtistInput.value,
         drumFilter: ingestDrumFilterSelect.value,
         melodicMethod: ingestMelodicMethodSelect.value,
+        wholemixTranscriber: ingestWholemixSelect.value,
         shiftsText: ingestShiftsInput.value,
         multiFilter: ingestMultiFilterInput.checked
       });
@@ -4089,6 +4140,7 @@ async function runIngestImport() {
         artist: ingestArtistInput.value,
         drumFilter: ingestDrumFilterSelect.value,
         melodicMethod: ingestMelodicMethodSelect.value,
+        wholemixTranscriber: ingestWholemixSelect.value,
         shiftsText: ingestShiftsInput.value,
         multiFilter: ingestMultiFilterInput.checked
       });
@@ -4772,7 +4824,7 @@ function renderPreferredModelPacks() {
       const pack = PREFERRED_MODEL_PACKS.find((p) => p.id === id);
       if (!pack) return;
       void installModelPackFromUrl(pack)
-        .then(() => Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]))
+        .then(() => Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus(), refreshWholemixAvailability()]))
         .catch((e) => {
           modelsStatusEl.textContent = String(e);
         });
@@ -4791,13 +4843,13 @@ async function refreshModels() {
 }
 
 modelsRefreshBtn.addEventListener("click", () => {
-  void Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]);
+  void Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus(), refreshWholemixAvailability()]);
 });
 
 modelpackImportBtn.addEventListener("click", () => {
   const p = modelpackPathInput.value;
   void installModelPackFromPath(p)
-    .then(() => Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]))
+    .then(() => Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus(), refreshWholemixAvailability()]))
     .catch((e) => {
       modelsStatusEl.textContent = String(e);
     });
@@ -4805,6 +4857,7 @@ modelpackImportBtn.addEventListener("click", () => {
 
 ingestRuntimeRefreshBtn.addEventListener("click", () => {
   void refreshIngestRuntimeStatus();
+  void refreshWholemixAvailability();
 });
 
 ingestOpenCleanupBtn.addEventListener("click", () => {
@@ -4814,7 +4867,7 @@ ingestOpenCleanupBtn.addEventListener("click", () => {
 // Initialize sizing for first paint.
 resizeVizCanvas();
 renderPreferredModelPacks();
-void Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus()]);
+void Promise.allSettled([refreshModels(), refreshIngestRuntimeStatus(), refreshWholemixAvailability()]);
 
 // Refine workspace -- owns the Cleanup & Edit per-region cleanup flow.
 // Initialized late because its template lives inside `root.innerHTML` above,
@@ -5067,6 +5120,9 @@ for (const card of importChoiceCards) {
 }
 
 importOpenModelsBtn.addEventListener("click", () => setRoute("config"));
+
+ingestWholemixSelect.addEventListener("change", syncWholemixDependentControls);
+syncWholemixDependentControls();
 
 setImportKind("suno");
 ingestSourcePathInput.addEventListener("change", () => {
