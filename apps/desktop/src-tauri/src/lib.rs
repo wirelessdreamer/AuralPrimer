@@ -1433,9 +1433,11 @@ async fn ingest_model_setup(
 async fn ingest_muscriptor_download(
     app: AppHandle,
     hf_token: Option<String>,
+    check_only: Option<bool>,
 ) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    let check_only = check_only.unwrap_or(false);
     run_blocking_command("ingest muscriptor download", move || {
-        ingest_sidecar::run_ingest_muscriptor_download(hf_token.clone(), Some(&app))
+        ingest_sidecar::run_ingest_muscriptor_download(hf_token.clone(), check_only, Some(&app))
     })
     .await
 }

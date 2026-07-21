@@ -11,6 +11,8 @@ export type IngestImportRequest = {
   duration_sec?: number;
   drum_filter?: string;
   melodic_method?: string;
+  /** Whole-mix transcriber ("muscriptor"); supersedes the two engines above. */
+  wholemix_transcriber?: string;
   shifts?: number;
   multi_filter?: boolean;
   ingest_binary_path?: string;

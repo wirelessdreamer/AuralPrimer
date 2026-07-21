@@ -6,6 +6,7 @@ import {
   canRunSetupDialog,
   setupDialogHtml,
   downloadResultMessage,
+  downloadProgressMessage,
   initModelSetupPanel,
   type ModelSetupEntry,
 } from "../src/modelSetupPanel";
@@ -18,7 +19,7 @@ function entry(over: Partial<ModelSetupEntry> = {}): ModelSetupEntry {
     summary: "Whole-mix multi-instrument transcription.",
     license: "MIT / CC-BY-NC-4.0 (gated)",
     install_hint: "pip install muscriptor",
-    license_accept_url: "https://huggingface.co/MuScriptor/muscriptor-medium",
+    license_accept_url: "https://huggingface.co/MuScriptor/muscriptor-large",
     docs_url: "https://github.com/muscriptor/muscriptor",
     requires_license_acceptance: true,
     package_installed: false,
@@ -55,19 +56,51 @@ describe("canRunSetupDialog", () => {
 });
 
 describe("setupDialogHtml", () => {
-  it("walks accept-license -> token -> download and wires the accept URL", () => {
+  it("walks accept-license -> check-access -> download and wires the accept URL", () => {
     const html = setupDialogHtml(entry({ package_installed: true, weights_present: false }));
-    expect(html).toContain('data-ms-open="https://huggingface.co/MuScriptor/muscriptor-medium"');
-    expect(html).toContain("data-ms-token");
+    expect(html).toContain('data-ms-open="https://huggingface.co/MuScriptor/muscriptor-large"');
+    expect(html).toContain('data-ms-check="muscriptor"');
     expect(html).toContain('data-ms-download="muscriptor"');
+  });
+
+  it("states the download size and keeps the token collapsed as a fallback", () => {
+    const html = setupDialogHtml(entry({ package_installed: true, weights_present: false }));
+    expect(html).toContain("5.5 GB");
+    // The token input exists but is tucked inside a closed <details>, so the
+    // happy path (already signed in) never asks the user to paste anything.
+    expect(html).toContain("data-ms-token-row");
+    expect(html).toMatch(/<details[^>]*data-ms-token-row(?![^>]*\bopen\b)/);
   });
 });
 
 describe("downloadResultMessage", () => {
-  it("points a refused download back at the license step", () => {
-    const msg = downloadResultMessage({ ok: false, needs_license_acceptance: true });
+  it("tells a signed-in user to accept the license, without asking for a token", () => {
+    const msg = downloadResultMessage({
+      ok: false,
+      needs_license_acceptance: true,
+      authenticated: true,
+    });
     expect(msg.ok).toBe(false);
-    expect(msg.text).toContain("Accept the license");
+    expect(msg.text).toContain("accept the");
+    expect(msg.needsToken).toBeFalsy();
+    expect(msg.text).not.toContain("token");
+  });
+
+  it("only offers the token fallback when there is no credential at all", () => {
+    const msg = downloadResultMessage({
+      ok: false,
+      needs_license_acceptance: true,
+      authenticated: false,
+    });
+    expect(msg.needsToken).toBe(true);
+    expect(msg.text).toContain("huggingface-cli login");
+  });
+
+  it("confirms a successful access check without claiming the weights are downloaded", () => {
+    const msg = downloadResultMessage({ ok: true, check_only: true, authenticated: true });
+    expect(msg.ok).toBe(true);
+    expect(msg.text).toContain("no token needed");
+    expect(msg.text).not.toContain("downloaded");
   });
 
   it("surfaces the raw error otherwise, and confirms success", () => {
@@ -97,7 +130,7 @@ describe("modelSetupRowHtml", () => {
       entry({ package_installed: true, next_step: "accept_license" }),
     );
     expect(html).toContain(
-      'data-ms-open="https://huggingface.co/MuScriptor/muscriptor-medium"',
+      'data-ms-open="https://huggingface.co/MuScriptor/muscriptor-large"',
     );
     expect(html).toContain(">Accept license<");
     expect(html).not.toContain("data-ms-copy"); // installed -> no install button
@@ -281,5 +314,32 @@ describe("initModelSetupPanel", () => {
       storage,
     });
     expect(container.innerHTML).toContain("CachedEngine");
+  });
+});
+
+describe("downloadProgressMessage", () => {
+  it("announces the total up front so the user can judge the wait", () => {
+    expect(downloadProgressMessage({ event: "start", total_bytes: 5465642136 })).toBe(
+      "Starting download — 5.47 GB to fetch.",
+    );
+  });
+
+  it("reports bytes and percent as they arrive", () => {
+    const text = downloadProgressMessage({
+      downloaded_bytes: 1_200_000_000,
+      total_bytes: 5_465_642_136,
+      pct: 21.9,
+    });
+    expect(text).toContain("1.20 GB");
+    expect(text).toContain("5.47 GB");
+    expect(text).toContain("21.9%");
+  });
+
+  it("degrades to a bare byte count when the total is unknown", () => {
+    expect(downloadProgressMessage({ downloaded_bytes: 5_000_000 })).toBe("Downloading — 5 MB");
+  });
+
+  it("returns null for events with nothing to say, so the prior message stands", () => {
+    expect(downloadProgressMessage({ event: "noise" })).toBeNull();
   });
 });

@@ -71,8 +71,13 @@ assertMatch(
 const desktopMainTs = read("apps/desktop/src/main.ts");
 assertMatch(
   desktopMainTs,
-  /<select id="ingestDrumFilter">\s+<option value="auto" selected>auto \(profile default\)<\/option>\s+<option value="beat_conditioned_multiband_decoder">beat_conditioned_multiband_decoder \(quality default\)<\/option>/s,
-  "desktop ingest UI must default to profile routing and expose the quality-default drum engine",
+  // Pins the BEHAVIOUR named below -- `auto` first and selected, with the
+  // quality-default engine immediately exposed -- not the human-facing label
+  // text. Pinning the copy made a transcription-quality guard fail on any
+  // wording change, which is a false coupling: the option `value` attributes
+  // are the contract with the sidecar, the labels are not.
+  /<select id="ingestDrumFilter">\s+<option value="auto" selected>[^<]*<\/option>\s+<option value="beat_conditioned_multiband_decoder">[^<]*<\/option>/s,
+  "desktop ingest UI must default to profile routing (value=\"auto\", selected, first) and expose the quality-default drum engine next",
 );
 
 const gameFingeringLoaderTs = read("apps/game/src/fingeringLoader.ts");

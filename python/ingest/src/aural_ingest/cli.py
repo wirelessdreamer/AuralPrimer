@@ -6,17 +6,20 @@ import contextlib
 import hashlib
 import importlib
 import importlib.metadata
+import importlib.util
 import io
 import inspect
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import warnings
 import zipfile
@@ -5689,48 +5692,228 @@ def cmd_model_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+_MUSCRIPTOR_WEIGHTS_FILE = "model.safetensors"
+
+
+def _spec_available_for_cli(module: str) -> bool:
+    try:
+        return importlib.util.find_spec(module) is not None
+    except Exception:
+        return False
+
+
+def _muscriptor_needs_auth(exc: BaseException) -> bool:
+    """Whether a hub failure means "sign in / accept the license" rather than a
+    transport problem.
+
+    Type first: huggingface_hub raises GatedRepoError / RepositoryNotFoundError
+    for exactly this case. The string fallback only runs when those types can't
+    be imported, and matches 401/403 on word boundaries -- hub errors carry a
+    hex request id, so a naive substring match false-positives on it.
+    """
+    try:
+        from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+
+        if isinstance(exc, (GatedRepoError, RepositoryNotFoundError)):
+            return True
+    except Exception:
+        pass
+
+    lowered = str(exc).lower()
+    if re.search(r"(?<![0-9a-f])(401|403)(?![0-9a-f])", lowered):
+        return True
+    return any(
+        phrase in lowered
+        for phrase in ("gated", "awaiting a review", "access to model", "unauthorized",
+                       "authenticated", "accept the")
+    )
+
+
+def _muscriptor_check_access(*, repo_id: str, size: str) -> int:
+    """Report whether the weights can be fetched -- without fetching them.
+
+    This is what lets the setup dialog avoid demanding a pasted token: if the
+    user is already signed in (``huggingface-cli login`` leaves a stored
+    credential that ``huggingface_hub`` picks up on its own) and has accepted
+    the license, there is nothing left to type.
+
+    Deliberately NOT ``model_info``: a gated repo's metadata is public, so
+    ``model_info`` succeeds even with a junk token and would wave through a
+    user who cannot actually download. ``auth_check`` tests the entitlement
+    itself. Neither transfers weights.
+    """
+    payload: dict[str, Any] = {"ok": False, "size": size, "repo": repo_id, "check_only": True}
+    try:
+        from huggingface_hub import HfApi
+        from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+    except Exception as exc:
+        payload["error"] = f"huggingface_hub unavailable: {exc}"
+        print(json.dumps(payload))
+        return 1
+
+    api = HfApi()
+    # `whoami` validates the credential; a token merely *existing* says nothing
+    # about whether it still works, and that distinction decides whether the
+    # dialog asks for a token or tells the user to accept the license.
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            api.whoami()
+        payload["authenticated"] = True
+    except Exception:
+        payload["authenticated"] = False
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            api.auth_check(repo_id)
+    except (GatedRepoError, RepositoryNotFoundError) as exc:
+        payload["error"] = str(exc).splitlines()[0]
+        payload["needs_license_acceptance"] = True
+        print(json.dumps(payload))
+        return 1
+    except Exception as exc:  # transport / DNS / proxy -- not an entitlement problem
+        payload["error"] = str(exc).splitlines()[0]
+        payload["needs_license_acceptance"] = False
+        print(json.dumps(payload))
+        return 1
+
+    payload["ok"] = True
+    payload["access_granted"] = True
+    print(json.dumps(payload))
+    return 0
+
+
+def _emit_line(payload: dict[str, Any]) -> None:
+    """One JSON object per line, flushed immediately.
+
+    The Studio dialog renders these as they arrive, so buffering here would
+    reproduce exactly the "no useful updates" problem this reporting exists to
+    solve.
+    """
+    print(json.dumps(payload), flush=True)
+
+
+def _muscriptor_weights_total_bytes(repo_id: str) -> int | None:
+    """Size of the weights file, for a percentage. Best-effort: a missing total
+    degrades the UI to "N MB downloaded", never blocks the download."""
+    try:
+        from huggingface_hub import HfApi
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            info = HfApi().model_info(repo_id, files_metadata=True)
+        for sibling in info.siblings or []:
+            if sibling.rfilename == _MUSCRIPTOR_WEIGHTS_FILE:
+                return int(sibling.size) if sibling.size else None
+    except Exception:
+        return None
+    return None
+
+
+def _watch_incomplete_downloads(
+    repo_dir: Path, total_bytes: int | None, stop: threading.Event
+) -> None:
+    """Report bytes-on-disk while huggingface_hub downloads.
+
+    Polls the ``*.incomplete`` blobs rather than hooking huggingface_hub's tqdm:
+    the partial file is a stable, public artifact of the cache layout, whereas
+    the progress-bar internals are not part of its API.
+    """
+    last_reported = -1
+    while not stop.wait(1.0):
+        try:
+            done = sum(p.stat().st_size for p in repo_dir.rglob("*.incomplete"))
+        except Exception:
+            continue
+        # Only speak when something changed, so a stalled transfer is visible
+        # as silence rather than a stream of identical lines.
+        if done and done != last_reported:
+            last_reported = done
+            payload: dict[str, Any] = {"event": "progress", "downloaded_bytes": done}
+            if total_bytes:
+                payload["total_bytes"] = total_bytes
+                payload["pct"] = round(min(100.0, done * 100.0 / total_bytes), 1)
+            _emit_line(payload)
+
+
 def cmd_muscriptor_download(args: argparse.Namespace) -> int:
     """Download MuScriptor's gated weights into the user's HuggingFace cache.
 
     The engine itself ships with the sidecar; only the CC-BY-NC-4.0 weights are
     fetched here, and only once the user has accepted the model license and is
-    authenticated (``HF_TOKEN`` / ``huggingface-cli login``). Emits a single
-    JSON line so the Studio setup dialog can show a precise next action --
-    notably distinguishing "you still need to accept the license / sign in"
-    from a generic network failure.
+    authenticated (``HF_TOKEN`` / ``huggingface-cli login``).
+
+    Streams ``{"event": "progress", ...}`` lines while transferring and ends
+    with a single result object, so the Studio dialog can show real bytes
+    instead of an indefinite spinner. Fetches the files directly rather than
+    calling ``load_model``: building the model would pull 5.5 GB into RAM to
+    prove a download that the files on disk already prove.
     """
+    from aural_ingest.algorithms.muscriptor import _DEFAULT_SIZE
+
     requested = getattr(args, "size", "") or os.environ.get("AURAL_MUSCRIPTOR_SIZE", "")
-    size = requested.strip() or "medium"
+    size = requested.strip() or _DEFAULT_SIZE
+    repo_id = f"MuScriptor/muscriptor-{size}"
+
+    if getattr(args, "check_only", False):
+        return _muscriptor_check_access(repo_id=repo_id, size=size)
+
     try:
-        from muscriptor import TranscriptionModel
-    except Exception as exc:  # engine missing from this build entirely
-        print(json.dumps({"ok": False, "size": size, "error": f"engine unavailable: {exc}"}))
+        from huggingface_hub import hf_hub_download
+        from huggingface_hub.constants import HF_HUB_CACHE
+    except Exception as exc:
+        _emit_line({"ok": False, "size": size, "error": f"huggingface_hub unavailable: {exc}"})
         return 1
+
+    if not _spec_available_for_cli("muscriptor"):
+        _emit_line({"ok": False, "size": size, "error": "engine unavailable in this build"})
+        return 1
+
+    total_bytes = _muscriptor_weights_total_bytes(repo_id)
+    _emit_line(
+        {
+            "event": "start",
+            "repo": repo_id,
+            "size": size,
+            "total_bytes": total_bytes,
+            "file": _MUSCRIPTOR_WEIGHTS_FILE,
+        }
+    )
+
+    org, _, name = repo_id.partition("/")
+    repo_dir = Path(HF_HUB_CACHE) / f"models--{org}--{name}"
+    stop = threading.Event()
+    watcher = threading.Thread(
+        target=_watch_incomplete_downloads,
+        args=(repo_dir, total_bytes, stop),
+        daemon=True,
+    )
+    watcher.start()
 
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                TranscriptionModel.load_model(size, device="cpu")
+            # config.json carries the architecture load_model reads; without it
+            # the weights alone are unusable.
+            for filename in ("config.json", _MUSCRIPTOR_WEIGHTS_FILE):
+                path = hf_hub_download(repo_id=repo_id, filename=filename)
     except Exception as exc:
-        message = str(exc)
-        lowered = message.lower()
-        needs_auth = any(
-            token in lowered for token in ("license", "gated", "401", "403", "unauthorized", "authenticate")
-        )
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "size": size,
-                    "error": message,
-                    "needs_license_acceptance": needs_auth,
-                }
-            )
+        _emit_line(
+            {
+                "ok": False,
+                "size": size,
+                "repo": repo_id,
+                "error": str(exc),
+                "needs_license_acceptance": _muscriptor_needs_auth(exc),
+            }
         )
         return 1
+    finally:
+        stop.set()
+        watcher.join(timeout=2.0)
 
-    print(json.dumps({"ok": True, "size": size}))
+    _emit_line({"ok": True, "size": size, "repo": repo_id, "path": str(path)})
     return 0
 
 
@@ -7344,7 +7527,10 @@ def build_parser() -> argparse.ArgumentParser:
     s_model_setup.set_defaults(func=cmd_model_setup)
 
     s_ms_download = sub.add_parser("muscriptor-download")
-    s_ms_download.add_argument("--size", default="medium")
+    # Empty default so AURAL_MUSCRIPTOR_SIZE / _DEFAULT_SIZE can win; an
+    # argparse default would always shadow both.
+    s_ms_download.add_argument("--size", default="")
+    s_ms_download.add_argument("--check-only", action="store_true", dest="check_only")
     s_ms_download.set_defaults(func=cmd_muscriptor_download)
 
     s_benchmark = sub.add_parser("benchmark-drums")

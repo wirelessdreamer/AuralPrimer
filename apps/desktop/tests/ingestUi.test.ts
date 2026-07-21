@@ -26,9 +26,35 @@ describe("ingestUi", () => {
       artist: "Artist",
       drum_filter: "combined_filter",
       melodic_method: "basic_pitch",
+      wholemix_transcriber: undefined,
       shifts: 1,
       multi_filter: false
     });
+  });
+
+  it("passes the whole-mix transcriber through to the sidecar request", () => {
+    // Regression: the sidecar accepted --wholemix-transcriber from the start,
+    // but nothing in the UI ever sent it, so MuScriptor was unreachable from
+    // the app even once its weights were installed.
+    const req = buildIngestRequestFromForm({
+      sourcePath: "C:/music/in.wav",
+      mode: "import",
+      wholemixTranscriber: "muscriptor",
+      multiFilter: false
+    });
+    expect(req.wholemix_transcriber).toBe("muscriptor");
+  });
+
+  it("omits the whole-mix transcriber when it is off", () => {
+    for (const value of [undefined, "", "   "]) {
+      const req = buildIngestRequestFromForm({
+        sourcePath: "C:/music/in.wav",
+        mode: "import",
+        wholemixTranscriber: value,
+        multiFilter: false
+      });
+      expect(req.wholemix_transcriber).toBeUndefined();
+    }
   });
 
   it("passes through piano melodic methods unchanged", () => {

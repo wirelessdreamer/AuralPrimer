@@ -104,6 +104,12 @@ pub struct IngestImportRequest {
     #[serde(default)]
     pub melodic_method: Option<String>,
 
+    /// Whole-mix transcriber (currently only `muscriptor`). Transcribes the
+    /// full mix in one pass, supplying BOTH the drum hits and every melodic
+    /// role, so it supersedes `drum_filter` / `melodic_method` when set.
+    #[serde(default)]
+    pub wholemix_transcriber: Option<String>,
+
     #[serde(default)]
     pub shifts: Option<i32>,
 
@@ -265,6 +271,10 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
     if let Some(melodic_method) = non_empty_opt(&req.melodic_method) {
         args.push("--melodic-method".to_string());
         args.push(melodic_method);
+    }
+    if let Some(wholemix) = non_empty_opt(&req.wholemix_transcriber) {
+        args.push("--wholemix-transcriber".to_string());
+        args.push(wholemix);
     }
     if let Some(shifts) = req.shifts {
         args.push("--shifts".to_string());
@@ -677,9 +687,15 @@ pub fn run_ingest_model_setup(
 /// persisted anywhere.
 pub fn run_ingest_muscriptor_download(
     hf_token: Option<String>,
+    check_only: bool,
     app: Option<&AppHandle>,
 ) -> Result<IngestRuntimeCheckResult, String> {
-    let args = vec!["muscriptor-download".to_string()];
+    let mut args = vec!["muscriptor-download".to_string()];
+    if check_only {
+        // Metadata-only probe: answers "am I signed in / has the license been
+        // granted" without starting a multi-GB download.
+        args.push("--check-only".to_string());
+    }
     let app = app.ok_or_else(|| {
         format!(
             "Tauri AppHandle required for sidecar execution to run {} muscriptor-download",
@@ -699,7 +715,101 @@ pub fn run_ingest_muscriptor_download(
         ],
         None => Vec::new(),
     };
-    run_tauri_sidecar_capture_env(app, &args, env)
+    if check_only {
+        return run_tauri_sidecar_capture_env(app, &args, env);
+    }
+    // A multi-GB transfer behind a single blocking call is indistinguishable
+    // from a hang, so the download streams its progress lines instead.
+    run_tauri_sidecar_streaming_env(app, &args, env, MODEL_DOWNLOAD_PROGRESS_EVENT)
+}
+
+pub const MODEL_DOWNLOAD_PROGRESS_EVENT: &str = "model_download_progress";
+
+/// Run the sidecar, forwarding each stdout line to the frontend as it arrives,
+/// and return the last JSON object it printed as the result payload.
+///
+/// The capture variants wait for exit before anyone learns anything; that is
+/// fine for a 40s status probe and useless for a 5.5 GB download.
+fn run_tauri_sidecar_streaming_env(
+    app: &AppHandle,
+    args: &[String],
+    env: Vec<(String, String)>,
+    event_name: &str,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let command = match app.shell().sidecar(INGEST_SIDECAR_NAME) {
+        Ok(command) => {
+            let command = command.args(args.to_vec());
+            if env.is_empty() {
+                command
+            } else {
+                command.envs(env.into_iter().collect::<HashMap<String, String>>())
+            }
+        }
+        Err(error) => {
+            return Err(format!(
+                "failed to resolve Tauri sidecar {INGEST_SIDECAR_NAME}: {error}"
+            ))
+        }
+    };
+
+    let (mut rx, child) = command
+        .spawn()
+        .map_err(|e| format!("failed to spawn Tauri sidecar {INGEST_SIDECAR_NAME}: {e}"))?;
+
+    let mut stdout_lines: Vec<String> = vec![];
+    let mut stderr_lines: Vec<String> = vec![];
+    let mut exit_code = -1;
+    let event_name = event_name.to_string();
+
+    tauri::async_runtime::block_on(async {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes)
+                        .trim_end_matches(&['\r', '\n'][..])
+                        .to_string();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                        let _ = app.emit(event_name.as_str(), parsed);
+                    }
+                    stdout_lines.push(line);
+                }
+                CommandEvent::Stderr(bytes) => {
+                    stderr_lines.push(
+                        String::from_utf8_lossy(&bytes)
+                            .trim_end_matches(&['\r', '\n'][..])
+                            .to_string(),
+                    );
+                }
+                CommandEvent::Error(error) => stderr_lines.push(error),
+                CommandEvent::Terminated(payload) => exit_code = payload.code.unwrap_or(-1),
+                _ => {}
+            }
+        }
+    });
+    drop(child);
+
+    // The result is the last JSON object carrying `ok`; progress lines precede it.
+    let payload = stdout_lines
+        .iter()
+        .rev()
+        .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|value| value.get("ok").is_some());
+
+    Ok(IngestRuntimeCheckResult {
+        ok: exit_code == 0,
+        exit_code,
+        command: {
+            let mut command = vec![INGEST_SIDECAR_NAME.to_string()];
+            command.extend(args.to_vec());
+            command
+        },
+        stdout: stdout_lines.join("\n"),
+        stderr: stderr_lines.join("\n"),
+        payload,
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

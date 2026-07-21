@@ -660,14 +660,155 @@ audio {
   gap: 14px;
 }
 
-.makeLayout {
-  align-items: start;
-}
-
-.stackCol {
+/* Import route: one decision, then one column. The old layout put two rival
+   "import" forms side by side inside the 1180px shell cap, squeezing the
+   analysis form to ~380px while a wide display sat empty either side. A form
+   reads better in one 820px column than stretched across 2000px, so this cap
+   is deliberate rather than inherited. */
+.importFlow {
   display: grid;
   gap: 14px;
-  align-content: start;
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.importStep {
+  padding: 16px 18px;
+}
+
+.importStep[hidden] {
+  display: none;
+}
+
+.importChoiceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.importChoiceCard {
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.importChoiceCard .menuTitle {
+  font-size: 15px;
+}
+
+.importChoiceCard.isActive {
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.14);
+}
+
+.importChoiceCard:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Label above the control, never beside it: `.row` is flex-wrap and every
+   select / text input carries `min-width:190px`, so two label+control pairs on
+   one row wrap mid-pair and orphan a label (this is what cut "MELODIC" off
+   from its dropdown). */
+.importField {
+  margin: 0 0 16px;
+}
+
+.importLabel {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 6px;
+}
+
+.importField > select,
+.importField > input[type="text"],
+.importField > input[type="number"] {
+  width: 100%;
+}
+
+.importField .row {
+  margin: 0;
+}
+
+.importField .meta {
+  margin-top: 6px;
+}
+
+.importSubRow {
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.importSubRow select {
+  flex: 0 1 auto;
+  min-width: 260px;
+}
+
+.importFieldPair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.importSubField > input {
+  width: 100%;
+}
+
+.importCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.importCheck input[type="checkbox"] {
+  flex: 0 0 auto;
+}
+
+.importAdvanced {
+  margin: 4px 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.importAdvanced > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.importAdvancedBody {
+  padding: 4px 12px 12px;
+}
+
+.importInlineLink {
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.importRunRow {
+  margin: 14px 0 10px;
+}
+
+.importRunBtn {
+  flex: 1;
+  min-width: 220px;
+  border-color: var(--accent2);
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #06121a;
+  font-weight: 700;
+  padding: 11px 16px;
+}
+
+.importRunBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .makeSummary {
@@ -837,7 +978,7 @@ audio {
 
 .mt3RuntimeGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
 
@@ -854,11 +995,20 @@ audio {
   letter-spacing: 0.06em;
 }
 
+/* Was a 3-track grid `minmax(0,1fr) auto minmax(0,1.3fr)`. Inside a ~200px card
+   both flexible tracks freeze at base size 0 (CSS Grid 12.4/12.6), so all free
+   space went to the one non-flexible `auto` badge track, which grew to its
+   max-content width and starved the label to a few pixels -- and because
+   `.meta { overflow-wrap: anywhere }` is inherited from #ingestRuntimeStatus,
+   the starved label broke one character per line instead of overflowing.
+   Flex sizes from content and reflows on the CONTAINER, which is what actually
+   varies here; the old @media fix keyed on VIEWPORT width and so never fired on
+   a wide display. */
 .mt3RuntimeRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.3fr);
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 6px 10px;
   padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -869,6 +1019,22 @@ audio {
 
 .mt3RuntimeLabel {
   font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 96px;
+  /* Undo the inherited `anywhere`: `break-word` only breaks a word that cannot
+     fit at all, so "basic_pitch" keeps a real min-content width. */
+  overflow-wrap: break-word;
+}
+
+.mt3RuntimeRow .importAuditStatus {
+  flex: 0 0 auto;
+}
+
+/* Version / error note: takes the rest of the line, or drops to its own line
+   when the row is too narrow for all three. */
+.mt3RuntimeNote {
+  flex: 1 1 130px;
+  min-width: 0;
 }
 
 .mt3RuntimeFootnote {
@@ -986,15 +1152,6 @@ li {
     max-height: none;
     overflow-y: visible;
     padding-right: 0;
-  }
-
-  .mt3RuntimeGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .mt3RuntimeRow {
-    grid-template-columns: 1fr;
-    gap: 4px;
   }
 }
 
