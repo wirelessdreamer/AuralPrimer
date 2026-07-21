@@ -371,33 +371,57 @@ type IngestImportProgressEvent = {
   parsed?: unknown;
 };
 
-const MELODIC_METHOD_OPTIONS = [
-  ["auto", "auto"],
-  ["piano_auto", "piano_auto (model-backed)"],
-  ["piano_basic_pitch_playable", "piano_basic_pitch_playable (model + playable)"],
-  ["piano_basic_pitch", "piano_basic_pitch (model-backed)"],
-  ["piano_basic_pitch_clean", "piano_basic_pitch_clean (model + cleanup)"],
-  ["piano_polyphonic_clean", "piano_polyphonic_clean (heuristic)"],
-  ["piano_polyphonic", "piano_polyphonic (heuristic raw)"],
-  ["piano_transkun_clean", "piano_transkun_clean (research)"],
-  ["piano_pti_clean", "piano_pti_clean (research)"],
-  ["piano_transkun", "piano_transkun (research raw)"],
-  ["piano_pti", "piano_pti (research raw)"],
-  ["piano_hft_clean", "piano_hft_clean (research)"],
-  ["piano_hft", "piano_hft (research raw)"],
-  ["basic_pitch", "basic_pitch"],
-  ["pyin", "pyin"],
-  ["melodic_combined", "melodic_combined"],
-  ["melodic_octave_fix", "melodic_octave_fix"],
-  ["melodic_yin_octave_hps_fix", "melodic_yin_octave_hps_fix"],
-  ["melodic_adaptive", "melodic_adaptive"],
-  ["melodic_yin_bass80", "melodic_yin_bass80"],
-  ["melodic_hpss_combined", "melodic_hpss_combined"],
-  ["melodic_template_multipass", "melodic_template_multipass"],
-] as const;
+// Grouped so the dropdown reads as a decision, not a 22-item list of internal
+// method names. Every `value` is unchanged -- ingestMelodicMethodSelect.value is
+// sent straight to the sidecar.
+const MELODIC_METHOD_GROUPS: Array<{ label: string; options: Array<[string, string]> }> = [
+  {
+    label: "Recommended",
+    options: [["auto", "Automatic (recommended)"]],
+  },
+  {
+    label: "Piano",
+    options: [
+      ["piano_auto", "Piano — automatic"],
+      ["piano_basic_pitch_playable", "Piano — simplified so it's playable"],
+      ["piano_basic_pitch", "Piano — model"],
+      ["piano_basic_pitch_clean", "Piano — model, cleaned up"],
+      ["piano_polyphonic_clean", "Piano — chords, cleaned up"],
+      ["piano_polyphonic", "Piano — chords, raw"],
+    ],
+  },
+  {
+    label: "General melody",
+    options: [
+      ["basic_pitch", "General pitch model"],
+      ["pyin", "Single-note pitch tracker"],
+      ["melodic_combined", "Combined detectors"],
+      ["melodic_octave_fix", "Combined, with octave correction"],
+      ["melodic_yin_octave_hps_fix", "YIN, with octave correction"],
+      ["melodic_adaptive", "Adaptive"],
+      ["melodic_yin_bass80", "Bass-tuned (80 Hz floor)"],
+      ["melodic_hpss_combined", "Harmonic / percussive split"],
+      ["melodic_template_multipass", "Template multi-pass"],
+    ],
+  },
+  {
+    label: "Research — expect rough results",
+    options: [
+      ["piano_transkun_clean", "Piano — Transkun, cleaned up"],
+      ["piano_pti_clean", "Piano — PTI, cleaned up"],
+      ["piano_hft_clean", "Piano — hFT, cleaned up"],
+      ["piano_transkun", "Piano — Transkun, raw"],
+      ["piano_pti", "Piano — PTI, raw"],
+      ["piano_hft", "Piano — hFT, raw"],
+    ],
+  },
+];
 
-const melodicMethodOptionsHtml = MELODIC_METHOD_OPTIONS.map(
-  ([value, label]) => `<option value="${value}">${label}</option>`
+const melodicMethodOptionsHtml = MELODIC_METHOD_GROUPS.map(
+  (group) =>
+    `<optgroup label="${group.label}">` +
+    group.options.map(([value, label]) => `<option value="${value}">${label}</option>`).join("") +
+    `</optgroup>`
 ).join("");
 
 type MidiTrackInfo = {
@@ -546,29 +570,58 @@ root.innerHTML = `
       </section>
 
       <section class="route" data-route="make">
-        <div class="twoCol makeLayout">
-          <section class="panel">
+        <div class="importFlow">
+
+          <!-- Step 1. The old page put two rival "import" panels side by side and
+               never asked which one you wanted; this asks first and shows only the
+               matching form. -->
+          <section class="panel importStep">
             <div class="panelHeader">
-              <h2>Import</h2>
-              <div class="meta">Suno folders</div>
+              <h2>Import a song</h2>
+              <div class="meta">step 1 of 2</div>
             </div>
-            <h3>Import stem WAV + MIDI (Suno)</h3>
+            <p class="meta">What are you starting from?</p>
+            <div class="importChoiceGrid">
+              <button class="menuCard importChoiceCard isActive" id="importKindSuno"
+                      type="button" data-import-kind="suno">
+                <div class="menuTitle">A Suno export folder</div>
+                <div class="meta">Stems and MIDI are already separated. Fast &mdash; about a minute.</div>
+              </button>
+              <button class="menuCard importChoiceCard" id="importKindAudio"
+                      type="button" data-import-kind="audio">
+                <div class="menuTitle">One audio file</div>
+                <div class="meta">MP3, WAV, FLAC, OGG or M4A. We separate the parts and write out the notes. Slow &mdash; 10 to 30 minutes.</div>
+              </button>
+              <button class="menuCard importChoiceCard" id="importKindStems"
+                      type="button" data-import-kind="stems">
+                <div class="menuTitle">A folder of separated stems</div>
+                <div class="meta">You already have drums/bass/vocals as separate files. We skip separation and go straight to writing the notes.</div>
+              </button>
+            </div>
+          </section>
+
+          <!-- Step 2a. Suno: same controls and ids as before. -->
+          <section class="panel importStep" id="importPanelSuno">
+            <div class="panelHeader">
+              <h2>Choose your Suno folder</h2>
+              <div class="meta">step 2 of 2</div>
+            </div>
             <p class="meta">
-              Point this at one Suno export folder. We will scan the folder for stem WAVs, MIDI,
-              <code>lyrics.txt</code>, and optional karaoke JSON, validate what we can, then build the AuralSong.
+              We scan the folder for stem WAVs, MIDI, <code>lyrics.txt</code> and optional karaoke
+              JSON, check what is there, then build the song.
             </p>
             <div class="row">
               <button id="stemMidiPickFolderMake">Choose Suno folder...</button>
               <div class="meta grow" id="stemMidiFolderLabelMake">(no folder selected)</div>
             </div>
             <div id="stemMidiSummaryMake" class="meta makeSummary"></div>
-            <div class="row">
-              <button id="stemMidiImportMake">Import song</button>
+            <div class="row importRunRow">
+              <button id="stemMidiImportMake" class="importRunBtn">Import song</button>
             </div>
-            <div class="meta" style="margin-top:4px">Imports an editable draft you clean up in Refine — export a <code>.feedpak</code> when it's finished.</div>
+            <div class="meta">Imports an editable draft you clean up in Refine &mdash; export a <code>.feedpak</code> when it's finished.</div>
             <pre id="stemMidiStatusMake" class="meta">(not imported)</pre>
             <div id="stemMidiNextStepsMake" class="postImportCard" style="display:none;">
-              <div class="postImportTitle">✓ Song imported</div>
+              <div class="postImportTitle">&#10003; Song imported</div>
               <div class="postImportHint">Next: clean up the auto-transcription so the gameplay chart matches your intent.</div>
               <div class="row">
                 <button class="postImportPrimary" id="stemMidiOpenRefine">Open in Refine workspace</button>
@@ -579,106 +632,135 @@ root.innerHTML = `
             </div>
           </section>
 
-          <div class="stackCol">
-            <section class="panel">
-              <div class="panelHeader">
-                <h2>Perform analysis import</h2>
-                <div class="meta">beat analysis + stem split + transcription</div>
-              </div>
-              <p class="meta">
-                Run the Python ingest sidecar on a file, folder, or pre-split stems folder. This path performs
-                beat/tempo analysis, stem separation, guitar lead/rhythm stem split, and chart transcription.
-              </p>
-              <div class="meta importStageNote">
-                Stages: decode audio -> analyze beats/tempo -> separate stems -> split guitar stems -> transcribe drums/melodic parts.
-              </div>
+          <!-- Step 2b. Analysis import. Hidden, never removed: every id below is
+               read by buildIngestRequestFromForm and must stay queryable. -->
+          <section class="panel importStep" id="importPanelAnalysis" hidden>
+            <div class="panelHeader">
+              <h2 id="importAnalysisHeading">Point us at your audio</h2>
+              <div class="meta">step 2 of 2</div>
+            </div>
+            <p class="meta importStageNote">
+              We decode the audio, find the beat and tempo, separate it into parts, split lead from
+              rhythm guitar, then write out the drum and melody notes. The defaults are good &mdash;
+              normally you only need the file.
+            </p>
+
+            <div class="importField">
+              <label class="importLabel" for="ingestSourcePath">Where is it?</label>
               <div class="row">
-                <label class="meta">Mode</label>
-                <select id="ingestMode">
-                  <option value="import">perform analysis import (single audio file)</option>
-                  <option value="import-dir">perform analysis import (scan folder)</option>
-                  <option value="stem-dir">perform analysis import (pre-split stems folder)</option>
-                </select>
-              </div>
-              <div class="row">
-                <label class="meta">Source</label>
                 <input id="ingestSourcePath" class="grow" type="text" placeholder="C:\\music\\song.wav" />
                 <button id="ingestBrowseSource">Browse...</button>
               </div>
-              <div class="row">
-                <label class="meta">Output AuralSong (optional)</label>
-                <input id="ingestOutPath" class="grow" type="text" placeholder="(leave blank for songs folder default)" />
-              </div>
-              <div class="row">
-                <label class="meta">Profile</label>
-                <input id="ingestProfile" type="text" value="full" />
-                <label class="meta">Shifts</label>
-                <input id="ingestShifts" type="number" min="1" step="1" value="1" />
-                <label><input id="ingestMultiFilter" type="checkbox" /> multi-filter</label>
-              </div>
-              <div class="row">
-                <label class="meta">Drum engine</label>
-                <select id="ingestDrumFilter">
-                  <option value="auto" selected>auto (profile default)</option>
-                  <option value="beat_conditioned_multiband_decoder">beat_conditioned_multiband_decoder (quality default)</option>
-                  <option value="spectral_flux_multiband">spectral_flux_multiband</option>
-                  <option value="combined_filter">combined_filter</option>
-                  <option value="adaptive_beat_grid">adaptive_beat_grid</option>
-                  <option value="dsp_bandpass_improved">dsp_bandpass_improved</option>
-                  <option value="dsp_spectral_flux">dsp_spectral_flux</option>
-                  <option value="aural_onset">aural_onset</option>
-                  <option value="dsp_bandpass">dsp_bandpass</option>
-                  <option value="librosa_superflux">librosa_superflux</option>
-                  <option value="mr_mt3_drums">mr_mt3_drums (local modelpack required)</option>
-                  <option value="yourmt3_drums">yourmt3_drums (local modelpack required)</option>
-                  <option value="drum_crnn">Drum CRNN (neural, 5-class)</option>
-                </select>
-                <label class="meta">Melodic</label>
-                <select id="ingestMelodicMethod">
-                  ${melodicMethodOptionsHtml}
+              <div class="row importSubRow">
+                <label class="meta" for="ingestMode">That path is</label>
+                <select id="ingestMode">
+                  <option value="import">One audio file</option>
+                  <option value="import-dir">A folder &mdash; use the audio file inside it</option>
+                  <option value="stem-dir">A folder of already-separated stems</option>
                 </select>
               </div>
-              <div class="meta importStageNote">
-                MT3 drum engines are benchmark-first research options. Studio checks the packaged sidecar and local modelpacks below so you can see whether the requirements are actually met.
-              </div>
-              <div class="mt3RuntimePanel">
-                <div class="row mt3RuntimeHeader">
-                  <div class="meta"><strong>MT3 availability</strong></div>
-                  <button id="ingestRuntimeRefresh" type="button">Refresh status</button>
-                </div>
-                <div id="ingestRuntimeStatus" class="mt3RuntimeStatus meta">Checking MT3 runtime…</div>
-              </div>
+            </div>
+
+            <div class="importField">
+              <label class="importLabel" for="ingestTitle">What is it called?</label>
               <div class="row">
-                <label class="meta">Config JSON/path (optional)</label>
-                <input id="ingestConfig" class="grow" type="text" placeholder='{"ingest_timestamp":"..."} or C:\\cfg.json' />
+                <input id="ingestTitle" class="grow" type="text" placeholder="Title" />
+                <input id="ingestArtist" class="grow" type="text" placeholder="Artist" />
               </div>
-              <div class="row">
-                <label class="meta">Title</label>
-                <input id="ingestTitle" class="grow" type="text" placeholder="Optional title override" />
-                <label class="meta">Artist</label>
-                <input id="ingestArtist" class="grow" type="text" placeholder="Optional artist override" />
-                <button id="ingestRun">Run import</button>
-              </div>
-              <div id="ingestSummary" class="ingestSummary ingestSummary--idle">
-                <div class="row ingestSummaryHeader">
-                  <div class="grow">
-                    <div id="ingestSummaryBadge" class="ingestSummaryBadge ingestSummaryBadge--idle">Ready</div>
-                    <div id="ingestSummaryTitle" class="ingestSummaryTitle">Ready to import</div>
+              <div class="meta">Filled in from the filename when you pick a file. Edit it if the guess is wrong.</div>
+            </div>
+
+            <details id="importAdvanced" class="importAdvanced">
+              <summary>Advanced &mdash; engines and tuning</summary>
+              <div class="importAdvancedBody">
+
+                <div class="importField">
+                  <label class="importLabel" for="ingestDrumFilter">How drum hits are found</label>
+                  <select id="ingestDrumFilter">
+                    <option value="auto" selected>Automatic (recommended)</option>
+                    <option value="beat_conditioned_multiband_decoder">Beat-aware multiband (quality default)</option>
+                    <option value="spectral_flux_multiband">Spectral change, multiband</option>
+                    <option value="combined_filter">Standard</option>
+                    <option value="adaptive_beat_grid">Snap hits to the beat grid</option>
+                    <option value="dsp_bandpass_improved">Frequency bands (improved)</option>
+                    <option value="dsp_spectral_flux">Spectral change</option>
+                    <option value="aural_onset">AuralPrimer onset detector</option>
+                    <option value="dsp_bandpass">Frequency bands (basic)</option>
+                    <option value="librosa_superflux">SuperFlux onsets</option>
+                    <option value="mr_mt3_drums">MR-MT3 (research)</option>
+                    <option value="yourmt3_drums">YourMT3 (research)</option>
+                    <option value="drum_crnn">Neural, 5 kit pieces</option>
+                  </select>
+                  <div class="meta">
+                    Anything marked <em>needs model pack</em> is not installed yet.
+                    <button id="importOpenModels" type="button" class="importInlineLink">Open Configure &rsaquo; Models</button>
                   </div>
-                  <div id="ingestSummaryProgressText" class="meta ingestSummaryProgressText">0%</div>
                 </div>
-                <progress id="ingestSummaryProgress" class="ingestSummaryProgress" max="100" value="0"></progress>
-                <div id="ingestSummaryDetail" class="meta ingestSummaryDetail">Choose a source, then run import.</div>
-                <div class="row ingestSummaryActions">
-                  <button id="ingestOpenCleanup" type="button" disabled>Review in Cleanup &amp; Edit</button>
+
+                <div class="importField">
+                  <label class="importLabel" for="ingestMelodicMethod">How melody notes are found</label>
+                  <select id="ingestMelodicMethod">
+                    ${melodicMethodOptionsHtml}
+                  </select>
                 </div>
+
+                <div class="importField importFieldPair">
+                  <div class="importSubField">
+                    <label class="importLabel" for="ingestProfile">Analysis depth</label>
+                    <input id="ingestProfile" type="text" value="full" />
+                    <div class="meta">&ldquo;full&rdquo; runs every stage. Change only if you were told to.</div>
+                  </div>
+                  <div class="importSubField">
+                    <label class="importLabel" for="ingestShifts">Separation passes</label>
+                    <input id="ingestShifts" type="number" min="1" step="1" value="1" />
+                    <div class="meta">More passes are slower and occasionally cleaner. 1 is right for almost everything.</div>
+                  </div>
+                </div>
+
+                <div class="importField">
+                  <label class="importCheck"><input id="ingestMultiFilter" type="checkbox" /> Cross-check drum hits with a second detector</label>
+                  <div class="meta">Slower. Helps on busy or heavily compressed mixes.</div>
+                </div>
+
+                <div class="importField">
+                  <label class="importLabel" for="ingestOutPath">Save the result somewhere else</label>
+                  <input id="ingestOutPath" class="grow" type="text" placeholder="(leave blank to use your songs folder)" />
+                </div>
+
+                <div class="importField">
+                  <label class="importLabel" for="ingestConfig">Extra settings</label>
+                  <input id="ingestConfig" class="grow" type="text" placeholder='{"ingest_timestamp":"..."} or C:\\cfg.json' />
+                  <div class="meta">Raw JSON, or a path to a .json file. Most people never touch this.</div>
+                </div>
+
               </div>
-              <details id="ingestLogPanel" class="ingestLogPanel">
-                <summary>Import log</summary>
-                <pre id="ingestStatus" class="meta">(not started)</pre>
-              </details>
-            </section>
-          </div>
+            </details>
+
+            <div class="row importRunRow">
+              <button id="ingestRun" class="importRunBtn">Analyze and import</button>
+            </div>
+
+            <div id="ingestSummary" class="ingestSummary ingestSummary--idle">
+              <div class="row ingestSummaryHeader">
+                <div class="grow">
+                  <div id="ingestSummaryBadge" class="ingestSummaryBadge ingestSummaryBadge--idle">Ready</div>
+                  <div id="ingestSummaryTitle" class="ingestSummaryTitle">Ready to import</div>
+                </div>
+                <div id="ingestSummaryProgressText" class="meta ingestSummaryProgressText">0%</div>
+              </div>
+              <progress id="ingestSummaryProgress" class="ingestSummaryProgress" max="100" value="0"></progress>
+              <div id="ingestSummaryDetail" class="meta ingestSummaryDetail">Pick a file, then press Analyze and import.</div>
+              <div class="row ingestSummaryActions">
+                <button id="ingestOpenCleanup" type="button" disabled>Review in Cleanup &amp; Edit</button>
+              </div>
+            </div>
+
+            <details id="ingestLogPanel" class="ingestLogPanel">
+              <summary>Import log</summary>
+              <pre id="ingestStatus" class="meta">(not started)</pre>
+            </details>
+          </section>
+
         </div>
       </section>
 
@@ -725,6 +807,18 @@ root.innerHTML = `
 
             <h4>Installed</h4>
             <pre id="modelsStatus">(not loaded)</pre>
+
+            <h4>Optional drum engines</h4>
+            <p class="meta">
+              MR-MT3 and YourMT3 are research-grade neural drum transcribers. They only become
+              selectable in Import once their model pack is installed above.
+            </p>
+            <div class="mt3RuntimePanel">
+              <div class="row mt3RuntimeHeader">
+                <button id="ingestRuntimeRefresh" type="button">Re-check</button>
+              </div>
+              <div id="ingestRuntimeStatus" class="mt3RuntimeStatus meta">Checking&hellip;</div>
+            </div>
           </section>
 
           <section class="panel">
@@ -1122,6 +1216,55 @@ const ingestLogPanelEl = document.getElementById("ingestLogPanel") as HTMLDetail
 const ingestStatusEl = document.getElementById("ingestStatus") as HTMLPreElement;
 const ingestRuntimeRefreshBtn = document.getElementById("ingestRuntimeRefresh") as HTMLButtonElement;
 const ingestRuntimeStatusEl = document.getElementById("ingestRuntimeStatus") as HTMLDivElement;
+
+// Import route step-1 chooser. The route used to show two rival "import" panels
+// side by side with nothing saying which one applied to you; it now asks first
+// and reveals only the matching form. Both panels stay in the DOM (hidden, never
+// removed) so every getElementById handle above keeps resolving.
+type ImportKind = "suno" | "audio" | "stems";
+
+const importChoiceCards = Array.from(
+  document.querySelectorAll<HTMLButtonElement>(".importChoiceCard")
+);
+const importPanelSunoEl = document.getElementById("importPanelSuno") as HTMLElement;
+const importPanelAnalysisEl = document.getElementById("importPanelAnalysis") as HTMLElement;
+const importAnalysisHeadingEl = document.getElementById("importAnalysisHeading") as HTMLElement;
+const importOpenModelsBtn = document.getElementById("importOpenModels") as HTMLButtonElement;
+
+function importAnalysisHeadingFor(kind: ImportKind): string {
+  return kind === "stems" ? "Point us at your stems folder" : "Point us at your audio";
+}
+
+function markImportKindActive(kind: ImportKind): void {
+  for (const card of importChoiceCards) {
+    card.classList.toggle("isActive", card.dataset.importKind === kind);
+  }
+}
+
+function setImportKind(kind: ImportKind): void {
+  markImportKindActive(kind);
+  importPanelSunoEl.hidden = kind !== "suno";
+  importPanelAnalysisEl.hidden = kind === "suno";
+  if (kind === "suno") return;
+
+  importAnalysisHeadingEl.textContent = importAnalysisHeadingFor(kind);
+  // Keep the mode select in step with the card, but don't fight a user who
+  // picked "scan folder" by hand: only correct it when it contradicts the card.
+  const wanted = kind === "stems" ? "stem-dir" : "import";
+  const contradicts = kind === "stems" ? ingestModeSelect.value !== "stem-dir" : ingestModeSelect.value === "stem-dir";
+  if (contradicts) {
+    ingestModeSelect.value = wanted;
+    ingestModeSelect.dispatchEvent(new Event("change"));
+  }
+}
+
+/** Keep the cards honest when the mode select is changed directly. */
+function syncImportKindFromMode(): void {
+  if (!importPanelSunoEl.hidden) return;
+  const kind: ImportKind = ingestModeSelect.value === "stem-dir" ? "stems" : "audio";
+  markImportKindActive(kind);
+  importAnalysisHeadingEl.textContent = importAnalysisHeadingFor(kind);
+}
 const modelSetupPanelEl = document.getElementById("modelSetupPanel") as HTMLDivElement;
 if (haveTauri()) {
   void initModelSetupPanel(modelSetupPanelEl);
@@ -1449,8 +1592,8 @@ function formatInstalledModelPacks(installed: InstalledModelPack[]): string {
 }
 
 const MT3_ENGINE_LABELS: Record<string, string> = {
-  mr_mt3_drums: "MR-MT3",
-  yourmt3_drums: "YourMT3"
+  mr_mt3_drums: "MR-MT3 (research)",
+  yourmt3_drums: "YourMT3 (research)"
 };
 
 function runtimeBadge(label: string, found: boolean): string {
@@ -1468,7 +1611,7 @@ function setMt3EngineOptionStatus(engineId: string, status: "checking" | "detect
     return;
   }
   option.disabled = status === "missing";
-  const suffix = status === "detected" ? "Detected" : detail || "Missing";
+  const suffix = status === "detected" ? "installed" : detail || "needs model pack";
   option.textContent = `${baseLabel} (${suffix})`;
 }
 
@@ -1477,9 +1620,9 @@ function renderMt3RuntimeState(
   options: { loading?: boolean; error?: string } = {}
 ) {
   if (!haveTauri()) {
-    ingestRuntimeStatusEl.innerHTML = `<div class="meta">MT3 availability can only be checked in the desktop app.</div>`;
-    setMt3EngineOptionStatus("mr_mt3_drums", "missing", "desktop app required");
-    setMt3EngineOptionStatus("yourmt3_drums", "missing", "desktop app required");
+    ingestRuntimeStatusEl.innerHTML = `<div class="meta">Optional engine status can only be checked in the desktop app.</div>`;
+    setMt3EngineOptionStatus("mr_mt3_drums", "missing", "needs the desktop app");
+    setMt3EngineOptionStatus("yourmt3_drums", "missing", "needs the desktop app");
     return;
   }
 
@@ -1492,8 +1635,8 @@ function renderMt3RuntimeState(
 
   if (options.error) {
     ingestRuntimeStatusEl.innerHTML = `<pre class="error">${escapeHtml(options.error)}</pre>`;
-    setMt3EngineOptionStatus("mr_mt3_drums", "missing", "runtime check failed");
-    setMt3EngineOptionStatus("yourmt3_drums", "missing", "runtime check failed");
+    setMt3EngineOptionStatus("mr_mt3_drums", "missing", "check failed");
+    setMt3EngineOptionStatus("yourmt3_drums", "missing", "check failed");
     return;
   }
 
@@ -1503,7 +1646,7 @@ function renderMt3RuntimeState(
   const runtimeOk = Boolean(result?.ok && payload?.ok);
 
   for (const engineId of Object.keys(MT3_ENGINE_LABELS)) {
-    setMt3EngineOptionStatus(engineId, "missing", "missing");
+    setMt3EngineOptionStatus(engineId, "missing", "needs model pack");
   }
 
   const depsHtml = dependencyEntries.length
@@ -1517,10 +1660,10 @@ function renderMt3RuntimeState(
           const optional = dep.required === false;
           const badgeFound = dep.ok || optional;
           const badgeLabel = dep.ok
-            ? "Detected"
+            ? "Installed"
             : optional
               ? "Optional — not installed"
-              : "Missing";
+              : "Not installed";
           const note = dep.version
             ? `v${dep.version}`
             : !dep.ok && optional && dep.missing_behavior
@@ -1530,7 +1673,7 @@ function renderMt3RuntimeState(
             <div class="mt3RuntimeRow">
               <div class="mt3RuntimeLabel">${escapeHtml(name)}</div>
               <div>${runtimeBadge(badgeLabel, badgeFound)}</div>
-              <div class="meta">${escapeHtml(note)}</div>
+              <div class="meta mt3RuntimeNote">${escapeHtml(note)}</div>
             </div>
           `;
         })
@@ -1547,12 +1690,12 @@ function renderMt3RuntimeState(
           ]
             .filter(Boolean)
             .join(" | ");
-          setMt3EngineOptionStatus(engineId, detected ? "detected" : "missing", detected ? "" : "missing");
+          setMt3EngineOptionStatus(engineId, detected ? "detected" : "missing", detected ? "" : "needs model pack");
           return `
             <div class="mt3RuntimeRow">
               <div class="mt3RuntimeLabel">${escapeHtml(MT3_ENGINE_LABELS[engineId] ?? engineId)}</div>
-              <div>${runtimeBadge(detected ? "Detected" : "Missing", detected)}</div>
-              <div class="meta">${escapeHtml(notes || "runtime ready")}</div>
+              <div>${runtimeBadge(detected ? "Installed" : "Not installed", detected)}</div>
+              <div class="meta mt3RuntimeNote">${escapeHtml(notes || "runtime ready")}</div>
             </div>
           `;
         })
@@ -1571,7 +1714,7 @@ function renderMt3RuntimeState(
       </div>
     </div>
     <div class="meta mt3RuntimeFootnote">
-      ${runtimeOk ? "Status checked against the packaged sidecar runtime." : "Runtime check did not report a fully healthy MT3 setup."}
+      ${runtimeOk ? "Status checked against the packaged sidecar runtime." : "Some optional engines are not ready. Install their model pack above."}
     </div>
   `;
 }
@@ -3967,6 +4110,7 @@ async function runIngestImport() {
   });
   ingestRunBtn.disabled = true;
   ingestRunBtn.textContent = "Importing...";
+  for (const card of importChoiceCards) card.disabled = true;
   try {
     await waitForUiPaint();
     const res = await ingestImport(req);
@@ -4037,7 +4181,8 @@ async function runIngestImport() {
   } finally {
     ingestInFlight = false;
     ingestRunBtn.disabled = false;
-    ingestRunBtn.textContent = "Run import";
+    ingestRunBtn.textContent = "Analyze and import";
+    for (const card of importChoiceCards) card.disabled = false;
   }
 }
 
@@ -4912,7 +5057,18 @@ ingestModeSelect.addEventListener("change", () => {
   ingestStemInspection = null;
   const mode = currentIngestMode();
   setIngestSourcePlaceholder(mode);
+  syncImportKindFromMode();
 });
+
+for (const card of importChoiceCards) {
+  card.addEventListener("click", () => {
+    setImportKind((card.dataset.importKind ?? "suno") as ImportKind);
+  });
+}
+
+importOpenModelsBtn.addEventListener("click", () => setRoute("config"));
+
+setImportKind("suno");
 ingestSourcePathInput.addEventListener("change", () => {
   if (currentIngestMode() === "stem-dir") {
     ingestStemInspection = null;
