@@ -1,0 +1,300 @@
+{
+  "psalm_121_my_help": {
+    "instruments": {
+      "keys": {
+        "ref_notes": 479,
+        "est_notes": 645,
+        "precision": 0.5473,
+        "recall": 0.737,
+        "f1": 0.6281,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "vocals": {
+        "ref_notes": 219,
+        "est_notes": 42,
+        "precision": 0.7381,
+        "recall": 0.1416,
+        "f1": 0.2375,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_10_why": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 14,
+        "est_notes": 62,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "drums": {
+        "ref_notes": 45,
+        "est_notes": 94,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "keys": {
+        "ref_notes": 1287,
+        "est_notes": 1822,
+        "precision": 0.0873,
+        "recall": 0.1235,
+        "f1": 0.1023,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "vocals": {
+        "ref_notes": 431,
+        "est_notes": 23,
+        "precision": 0.087,
+        "recall": 0.0046,
+        "f1": 0.0088,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_10_why_instrumental": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 0,
+        "est_notes": 14,
+        "f1": null,
+        "authored": false,
+        "muscriptor_emitted": true
+      },
+      "keys": {
+        "ref_notes": 1003,
+        "est_notes": 1292,
+        "precision": 0.0325,
+        "recall": 0.0419,
+        "f1": 0.0366,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_5_every_morning": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 59,
+        "est_notes": 126,
+        "precision": 0.2143,
+        "recall": 0.4576,
+        "f1": 0.2919,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "drums": {
+        "ref_notes": 53,
+        "est_notes": 158,
+        "precision": 0.1835,
+        "recall": 0.5472,
+        "f1": 0.2749,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "keys": {
+        "ref_notes": 1606,
+        "est_notes": 2029,
+        "precision": 0.3751,
+        "recall": 0.4738,
+        "f1": 0.4187,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "vocals": {
+        "ref_notes": 375,
+        "est_notes": 234,
+        "precision": 0.2607,
+        "recall": 0.1627,
+        "f1": 0.2003,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_5_every_morning_instrumental": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 0,
+        "est_notes": 30,
+        "f1": null,
+        "authored": false,
+        "muscriptor_emitted": true
+      },
+      "keys": {
+        "ref_notes": 1055,
+        "est_notes": 1178,
+        "precision": 0.1587,
+        "recall": 0.1773,
+        "f1": 0.1675,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "vocals": {
+        "ref_notes": 2,
+        "est_notes": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_6_how_long": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 25,
+        "est_notes": 48,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "drums": {
+        "ref_notes": 0,
+        "est_notes": 15,
+        "f1": null,
+        "authored": false,
+        "muscriptor_emitted": true
+      },
+      "keys": {
+        "ref_notes": 1125,
+        "est_notes": 1714,
+        "precision": 0.1196,
+        "recall": 0.1822,
+        "f1": 0.1444,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "vocals": {
+        "ref_notes": 633,
+        "est_notes": 79,
+        "precision": 0.0127,
+        "recall": 0.0016,
+        "f1": 0.0028,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_6_how_long_piano_instrumental": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 6,
+        "est_notes": 12,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "drums": {
+        "ref_notes": 2,
+        "est_notes": 0,
+        "f1": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "authored": true,
+        "muscriptor_emitted": false
+      },
+      "keys": {
+        "ref_notes": 826,
+        "est_notes": 1057,
+        "precision": 0.0662,
+        "recall": 0.0847,
+        "f1": 0.0743,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_130_please_hear_me": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 0,
+        "est_notes": 30,
+        "f1": null,
+        "authored": false,
+        "muscriptor_emitted": true
+      },
+      "drums": {
+        "ref_notes": 197,
+        "est_notes": 91,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "keys": {
+        "ref_notes": 753,
+        "est_notes": 1097,
+        "precision": 0.1768,
+        "recall": 0.2576,
+        "f1": 0.2097,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "vocals": {
+        "ref_notes": 305,
+        "est_notes": 77,
+        "precision": 0.1299,
+        "recall": 0.0328,
+        "f1": 0.0524,
+        "authored": true,
+        "muscriptor_emitted": true
+      }
+    }
+  },
+  "psalm_130_please_hear_me_instrumental": {
+    "instruments": {
+      "bass": {
+        "ref_notes": 45,
+        "est_notes": 4,
+        "precision": 0.5,
+        "recall": 0.0444,
+        "f1": 0.0816,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "drums": {
+        "ref_notes": 26,
+        "est_notes": 0,
+        "f1": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "authored": true,
+        "muscriptor_emitted": false
+      },
+      "keys": {
+        "ref_notes": 882,
+        "est_notes": 937,
+        "precision": 0.5272,
+        "recall": 0.5601,
+        "f1": 0.5432,
+        "authored": true,
+        "muscriptor_emitted": true
+      },
+      "vocals": {
+        "ref_notes": 9,
+        "est_notes": 0,
+        "f1": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "authored": true,
+        "muscriptor_emitted": false
+      }
+    }
+  }
+}
