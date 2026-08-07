@@ -1442,6 +1442,30 @@ async fn ingest_muscriptor_download(
     .await
 }
 
+/// Build a `.feedpak` from a MusicXML score (no transcription). Used by the
+/// Import route's "A MusicXML score" path.
+#[tauri::command]
+async fn ingest_import_musicxml(
+    app: AppHandle,
+    musicxml_path: String,
+    out_dir: String,
+    audio_path: Option<String>,
+    title: Option<String>,
+    artist: Option<String>,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("ingest import musicxml", move || {
+        ingest_sidecar::run_ingest_import_musicxml(
+            musicxml_path.clone(),
+            out_dir.clone(),
+            audio_path.clone(),
+            title.clone(),
+            artist.clone(),
+            Some(&app),
+        )
+    })
+    .await
+}
+
 /// Open an external http(s) URL in the user's default browser. Used by the
 /// "Model setup" surface to direct users to license-acceptance pages
 /// (a gated HuggingFace model page, or any other host). Only http(s) is
@@ -2682,6 +2706,7 @@ pub fn run() {
             ingest_runtime_check,
             ingest_model_setup,
             ingest_muscriptor_download,
+            ingest_import_musicxml,
             open_external_url,
             ingest_refine_candidates,
             ingest_spectrogram,

@@ -812,6 +812,38 @@ fn run_tauri_sidecar_streaming_env(
     })
 }
 
+/// Build a `.feedpak` directly from a MusicXML score (no transcription). The
+/// sidecar's `import-musicxml` parses the score, attaches a co-located render
+/// (or `audio_path`), and writes the pack under `out_dir`.
+pub fn run_ingest_import_musicxml(
+    musicxml_path: String,
+    out_dir: String,
+    audio_path: Option<String>,
+    title: Option<String>,
+    artist: Option<String>,
+    app: Option<&AppHandle>,
+) -> Result<IngestRuntimeCheckResult, String> {
+    let mut args = vec![
+        "import-musicxml".to_string(),
+        musicxml_path,
+        "--out".to_string(),
+        out_dir,
+    ];
+    for (flag, value) in [("--audio", audio_path), ("--title", title), ("--artist", artist)] {
+        if let Some(v) = value.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+            args.push(flag.to_string());
+            args.push(v);
+        }
+    }
+    let app = app.ok_or_else(|| {
+        format!(
+            "Tauri AppHandle required for sidecar execution to run {} import-musicxml",
+            INGEST_SIDECAR_NAME
+        )
+    })?;
+    run_tauri_sidecar_capture(app, &args)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RefineCandidatesRequest {
     /// Path to the AuralSong directory (must end with `.auralsong` and be a

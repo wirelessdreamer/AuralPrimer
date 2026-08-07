@@ -597,7 +597,56 @@ root.innerHTML = `
                 <div class="menuTitle">A folder of separated stems</div>
                 <div class="meta">You already have drums/bass/vocals as separate files. We skip separation and go straight to writing the notes.</div>
               </button>
+              <button class="menuCard importChoiceCard" id="importKindMusicxml"
+                      type="button" data-import-kind="musicxml">
+                <div class="menuTitle">A MusicXML score</div>
+                <div class="meta">A .musicxml/.mxl from a transcription tool (e.g. Mirelo). We read the written notes directly &mdash; no transcription needed. Bring the matching audio too.</div>
+              </button>
             </div>
+          </section>
+
+          <!-- Step 2d. MusicXML score. Hidden until chosen. -->
+          <section class="panel importStep" id="importPanelMusicxml" hidden>
+            <div class="panelHeader">
+              <h2>Import a MusicXML score</h2>
+              <div class="meta">step 2 of 2</div>
+            </div>
+            <p class="meta importStageNote">
+              We read the notes, tempo and bar grid straight from the score &mdash; the highest-fidelity
+              path when you already have notation. Pick the score and its matching audio; the song plays
+              back over that audio.
+            </p>
+
+            <div class="importField">
+              <label class="importLabel" for="musicxmlScorePath">Score (.musicxml / .mxl)</label>
+              <div class="row">
+                <input id="musicxmlScorePath" class="grow" type="text" placeholder="C:\\music\\song.musicxml" />
+                <button id="musicxmlBrowseScore" type="button">Browse...</button>
+              </div>
+            </div>
+
+            <div class="importField">
+              <label class="importLabel" for="musicxmlAudioPath">Audio</label>
+              <div class="row">
+                <input id="musicxmlAudioPath" class="grow" type="text" placeholder="(leave blank to use a render beside the score)" />
+                <button id="musicxmlBrowseAudio" type="button">Browse...</button>
+              </div>
+              <div class="meta">A feedpak plays over audio. If the render sits next to the score with the same name, we find it automatically.</div>
+            </div>
+
+            <div class="importField">
+              <label class="importLabel" for="musicxmlTitle">What is it called?</label>
+              <div class="row">
+                <input id="musicxmlTitle" class="grow" type="text" placeholder="Title" />
+                <input id="musicxmlArtist" class="grow" type="text" placeholder="Artist" />
+              </div>
+              <div class="meta">Some exporters put the key (e.g. &ldquo;F&#9839; minor&rdquo;) in the title field &mdash; set a real name here.</div>
+            </div>
+
+            <div class="row importRunRow">
+              <button id="musicxmlRun" class="importRunBtn">Build feedpak from score</button>
+            </div>
+            <pre id="musicxmlStatus" class="meta">(not started)</pre>
           </section>
 
           <!-- Step 2a. Suno: same controls and ids as before. -->
@@ -1271,15 +1320,75 @@ const ingestRuntimeStatusEl = document.getElementById("ingestRuntimeStatus") as 
 // side by side with nothing saying which one applied to you; it now asks first
 // and reveals only the matching form. Both panels stay in the DOM (hidden, never
 // removed) so every getElementById handle above keeps resolving.
-type ImportKind = "suno" | "audio" | "stems";
+type ImportKind = "suno" | "audio" | "stems" | "musicxml";
 
 const importChoiceCards = Array.from(
   document.querySelectorAll<HTMLButtonElement>(".importChoiceCard")
 );
 const importPanelSunoEl = document.getElementById("importPanelSuno") as HTMLElement;
 const importPanelAnalysisEl = document.getElementById("importPanelAnalysis") as HTMLElement;
+const importPanelMusicxmlEl = document.getElementById("importPanelMusicxml") as HTMLElement;
 const importAnalysisHeadingEl = document.getElementById("importAnalysisHeading") as HTMLElement;
 const importOpenModelsBtn = document.getElementById("importOpenModels") as HTMLButtonElement;
+
+const musicxmlScorePathInput = document.getElementById("musicxmlScorePath") as HTMLInputElement;
+const musicxmlAudioPathInput = document.getElementById("musicxmlAudioPath") as HTMLInputElement;
+const musicxmlTitleInput = document.getElementById("musicxmlTitle") as HTMLInputElement;
+const musicxmlArtistInput = document.getElementById("musicxmlArtist") as HTMLInputElement;
+const musicxmlRunBtn = document.getElementById("musicxmlRun") as HTMLButtonElement;
+const musicxmlStatusEl = document.getElementById("musicxmlStatus") as HTMLPreElement;
+
+function setMusicxmlStatus(text: string): void {
+  musicxmlStatusEl.textContent = text;
+}
+
+async function runMusicxmlImport(): Promise<void> {
+  const score = musicxmlScorePathInput.value.trim();
+  if (!score) {
+    setMusicxmlStatus("Pick a .musicxml or .mxl score first.");
+    return;
+  }
+  if (!haveTauri()) {
+    setMusicxmlStatus("MusicXML import requires the desktop app.");
+    return;
+  }
+  musicxmlRunBtn.disabled = true;
+  setMusicxmlStatus("Building feedpak from the score…");
+  try {
+    const outDir = await invoke<string>("get_songs_folder");
+    const res = await invoke<{
+      ok: boolean;
+      stdout: string;
+      stderr: string;
+      payload?: Record<string, unknown>;
+    }>("ingest_import_musicxml", {
+      musicxmlPath: score,
+      outDir,
+      audioPath: musicxmlAudioPathInput.value.trim() || null,
+      title: musicxmlTitleInput.value.trim() || null,
+      artist: musicxmlArtistInput.value.trim() || null,
+    });
+    const payload = res.payload;
+    if (res.ok && payload?.ok) {
+      const roles = payload.roles as Record<string, number> | undefined;
+      const roleStr = roles ? Object.entries(roles).map(([r, n]) => `${r} ${n}`).join(", ") : "";
+      setMusicxmlStatus(
+        `✓ Built ${payload.title}\n` +
+          `  ${payload.notes} notes (${roleStr})\n` +
+          `  ${payload.measures} measures · ${payload.tempo_bpm} BPM · ${payload.time_signature}\n` +
+          `  audio ${payload.audio_attached ? "attached" : "MISSING"}\n` +
+          `  ${payload.feedpak}\n\nIt will appear in your library (Configure › refresh).`,
+      );
+    } else {
+      const err = payload?.error || res.stderr || res.stdout || "import failed";
+      setMusicxmlStatus(`Import failed: ${err}`);
+    }
+  } catch (e) {
+    setMusicxmlStatus(`Import failed: ${String(e)}`);
+  } finally {
+    musicxmlRunBtn.disabled = false;
+  }
+}
 
 function importAnalysisHeadingFor(kind: ImportKind): string {
   return kind === "stems" ? "Point us at your stems folder" : "Point us at your audio";
@@ -1293,9 +1402,11 @@ function markImportKindActive(kind: ImportKind): void {
 
 function setImportKind(kind: ImportKind): void {
   markImportKindActive(kind);
+  // Analysis handles both audio and stems; suno and musicxml get their own panel.
   importPanelSunoEl.hidden = kind !== "suno";
-  importPanelAnalysisEl.hidden = kind === "suno";
-  if (kind === "suno") return;
+  importPanelMusicxmlEl.hidden = kind !== "musicxml";
+  importPanelAnalysisEl.hidden = kind === "suno" || kind === "musicxml";
+  if (kind === "suno" || kind === "musicxml") return;
 
   importAnalysisHeadingEl.textContent = importAnalysisHeadingFor(kind);
   // Keep the mode select in step with the card, but don't fight a user who
@@ -1310,7 +1421,8 @@ function setImportKind(kind: ImportKind): void {
 
 /** Keep the cards honest when the mode select is changed directly. */
 function syncImportKindFromMode(): void {
-  if (!importPanelSunoEl.hidden) return;
+  // Only meaningful while the analysis panel is the visible one.
+  if (importPanelAnalysisEl.hidden) return;
   const kind: ImportKind = ingestModeSelect.value === "stem-dir" ? "stems" : "audio";
   markImportKindActive(kind);
   importAnalysisHeadingEl.textContent = importAnalysisHeadingFor(kind);
@@ -5142,6 +5254,30 @@ ingestBrowseSourceBtn.addEventListener("click", () => {
 
 ingestRunBtn.addEventListener("click", () => {
   void runIngestImport();
+});
+
+document.getElementById("musicxmlBrowseScore")?.addEventListener("click", () => {
+  void (async () => {
+    const [p] = await pickFiles(["musicxml", "mxl"], false);
+    if (!p) return;
+    musicxmlScorePathInput.value = p;
+    // Prefill title from the filename; the score's own title is often the key.
+    if (!musicxmlTitleInput.value.trim()) {
+      const stem = p.split(/[\\/]/).pop()?.replace(/\.(musicxml|mxl)$/i, "") ?? "";
+      musicxmlTitleInput.value = stem;
+    }
+  })().catch((e) => setMusicxmlStatus(String(e)));
+});
+
+document.getElementById("musicxmlBrowseAudio")?.addEventListener("click", () => {
+  void (async () => {
+    const [p] = await pickFiles(["wav", "mp3", "flac", "ogg", "m4a"], false);
+    if (p) musicxmlAudioPathInput.value = p;
+  })().catch((e) => setMusicxmlStatus(String(e)));
+});
+
+musicxmlRunBtn.addEventListener("click", () => {
+  void runMusicxmlImport();
 });
 
 stemMidiPickFolderBtn.addEventListener("click", () => {
