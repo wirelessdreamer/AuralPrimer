@@ -1353,9 +1353,24 @@ async function runMusicxmlImport(): Promise<void> {
     return;
   }
   musicxmlRunBtn.disabled = true;
-  setMusicxmlStatus("Building feedpak from the score…");
+  // The sidecar has a cold start (~40s the first time each session) during which
+  // it emits nothing — a static message reads as a hang. Tick elapsed seconds
+  // and name the phase so it visibly progresses.
+  const started = Date.now();
+  let phase = "Starting the import engine";
+  const tick = () => {
+    const s = Math.round((Date.now() - started) / 1000);
+    const hint = s >= 8 && phase.startsWith("Starting")
+      ? "  (first run warms up the engine — this is normal, ~40s)"
+      : "";
+    setMusicxmlStatus(`${phase}… ${s}s${hint}`);
+  };
+  tick();
+  const ticker = window.setInterval(tick, 1000);
   try {
     const outDir = await invoke<string>("get_songs_folder");
+    phase = "Reading the score and writing the pack";
+    tick();
     const res = await invoke<{
       ok: boolean;
       stdout: string;
@@ -1368,6 +1383,7 @@ async function runMusicxmlImport(): Promise<void> {
       title: musicxmlTitleInput.value.trim() || null,
       artist: musicxmlArtistInput.value.trim() || null,
     });
+    window.clearInterval(ticker);
     const payload = res.payload;
     if (res.ok && payload?.ok) {
       const roles = payload.roles as Record<string, number> | undefined;
@@ -1377,13 +1393,16 @@ async function runMusicxmlImport(): Promise<void> {
           `  ${payload.notes} notes (${roleStr})\n` +
           `  ${payload.measures} measures · ${payload.tempo_bpm} BPM · ${payload.time_signature}\n` +
           `  audio ${payload.audio_attached ? "attached" : "MISSING"}\n` +
-          `  ${payload.feedpak}\n\nIt will appear in your library (Configure › refresh).`,
+          `  ${payload.feedpak}\n\nAdded to your library below.`,
       );
+      // Rescan so the new pack shows without a manual Refresh.
+      void refresh();
     } else {
       const err = payload?.error || res.stderr || res.stdout || "import failed";
       setMusicxmlStatus(`Import failed: ${err}`);
     }
   } catch (e) {
+    window.clearInterval(ticker);
     setMusicxmlStatus(`Import failed: ${String(e)}`);
   } finally {
     musicxmlRunBtn.disabled = false;
