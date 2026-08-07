@@ -5102,10 +5102,39 @@ async function refresh() {
       return arr;
     };
 
-    const inlineBuild = async (path: string, btn: HTMLButtonElement): Promise<void> => {
+    // These sidecar ops have a ~40s cold start that emits nothing, so a static
+    // "Building…" reads as a hang. Tick elapsed seconds on the button, and note
+    // the first-run warm-up in the status line, so it visibly progresses.
+    const packName = (path: string): string =>
+      path.split(/[\/]/).pop()?.replace(/\.(feedpak|sloppak|auralsong)$/i, "") ?? path;
+    const withElapsed = async <T>(
+      btn: HTMLButtonElement,
+      verb: string,
+      songName: string,
+      fn: () => Promise<T>,
+    ): Promise<T> => {
+      const started = Date.now();
       btn.disabled = true;
-      btn.textContent = "Building…";
-      const res = await buildSpectrogramForSong(path);
+      const tick = (): void => {
+        const s = Math.round((Date.now() - started) / 1000);
+        btn.textContent = `${verb}… ${s}s`;
+        statusEl.textContent =
+          `${verb} ${songName}… ${s}s` +
+          (s >= 8 ? "  (first run warms up the engine — normal, ~40s)" : "");
+      };
+      tick();
+      const id = window.setInterval(tick, 1000);
+      try {
+        return await fn();
+      } finally {
+        window.clearInterval(id);
+      }
+    };
+
+    const inlineBuild = async (path: string, btn: HTMLButtonElement): Promise<void> => {
+      const res = await withElapsed(btn, "Building", packName(path), () =>
+        buildSpectrogramForSong(path),
+      );
       statusEl.textContent = res.msg;
       try {
         applyRowReadiness(path, await probeRowReadiness(path));
@@ -5118,9 +5147,9 @@ async function refresh() {
     };
 
     const inlinePrep = async (path: string, btn: HTMLButtonElement): Promise<void> => {
-      btn.disabled = true;
-      btn.textContent = "Prepping…";
-      const res = await prepArrangementsForSong(path);
+      const res = await withElapsed(btn, "Prepping", packName(path), () =>
+        prepArrangementsForSong(path),
+      );
       statusEl.textContent = res.msg;
       try {
         applyRowReadiness(path, await probeRowReadiness(path));
