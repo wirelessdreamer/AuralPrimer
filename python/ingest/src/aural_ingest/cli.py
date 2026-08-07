@@ -5973,6 +5973,34 @@ def _convert_auralsong_to_feedpak(working_dir: Path) -> Path:
     return desired
 
 
+def cmd_import_musicxml(args: argparse.Namespace) -> int:
+    """Build a ``.feedpak`` directly from a MusicXML score (no transcription).
+
+    The score already carries notes, tempo, time signature and a metronomic bar
+    grid, so this bypasses audio transcription entirely. A co-located render is
+    attached as the pack's audio when present (or via ``--audio``).
+    """
+    from aural_ingest.musicxml_feedpak import build_feedpak_from_musicxml
+
+    src = Path(args.input_musicxml_path)
+    if not src.exists():
+        print(json.dumps({"ok": False, "error": f"no such file: {src}"}))
+        return 2
+    try:
+        result = build_feedpak_from_musicxml(
+            src,
+            Path(args.out),
+            audio_path=args.audio or None,
+            title=args.title or None,
+            artist=args.artist or None,
+        )
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    print(json.dumps(result))
+    return 0
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     src = Path(args.input_audio_path)
     out = Path(args.out)
@@ -7571,6 +7599,14 @@ def build_parser() -> argparse.ArgumentParser:
     s_refine_piano.add_argument("--label", default="piano-refinement")
     s_refine_piano.add_argument("--out-root", default="benchmarks/piano/refinement_runs")
     s_refine_piano.set_defaults(func=cmd_refine_piano)
+
+    s_import_xml = sub.add_parser("import-musicxml")
+    s_import_xml.add_argument("input_musicxml_path")
+    s_import_xml.add_argument("--out", required=True, help="output directory for <stem>.feedpak")
+    s_import_xml.add_argument("--audio", default="", help="audio to attach (defaults to a render beside the score)")
+    s_import_xml.add_argument("--title", default="")
+    s_import_xml.add_argument("--artist", default="")
+    s_import_xml.set_defaults(func=cmd_import_musicxml)
 
     s_import = sub.add_parser("import")
     s_import.add_argument("input_audio_path")
