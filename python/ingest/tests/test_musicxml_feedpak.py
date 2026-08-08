@@ -120,3 +120,28 @@ def test_title_defaults_to_stem_not_movement_title(score: Path) -> None:
     # The whole point: Mirelo's exporter stamps the key as movement-title.
     result = build_feedpak_from_musicxml(score, score.parent / "out")
     assert result["title"] == "song"  # the file stem, not "G major"
+
+
+def test_spectrogram_explains_mix_only_pack(score: Path, tmp_path: Path, capsys) -> None:
+    """A MusicXML pack has only a `mix` stem, so a spectrogram build can't run.
+    Regression: it must say WHY (naming the stems, and that score notes are
+    authoritative) rather than returning a bare ok:false with no message.
+    """
+    import argparse
+    import json
+
+    from aural_ingest import cli
+
+    result = build_feedpak_from_musicxml(score, tmp_path / "out", title="S", artist="A")
+    args = argparse.Namespace(auralsong_dir=result["feedpak"], instrument=["keys"])
+    rc = cli.cmd_build_spectrogram(args)
+
+    payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert rc == 1
+    assert payload["ok"] is False
+    assert payload["available_stems"] == ["mix"]
+    assert payload["requested_roles"] == ["keys"]
+    # The reason is human-readable and points at the real cause.
+    err = payload["error"].lower()
+    assert "mix" in err
+    assert "stem" in err and "score" in err
