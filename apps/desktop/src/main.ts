@@ -2176,13 +2176,18 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
         req: { container_path: pack, instruments: roles },
       });
+      const parsed = parseSidecarStatusLine(res.stdout);
+      const reason = typeof parsed?.error === "string" ? parsed.error : "";
       if (res.ok) {
-        const parsed = parseSidecarStatusLine(res.stdout);
         const rolesObj = (parsed?.roles ?? {}) as Record<string, { n_frames?: number }>;
         const summary = Object.entries(rolesObj)
           .map(([k, v]) => `${roleLabel(k)}=${v?.n_frames ?? "?"}f`)
           .join(", ");
         setRunStatus(`Spectrogram built: ${summary || `exit ${res.exit_code}`}`);
+      } else if (reason) {
+        // The sidecar explained why (e.g. no per-instrument stem in a
+        // score-imported pack) — show that, not a bare "exit 1".
+        setRunStatus(reason);
       } else {
         const tail = res.stderr.trim().split(/\r?\n/).slice(-3).join("\n");
         setRunStatus(`Build failed (exit ${res.exit_code}):\n${tail || "(no stderr)"}`);
@@ -2201,13 +2206,16 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       const res = await safeInvoke<SidecarRunResult>("ingest_refine_candidates", {
         req: { container_path: pack, instruments: [role] },
       });
+      const parsed = parseSidecarStatusLine(res.stdout);
+      const reason = typeof parsed?.error === "string" ? parsed.error : "";
       if (res.ok) {
-        const parsed = parseSidecarStatusLine(res.stdout);
         const instsObj = (parsed?.instruments ?? {}) as Record<string, { regions?: number }>;
         const summary = Object.entries(instsObj)
           .map(([k, v]) => `${roleLabel(k)}=${v?.regions ?? "?"}r`)
           .join(", ");
         setRunStatus(`Candidates ready: ${summary || `exit ${res.exit_code}`}`);
+      } else if (reason) {
+        setRunStatus(reason);
       } else {
         const tail = res.stderr.trim().split(/\r?\n/).slice(-3).join("\n");
         setRunStatus(`Compute failed (exit ${res.exit_code}):\n${tail || "(no stderr)"}`);
@@ -2348,9 +2356,15 @@ async function buildSpectrogramForSong(
     invalidateCleanupCache(path);
     const kind = classifySpectroResult(res);
     if (kind === "ok") return { kind, msg: "Spectrogram built" };
-    if (kind === "nostem") return { kind, msg: "No melodic stem — nothing to build" };
+    // Prefer the sidecar's own reason (it now explains *why* — e.g. a mix-only
+    // / score-imported pack has no per-instrument stem) over a generic line.
+    const parsed = parseSidecarStatusLine(res.stdout);
+    const reason = typeof parsed?.error === "string" ? parsed.error : "";
+    if (kind === "nostem") {
+      return { kind, msg: reason || "No separated instrument stem to build a spectrogram against." };
+    }
     const tail = res.stderr.trim().split(/\r?\n/).slice(-2).join(" ");
-    return { kind, msg: `Build failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
+    return { kind, msg: reason || `Build failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
   } catch (e) {
     invalidateCleanupCache(path);
     return { kind: "error", msg: `Build failed: ${String(e)}` };

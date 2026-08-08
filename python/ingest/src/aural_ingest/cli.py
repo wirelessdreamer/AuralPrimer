@@ -6947,11 +6947,45 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         present[role] = stem_path
 
     requested = list(args.instrument or [])
+    available = sorted(present.keys())
     if requested and "melodic" not in requested:
         target_roles = [r for r in requested if r in present]
     else:
         # Default (or explicit "melodic"): all melodic stems present.
         target_roles = sorted(r for r in present if r not in default_excluded)
+
+    # No stem to build against -> say WHY, not just ok:false. The common case is
+    # a pack with only a "mix" stem (e.g. imported from a MusicXML score, which
+    # carries the render but no separated instrument stems); a spectrogram
+    # overlay needs a per-instrument stem.
+    if not target_roles:
+        only_mix = available == ["mix"]
+        if only_mix:
+            reason = (
+                "This pack has no separated instrument stems — only the full mix. "
+                "A spectrogram overlay needs a per-instrument stem (e.g. keys, vocals). "
+                "Packs imported from a MusicXML score carry only the mix; their notes "
+                "come from the score, so there is nothing to clean up against a "
+                "spectrogram — open the editor or play it directly."
+            )
+        elif not available:
+            reason = "This pack has no audio stems at all, so there is nothing to build a spectrogram from."
+        else:
+            reason = (
+                f"None of the requested role(s) {requested or ['melodic']} have a stem in this pack. "
+                f"Available stems: {available}."
+            )
+        payload_err: dict[str, object] = {
+            "ok": False,
+            "roles": {},
+            "error": reason,
+            "requested_roles": requested or ["melodic"],
+            "available_stems": available,
+        }
+        if args.instrument:
+            payload_err["instrument"] = list(args.instrument)
+        print(json.dumps(payload_err, sort_keys=True))
+        return 1
 
     results: dict[str, dict[str, object]] = {}
     for role in target_roles:
@@ -6971,7 +7005,15 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
             results[role] = {"ok": False, "error": str(exc)}
 
     overall_ok = bool(results) and any(bool(r.get("ok")) for r in results.values())
-    payload: dict[str, object] = {"ok": overall_ok, "roles": results}
+    payload: dict[str, object] = {"ok": overall_ok, "roles": results, "available_stems": available}
+    if not overall_ok:
+        # Every requested role errored — surface the first reason so the UI has
+        # something to show beyond "ok:false".
+        first_err = next(
+            (str(r.get("error")) for r in results.values() if not r.get("ok") and r.get("error")),
+            "spectrogram build failed for all requested roles",
+        )
+        payload["error"] = first_err
     if args.instrument:
         payload["instrument"] = list(args.instrument)
     print(json.dumps(payload, sort_keys=True))
