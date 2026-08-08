@@ -6948,33 +6948,36 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
 
     requested = list(args.instrument or [])
     available = sorted(present.keys())
-    if requested and "melodic" not in requested:
-        target_roles = [r for r in requested if r in present]
-    else:
-        # Default (or explicit "melodic"): all melodic stems present.
-        target_roles = sorted(r for r in present if r not in default_excluded)
+    mix_stem = present.get("mix")
 
-    # No stem to build against -> say WHY, not just ok:false. The common case is
-    # a pack with only a "mix" stem (e.g. imported from a MusicXML score, which
-    # carries the render but no separated instrument stems); a spectrogram
-    # overlay needs a per-instrument stem.
-    if not target_roles:
-        only_mix = available == ["mix"]
-        if only_mix:
-            reason = (
-                "This pack has no separated instrument stems — only the full mix. "
-                "A spectrogram overlay needs a per-instrument stem (e.g. keys, vocals). "
-                "Packs imported from a MusicXML score carry only the mix; their notes "
-                "come from the score, so there is nothing to clean up against a "
-                "spectrogram — open the editor or play it directly."
+    # role -> (audio source, built_from_mix). A pack imported from a MusicXML
+    # score carries only the full mix (the notes come from the score, not from
+    # separating stems), so a requested role has no dedicated stem. Build its
+    # overlay from the mix instead of refusing — the spectrogram is a pitch view
+    # of the audio to edit notes against, and the mix is the audio the user
+    # supplied. Only when there is NO audio at all is there nothing to do.
+    targets: dict[str, tuple[Path, bool]] = {}
+    if requested and "melodic" not in requested:
+        for role in requested:
+            if role in present:
+                targets[role] = (present[role], False)
+            elif mix_stem is not None:
+                targets[role] = (mix_stem, True)
+    else:
+        # Default (or explicit "melodic"): all separated melodic stems present.
+        for role in present:
+            if role not in default_excluded and role != "mix":
+                targets[role] = (present[role], False)
+
+    if not targets:
+        reason = (
+            "This pack has no audio to build a spectrogram from."
+            if not available
+            else (
+                f"No audio available for the requested role(s) {requested or ['melodic']}. "
+                f"Stems: {available}."
             )
-        elif not available:
-            reason = "This pack has no audio stems at all, so there is nothing to build a spectrogram from."
-        else:
-            reason = (
-                f"None of the requested role(s) {requested or ['melodic']} have a stem in this pack. "
-                f"Available stems: {available}."
-            )
+        )
         payload_err: dict[str, object] = {
             "ok": False,
             "roles": {},
@@ -6988,8 +6991,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         return 1
 
     results: dict[str, dict[str, object]] = {}
-    for role in target_roles:
-        stem_path = present[role]
+    for role, (stem_path, from_mix) in targets.items():
         try:
             geom = write_spectrogram_artifact(
                 stem_path,
@@ -7000,6 +7002,7 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
                 "ok": True,
                 "n_frames": int(geom.get("n_frames", 0)),
                 "tiles": len(geom.get("tiles", []) or []),
+                "from_mix": from_mix,
             }
         except Exception as exc:  # noqa: BLE001
             results[role] = {"ok": False, "error": str(exc)}

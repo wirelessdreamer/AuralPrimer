@@ -987,10 +987,18 @@ def precompute_refine_candidates(
 
     resolved_stem = stem_path if stem_path is not None else _find_stem(auralsong_root, instrument)
     if resolved_stem is None or not resolved_stem.is_file():
-        raise FileNotFoundError(
-            f"no stem found for instrument={instrument!r} under "
-            f"{auralsong_root / 'audio' / 'stems'}"
-        )
+        # A MusicXML/score-imported pack carries only the full mix (its notes
+        # come from the score, not from separating stems), so a melodic role has
+        # no dedicated stem. Fall back to the mix the user supplied so candidates
+        # can still be computed against the audio.
+        mix_stem = resolve_stem_paths(auralsong_root).get("mix")
+        if mix_stem is not None and mix_stem.is_file():
+            resolved_stem = mix_stem
+        else:
+            raise FileNotFoundError(
+                f"no stem found for instrument={instrument!r} under "
+                f"{auralsong_root / 'audio' / 'stems'}"
+            )
 
     resolved_mix = mix_path if mix_path is not None else _find_mix(auralsong_root)
 

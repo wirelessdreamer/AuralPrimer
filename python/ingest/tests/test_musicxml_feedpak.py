@@ -122,11 +122,12 @@ def test_title_defaults_to_stem_not_movement_title(score: Path) -> None:
     assert result["title"] == "song"  # the file stem, not "G major"
 
 
-def test_spectrogram_explains_mix_only_pack(score: Path, tmp_path: Path, capsys) -> None:
-    """A MusicXML pack has only a `mix` stem, so a spectrogram build can't run.
-    Regression: it must say WHY (naming the stems, and that score notes are
-    authoritative) rather than returning a bare ok:false with no message.
+def test_spectrogram_builds_from_mix_for_musicxml_pack(score: Path, tmp_path: Path, capsys) -> None:
+    """A MusicXML pack carries only the full mix (no separated stems). The
+    spectrogram overlay must build from that mix — the audio the user supplied —
+    not refuse for lack of a per-instrument stem.
     """
+    pytest.importorskip("librosa")
     import argparse
     import json
 
@@ -137,11 +138,8 @@ def test_spectrogram_explains_mix_only_pack(score: Path, tmp_path: Path, capsys)
     rc = cli.cmd_build_spectrogram(args)
 
     payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert rc == 1
-    assert payload["ok"] is False
-    assert payload["available_stems"] == ["mix"]
-    assert payload["requested_roles"] == ["keys"]
-    # The reason is human-readable and points at the real cause.
-    err = payload["error"].lower()
-    assert "mix" in err
-    assert "stem" in err and "score" in err
+    assert rc == 0
+    assert payload["ok"] is True
+    assert payload["roles"]["keys"]["ok"] is True
+    # Built from the mix (there is no dedicated keys stem), flagged as such.
+    assert payload["roles"]["keys"]["from_mix"] is True
