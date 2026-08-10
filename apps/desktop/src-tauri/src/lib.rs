@@ -1049,6 +1049,21 @@ fn native_audio_init(
     replace_native_audio_engine(&state, sample_rate_hz, channels)
 }
 
+/// Warm up the output engine/stream ahead of the first real load.
+///
+/// The first audio load in a session otherwise creates the engine and starts
+/// the device stream *at the same time* as loading the buffer — a cold start
+/// where the first playback doesn't engage until a second load (the "select an
+/// instrument first" workaround). Initializing at the device's preferred rate
+/// and stereo here means the first real stereo load (the common case) reuses
+/// the already-running stream instead of reinitializing it. A no-op if the
+/// engine already matches this format.
+#[tauri::command]
+fn native_audio_warm_up(state: tauri::State<NativeAudioState>) -> Result<(), String> {
+    let target_sr = preferred_native_audio_sample_rate_hz(&state, 48_000)?;
+    ensure_native_audio_engine_format(&state, target_sr, 2)
+}
+
 #[tauri::command]
 fn native_audio_get_selected_output_host(
     state: tauri::State<NativeAudioState>,
@@ -2694,6 +2709,7 @@ pub fn run() {
             native_audio_list_output_hosts,
             native_audio_list_output_devices,
             native_audio_init,
+            native_audio_warm_up,
             native_audio_get_selected_output_host,
             native_audio_set_output_host,
             native_audio_set_output_host_and_persist,

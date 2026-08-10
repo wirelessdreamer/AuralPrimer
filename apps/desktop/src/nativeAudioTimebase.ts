@@ -95,6 +95,22 @@ export class NativeAudioTimebase implements TransportTimebase {
     return info;
   }
 
+  /**
+   * Warm up the output stream ahead of the first real load, so the first
+   * playback isn't a cold-start (which otherwise doesn't engage until a second
+   * load — the "select an instrument first" workaround). Fire-and-forget and
+   * best-effort: a failure just leaves the first load to init the engine as
+   * before.
+   */
+  async warmUp(): Promise<void> {
+    try {
+      await invoke("native_audio_warm_up");
+      this.initialized = true;
+    } catch {
+      /* first real load will init the engine as before */
+    }
+  }
+
   private async loadPackAudioIntoNative(
     containerPath: string,
     role: string | null,

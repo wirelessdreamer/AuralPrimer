@@ -843,6 +843,12 @@ let songTimelineRelPath = "song_timeline.json";
     stopTransport();
     setTransportEnabled(false);
 
+    // Warm the output stream now, while detection + the session load run, so the
+    // first real audio load lands in an already-running stream. Without this the
+    // first play in a session cold-starts the engine and doesn't engage until a
+    // second load — the old "select an instrument first to get sound" symptom.
+    void nativeAudio.warmUp();
+
     // The dropdown offers this song's editable instruments: every melodic role
     // the pack actually carries, plus Drums when it has a drum chart (which
     // opens the lane editor instead of the candidates flow).
