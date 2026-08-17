@@ -124,9 +124,9 @@ export function appShellHtml(): string {
                   In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.<br />
                   <kbd>Space</kbd> start / pause / resume &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> jog 5s
                   (hold <kbd>Shift</kbd> for 1s).<br />
-                  MIDI transport buttons: <kbd>CC31</kbd> start over &middot; <kbd>CC32</kbd> rewind &middot;
-                  <kbd>CC33</kbd> fast fwd &middot; <kbd>CC34</kbd> stop &middot; <kbd>CC35</kbd> play
-                  (hold rewind / fast fwd to jog, accelerating).
+                  MIDI transport buttons (start over / rewind / fast fwd / stop / play) are
+                  assignable in <strong>Configure &rarr; MIDI &rarr; Transport control</strong>;
+                  hold rewind or fast fwd to jog, accelerating.
                 </div>
 
                 <div class="row" id="nashvilleRow">
@@ -348,6 +348,16 @@ export function appShellHtml(): string {
             <pre id="midiStatus" class="meta">(midi input: not connected)</pre>
             <pre id="midiInActiveNotes" class="meta">(no active notes)</pre>
             <pre id="midiInEvents" class="meta">(midi input events)</pre>
+
+            <h3>Transport control (MIDI learn)</h3>
+            <div class="meta" style="margin-bottom:6px;opacity:0.75">
+              Drive playback from your controller's transport buttons. Click
+              <strong>Learn</strong>, then press the button on your device &mdash; whatever it
+              sends becomes the binding, whether that's a CC or a note. Connect the input
+              port above first; the last-message line below shows what is arriving.
+            </div>
+            <div id="midiTransportRows"></div>
+            <pre id="midiTransportStatus" class="meta">last message: (nothing received yet)</pre>
 
             <h3>MIDI Sync (clock out)</h3>
             <div class="row">

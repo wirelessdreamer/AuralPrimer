@@ -33,6 +33,8 @@ import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
+import { initMidiTransportPanel } from "./midiTransportPanel";
+import { loadBindings, saveBindings, type TransportBindings } from "./midiTransportBindings";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
 import {
@@ -1481,8 +1483,24 @@ const transportHostDeps = {
 
 initTransportHotkeys(transportHostDeps);
 
-// The same transport, driven from the control surface's buttons (CC 31-35).
-initMidiTransportControl(transportHostDeps);
+// The same transport, driven from the control surface's buttons. Which button
+// does what is learned in Configure -> MIDI -> Transport control, because
+// controllers disagree about whether they send CC or notes and on what numbers.
+let midiTransportBindings: TransportBindings = loadBindings();
+const midiTransportPanel = initMidiTransportPanel({
+  getBindings: () => midiTransportBindings,
+  setBindings: (next) => {
+    midiTransportBindings = next;
+    saveBindings(next);
+  },
+});
+
+initMidiTransportControl({
+  ...transportHostDeps,
+  getBindings: () => midiTransportBindings,
+  // Don't fire the transport while the panel is capturing that same button.
+  isSuppressed: () => midiTransportPanel.isLearning(),
+});
 
 // --- Audio/visual sync calibration -------------------------------------
 // Aligns the falling notes with the audible beat. The backend's auto output-

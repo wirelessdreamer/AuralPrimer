@@ -1445,3 +1445,35 @@ li {
   background: rgba(163, 255, 18, 0.16);
   color: var(--accent3);
 }
+
+/* Configure -> MIDI -> Transport control (MIDI learn) rows. */
+.midiTransportRow {
+  align-items: center;
+  gap: 8px;
+}
+
+.midiTransportLabel {
+  min-width: 10.5em;
+}
+
+.midiTransportValue {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  min-width: 11em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(10, 14, 24, 0.6);
+  color: #22d3ee;
+}
+
+.midiTransportValue[data-unassigned="true"] {
+  color: inherit;
+  opacity: 0.45;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.midiTransportHint {
+  opacity: 0.6;
+  font-size: 11px;
+}

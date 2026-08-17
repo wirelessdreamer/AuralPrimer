@@ -11,14 +11,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   initMidiTransportControl,
   jogStepSecForTick,
-  CC_PRESS_THRESHOLD,
   JOG_TICK_MS,
   JOG_STEP_START_SEC,
   JOG_STEP_MAX_SEC,
-  MIDI_TRANSPORT_CC,
   type MidiTransportControl,
   type MidiTransportDeps,
 } from "../src/midiTransportControl";
+import { CC_PRESS_THRESHOLD, defaultBindings } from "../src/midiTransportBindings";
+
+/** The factory defaults these tests drive; learning replaces them at runtime. */
+const MIDI_TRANSPORT_CC = {
+  restart: 31,
+  rewind: 32,
+  fastForward: 33,
+  stop: 34,
+  play: 35,
+} as const;
 
 let handle: MidiTransportControl | null = null;
 
@@ -39,6 +47,7 @@ function setup(overrides: Partial<MidiTransportDeps> = {}, state = { t: 30, isPl
   const onSeeked = vi.fn();
   const deps = {
     transportController: tc as unknown as MidiTransportDeps["transportController"],
+    getBindings: () => defaultBindings(),
     getCurrentRoute: () => "play",
     isPauseMenuVisible: () => false,
     isSessionRunning: () => true,
