@@ -756,6 +756,49 @@ label.meta {
   display: none !important;
 }
 
+/* Live MIDI-input readout above the Start button. Cyan matches the live-key
+   highlight the piano roll already uses for the same notes. */
+.liveInputHud[hidden] {
+  display: none !important;
+}
+
+.liveInputHud {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  background: rgba(10, 14, 24, 0.72);
+}
+
+.liveInputLabel {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  opacity: 0.55;
+}
+
+.liveInputNotes {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  opacity: 0.75;
+}
+
+.liveInputHud[data-state="playing"] .liveInputNotes {
+  color: #22d3ee;
+  opacity: 1;
+}
+
+.liveInputHud[data-state="waiting"] .liveInputNotes {
+  color: #fbbf24;
+  opacity: 1;
+}
+
+.liveInputHud[data-state="off"] .liveInputNotes {
+  opacity: 0.5;
+}
+
 .playLyrics {
   margin-top: 10px;
   padding: 14px 18px 12px;

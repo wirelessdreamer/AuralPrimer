@@ -121,7 +121,9 @@ export function appShellHtml(): string {
                   <button id="scrollSpeedReset" title="Reset to 1.00x">Reset</button>
                 </div>
                 <div class="meta" style="margin: 4px 0 0 6px; opacity: 0.7; font-size: 11px">
-                  In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.
+                  In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.<br />
+                  <kbd>Space</kbd> start / pause / resume &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> jog 5s
+                  (hold <kbd>Shift</kbd> for 1s).
                 </div>
 
                 <div class="row" id="nashvilleRow">
@@ -141,6 +143,8 @@ export function appShellHtml(): string {
                   </label>
                   <span class="meta" style="opacity:0.7;font-size:11px">
                     Playback pauses at each note until you play it on your MIDI keyboard.
+                    Needs a keyboard connected in <strong>Configure &rarr; MIDI</strong>; the
+                    MIDI IN readout above the Start button shows what it hears.
                   </span>
                 </div>
 
@@ -208,6 +212,10 @@ export function appShellHtml(): string {
                 <div id="playLyrics" class="playLyrics" hidden aria-live="polite" aria-atomic="true">
                   <div id="playLyricsCurrent" class="playLyricsCurrent"></div>
                   <div id="playLyricsNext" class="playLyricsNext"></div>
+                </div>
+                <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
+                  <span class="liveInputLabel">MIDI IN</span>
+                  <span id="liveInputNotes" class="liveInputNotes"></span>
                 </div>
                 <pre id="vizStatus">(not running)</pre>
 

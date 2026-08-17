@@ -31,6 +31,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "./chartLoader";
 // TabRenderer + the melodic-surface logic live in playSurfaceController.ts (Phase 2.O).
 import { initScrollSpeedController } from "./scrollSpeedController";
+import { initTransportHotkeys } from "./transportHotkeys";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
 import {
@@ -1250,6 +1251,10 @@ if (nashvilleCheckbox) {
 // Playback waits at each note onset until the correct note(s) are played on
 // MIDI input, then advances. Notes are grouped by onset (chords held together).
 const LEARN_STORAGE_KEY = "auralprimer.learnMode";
+// Playhead jump that means "seeked", not "played on". Comfortably above a
+// frame's worth of playback (even a slow frame at 2x rate) and below the
+// smallest jog step, so a Shift+arrow nudge still counts as a seek.
+const LEARN_SEEK_EPSILON_SEC = 0.35;
 type LearnGroup = { t: number; pitches: number[] };
 let learnMode = (() => {
   try {
@@ -1263,6 +1268,10 @@ let learnIdx = 0;
 const learnHit = new Set<number>();
 let learnPrevActive = new Set<number>();
 let learnWaiting = false;
+// Last playhead we saw in the gate. A jump larger than a frame means someone
+// seeked (arrow-key jog, seek box, loop wrap) and our position in the note
+// list is stale — see learnGateTick.
+let learnLastT = 0;
 
 function learnNoteName(p: number): string {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -1291,6 +1300,7 @@ function resetLearnFromTime(t: number): void {
   learnHit.clear();
   learnWaiting = false;
   learnPrevActive = new Set();
+  learnLastT = t;
   const idx = learnGroups.findIndex((g) => g.t >= t - 0.02);
   learnIdx = idx < 0 ? learnGroups.length : idx;
 }
@@ -1309,6 +1319,17 @@ function learnRegisterPlayed(pitch: number): void {
 
 function learnGateTick(): void {
   if (!learnGroups.length) return;
+
+  // Re-sync after a seek. Playback advances by at most a frame per tick, so a
+  // bigger jump means the playhead was moved out from under us (arrow-key jog,
+  // seek box, loop wrap). Without this, learnIdx still points at the old spot
+  // and the mode has to be toggled off and on to recover.
+  const tNow = transportController.getState().t;
+  if (Math.abs(tNow - learnLastT) > LEARN_SEEK_EPSILON_SEC) {
+    resetLearnFromTime(tNow);
+  }
+  learnLastT = tNow;
+
   // Rising-edge MIDI note detection (newly pressed = note-on).
   const snap = midiPanel.inputActiveNotes();
   const active = new Set<number>(
@@ -1392,6 +1413,69 @@ window.addEventListener("keydown", (ev) => {
 
   ev.preventDefault();
   pauseMenu.show("loaded");
+});
+
+// --- Live MIDI input readout -------------------------------------------
+// Says out loud what the app is hearing from the keyboard. The 88-key cyan
+// highlight only exists in piano-roll mode, so on any other instrument or in
+// sheet mode there was previously no sign that MIDI was working at all — and
+// no sign when it wasn't (an unconnected port looks identical to silence).
+// Wait mode also announces the note it is holding for here.
+const liveInputHudEl = document.getElementById("liveInputHud");
+const liveInputNotesEl = document.getElementById("liveInputNotes");
+const LIVE_INPUT_HUD_INTERVAL_MS = 60;
+
+function renderLiveInputHud(): void {
+  if (!liveInputHudEl || !liveInputNotesEl) return;
+  liveInputHudEl.hidden = false;
+
+  const held = (midiPanel.inputActiveNotes().activeNotes ?? [])
+    .map((n) => n.noteName)
+    .join("  ");
+
+  let text: string;
+  let state: string;
+  if (!midiPanel.inputIsConnected()) {
+    text = "no keyboard connected — Configure → MIDI";
+    state = "off";
+  } else if (learnMode && learnWaiting && learnIdx < learnGroups.length) {
+    const want = learnGroups[learnIdx].pitches.map(learnNoteName).join(" + ");
+    text = held ? `waiting for ${want}  —  holding ${held}` : `waiting for ${want}`;
+    state = "waiting";
+  } else if (held) {
+    text = held;
+    state = "playing";
+  } else {
+    text = "listening";
+    state = "idle";
+  }
+
+  // Guard the writes: this runs on a timer and most ticks change nothing.
+  if (liveInputNotesEl.textContent !== text) liveInputNotesEl.textContent = text;
+  if (liveInputHudEl.dataset.state !== state) liveInputHudEl.dataset.state = state;
+}
+
+renderLiveInputHud();
+window.setInterval(renderLiveInputHud, LIVE_INPUT_HUD_INTERVAL_MS);
+
+// --- Play-mode transport hotkeys ---------------------------------------
+// Space start/pause/resume + Left/Right jog. Logic lives in
+// transportHotkeys.ts; the wiring here supplies the host state it needs.
+initTransportHotkeys({
+  transportController,
+  getCurrentRoute: () => routeController.getCurrentRoute(),
+  isPauseMenuVisible: () => pauseMenu.isVisible(),
+  isSessionRunning: () => Boolean(viz),
+  canStartSession: () => !playStartBtn.disabled,
+  startSession: () => {
+    void startSelectedSongSession();
+  },
+  onTransportChanged: () => {
+    transport = transportController.getState();
+  },
+  onSeeked: (tSec) => {
+    void midiPanel.outSeek(tSec);
+  },
 });
 
 // --- Audio/visual sync calibration -------------------------------------

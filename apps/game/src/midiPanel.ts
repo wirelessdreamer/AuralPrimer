@@ -63,6 +63,8 @@ export type MidiPanelHandle = {
   outShutdown: () => Promise<void>;
   /** Snapshot of currently-pressed MIDI input notes (for tab renderer overlay). */
   inputActiveNotes: () => ReturnType<MidiInputStateTracker["snapshot"]>;
+  /** True once an input port is connected — lets play mode say "no MIDI device". */
+  inputIsConnected: () => boolean;
 };
 
 export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
@@ -516,5 +518,6 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     outSeek,
     outShutdown,
     inputActiveNotes: () => tracker.snapshot(),
+    inputIsConnected: () => midiConnected,
   };
 }
