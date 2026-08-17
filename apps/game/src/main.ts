@@ -32,6 +32,7 @@ import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "
 // TabRenderer + the melodic-surface logic live in playSurfaceController.ts (Phase 2.O).
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
+import { initMidiTransportControl } from "./midiTransportControl";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
 import {
@@ -1461,7 +1462,7 @@ window.setInterval(renderLiveInputHud, LIVE_INPUT_HUD_INTERVAL_MS);
 // --- Play-mode transport hotkeys ---------------------------------------
 // Space start/pause/resume + Left/Right jog. Logic lives in
 // transportHotkeys.ts; the wiring here supplies the host state it needs.
-initTransportHotkeys({
+const transportHostDeps = {
   transportController,
   getCurrentRoute: () => routeController.getCurrentRoute(),
   isPauseMenuVisible: () => pauseMenu.isVisible(),
@@ -1473,10 +1474,15 @@ initTransportHotkeys({
   onTransportChanged: () => {
     transport = transportController.getState();
   },
-  onSeeked: (tSec) => {
+  onSeeked: (tSec: number) => {
     void midiPanel.outSeek(tSec);
   },
-});
+};
+
+initTransportHotkeys(transportHostDeps);
+
+// The same transport, driven from the control surface's buttons (CC 31-35).
+initMidiTransportControl(transportHostDeps);
 
 // --- Audio/visual sync calibration -------------------------------------
 // Aligns the falling notes with the audible beat. The backend's auto output-
