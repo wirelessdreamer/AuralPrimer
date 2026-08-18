@@ -61,6 +61,22 @@ The headset then opens the session on `<hostIp>:<sessionPort>`. The beacon
 continues regardless, so a headset that joins late, or rejoins after a drop,
 needs no action from the user.
 
+### The client must send `CONNECT` from a separate ephemeral socket
+
+The beacon listener binds the group port (`47761`). The `CONNECT`/`ACK` exchange
+must **not** reuse that socket — it needs its own, on an ephemeral port.
+
+This is not stylistic. With two sockets sharing port `47761` on one machine, a
+unicast to that port is delivered to the more specifically bound socket, which
+is the host's own. The ack is then swallowed and discovery hangs with no error
+on either side. That is precisely the shape of running the Unity Editor on the
+host PC, which is the normal development setup — and it was caught by the live
+socket test rather than by reading the code, which is the argument for having
+one.
+
+Across separate machines either arrangement works; the ephemeral socket is
+simply the one that also works on a single machine.
+
 ### Platform requirements (not optional)
 
 - **Android must hold a multicast lock** (`WifiManager.createMulticastLock`) for

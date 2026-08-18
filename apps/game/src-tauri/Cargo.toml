@@ -33,6 +33,13 @@ hex = "0.4"
 midir = { version = "0.10", features = ["winrt"] }
 midly = "0.5"
 
+# Mixed-reality link discovery needs socket options std::net does not expose:
+# SO_REUSEADDR (so a second process on the same machine can also receive the
+# group) and IP_MULTICAST_IF (so the beacon leaves via the interface we
+# advertised, not whichever one the stack picks on a multi-NIC desktop).
+# Already in the tree via tokio; this only promotes it to a direct dependency.
+socket2 = "0.6"
+
 # Phase 1 native playback engine
 cpal = "0.15"
 rtrb = "0.3"

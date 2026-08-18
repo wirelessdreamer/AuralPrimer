@@ -24,6 +24,7 @@ pub mod demo_auralsong;
 pub mod ingest_sidecar;
 mod midi_clock;
 mod midi_clock_input;
+mod mr_link;
 mod midi_clock_service;
 mod models;
 mod native_audio;
