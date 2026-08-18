@@ -132,8 +132,9 @@ def cmd_backup(args: argparse.Namespace) -> int:
     """Capture a SysEx memory dump to a .syx file."""
     port = open_input(args.match)
     print()
-    print("On the Axiom:  press Edit, then the Memory Dump key.")
-    print("The screen shows SYS while it transmits.")
+    # 49/61 have a dedicated Mem Dump button; only the 25 needs Advanced first.
+    print("On the Axiom:  press Mem Dump  (on the 25-note model: Advanced, then Mem Dump).")
+    print("The display shows SYS while it transmits.")
     print()
 
     messages: list = []
@@ -191,6 +192,42 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+STEPS_49_61 = """\
+Axiom 49 / 61 -- momentary (trigger) mode for a button
+======================================================
+These models have no Advanced/Edit button; the Function Index lists "Advanced
+(Axiom 25 only)". Ctrl Assign and Data 1/2/3 are pressed directly, and there is
+no Enter key to confirm (that step is the 25-note version only).
+
+Per button:
+
+  1. Select it            press the button itself (or Ctrl Select + its number)
+  2. Ctrl Assign          type 146      -> MIDI CC (on/off), press/release mode
+  3. Data 1               type the CC number, 3 digits   e.g. 021
+  4. Data 2               type 000
+  5. Data 3               type 127
+
+Appendix E applies this to "Assignable buttons (Axiom 49/61 only)", the
+transport controls, and the sustain pedal.
+
+Heads-up on Data 2 / Data 3: the manual contradicts itself. Section 3.8.1 calls
+Data 2 the OFF value and Data 3 the ON value, while the Appendix E table labels
+Data 2 "Button Press Value" and Data 3 "Button Release Value". The 2nd-gen guide
+agrees with the prose, so use Data 2 = 000, Data 3 = 127 -- then run `check`. If
+a button reports backwards, swap the two values.
+
+Avoid controller 149 (MMC): that is SysEx, which AuralPrimer does not parse and
+has disabled by default.
+
+Verify as you go:  axiom_tool.py check
+"""
+
+
+def cmd_steps(_: argparse.Namespace) -> int:
+    print(STEPS_49_61)
+    return 0
+
+
 def cmd_ports(_: argparse.Namespace) -> int:
     print("inputs:")
     for name in mido.get_input_names():
@@ -209,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("ports", help="list MIDI ports").set_defaults(func=cmd_ports)
+    sub.add_parser("steps", help="print the Axiom 49/61 momentary-mode procedure").set_defaults(func=cmd_steps)
     sub.add_parser("check", help="report momentary vs toggle per button").set_defaults(func=cmd_check)
 
     backup = sub.add_parser("backup", help="capture a SysEx memory dump to a file")
