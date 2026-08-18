@@ -212,23 +212,34 @@ The falling-note plane rises from the keyboard toward the player. Adjustable:
 ### Input: hand tracking, and why play mode should need none
 
 Hands are the right choice at a keyboard — controllers would have to be put down
-to play — and XR Hands 1.8.1 is already in the project. But hand tracking is at
-its **worst** in exactly the pose this app puts the user in: fingers on keys,
-hands self-occluding, palms near a surface, often below the headset's downward
-view. Designing menus that require reliable pinches *while seated at the
-instrument* would be designing on sand.
+to play — and XR Hands 1.8.1 is already in the project.
 
-So the split is:
+Hand tracking degrades badly in one specific pose: fingers on keys, hands
+self-occluding, palms flat near a surface, below the headset's downward view.
+**Menu placement resolves this rather than working around it**: the panel lives
+up in the air, so using it means raising the hands into clear, well-tracked
+space, and the fingers-on-keys pose is never asked to produce a gesture. Stated
+as a rule so it survives later UI work: **nothing at keyboard height should
+require a gesture.**
 
-- **Calibration uses pinch**, deliberately. Hands are up, clear of the keys, and
-  moving slowly — the one moment tracking is dependable. Pinch-to-place gives
-  precision at the key edges that a controller ray would not.
-- **Play mode needs no gesture at all.** Transport already lives on the Axiom's
-  buttons via the learned CCs, so the player never lifts their hands to control
-  playback. That is a genuine advantage of the host-owns-MIDI design and it
-  should be preserved rather than papered over with a floating panel.
-- **Menus outside play** — song choice, profile switching — can use pinch plus
-  gaze, with hands raised and away from the keyboard.
+- **The menu is a grabbable world-space panel** floating above and in front of
+  the player (XRI 3.5 grab interactables). Positioned once, it stays put.
+- **Summoned by the standard palm-up gesture**, matching platform convention so
+  it feels native. Two cautions: confirm it does not collide with the gesture
+  Horizon OS reserves for its own menu, and **always keep a non-gesture
+  fallback** — hands on keys will produce false negatives, and a player who
+  cannot summon the menu is stuck. The Axiom's buttons are the natural fallback,
+  since the host already reads them.
+- **Calibration uses pinch**, deliberately: hands are up, clear of the keys and
+  moving slowly, which is when tracking is most dependable, and pinch-to-place
+  gives precision at the key edges that a ray would not.
+- **Play mode needs no gesture at all.** Transport lives on the Axiom's buttons
+  via the learned CCs, so the player never lifts their hands to control
+  playback — a direct dividend of the host-owns-MIDI design.
+
+Seated at the instrument is the initial target. The panel being grabbable is
+what makes a later standing or room-scale mode a question of where it is placed
+rather than a redesign.
 
 ### Step 5 — Persist
 
@@ -440,17 +451,30 @@ consumes them yet.
 
 ## 7. Repo and licensing concerns (flagging early — cheap now, expensive later)
 
-1. **Nested git repo.** `UnityClient/Aural Primer` has its own `.git` and is not
-   ignored by the parent. The parent will treat it as an untracked directory and
-   Unity's `Library/`, `Temp/`, `Logs/` are large and churn constantly. Decide:
-   submodule, separate repo, or same repo with proper ignores.
-2. **GPL-3.0 and Unity.** This project is GPL-3.0-or-later. The Unity runtime is
-   proprietary, and GPLv3 requires the complete combined work to be
-   GPL-compatible — shipping a GPL app linked against the Unity player is a real
-   friction point, not a formality. Usual resolutions are an explicit linking
-   exception on our code, or licensing the Unity client separately. **This needs
-   a decision before the client is distributed**, and I am flagging it rather
-   than deciding it.
+1. **Ignores — done.** The parent `.gitignore` now covers Unity's generated
+   output (`Library/`, `Temp/`, `Logs/`, `UserSettings/`, IDE project files,
+   build products), unanchored so the patterns apply at whatever depth the
+   project sits. Verified: `Assets/`, `ProjectSettings/` and `Packages/` are
+   tracked; `Library/` and the `.csproj` files are not.
+2. **Nested `.git` — still blocking.** `UnityClient/Aural Primer` carries its own
+   repository (one commit, `Initial check-in`). While it exists, `git add` from
+   the parent records a **gitlink** — a bare commit hash, none of the files. To
+   keep the client in this repo that nested `.git` has to go, or become a proper
+   submodule. Left alone pending a decision: it is history, however small.
+3. **Licence — GPL-3.0-or-later plus a §7 linking exception.** Matching the
+   parent is right for our source, but on its own it is not sufficient once
+   builds are distributed. The Unity runtime is proprietary and cannot be
+   sublicensed under GPL, so a compiled binary is a combined work we could not
+   convey under GPLv3 in full. **GPLv3 §7 exists precisely for this**: an
+   additional-permission exception allowing linkage with the Unity runtime
+   resolves it, and it is a standard, well-understood addition. Source-only
+   distribution is largely unaffected either way.
+
+   The harder case is **storefronts**: their terms typically impose
+   redistribution and usage restrictions that GPL forbids, which is the
+   long-running friction between GPL software and app stores. Sideloading and
+   source releases avoid it entirely. Not legal advice — but the exception is
+   cheap, and belongs in place before the first build leaves the machine.
 3. **Model/asset licensing** still applies: anything bundled keeps the same
    attribution obligations as the desktop client (README rules).
 
@@ -471,18 +495,18 @@ consumes them yet.
 | Audio | Host, through the existing interface |
 | Discovery | UDP multicast on `239.255.61.88:47761`, AugmentedDefense pattern, own magic |
 | v1 surface | Piano roll on keys — sheet music, drums, fretboard, multi-player deferred |
-| Input | Hand tracking; calibration by pinch, play mode gesture-free |
+| Input | Hand tracking; grabbable menu in the air, calibration by pinch, play mode gesture-free |
 | Scoring | Later — v1 is a learning tool |
 | Ingest | Stays on desktop in AuralStudio |
+| Licence | GPL-3.0-or-later as parent, **plus a §7 linking exception for the Unity runtime** |
+| Repo | Tracked in the parent; Unity ignores added (nested `.git` still to remove) |
 | Pack delivery | Moot — the host serves the chart, the headset stores nothing |
 
 ### Still outstanding
 
-1. **Posture.** Seated at the keyboard in passthrough is assumed throughout. Any
-   standing or room-scale use worth designing for now rather than retrofitting?
-2. **Repo layout.** `UnityClient/Aural Primer` is a nested git repo, untracked by
-   the parent, and Unity's `Library/` churns heavily. Submodule, separate repo,
-   or same repo with ignores? (see §7)
-3. **GPLv3 and the Unity runtime.** Needs a decision before anything is
-   distributed — a linking exception on our code, or licensing the Unity client
-   separately (see §7). Not urgent for development; blocking for release.
+1. **May I remove the nested `.git` under `UnityClient/Aural Primer`?** One commit
+   of the untouched template, and it is the only thing stopping the parent from
+   tracking the project's files instead of a bare gitlink.
+2. **Do you intend to distribute builds** — sideload, or a storefront? It decides
+   how carefully the §7 exception needs wording, and whether the app-store
+   friction in §7 applies to you at all.

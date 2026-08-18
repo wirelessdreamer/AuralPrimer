@@ -139,3 +139,47 @@ python/ingest/src/aural_ingest/training/**/*.onnx
 
 # Local idea/scratch material dropped at the repo root (not for VCS for now).
 /00_Ideas_for_nashville_number_stuff/
+
+# --- Unity MR client (UnityClient/) -------------------------------------
+# Unity regenerates all of this from Assets/ + ProjectSettings/ + Packages/.
+# It is large, churns on every editor launch, and is machine-specific, so it
+# must never enter VCS. Patterns are unanchored so they apply at whatever
+# depth the project sits (the folder name contains a space).
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+
+# Visual Studio / Rider project files: regenerated from the package set.
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+.vs/
+.idea/
+.vscode/
+
+# Unity build products and crash dumps.
+*.apk
+*.aab
+*.unitypackage
+*.app
+crashlytics-build.properties
+sysinfo.txt
+
+# Asset-import and burst artefacts.
+/[Aa]ssets/AssetStoreTools*
+/[Aa]ssets/Plugins/Editor/JetBrains*
+*.pdb.meta
+*.mdb.meta
