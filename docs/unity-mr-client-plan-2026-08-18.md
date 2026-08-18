@@ -7,6 +7,11 @@ Status: **draft for review** — several requirements still open (see [Questions
 Meta SDK only where a capability is otherwise unavailable — see
 [SDK strategy](#12-sdk-strategy-multiplatform-by-default).
 
+**Architecture: host-served.** The desktop app stays the host and keeps all
+MIDI; the headset is a renderer joined over the LAN by UDP multicast discovery
+modelled on the existing AugmentedDefense implementation — see
+[§5 Host ↔ headset link](#5-host--headset-link).
+
 Target project: `UnityClient/Aural Primer` — Unity **6000.3.15f1**, URP 17.3,
 OpenXR 1.17.1 + Meta OpenXR 2.5.1 + Android XR 1.3.1, ARFoundation 6.5,
 XR Hands 1.8.1, XRI 3.5.1, Composition Layers 2.5. Android-first (MR Template,
@@ -21,28 +26,31 @@ container I/O) under a TypeScript UI, plus a ~3 GB frozen Python sidecar for
 ingest. On a standalone headset **none of that host survives**. Ported to
 Android XR, every capability has to be re-provided in C# or an Android plugin.
 
-So the first decision is not "which features" but **where the runtime lives**:
+**Decided: the desktop app stays the host and keeps all MIDI.** That single
+choice closes the largest risk in this plan. The earlier draft treated MIDI on
+Horizon OS as make-or-break — whether `android.media.midi` exists, whether a raw
+USB-MIDI class parser would be needed, whether the Quest's only USB-C port could
+carry a bus-powered controller and charge at once. **All of that is now moot.**
+The host already reads the Axiom reliably, already has learned transport
+bindings, and already persists them.
 
-| | A. Standalone on-device | B. Desktop-served | C. PC VR |
-|---|---|---|---|
-| Runs on | Quest / Android XR, no PC | Headset renders, desktop streams audio+MIDI+charts | Unity app on PC, headset as display |
-| Audio | Unity audio, stems decoded on device | Desktop keeps cpal; headset gets a mixed stream | Existing desktop stack |
-| MIDI | Android MIDI API over USB-C — **unproven on Horizon OS** | Desktop `midir` already works; forward over the wire | Already works |
-| Latency risk | Lowest (local) | Wi-Fi jitter on top of A/V sync | Low |
-| Product feel | Sit at the piano, headset only | Piano must be near the PC | Tethered |
-| Effort | Highest | Medium | Lowest |
+What each side owns:
 
-**Recommendation: A, with B as the fallback the architecture keeps open.** The
-whole point of the MR client is sitting at your instrument without a PC in the
-loop. But MIDI input on the headset is the make-or-break unknown, so Phase 0
-proves it before anything else is built, and the transport layer is written
-behind an interface so a network source can be substituted without touching
-gameplay.
+| Host (desktop, existing app) | Headset (Unity) |
+|---|---|
+| MIDI input, transport bindings, wait-mode gating | Rendering the note lane in the real room |
+| Song position — the single source of truth for time | Keyboard calibration + spatial anchors |
+| Chart + tempo map, served to the headset | Local clock disciplined to the host's |
+| Audio playback (already A/V calibrated) | Live key highlight from host-relayed note state |
+| Ingest, transcription, pack authoring | Nothing that must survive a lost link |
+
+The headset becomes a **thin, stateless-by-design renderer**: it holds no pack
+storage, no MIDI stack, and no authority over time. That is a much smaller
+Phase 1 than the standalone route, and it removes "how do packs get to the
+headset" as a problem entirely — the host serves the chart on session start.
 
 **Ingest never moves.** Demucs, the transcription models and the frozen sidecar
-stay on desktop in AuralStudio. The Unity client is a **player**; packs are
-authored on the PC and synced to the headset. That is a scoping decision worth
-confirming, not an assumption I should make silently.
+stay on desktop in AuralStudio.
 
 ### 1.2 SDK strategy: multiplatform by default
 
@@ -118,38 +126,31 @@ so both clients are provably answering the same questions the same way.
 
 Nothing below matters if these fail. Each is a throwaway scene, not product code.
 
-1. **MIDI input on the headset — the make-or-break spike.** Plug the Axiom 61
-   into the Quest via USB-C and measure round-trip latency (key press → app
-   callback). Work down this ladder, stopping at the first rung that works:
-
-   1. **`android.media.midi`** — the clean path, but it needs Horizon OS to
-      declare `FEATURE_MIDI`, which I cannot confirm from here.
-   2. **Raw USB host (`UsbManager` + bulk transfers).** A class-compliant USB-MIDI
-      device exposes a standard interface whose 4-byte event packets we can parse
-      ourselves. This works *without* `FEATURE_MIDI` and needs only USB host
-      permission, so it de-risks rung 1 failing considerably.
-   3. **BLE MIDI** — needs a BLE-capable instrument or an adapter; the Axiom has
-      neither.
-   4. **Desktop bridge over Wi-Fi** — topology B, and the point at which the
-      standalone premise is compromised.
-
-   Practical note: the Quest's single USB-C port is also its charging port, and a
-   bus-powered controller like the Axiom draws from it. Plan on a powered USB-C
-   hub for sessions longer than the battery, and verify the keyboard enumerates
-   through one.
-2. **Audio latency and A/V sync.** Play a stem, measure the offset between
-   audible onset and the rendered note crossing the hit line, in passthrough,
-   at target framerate. This decides whether the existing A/V calibration model
-   transfers or needs an XR-specific one.
-3. **feedpak on device.** Read a real pack from persistent storage: parse the
-   manifest, decode a stem, parse `notes.mid`. Measure load time for a 4-minute
-   song. Decide streaming vs preload.
+1. **Discovery across the real network.** Rust host beacons, Quest finds it and
+   completes the handshake — on the actual Wi-Fi, not a wired LAN. Confirm the
+   Android multicast lock is doing its job (without it Android silently drops
+   multicast, which looks exactly like a host that is not there), and check
+   behaviour when the PC has several NICs.
+2. **Clock discipline and end-to-end latency.** The number that decides whether
+   this is playable: key press on the Axiom → host reads it → headset renders
+   the response. Measure it under load, and measure playhead jitter with the
+   client running a disciplined local clock rather than rendering raw packets.
+   *If the total is too high for the visual to feel attached to the sound, that
+   changes the design, not just a constant.*
+3. **A/V sync with audio on the host.** Audio comes out of the interface at the
+   desk; the notes render on the headset. Measure the offset between audible
+   onset and the note crossing the hit line, in passthrough, at target
+   framerate. The desktop client's existing calibration covers audio-vs-monitor;
+   this adds headset render and compositor latency on top, so expect it to need
+   its own offset.
 4. **Passthrough legibility.** Render a note lane over a real keyboard in a
-   normally-lit room. Are the colours from the 2D client readable against a real
-   scene? (They were chosen against a dark canvas — they will likely need
-   rework, especially the black-key palette.)
+   normally-lit room, on **Quest Pro as well as 3**. The palette was chosen
+   against a black canvas and will likely need rework, especially the black-key
+   colours.
 5. **Spatial anchor persistence.** Save an anchor, quit, relaunch, confirm the
    keyboard alignment survives.
+6. **Link loss behaviour.** Pull the Wi-Fi mid-song. The headset should coast on
+   its local clock and recover, never freeze or jump.
 
 ---
 
@@ -225,12 +226,78 @@ disagree about where C♯4 is.
 
 ---
 
-## 5. Phased delivery
+## 5. Host ↔ headset link
 
-**Phase 1 — Vertical slice (keys only).** Feedpak reader, chart parse, audio
-playback with a timebase, calibration flow, 3D piano-roll lane anchored to the
-real keyboard, MIDI input lighting real-key positions. One song, one instrument,
-end to end. This is where the concept is proven or killed.
+Discovery follows the implementation already proven in **AugmentedDefense**
+(`Assets/Core/NGO/UdpMulticastServer.cs` / `UdpMulticastClient.cs`), because it
+already handles the parts that make LAN discovery flaky in practice.
+
+### The pattern, as built
+
+1. Both ends join multicast group **239.0.0.222** on port **47777**.
+2. The host beacons `GameServer|{hostIP}|{port}` once a second to the group.
+3. A client that hears a beacon replies **unicast** `ConnectRequest`.
+4. The host answers `UTPAck|{sessionPort}` and records the client, ageing it out
+   after 30 s of silence.
+5. The client retargets to `{hostIP}:{sessionPort}` and opens the real session.
+
+Details worth copying verbatim rather than rediscovering:
+
+- **Android multicast lock.** `WifiManager.createMulticastLock` acquired for the
+  app's lifetime. Without it Android silently discards multicast, which presents
+  as "the host isn't there" with no error anywhere.
+- **Per-platform bind.** Android binds `IPAddress.Any` and disables
+  `MulticastLoopback`; desktop binds the specific local address and sets
+  `MulticastInterface` explicitly — which is what makes it behave on a machine
+  with several NICs (Ethernet + Wi-Fi + virtual adapters).
+- `ReuseAddress` / `ExclusiveAddressUse = false`, background threads for beacon
+  and listen, and a main-thread action queue to marshal the connect back into
+  Unity.
+- Beacon on a timer, ack unicast: the host is discoverable continuously, so a
+  headset joining late or rejoining after a drop needs no user action.
+
+### The one required deviation
+
+In AugmentedDefense both ends are Unity, so the ack advertises an **NGO/UTP**
+port and Netcode takes over. **Here the host is the Rust/Tauri app — there is no
+NGO on that side.** So:
+
+- The **discovery layer is reproduced faithfully** (same group, port, message
+  grammar, timing, and platform handling) in Rust on the host and C# on the
+  headset.
+- The **ack's port points at our own session socket**, and the session speaks a
+  protocol we define rather than Netcode.
+
+### Suggested change: don't reuse the beacon's magic string
+
+Both projects would otherwise beacon the literal `GameServer` on the same group
+and port. On a network running both, an AuralPrimer headset could hand itself to
+an AugmentedDefense host and vice versa — and the symptom would be a confusing
+one. Keep the mechanism identical but make the beacon self-identifying, e.g.
+`AuralPrimer|1|{hostIP}|{sessionPort}`, and ignore beacons that do not match.
+Cheap now; obscure to debug later.
+
+### Session traffic
+
+Three streams, each with different requirements:
+
+| Stream | Direction | Transport | Notes |
+|---|---|---|---|
+| Chart + tempo map | host → headset | reliable (TCP) | Sent once on session start; removes any need for pack storage on the headset |
+| Song position | host → headset | unreliable (UDP), ~30–60 Hz | `(songTime, hostClock)` samples; the client **disciplines a local clock** to them and renders from that, never straight from packets, or every dropped datagram becomes a visible stutter |
+| Live MIDI note state | host → headset | unreliable (UDP), on change + periodic | Send the **full set of held pitches**, not deltas. It fits in a handful of bytes and a lost packet then self-heals on the next one, where a lost note-off would leave a key lit forever |
+
+Transport control travels the same link: the host already owns the bindings, so
+the headset sends intent (`play`, `seek`) and the host remains the authority.
+
+## 6. Phased delivery
+
+**Phase 1 — Vertical slice (keys only).** Discovery + session link, host serves
+chart and position, disciplined client clock, calibration flow, 3D piano-roll
+lane anchored to the real keyboard, live key highlight from host-relayed MIDI.
+Audio plays on the host. One song, end to end. This is where the concept is
+proven or killed — and note it needs **no feedpak reader and no MIDI stack on
+the headset**, which is most of what made the standalone route expensive.
 
 **Phase 2 — Practice loop.** Wait mode, Nashville labels, note spacing, seek /
 jog, MIDI transport bindings, A/V offset calibration.
@@ -243,7 +310,7 @@ lyrics, guitar/bass fretboard — driven by which instruments actually matter.
 
 ---
 
-## 6. Repo and licensing concerns (flagging early — cheap now, expensive later)
+## 7. Repo and licensing concerns (flagging early — cheap now, expensive later)
 
 1. **Nested git repo.** `UnityClient/Aural Primer` has its own `.git` and is not
    ignored by the parent. The parent will treat it as an untracked directory and
@@ -266,13 +333,13 @@ lyrics, guitar/bass fretboard — driven by which instruments actually matter.
 **Blocking the plan's shape**
 
 1. ~~Target device~~ — **answered: Quest 3 / 3S / Pro**, multiplatform where free.
-2. **If USB MIDI does not work on Horizon OS, which way do you want to go?** The
-   raw-USB fallback (rung 2 above) most likely works and keeps the standalone
-   premise, but it is real work — a USB-MIDI class parser. The alternative is a
-   desktop bridge, which puts the PC back in the loop. Worth deciding now,
-   because it changes the size of Phase 1.
-3. **Is the Unity client playback-only?** I have assumed authoring stays in
-   AuralStudio. Confirm, or say if the headset needs to import too.
+2. ~~MIDI on the headset~~ — **answered: the host keeps all MIDI.** Risk closed.
+3. ~~Playback-only?~~ — **answered by the architecture**: the headset renders, the
+   host owns MIDI, time and ingest.
+4. **Where does audio come out — host or headset?** My assumption is the **host**:
+   it is already A/V calibrated, it avoids streaming audio, and you are sitting
+   at the interface anyway. Say if you want it in the headset instead, because
+   that pulls stem delivery and mixing back onto the device and changes Phase 1.
 
 **Scope**
 
