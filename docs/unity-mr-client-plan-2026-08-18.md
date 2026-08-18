@@ -88,7 +88,7 @@ What "feature parity" actually covers, from the current client:
 | Song library | feedpak containers, folder scan | Needs a **C# feedpak reader** (manifest.yaml, notes.mid, stems, features) |
 | Chart parse | Hand-rolled SMF parser in TS | Port to C# — pure logic, testable |
 | Piano roll | `viz-tab` canvas renderer | **Rebuild in 3D** — the centrepiece; anchored to the real keyboard |
-| Sheet music | `viz-tab/sheetMusic.ts` | Port later; world-space quad |
+| Sheet music | `viz-tab/sheetMusic.ts` | **Deferred past v1**; world-space quad when it lands |
 | Tab / fretboard | fret math in `viz-tab` | Only if guitar/bass is in scope |
 | Drum highway | `viz-drum-highway` | Natural in 3D; needs its own anchor (kit, not keyboard) |
 | Lyrics | `viz-lyrics` | Straightforward world-space text |
@@ -101,7 +101,7 @@ What "feature parity" actually covers, from the current client:
 | Stem mixer | per-stem gain | Multiple `AudioSource`s, or pre-mixed |
 | MIDI input | `midir` | The Phase 0 risk |
 | MIDI transport learn | CC/note binding, persisted | Port the binding model; it is already pure logic |
-| Multi-player stages | up to 4 canvases | Probably out of scope for v1 — confirm |
+| Multi-player stages | up to 4 canvases | **Out of scope for v1** |
 | Ingest / import | Python sidecar | **Stays on desktop** |
 
 ### Code that should be shared, not rewritten twice
@@ -137,12 +137,12 @@ Nothing below matters if these fail. Each is a throwaway scene, not product code
    client running a disciplined local clock rather than rendering raw packets.
    *If the total is too high for the visual to feel attached to the sound, that
    changes the design, not just a constant.*
-3. **A/V sync with audio on the host.** Audio comes out of the interface at the
-   desk; the notes render on the headset. Measure the offset between audible
-   onset and the note crossing the hit line, in passthrough, at target
-   framerate. The desktop client's existing calibration covers audio-vs-monitor;
-   this adds headset render and compositor latency on top, so expect it to need
-   its own offset.
+3. **A/V sync with audio on the host, Ableton included.** Audio leaves the
+   interface at the desk; notes render on the headset. Measure the offset
+   between audible onset and the note crossing the hit line, in passthrough, at
+   target framerate — **with Ableton in the path**, since its buffer is part of
+   what the player hears and the desktop's existing calibration was not measured
+   through it.
 4. **Passthrough legibility.** Render a note lane over a real keyboard in a
    normally-lit room, on **Quest Pro as well as 3**. The palette was chosen
    against a black canvas and will likely need rework, especially the black-key
@@ -208,6 +208,27 @@ The falling-note plane rises from the keyboard toward the player. Adjustable:
 - **tilt** — vertical, or raked toward the face for a seated player
 - **spacing multiplier** — same semantics as the desktop `[` / `]` control
 - **near/far opacity** so the lane never obscures the real hands
+
+### Input: hand tracking, and why play mode should need none
+
+Hands are the right choice at a keyboard — controllers would have to be put down
+to play — and XR Hands 1.8.1 is already in the project. But hand tracking is at
+its **worst** in exactly the pose this app puts the user in: fingers on keys,
+hands self-occluding, palms near a surface, often below the headset's downward
+view. Designing menus that require reliable pinches *while seated at the
+instrument* would be designing on sand.
+
+So the split is:
+
+- **Calibration uses pinch**, deliberately. Hands are up, clear of the keys, and
+  moving slowly — the one moment tracking is dependable. Pinch-to-place gives
+  precision at the key edges that a controller ray would not.
+- **Play mode needs no gesture at all.** Transport already lives on the Axiom's
+  buttons via the learned CCs, so the player never lifts their hands to control
+  playback. That is a genuine advantage of the host-owns-MIDI design and it
+  should be preserved rather than papered over with a floating panel.
+- **Menus outside play** — song choice, profile switching — can use pinch plus
+  gaze, with hands raised and away from the keyboard.
 
 ### Step 5 — Persist
 
@@ -334,6 +355,46 @@ fallback is a single constant we characterise once during development — a buil
 value, still not something a player is asked to tune. Phase 0 spike 3 is what
 confirms the compensated result actually lands.
 
+### Ableton shares the keyboard, and the game does not know about it
+
+The host runs **Ableton Live**, which voices the keyboard — the sound of the
+player's own playing is Ableton's. AuralPrimer is unaware of it: **both
+applications read the Axiom concurrently**, and AuralPrimer plays the song audio
+while Ableton plays the performance.
+
+```
+                 ┌──▶ Ableton ──────┐
+Axiom ──USB──────┤                  ├──▶ audio interface ──▶ what the player hears
+                 └──▶ AuralPrimer ──┘
+                          │
+                          └──LAN──▶ headset (note lane + key highlight)
+```
+
+That this works at all is worth recording, because it is a property we must not
+break. On Windows the legacy **WinMM** MIDI API hands an input port to one
+process exclusively, while **WinRT** (`Windows.Devices.Midi`) permits multiple
+clients — and AuralPrimer's `midir` is built with the `winrt` feature precisely
+because of it. The evidence is already in hand from this project: the Python
+helper written earlier uses `python-rtmidi` over WinMM and *cannot* open the
+Axiom while AuralPrimer holds it, whereas Ableton and AuralPrimer coexist
+happily. macOS CoreMIDI and ALSA are multi-client too, so the constraint is
+Windows-specific.
+
+**Consequence for the plan: no MIDI routing work, no virtual ports, no
+loopback.** The existing setup already delivers what the headset needs. Two
+notes only:
+
+- **Keep the WinRT backend.** Dropping to WinMM would silently make AuralPrimer
+  and Ableton mutually exclusive, and the symptom — one of them stops seeing the
+  keyboard — would look like a hardware fault rather than a backend change.
+- The learned transport CCs (20-25) reach Ableton too. If Ableton has MIDI
+  mappings on those numbers it will act on them; worth a glance at its mapping
+  if a transport press ever does something unexpected in Live.
+
+**Timebase stays simple.** Ableton is not in AuralPrimer's clock or audio path,
+so AuralPrimer is transport master outright and the headset follows it directly.
+No external-clock hop is needed, even though the client supports one.
+
 ### Session traffic
 
 Three streams, each with different requirements:
@@ -357,13 +418,23 @@ proven or killed — and note it needs **no feedpak reader and no MIDI stack on
 the headset**, which is most of what made the standalone route expensive.
 
 **Phase 2 — Practice loop.** Wait mode, Nashville labels, note spacing, seek /
-jog, MIDI transport bindings, A/V offset calibration.
+jog. All of these are host-side logic already built; the headset renders their
+state, so this phase is mostly protocol and presentation.
 
-**Phase 3 — Library and comfort.** Song browser in MR, pack sync from desktop,
-instrument profiles, per-stem mixing, hand-vs-controller input, seated/standing.
+**Phase 3 — Library and comfort.** Song choice from inside MR, instrument
+profiles, seated ergonomics, link-loss polish.
 
-**Phase 4 — Remaining surfaces.** Sheet music, drum highway (own anchor),
-lyrics, guitar/bass fretboard — driven by which instruments actually matter.
+**Phase 4 — Remaining surfaces.** Sheet music, drum highway (needs its own
+anchor, on the kit rather than the keyboard), lyrics, guitar/bass fretboard —
+**all deferred**: v1 is the piano roll on keys.
+
+**Later — scoring.** Explicitly out of scope for now; the tool is for learning.
+Worth noting what that buys: with no hit-window judgement, the input-latency
+budget is comfortable, because the live key highlight is feedback rather than
+adjudication. Adding scoring later tightens it considerably and is the one
+future feature that could force a rethink of the network design — so the
+protocol should carry note timestamps from the host even now, when nothing
+consumes them yet.
 
 ---
 
@@ -405,12 +476,13 @@ lyrics, guitar/bass fretboard — driven by which instruments actually matter.
 
 **Product**
 
-7. **Seated at an acoustic/digital piano in passthrough** — is that the primary
-   posture? Any standing or room-scale use?
-8. **Hand tracking or controllers** for menus? Hands seem right at a keyboard
-   (controllers must be put down to play), but that affects the UI toolkit choice.
-9. **How do packs get to the headset?** adb sideload, Wi-Fi sync from AuralStudio,
-   or cloud?
-10. **Is there a scoring/judgement goal here** that the desktop client does not
-    have? Today there is no hit-window scoring at all — MR might be where that
-    finally matters, and it changes the input-latency budget considerably.
+5. ~~Multi-player stages~~ / ~~sheet music~~ — **answered: piano roll only for v1.**
+6. ~~Hand tracking or controllers~~ — **answered: hand tracking.**
+7. ~~Scoring~~ — **answered: later.** Learning tool for now, which usefully relaxes
+   the input-latency budget for v1.
+8. ~~Pack delivery~~ — **moot**: the host serves the chart, the headset stores nothing.
+9. ~~Ableton or AuralPrimer as transport master?~~ — **answered: AuralPrimer.**
+   Ableton voices the performance and is otherwise unaware; both read the Axiom
+   concurrently.
+10. **Seated at the keyboard in passthrough** — assumed primary posture. Any
+    standing or room-scale use worth designing for?
