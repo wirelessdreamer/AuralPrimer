@@ -195,10 +195,6 @@ export function appShellHtml(): string {
                   <div id="playLyricsCurrent" class="playLyricsCurrent"></div>
                   <div id="playLyricsNext" class="playLyricsNext"></div>
                 </div>
-                <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
-                  <span class="liveInputLabel">MIDI IN</span>
-                  <span id="liveInputNotes" class="liveInputNotes"></span>
-                </div>
                 <pre id="vizStatus">(not running)</pre>
 
                 <div id="instrumentSelector" class="instrumentSelector" style="display:none">
@@ -210,27 +206,27 @@ export function appShellHtml(): string {
                 </div>
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
 
-                <div class="practiceRow" id="nashvilleRow">
-                  <label class="practiceToggle" for="nashvilleMode">
+                <div class="stageBar">
+                  <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
+                    <span class="liveInputLabel">MIDI IN</span>
+                    <span id="liveInputNotes" class="liveInputNotes"></span>
+                  </div>
+                  <label
+                    class="practiceToggle"
+                    for="nashvilleMode"
+                    title="Stamps the scale degree (1-7) on each falling note, so the song reads as numbers in its key instead of note names."
+                  >
                     <input id="nashvilleMode" type="checkbox" />
                     <span>Nashville numbers</span>
                   </label>
-                  <span class="meta practiceHint">
-                    Stamps the scale degree (1-7) on each falling note, so the song reads as
-                    numbers in its key instead of note names.
-                  </span>
-                </div>
-
-                <div class="practiceRow" id="learnModeRow">
-                  <label class="practiceToggle" for="learnMode">
+                  <label
+                    class="practiceToggle"
+                    for="learnMode"
+                    title="Steps through the song one note at a time, holding at each until you play it on your MIDI keyboard. Needs a keyboard connected in Configure -> MIDI."
+                  >
                     <input id="learnMode" type="checkbox" />
-                    <span>Wait mode &mdash; advance on note play</span>
+                    <span>Wait mode</span>
                   </label>
-                  <span class="meta practiceHint">
-                    Steps through the song one note at a time, holding at each until you play
-                    it on your MIDI keyboard. Needs a keyboard connected in
-                    <strong>Configure &rarr; MIDI</strong>.
-                  </span>
                 </div>
 
                 <div class="startRow">

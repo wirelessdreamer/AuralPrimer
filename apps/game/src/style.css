@@ -638,7 +638,7 @@ label.meta {
 .bandSetupStage {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -738,6 +738,15 @@ label.meta {
   display: none;
 }
 
+/* With the piano promoted, #viz is hidden -- but its container keeps
+   flex: 1 1 auto and so still claims half the column, leaving the falling-note
+   surface with a fraction of the height it should have. Collapse it, but only
+   when player 1 is alone in there: with a second player the same container
+   holds their stage, which must keep its space. */
+.playSurface.isPianoPrimary .playerStages[data-player-count="1"] {
+  display: none;
+}
+
 .playSurface.isPianoPrimary .tabContainer {
   margin-top: 0;
   min-height: clamp(360px, 58vh, 620px);
@@ -765,12 +774,9 @@ label.meta {
 .liveInputHud {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(34, 211, 238, 0.18);
-  background: rgba(10, 14, 24, 0.72);
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 14em;
 }
 
 .liveInputLabel {
@@ -918,15 +924,15 @@ label.meta {
 .startRow {
   position: sticky;
   bottom: 0;
-  padding-top: 12px;
-  margin-top: 10px;
+  padding-top: 8px;
+  margin-top: 4px;
   background: linear-gradient(180deg, rgba(11, 15, 24, 0), rgba(11, 15, 24, 0.95) 35%);
 }
 
 .playStartBtn {
   width: 100%;
-  min-height: 48px;
-  font-size: 20px;
+  min-height: 42px;
+  font-size: 19px;
   font-weight: 900;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -1287,8 +1293,8 @@ li {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 10px 0 6px;
-  padding: 8px 10px;
+  margin: 6px 0 4px;
+  padding: 5px 8px;
   border-radius: 12px;
   border: 1px solid rgba(140, 170, 255, 0.14);
   background: rgba(12, 16, 28, 0.40);
@@ -1478,41 +1484,38 @@ li {
   font-size: 11px;
 }
 
-/* Wait-mode toggle, sitting with the Start button rather than buried in the
-   scrollable rail where it went unnoticed. */
-.practiceRow {
+/* One compact strip under the stage: live MIDI readout + the practice
+   toggles. These were three stacked full-width rows, which cost ~150px of
+   vertical space directly out of the falling-note area -- the part of the
+   screen the player is actually reading. Long explanations moved to title
+   tooltips; the labels carry the meaning. */
+.stageBar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-top: 10px;
-  padding: 8px 12px;
+  gap: 6px 14px;
+  padding: 5px 10px;
   border-radius: 10px;
-  border: 1px solid rgba(163, 255, 18, 0.22);
+  border: 1px solid rgba(140, 170, 255, 0.14);
   background: rgba(10, 14, 24, 0.55);
 }
 
 .practiceToggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   cursor: pointer;
-  font-weight: 650;
   white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.75;
 }
 
-.practiceRow:has(#learnMode:checked) {
-  border-color: rgba(163, 255, 18, 0.6);
-  box-shadow: 0 0 0 2px rgba(163, 255, 18, 0.1);
+.practiceToggle:hover {
+  opacity: 1;
 }
 
-.practiceRow:has(#learnMode:checked) .practiceToggle {
+.practiceToggle:has(input:checked) {
   color: var(--accent3);
-}
-
-.practiceHint {
-  flex: 1;
-  min-width: 16em;
-  opacity: 0.65;
-  font-size: 11px;
+  opacity: 1;
+  font-weight: 650;
 }
