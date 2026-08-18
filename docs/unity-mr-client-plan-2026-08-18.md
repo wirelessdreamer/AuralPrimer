@@ -3,6 +3,10 @@
 Date: 2026-08-18
 Status: **draft for review** — several requirements still open (see [Questions](#questions-i-need-answered))
 
+**Target: Meta Quest 3 / 3S / Pro** (Horizon OS). Multiplatform where it is free;
+Meta SDK only where a capability is otherwise unavailable — see
+[SDK strategy](#12-sdk-strategy-multiplatform-by-default).
+
 Target project: `UnityClient/Aural Primer` — Unity **6000.3.15f1**, URP 17.3,
 OpenXR 1.17.1 + Meta OpenXR 2.5.1 + Android XR 1.3.1, ARFoundation 6.5,
 XR Hands 1.8.1, XRI 3.5.1, Composition Layers 2.5. Android-first (MR Template,
@@ -39,6 +43,31 @@ gameplay.
 stay on desktop in AuralStudio. The Unity client is a **player**; packs are
 authored on the PC and synced to the headset. That is a scoping decision worth
 confirming, not an assumption I should make silently.
+
+### 1.2 SDK strategy: multiplatform by default
+
+The project is already on the right footing: `com.unity.xr.meta-openxr` exposes
+Quest's passthrough, planes, meshing, bounding boxes and anchors **through
+ARFoundation**, so the app codes against the vendor-neutral API and Quest
+becomes a build target rather than a fork.
+
+The rule: **ARFoundation / OpenXR is the default; Meta XR SDK is opt-in per
+capability, behind an interface.** Reach for it only when something genuinely is
+not exposed — and when that happens, isolate it so a later Android XR or SteamVR
+build swaps one implementation instead of unpicking gameplay code.
+
+Consequences worth planning around now:
+
+- **The performance floor is Quest Pro / 3S, not Quest 3.** Quest Pro is XR2
+  Gen 1, with a weaker GPU and lower-resolution colour passthrough. Budget the
+  note lane, glow and transparency for the floor, or Pro users get a materially
+  worse read of the notes.
+- **Depth sensing differs across the three.** Quest 3 has a depth projector;
+  3S and Pro do not. Anything leaning on depth or plane quality must degrade to
+  the manual point-and-pinch path — which is exactly why the flow in §4 is built
+  on user-placed points rather than automatic surface detection.
+- **Passthrough colour fidelity varies.** The note palette was chosen against a
+  black canvas; it must be validated on Pro as well as 3 (Phase 0 spike 4).
 
 ---
 
@@ -89,10 +118,25 @@ so both clients are provably answering the same questions the same way.
 
 Nothing below matters if these fail. Each is a throwaway scene, not product code.
 
-1. **MIDI input on the target headset.** Plug the Axiom 61 into the headset via
-   USB-C. Can Unity see note on/off through `android.media.midi`? Measure
-   round-trip latency (key press → app callback). *If this fails*, fall back to a
-   desktop→headset MIDI bridge and re-scope to topology B.
+1. **MIDI input on the headset — the make-or-break spike.** Plug the Axiom 61
+   into the Quest via USB-C and measure round-trip latency (key press → app
+   callback). Work down this ladder, stopping at the first rung that works:
+
+   1. **`android.media.midi`** — the clean path, but it needs Horizon OS to
+      declare `FEATURE_MIDI`, which I cannot confirm from here.
+   2. **Raw USB host (`UsbManager` + bulk transfers).** A class-compliant USB-MIDI
+      device exposes a standard interface whose 4-byte event packets we can parse
+      ourselves. This works *without* `FEATURE_MIDI` and needs only USB host
+      permission, so it de-risks rung 1 failing considerably.
+   3. **BLE MIDI** — needs a BLE-capable instrument or an adapter; the Axiom has
+      neither.
+   4. **Desktop bridge over Wi-Fi** — topology B, and the point at which the
+      standalone premise is compromised.
+
+   Practical note: the Quest's single USB-C port is also its charging port, and a
+   bus-powered controller like the Axiom draws from it. Plan on a powered USB-C
+   hub for sessions longer than the battery, and verify the keyboard enumerates
+   through one.
 2. **Audio latency and A/V sync.** Play a stem, measure the offset between
    audible onset and the rendered note crossing the hit line, in passthrough,
    at target framerate. This decides whether the existing A/V calibration model
@@ -221,11 +265,12 @@ lyrics, guitar/bass fretboard — driven by which instruments actually matter.
 
 **Blocking the plan's shape**
 
-1. **Target device**, precisely — Quest 3/3S only, Android XR (Samsung Moohan),
-   both, or PC VR? It decides the MIDI story and the perf budget.
-2. **How does the keyboard connect to the headset?** USB-C direct, or do you
-   expect the PC to stay in the loop? If MIDI-over-USB does not work on Horizon
-   OS, which fallback do you prefer — desktop bridge, or PC VR?
+1. ~~Target device~~ — **answered: Quest 3 / 3S / Pro**, multiplatform where free.
+2. **If USB MIDI does not work on Horizon OS, which way do you want to go?** The
+   raw-USB fallback (rung 2 above) most likely works and keeps the standalone
+   premise, but it is real work — a USB-MIDI class parser. The alternative is a
+   desktop bridge, which puts the PC back in the loop. Worth deciding now,
+   because it changes the size of Phase 1.
 3. **Is the Unity client playback-only?** I have assumed authoring stays in
    AuralStudio. Confirm, or say if the headset needs to import too.
 
