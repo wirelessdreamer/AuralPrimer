@@ -268,14 +268,71 @@ NGO on that side.** So:
 - The **ack's port points at our own session socket**, and the session speaks a
   protocol we define rather than Netcode.
 
-### Suggested change: don't reuse the beacon's magic string
+### Our socket and grammar (distinct from AugmentedDefense)
 
-Both projects would otherwise beacon the literal `GameServer` on the same group
-and port. On a network running both, an AuralPrimer headset could hand itself to
-an AugmentedDefense host and vice versa — and the symptom would be a confusing
-one. Keep the mechanism identical but make the beacon self-identifying, e.g.
-`AuralPrimer|1|{hostIP}|{sessionPort}`, and ignore beacons that do not match.
-Cheap now; obscure to debug later.
+Same mechanism, different address space and a self-identifying beacon, so the
+two protocols cannot mistake each other on a network running both:
+
+| | AugmentedDefense | AuralPrimer |
+|---|---|---|
+| Group | `239.0.0.222` | **`239.255.61.88`** |
+| Port | `47777` | **`47761`** |
+| Beacon | `GameServer\|ip\|port` | **`AURALPRIMER\|1\|{hostIP}\|{sessionPort}\|{hostName}`** |
+| Request | `ConnectRequest` | **`AP-CONNECT\|1\|{clientName}`** |
+| Ack | `UTPAck\|{ngoPort}` | **`AP-ACK\|1\|{sessionPort}`** |
+
+`239.255/16` is the IPv4 Local Scope (RFC 2365), which is explicitly meant for
+local use and is not forwarded beyond it — a better fit for LAN discovery than
+`239.0.0/8`, whose organisation-local scope routers may carry further.
+
+Both ends **must ignore any datagram that does not open with their own magic and
+version**. The version field is there so a future change can be detected rather
+than mis-parsed. `hostName` is included because more than one PC on the network
+may be running the host, and the headset should be able to say which it found.
+
+### Timebase: the desktop is authoritative, and the headset needs no calibration
+
+The desktop owns song position; the headset only draws. The problem that creates
+is real but solvable **without adding a user-facing calibration step**: sound
+leaves the audio interface at the desk while the notes light up inside a headset
+that has its own render and compositor latency. Left uncompensated the notes drift
+visibly late against what you hear.
+
+The fix is to compensate from values that are **measured or predicted
+automatically**, never dialled in by hand:
+
+1. **Clock offset — measured.** The session runs an NTP-style exchange: the
+   client timestamps a request, the host stamps receipt and reply, the client
+   stamps arrival. That yields `offset = hostClock − localClock` plus a
+   round-trip time. Keep the sample with the **lowest RTT** over a rolling window
+   rather than averaging — on Wi-Fi the fast samples are the honest ones, and
+   averaging lets a single stalled packet skew the clock.
+2. **Display latency — predicted by the runtime, not guessed.** OpenXR already
+   reports the predicted display time for the frame being submitted: when *this
+   frame's photons* will actually reach the eye. Render each frame for that
+   instant instead of for "now".
+3. **Audio latency — already measured, on the host.** The desktop client has
+   calibrated `av_audio_offset_ms` in `settings.json`. The host sends it; note
+   that its *video* offset no longer applies, because the video is no longer the
+   monitor.
+
+Per frame the client therefore renders:
+
+```
+hostClockAtPhotons = predictedDisplayTime + clockOffset
+songTimeToRender   = lastSongTime
+                   + (hostClockAtPhotons - lastSampleHostClock)
+                   + hostAudioOffset
+```
+
+Everything on the right is measured or supplied. **No headset-latency
+calibration screen, and none of it changes per user.**
+
+Being straight about the limit: this removes the *user-facing* calibration, not
+the physics. If a runtime does not expose a usable predicted display time, the
+fallback is a single constant we characterise once during development — a build
+value, still not something a player is asked to tune. Phase 0 spike 3 is what
+confirms the compensated result actually lands.
 
 ### Session traffic
 
@@ -336,10 +393,8 @@ lyrics, guitar/bass fretboard — driven by which instruments actually matter.
 2. ~~MIDI on the headset~~ — **answered: the host keeps all MIDI.** Risk closed.
 3. ~~Playback-only?~~ — **answered by the architecture**: the headset renders, the
    host owns MIDI, time and ingest.
-4. **Where does audio come out — host or headset?** My assumption is the **host**:
-   it is already A/V calibrated, it avoids streaming audio, and you are sitting
-   at the interface anyway. Say if you want it in the headset instead, because
-   that pulls stem delivery and mixing back onto the device and changes Phase 1.
+4. ~~Where does audio come out?~~ — **answered: the host.** "Mixed reality only a
+   display" settles it; audio stays on the desk where it is already calibrated.
 
 **Scope**
 
