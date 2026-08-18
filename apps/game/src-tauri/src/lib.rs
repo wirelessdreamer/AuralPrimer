@@ -2439,6 +2439,7 @@ pub fn run() {
             midi_clock_input_start,
             midi_clock_input_start_and_persist,
             midi_clock_input_get_saved_settings,
+            midi_clock_input_is_connected,
             midi_clock_input_stop
         ])
         .run(tauri::generate_context!())
@@ -2934,6 +2935,17 @@ fn midi_clock_input_stop(state: tauri::State<MidiClockInputState>) -> Result<(),
     let mut lock = state.conn.lock().unwrap();
     *lock = None;
     Ok(())
+}
+
+/// Is an input port open right now?
+///
+/// The persisted port is reconnected during setup(), so the connection can
+/// already be live before the frontend has done anything. The UI asks instead
+/// of assuming, so a restore that failed — device unplugged since last run —
+/// still reads as disconnected rather than showing a phantom connection.
+#[tauri::command]
+fn midi_clock_input_is_connected(state: tauri::State<MidiClockInputState>) -> bool {
+    state.conn.lock().unwrap().is_some()
 }
 
 #[cfg(test)]
