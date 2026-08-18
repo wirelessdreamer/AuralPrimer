@@ -38,6 +38,13 @@ namespace AuralPrimer.Link
         public bool IsPlaying => _session?.Clock.Playing ?? false;
         public string HostName => _session?.HostName ?? "";
 
+        /// <summary>The host is beaconing but we are not connected to it.</summary>
+        public bool HostHeardButNotConnected =>
+            !IsConnected && _discovery is { BeaconHeard: true };
+
+        /// <summary>Host named by the last beacon heard, or "".</summary>
+        public string LastBeaconHost => _discovery?.LastBeaconHost ?? "";
+
         /// <summary>Raised when the host delivers a chart (protocol §4).</summary>
         public event System.Action<string> ChartReceived;
 

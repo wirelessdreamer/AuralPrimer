@@ -278,6 +278,15 @@ namespace AuralPrimer.Calibration
             {
                 panel.SetStatus($"connected to {link.HostName}", new Color(0.4f, 0.95f, 0.55f));
             }
+            else if (link.HostHeardButNotConnected)
+            {
+                // The beacon reached us, so the desktop is up and on this
+                // network; only the reply is missing. On Windows that is the
+                // firewall dropping inbound UDP to the app, which is invisible
+                // from in here unless the headset says so.
+                panel.SetStatus($"found {link.LastBeaconHost} — no reply (allow AuralPrimer through the firewall)",
+                                new Color(1f, 0.55f, 0.2f));
+            }
             else
             {
                 panel.SetStatus("searching for the desktop app…", new Color(0.98f, 0.75f, 0.15f));

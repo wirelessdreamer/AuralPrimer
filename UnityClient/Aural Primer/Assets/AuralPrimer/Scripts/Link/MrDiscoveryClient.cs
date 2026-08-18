@@ -59,6 +59,25 @@ namespace AuralPrimer.Link
 
         public bool IsRunning => _running;
 
+        /// <summary>
+        /// A host beacon has been heard, whether or not the handshake that
+        /// follows it succeeded.
+        ///
+        /// Worth reporting on its own: "heard nothing" and "heard the host but
+        /// it never answered" have completely different causes — the first is
+        /// usually a desktop that is not running or not on this network, the
+        /// second is almost always the host's inbound UDP being firewalled.
+        /// Collapsing both into "searching…" leaves the headset saying the same
+        /// thing in both cases, with no way to tell them apart.
+        /// </summary>
+        public bool BeaconHeard => _beaconHeard;
+
+        /// <summary>Host named by the most recent beacon, for the status line.</summary>
+        public string LastBeaconHost => _lastBeaconHost ?? "";
+
+        volatile bool _beaconHeard;
+        volatile string _lastBeaconHost;
+
         public void Start()
         {
             if (_running) return;
@@ -121,6 +140,10 @@ namespace AuralPrimer.Link
                     var text = Encoding.UTF8.GetString(data);
 
                     if (!MrProtocol.TryParseBeacon(text, out var beacon)) continue;
+
+                    _beaconHeard = true;
+                    _lastBeaconHost = beacon.HostName;
+
                     if (_handshakeInFlight) continue;
 
                     _handshakeInFlight = true;
