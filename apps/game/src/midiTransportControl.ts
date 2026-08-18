@@ -11,9 +11,18 @@
  * land at zero and differ in whether playback continues, which is what makes
  * them worth separate buttons.
  *
- * Rewind / fast forward act on both edges so they can be held. The rest are
- * momentary and fire on press only, so a controller that sends a 0 on release
- * cannot double-trigger.
+ * Rewind / fast forward adapt to what the controller can express. A device
+ * that sends a release (value 0, or note-off) gets true momentary hold: jog
+ * while down, stop on release. A device that sends a single message per press
+ * and nothing on release physically cannot signal "still held", so for those a
+ * second press of the same button stops the jog. Without that, the jog started
+ * and never stopped -- a runaway fast-forward with no way out.
+ *
+ * Pressing the opposite jog button switches direction rather than stopping, and
+ * play / stop / start-over all cancel a jog in flight.
+ *
+ * The remaining buttons fire on press only, so a controller that does send a 0
+ * on release cannot double-trigger.
  *
  * Jogging accelerates the longer a button is held, like a DAW shuttle: short
  * taps nudge, long holds cross the song.
@@ -112,6 +121,21 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
     afterTransportChange();
   }
 
+  /**
+   * Handle a press of a jog button.
+   *
+   * Same button while already jogging = stop, which is the only stop signal a
+   * controller that sends no release can give. Opposite button = switch
+   * direction, so a two-button transport strip still behaves like one.
+   */
+  function onJogPress(direction: 1 | -1): void {
+    if (jogTimer !== null && jogDir === direction) {
+      cancelJog();
+      return;
+    }
+    beginJog(direction);
+  }
+
   function beginJog(direction: 1 | -1): void {
     if (!deps.isSessionRunning()) return;
     cancelJog();
@@ -123,6 +147,7 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
   }
 
   function playPause(): void {
+    cancelJog();
     if (!deps.isSessionRunning()) {
       if (deps.canStartSession()) deps.startSession();
       return;
@@ -135,6 +160,7 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
   }
 
   function restart(): void {
+    cancelJog();
     if (!deps.isSessionRunning()) {
       if (deps.canStartSession()) deps.startSession();
       return;
@@ -186,10 +212,10 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
         restart();
         break;
       case "rewind":
-        beginJog(-1);
+        onJogPress(-1);
         break;
       case "fastForward":
-        beginJog(1);
+        onJogPress(1);
         break;
       case "stop":
         stop();

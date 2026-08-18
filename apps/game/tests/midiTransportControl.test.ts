@@ -303,6 +303,45 @@ describe("midiTransportControl", () => {
       expect(targets.length).toBe(6); // press + 5 ticks
     });
 
+    it("stops on a second press when the controller sends no release", () => {
+      // Real device: one CC 127 per press, nothing on release. It cannot signal
+      // "still held", so the second press is the only available stop -- without
+      // this the jog ran away with no way out.
+      const h = setup({}, { t: 50, isPlaying: true });
+      press(MIDI_TRANSPORT_CC.fastForward);
+      vi.advanceTimersByTime(JOG_TICK_MS * 3);
+      const moved = h.tc.seek.mock.calls.length;
+      expect(moved).toBeGreaterThan(1);
+
+      press(MIDI_TRANSPORT_CC.fastForward); // same button again
+      h.tc.seek.mockClear();
+      vi.advanceTimersByTime(JOG_TICK_MS * 10);
+      expect(h.tc.seek).not.toHaveBeenCalled();
+    });
+
+    it("still stops on a real release, so momentary controllers keep true hold", () => {
+      const h = setup({}, { t: 50, isPlaying: true });
+      press(MIDI_TRANSPORT_CC.rewind);
+      vi.advanceTimersByTime(JOG_TICK_MS * 3);
+      release(MIDI_TRANSPORT_CC.rewind);
+      h.tc.seek.mockClear();
+      vi.advanceTimersByTime(JOG_TICK_MS * 10);
+      expect(h.tc.seek).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["play", 35],
+      ["stop", 34],
+      ["start over", 31],
+    ])("%s cancels a jog in flight", (_label, ccNumber) => {
+      const h = setup({}, { t: 50, isPlaying: true });
+      press(MIDI_TRANSPORT_CC.fastForward);
+      press(ccNumber);
+      h.tc.seek.mockClear();
+      vi.advanceTimersByTime(JOG_TICK_MS * 10);
+      expect(h.tc.seek).not.toHaveBeenCalled();
+    });
+
     it("does not jog when no session is running", () => {
       const h = setup({ isSessionRunning: () => false }, { t: 30, isPlaying: false });
       press(MIDI_TRANSPORT_CC.fastForward);

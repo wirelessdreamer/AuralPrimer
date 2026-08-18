@@ -126,7 +126,8 @@ export function appShellHtml(): string {
                   (hold <kbd>Shift</kbd> for 1s).<br />
                   MIDI transport buttons (start over / rewind / fast fwd / stop / play) are
                   assignable in <strong>Configure &rarr; MIDI &rarr; Transport control</strong>;
-                  hold rewind or fast fwd to jog, accelerating.
+                  rewind / fast fwd jog while held, accelerating &mdash; and since many
+                  controllers send nothing on release, pressing the same button again stops it.
                 </div>
 
                 <div class="row">
@@ -355,7 +356,11 @@ export function appShellHtml(): string {
               Drive playback from your controller's transport buttons. Click
               <strong>Learn</strong>, then press the button on your device &mdash; whatever it
               sends becomes the binding, whether that's a CC or a note. Connect the input
-              port above first; the last-message line below shows what is arriving.
+              port above first; the log below shows each message and how it was read.
+              <br />
+              Rewind / fast forward jog while held on controllers that send a release. Many
+              send only a single message per press and cannot signal a hold &mdash; for those,
+              press the same button again to stop the jog.
             </div>
             <div id="midiTransportRows"></div>
             <pre id="midiTransportStatus" class="meta">last message: (nothing received yet)</pre>

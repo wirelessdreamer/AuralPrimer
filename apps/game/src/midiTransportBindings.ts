@@ -29,8 +29,8 @@ export type TransportActionInfo = {
 /** Display order in the Configure panel. */
 export const TRANSPORT_ACTIONS: TransportActionInfo[] = [
   { id: "restart", label: "Start song over", hint: "Back to the beginning, playing" },
-  { id: "rewind", label: "Rewind", hint: "Hold to jog backward" },
-  { id: "fastForward", label: "Fast forward", hint: "Hold to jog forward" },
+  { id: "rewind", label: "Rewind", hint: "Hold to jog back; press again to stop" },
+  { id: "fastForward", label: "Fast forward", hint: "Hold to jog on; press again to stop" },
   { id: "stop", label: "Stop", hint: "Halt and return to the beginning" },
   { id: "play", label: "Play / pause", hint: "Toggles — pauses if already playing" },
   { id: "waitMode", label: "Wait mode on/off", hint: "Toggles advance-on-note-play" },
