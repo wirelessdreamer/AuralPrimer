@@ -529,3 +529,12 @@ useful, but WITHOUT ANY WARRANTY — see the LICENSE file for details.
 Third-party components, model weights, and datasets retain their own
 licenses, catalogued in
 [Third-party components & attribution](#third-party-components--attribution).
+
+**One exception: the Unity mixed-reality client** under `UnityClient/` is
+licensed **Apache-2.0** ([LICENSE](UnityClient/Aural%20Primer/LICENSE)). The
+Unity runtime is proprietary and cannot be sublicensed under the GPL, so a
+GPL-licensed Unity build would be a combined work that could not be conveyed
+under the GPL in full. Apache-2.0 removes the conflict rather than working
+around it with a GPLv3 §7 linking exception. Apache-2.0 is one-way compatible
+with GPLv3 — permissively licensed code may be used by the GPL parts of this
+repository, but not the reverse.

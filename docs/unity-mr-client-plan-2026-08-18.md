@@ -461,20 +461,35 @@ consumes them yet.
    the parent records a **gitlink** — a bare commit hash, none of the files. To
    keep the client in this repo that nested `.git` has to go, or become a proper
    submodule. Left alone pending a decision: it is history, however small.
-3. **Licence — GPL-3.0-or-later plus a §7 linking exception.** Matching the
-   parent is right for our source, but on its own it is not sufficient once
-   builds are distributed. The Unity runtime is proprietary and cannot be
-   sublicensed under GPL, so a compiled binary is a combined work we could not
-   convey under GPLv3 in full. **GPLv3 §7 exists precisely for this**: an
-   additional-permission exception allowing linkage with the Unity runtime
-   resolves it, and it is a standard, well-understood addition. Source-only
-   distribution is largely unaffected either way.
+3. **Licence — Apache-2.0 for the Unity client. Done.** `UnityClient/` now
+   carries the canonical Apache-2.0 text plus a `NOTICE`, and the root README
+   records the split. This is a better answer than the §7 exception I first
+   proposed: it removes the GPL/proprietary-runtime conflict outright instead of
+   carving an exception around it, and it drops the storefront problem too,
+   since app-store terms impose restrictions GPL forbids but Apache does not.
+   The explicit patent grant is a real bonus over MIT.
 
-   The harder case is **storefronts**: their terms typically impose
-   redistribution and usage restrictions that GPL forbids, which is the
-   long-running friction between GPL software and app stores. Sideloading and
-   source releases avoid it entirely. Not legal advice — but the exception is
-   cheap, and belongs in place before the first build leaves the machine.
+   **The consequence to plan around: code may only flow permissive → copyleft.**
+   Apache-2.0 code can be used by the GPL desktop client; GPL code cannot be
+   pulled into the Apache client. That directly affects §2's shared-logic list —
+   keyboard layout maths, Nashville degrees, key inference, MIDI binding model,
+   wait-mode grouping, tempo conversion — which lives in GPL files today.
+
+   Two ways to satisfy it, and the second is much better:
+
+   - **Relicense on port.** Legitimate here: `git log` shows every commit to
+     those files is by the project owner, with no third-party notices, so the
+     copyright holder may license that code under whatever terms they choose.
+     But it makes the question recur every time logic moves between clients.
+   - **Give the shared core its own permissive licence** (recommended). Put the
+     pure logic in a permissively licensed package that *both* clients consume —
+     `packages/core-music` already exists as a natural home, with the C# port
+     alongside it. The GPL desktop client may consume Apache code freely, so
+     nothing about the desktop licence changes, and the direction-of-flow rule
+     stops being something anyone has to remember.
+
+   Worth doing now while sole authorship makes it trivial: once outside
+   contributors touch the GPL parts, relicensing anything requires their consent.
 3. **Model/asset licensing** still applies: anything bundled keeps the same
    attribution obligations as the desktop client (README rules).
 
@@ -498,7 +513,7 @@ consumes them yet.
 | Input | Hand tracking; grabbable menu in the air, calibration by pinch, play mode gesture-free |
 | Scoring | Later — v1 is a learning tool |
 | Ingest | Stays on desktop in AuralStudio |
-| Licence | GPL-3.0-or-later as parent, **plus a §7 linking exception for the Unity runtime** |
+| Licence | Unity client **Apache-2.0**; rest of the repo stays GPL-3.0-or-later |
 | Repo | Tracked in the parent; Unity ignores added (nested `.git` still to remove) |
 | Pack delivery | Moot — the host serves the chart, the headset stores nothing |
 
@@ -507,6 +522,6 @@ consumes them yet.
 1. **May I remove the nested `.git` under `UnityClient/Aural Primer`?** One commit
    of the untouched template, and it is the only thing stopping the parent from
    tracking the project's files instead of a bare gitlink.
-2. **Do you intend to distribute builds** — sideload, or a storefront? It decides
-   how carefully the §7 exception needs wording, and whether the app-store
-   friction in §7 applies to you at all.
+2. **Move the shared pure logic to a permissive licence?** Recommended, so code
+   can flow to both clients without a relicensing question each time. Needs your
+   say-so since it changes the licence on existing files — see §7.
