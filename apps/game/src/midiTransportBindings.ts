@@ -26,7 +26,7 @@ export const TRANSPORT_ACTIONS: TransportActionInfo[] = [
   { id: "rewind", label: "Rewind", hint: "Hold to jog backward" },
   { id: "fastForward", label: "Fast forward", hint: "Hold to jog forward" },
   { id: "stop", label: "Stop", hint: "Halt and return to the beginning" },
-  { id: "play", label: "Play", hint: "Start or resume from here" },
+  { id: "play", label: "Play / pause", hint: "Toggles — pauses if already playing" },
 ];
 
 /**

@@ -1441,6 +1441,10 @@ function renderLiveInputHud(): void {
   if (!midiPanel.inputIsConnected()) {
     text = "no keyboard connected — Configure → MIDI";
     state = "off";
+  } else if (learnMode && !learnGroups.length) {
+    // Wait mode on with nothing to wait for is otherwise a silent no-op.
+    text = "wait mode on, but this song has no melodic notes to follow";
+    state = "off";
   } else if (learnMode && learnWaiting && learnIdx < learnGroups.length) {
     const want = learnGroups[learnIdx].pitches.map(learnNoteName).join(" + ");
     text = held ? `waiting for ${want}  —  holding ${held}` : `waiting for ${want}`;
@@ -1449,7 +1453,7 @@ function renderLiveInputHud(): void {
     text = held;
     state = "playing";
   } else {
-    text = "listening";
+    text = learnMode ? "wait mode armed" : "listening";
     state = "idle";
   }
 

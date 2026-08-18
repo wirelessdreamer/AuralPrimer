@@ -7,8 +7,9 @@
  * disagree about whether transport buttons send CC or notes, and about the
  * numbers they use.
  *
- * Stop and start-over both land at zero; they differ in whether playback
- * continues, which is what makes them worth separate buttons.
+ * Play toggles: pressing it while playing pauses. Stop and start-over both
+ * land at zero and differ in whether playback continues, which is what makes
+ * them worth separate buttons.
  *
  * Rewind / fast forward act on both edges so they can be held. The rest are
  * momentary and fire on press only, so a controller that sends a 0 on release
@@ -111,12 +112,15 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
     jogTimer = window.setInterval(jogOnce, JOG_TICK_MS);
   }
 
-  function play(): void {
+  function playPause(): void {
     if (!deps.isSessionRunning()) {
       if (deps.canStartSession()) deps.startSession();
       return;
     }
-    void transportController.play();
+    // Toggle, matching Space: a transport button you have to pair with Stop to
+    // re-use is worse than one that just does the obvious thing.
+    if (transportController.getState().isPlaying) transportController.pause();
+    else void transportController.play();
     deps.onTransportChanged?.();
   }
 
@@ -181,7 +185,7 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
         stop();
         break;
       case "play":
-        play();
+        playPause();
         break;
     }
   }

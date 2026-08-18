@@ -139,18 +139,6 @@ export function appShellHtml(): string {
                   </span>
                 </div>
 
-                <div class="row" id="learnModeRow">
-                  <label class="meta" for="learnMode" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                    <input id="learnMode" type="checkbox" />
-                    Note progression (wait for MIDI)
-                  </label>
-                  <span class="meta" style="opacity:0.7;font-size:11px">
-                    Playback pauses at each note until you play it on your MIDI keyboard.
-                    Needs a keyboard connected in <strong>Configure &rarr; MIDI</strong>; the
-                    MIDI IN readout above the Start button shows what it hears.
-                  </span>
-                </div>
-
                 <div class="row">
                   <button id="vizStart">Start visualizer</button>
                   <button id="vizStop" disabled>Stop</button>
@@ -230,6 +218,18 @@ export function appShellHtml(): string {
                   </div>
                 </div>
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
+
+                <div class="practiceRow" id="learnModeRow">
+                  <label class="practiceToggle" for="learnMode">
+                    <input id="learnMode" type="checkbox" />
+                    <span>Wait mode &mdash; advance on note play</span>
+                  </label>
+                  <span class="meta practiceHint">
+                    Steps through the song one note at a time, holding at each until you play
+                    it on your MIDI keyboard. Needs a keyboard connected in
+                    <strong>Configure &rarr; MIDI</strong>.
+                  </span>
+                </div>
 
                 <div class="startRow">
                   <button id="playStart" class="playStartBtn" disabled>Start</button>

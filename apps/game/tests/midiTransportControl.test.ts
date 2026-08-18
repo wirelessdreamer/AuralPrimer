@@ -107,10 +107,30 @@ describe("midiTransportControl", () => {
   });
 
   describe("momentary buttons", () => {
-    it("play starts playback", () => {
-      const h = setup();
+    it("play starts playback when paused", () => {
+      const h = setup({}, { t: 5, isPlaying: false });
       press(MIDI_TRANSPORT_CC.play);
       expect(h.tc.play).toHaveBeenCalledTimes(1);
+      expect(h.tc.pause).not.toHaveBeenCalled();
+    });
+
+    it("play pauses when already playing, so the button toggles", () => {
+      const h = setup({}, { t: 5, isPlaying: true });
+      press(MIDI_TRANSPORT_CC.play);
+      expect(h.tc.pause).toHaveBeenCalledTimes(1);
+      expect(h.tc.play).not.toHaveBeenCalled();
+    });
+
+    it("toggles back and forth across repeated presses", () => {
+      const state = { t: 5, isPlaying: false };
+      const h = setup({}, state);
+      press(MIDI_TRANSPORT_CC.play);
+      state.isPlaying = true; // transport now reports playing
+      press(MIDI_TRANSPORT_CC.play);
+      state.isPlaying = false;
+      press(MIDI_TRANSPORT_CC.play);
+      expect(h.tc.play).toHaveBeenCalledTimes(2);
+      expect(h.tc.pause).toHaveBeenCalledTimes(1);
     });
 
     it("stop halts and returns to zero", () => {
@@ -127,20 +147,20 @@ describe("midiTransportControl", () => {
     });
 
     it("fires on press only, so a release can't double-trigger", () => {
-      const h = setup();
+      const h = setup({}, { t: 5, isPlaying: false });
       press(MIDI_TRANSPORT_CC.play);
       release(MIDI_TRANSPORT_CC.play);
       expect(h.tc.play).toHaveBeenCalledTimes(1);
     });
 
     it("treats the threshold value as a press", () => {
-      const h = setup();
+      const h = setup({}, { t: 5, isPlaying: false });
       cc(MIDI_TRANSPORT_CC.play, CC_PRESS_THRESHOLD);
       expect(h.tc.play).toHaveBeenCalledTimes(1);
     });
 
     it("treats just below the threshold as a release", () => {
-      const h = setup();
+      const h = setup({}, { t: 5, isPlaying: false });
       cc(MIDI_TRANSPORT_CC.play, CC_PRESS_THRESHOLD - 1);
       expect(h.tc.play).not.toHaveBeenCalled();
     });

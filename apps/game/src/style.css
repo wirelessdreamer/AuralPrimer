@@ -1477,3 +1477,42 @@ li {
   opacity: 0.6;
   font-size: 11px;
 }
+
+/* Wait-mode toggle, sitting with the Start button rather than buried in the
+   scrollable rail where it went unnoticed. */
+.practiceRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(163, 255, 18, 0.22);
+  background: rgba(10, 14, 24, 0.55);
+}
+
+.practiceToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.practiceRow:has(#learnMode:checked) {
+  border-color: rgba(163, 255, 18, 0.6);
+  box-shadow: 0 0 0 2px rgba(163, 255, 18, 0.1);
+}
+
+.practiceRow:has(#learnMode:checked) .practiceToggle {
+  color: var(--accent3);
+}
+
+.practiceHint {
+  flex: 1;
+  min-width: 16em;
+  opacity: 0.65;
+  font-size: 11px;
+}
