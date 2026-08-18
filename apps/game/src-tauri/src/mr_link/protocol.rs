@@ -280,6 +280,57 @@ mod tests {
         assert_eq!(decoded.held.len(), 128);
     }
 
+    // ---- Cross-implementation fixtures -------------------------------
+    // These exact byte sequences are also asserted by the C# client's check
+    // harness. Pinning the same literals on both sides is what makes "the two
+    // implementations agree" a fact rather than an intention: if either encoder
+    // drifts, one of the two suites fails immediately instead of the headset
+    // quietly rendering nonsense.
+
+    #[test]
+    fn position_bytes_match_the_client_fixture() {
+        let sample = PositionSample {
+            song_time_sec: 12.5,
+            host_clock_us: 987_654_321,
+            playing: true,
+        };
+        assert_eq!(
+            sample.encode().to_vec(),
+            vec![
+                0x40, //
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x29, 0x40, // 12.5 f64 LE
+                0xB1, 0x68, 0xDE, 0x3A, 0x00, 0x00, 0x00, 0x00, // 987654321 u64 LE
+                0x01, // playing
+            ]
+        );
+    }
+
+    #[test]
+    fn notes_bytes_match_the_client_fixture() {
+        let state = NoteState {
+            host_clock_us: 42,
+            held: vec![(60, 100), (64, 90), (67, 80)],
+        };
+        assert_eq!(
+            state.encode(),
+            vec![
+                0x41, //
+                0x2A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 42 u64 LE
+                0x03, // three held
+                60, 100, 64, 90, 67, 80,
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_notes_bytes_match_the_client_fixture() {
+        let state = NoteState {
+            host_clock_us: 0,
+            held: vec![],
+        };
+        assert_eq!(state.encode(), vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0, 0x00]);
+    }
+
     #[test]
     fn host_clock_is_monotonic() {
         let a = host_clock_us();
