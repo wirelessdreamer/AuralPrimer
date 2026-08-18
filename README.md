@@ -530,11 +530,25 @@ Third-party components, model weights, and datasets retain their own
 licenses, catalogued in
 [Third-party components & attribution](#third-party-components--attribution).
 
-**One exception: the Unity mixed-reality client** under `UnityClient/` is
-licensed **Apache-2.0** ([LICENSE](UnityClient/Aural%20Primer/LICENSE)). The
-Unity runtime is proprietary and cannot be sublicensed under the GPL, so a
-GPL-licensed Unity build would be a combined work that could not be conveyed
-under the GPL in full. Apache-2.0 removes the conflict rather than working
-around it with a GPLv3 §7 linking exception. Apache-2.0 is one-way compatible
-with GPLv3 — permissively licensed code may be used by the GPL parts of this
-repository, but not the reverse.
+### Libraries permissive, applications copyleft
+
+| Tree | Licence |
+| --- | --- |
+| `apps/`, `visualizers/`, `python/`, `crates/` | GPL-3.0-or-later |
+| [`packages/`](packages/README.md) — shared libraries | **Apache-2.0** |
+| `UnityClient/` — mixed-reality client | **Apache-2.0** |
+
+The forcing constraint is the MR client: the Unity runtime is proprietary and
+cannot be sublicensed under the GPL, so a GPL-licensed Unity build would be a
+combined work that could not be conveyed under the GPL in full. Apache-2.0
+removes that conflict outright rather than working around it with a GPLv3 §7
+linking exception, and it avoids the same friction with app-store terms.
+
+Because **licence compatibility runs one way** — Apache-2.0 code may be used by
+a GPL work, but not the reverse — the shared libraries under `packages/` are
+Apache-2.0 too. Otherwise every piece of logic both clients need would raise a
+relicensing question on the way across. Nothing about the desktop client changes:
+a GPL application consuming Apache-2.0 libraries is the direction that works.
+
+`packages/feedpak/schemas/` is MIT per-file, set deliberately so the container
+format stays unencumbered for interoperating tools.

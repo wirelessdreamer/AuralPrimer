@@ -120,6 +120,11 @@ maddening:
 Port them to a small C# library with the **same unit tests ported alongside**,
 so both clients are provably answering the same questions the same way.
 
+Most of this still sits inside `apps/game` and `visualizers/viz-tab`. Move each
+piece into `packages/` as the MR client needs it: that tree is Apache-2.0, so
+the code is born under a licence both clients can use, and the GPL desktop
+client keeps consuming it unchanged.
+
 ---
 
 ## 3. Phase 0 — de-risking spikes (do these first)
@@ -475,21 +480,20 @@ consumes them yet.
    keyboard layout maths, Nashville degrees, key inference, MIDI binding model,
    wait-mode grouping, tempo conversion — which lives in GPL files today.
 
-   Two ways to satisfy it, and the second is much better:
+   **Resolved: `packages/` is now Apache-2.0.** The repository policy is
+   *libraries permissive, applications copyleft* — `packages/` Apache-2.0,
+   `apps/` and `visualizers/` GPL-3.0-or-later, `UnityClient/` Apache-2.0.
+   Documented in [`packages/README.md`](../packages/README.md) and the root
+   README. Verified clean to do: all 19 commits under `packages/` are the
+   owner's, with no third-party code, and the feedpak schemas were already MIT
+   by design.
 
-   - **Relicense on port.** Legitimate here: `git log` shows every commit to
-     those files is by the project owner, with no third-party notices, so the
-     copyright holder may license that code under whatever terms they choose.
-     But it makes the question recur every time logic moves between clients.
-   - **Give the shared core its own permissive licence** (recommended). Put the
-     pure logic in a permissively licensed package that *both* clients consume —
-     `packages/core-music` already exists as a natural home, with the C# port
-     alongside it. The GPL desktop client may consume Apache code freely, so
-     nothing about the desktop licence changes, and the direction-of-flow rule
-     stops being something anyone has to remember.
-
-   Worth doing now while sole authorship makes it trivial: once outside
-   contributors touch the GPL parts, relicensing anything requires their consent.
+   So the direction-of-flow rule stops being something anyone has to remember.
+   The pure logic still embedded in `apps/game` and `visualizers/viz-tab` moves
+   into `packages/` when the MR client needs it, and is **born Apache** at that
+   point — no relicensing question ever arises. Nothing about the desktop
+   client's licence changes: a GPL application consuming Apache-2.0 libraries is
+   the direction that works.
 3. **Model/asset licensing** still applies: anything bundled keeps the same
    attribution obligations as the desktop client (README rules).
 
@@ -513,7 +517,7 @@ consumes them yet.
 | Input | Hand tracking; grabbable menu in the air, calibration by pinch, play mode gesture-free |
 | Scoring | Later — v1 is a learning tool |
 | Ingest | Stays on desktop in AuralStudio |
-| Licence | Unity client **Apache-2.0**; rest of the repo stays GPL-3.0-or-later |
+| Licence | `packages/` + `UnityClient/` **Apache-2.0**; `apps/`, `visualizers/` GPL-3.0-or-later |
 | Repo | Tracked in the parent; Unity ignores added (nested `.git` still to remove) |
 | Pack delivery | Moot — the host serves the chart, the headset stores nothing |
 
@@ -522,6 +526,4 @@ consumes them yet.
 1. **May I remove the nested `.git` under `UnityClient/Aural Primer`?** One commit
    of the untouched template, and it is the only thing stopping the parent from
    tracking the project's files instead of a bare gitlink.
-2. **Move the shared pure logic to a permissive licence?** Recommended, so code
-   can flow to both clients without a relicensing question each time. Needs your
-   say-so since it changes the licence on existing files — see §7.
+2. ~~Shared logic licence~~ — **done: `packages/` is Apache-2.0** (see §7).
