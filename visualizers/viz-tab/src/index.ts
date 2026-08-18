@@ -57,6 +57,13 @@ export type PianoRenderOptions = {
    */
   scrollSpeedMultiplier?: number;
   /**
+   * Chord names for the chart, one per change (see core-music `chordLabels`).
+   * Precomputed by the host rather than derived per frame: naming a chord scans
+   * a template table, and doing that for every visible group every frame would
+   * be wasted work on a value that never changes.
+   */
+  chordLabels?: { tSec: number; label: string }[];
+  /**
    * Nashville Number System mode. When true, the piano roll labels notes
    * by their scale-degree number relative to the inferred song key
    * (1..7 for diatonic notes, b/# of the nearest degree for chromatic
@@ -889,6 +896,38 @@ export class TabRenderer {
       if (dt <= 0.08 && note.t_off >= t - 0.02) {
         activeKeys.set(note.pitch, Math.max(activeKeys.get(note.pitch) ?? 0, 0.35 + velocity * 0.65));
       }
+    }
+
+    // Chord names, riding down the left margin alongside the notes they belong
+    // to, so the name arrives at the hit line at the same moment the chord does.
+    if (opts.chordLabels && opts.chordLabels.length) {
+      ctx.save();
+      ctx.font = "800 15px ui-monospace, SFMono-Regular, Consolas, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      for (const chord of opts.chordLabels) {
+        const dt = chord.tSec - t;
+        if (dt < -lookBehindSec || dt > lookAheadSec) continue;
+
+        const y = hitY - dt * pxPerSec;
+        if (y < rollTop - 10 || y > hitY + 10) continue;
+
+        // Fade in as it approaches, so the eye is drawn to what is imminent
+        // rather than to a wall of equally-loud text.
+        const approach = clamp(1 - dt / lookAheadSec, 0, 1);
+        const alpha = 0.35 + approach * 0.65;
+
+        const width = ctx.measureText(chord.label).width + 12;
+        ctx.globalAlpha = alpha * 0.72;
+        ctx.fillStyle = "rgba(3,7,13,0.9)";
+        roundRectPath(ctx, layoutPadX + 2, y - 11, width, 22, 5);
+        ctx.fill();
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#a3ff12";
+        ctx.fillText(chord.label, layoutPadX + 8, y);
+      }
+      ctx.restore();
     }
 
     // Draw the queued Nashville degrees on top of every note body.
