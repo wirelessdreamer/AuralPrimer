@@ -195,6 +195,7 @@ export function appShellHtml(): string {
                   <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
                     <span class="liveInputLabel">MIDI IN</span>
                     <span id="liveInputNotes" class="liveInputNotes"></span>
+                    <span id="liveInputChord" class="liveInputChord"></span>
                   </div>
                   <div
                     class="stageSpacing"
@@ -350,6 +351,16 @@ export function appShellHtml(): string {
             <pre id="midiStatus" class="meta">(midi input: not connected)</pre>
             <pre id="midiInActiveNotes" class="meta">(no active notes)</pre>
             <pre id="midiInEvents" class="meta">(midi input events)</pre>
+
+            <h3>Mixed-reality headset</h3>
+            <div class="row">
+              <label><input id="mrLinkEnabled" type="checkbox" checked /> serve the MR headset on this network</label>
+            </div>
+            <div class="meta" style="margin: 0 0 6px 6px; opacity: 0.7; font-size: 11px">
+              Streams the chart, playhead and your played notes to the AuralPrimer app on a
+              Quest. The headset finds this PC by itself &mdash; same Wi-Fi is all it needs.
+            </div>
+            <pre id="mrLinkStatus" class="meta">(starting)</pre>
 
             <h3>Transport control (MIDI learn)</h3>
             <div class="meta" style="margin-bottom:6px;opacity:0.75">

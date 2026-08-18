@@ -33,6 +33,8 @@ import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
+import { initMrLinkPanel, buildChart } from "./mrLinkPanel";
+import { nameChord, chordLabels } from "@auralprimer/core-music";
 import { initMidiTransportPanel } from "./midiTransportPanel";
 import {
   defaultBindings,
@@ -330,6 +332,13 @@ let selectedAuralSongPath: string | null = null;
 // is selected, so it is already non-null while the user is still looking at
 // the Start button. Play/pause needs to know the difference.
 let sessionStarted = false;
+
+/**
+ * Chord names for the loaded melodic track, computed once when the song loads.
+ * Naming a chord walks a template table; doing that per frame for every visible
+ * group would be real work repeated on a value that never changes.
+ */
+let songChordLabels: { tSec: number; label: string }[] = [];
 let selectedAuralSongDetails: AuralSongDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
 let selectedMelodicTracks: MelodicTrackSelection[] = [];
@@ -909,6 +918,25 @@ async function selectAuralSong(containerPath: string) {
     songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack?.notes ?? null, keyModeArtifacts);
     if (learnMode) buildLearnGroups();
 
+    // Chord names for the roll, from the same track the piano surface renders.
+    const chordTrack =
+      selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+    songChordLabels = chordTrack ? chordLabels(chordTrack.notes) : [];
+
+    // Hand the headset this song's chart. Prefers keys, since that is what the
+    // MR client renders against a real keyboard.
+    const mrTrack =
+      selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+    mrLink.setChart(
+      buildChart(
+        containerPath,
+        containerPath.split(/[\/]/).pop()?.replace(/\.(feedpak|auralsong)$/i, "") ?? "song",
+        mrTrack,
+        transport.bpm,
+        transport.timeSignature?.[0] ?? 4,
+      ),
+    );
+
     // Populate instrument selector with available melodic tracks.
     updateInstrumentSelector();
 
@@ -1177,8 +1205,16 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
         liveInputNotes: midiPanel.inputActiveNotes().activeNotes,
         scrollSpeedMultiplier: transport.scrollSpeedMultiplier,
         nashville: nashvilleMode,
+        chordLabels: songChordLabels,
       });
     }
+
+    // Feed the MR headset. Rate-limited inside the panel; a no-op when off.
+    mrLink.publish(
+      transport.t,
+      transport.isPlaying,
+      midiPanel.inputActiveNotes().activeNotes,
+    );
 
     vizRaf = requestAnimationFrame(tick);
   };
@@ -1252,6 +1288,9 @@ function readNashvilleMode(): boolean {
   }
 }
 let nashvilleMode = readNashvilleMode();
+// MR headset link: serves the chart, playhead and live notes to the Quest app.
+const mrLink = initMrLinkPanel();
+
 const nashvilleCheckbox = document.getElementById("nashvilleMode") as HTMLInputElement | null;
 if (nashvilleCheckbox) {
   nashvilleCheckbox.checked = nashvilleMode;
@@ -1441,15 +1480,23 @@ window.addEventListener("keydown", (ev) => {
 // Wait mode also announces the note it is holding for here.
 const liveInputHudEl = document.getElementById("liveInputHud");
 const liveInputNotesEl = document.getElementById("liveInputNotes");
+const liveInputChordEl = document.getElementById("liveInputChord");
 const LIVE_INPUT_HUD_INTERVAL_MS = 60;
 
 function renderLiveInputHud(): void {
   if (!liveInputHudEl || !liveInputNotesEl) return;
   liveInputHudEl.hidden = false;
 
-  const held = (midiPanel.inputActiveNotes().activeNotes ?? [])
-    .map((n) => n.noteName)
-    .join("  ");
+  const heldNotes = midiPanel.inputActiveNotes().activeNotes ?? [];
+  const held = heldNotes.map((n) => n.noteName).join("  ");
+
+  // Name what is being held, beside the note names rather than instead of them:
+  // the names say which keys are down, the chord says what they mean.
+  if (liveInputChordEl) {
+    const chord = heldNotes.length >= 2 ? nameChord(heldNotes.map((n) => n.pitch)) : null;
+    const chordText = chord ?? "";
+    if (liveInputChordEl.textContent !== chordText) liveInputChordEl.textContent = chordText;
+  }
 
   let text: string;
   let state: string;

@@ -1550,3 +1550,13 @@ li {
   opacity: 1;
   font-weight: 650;
 }
+
+/* Chord name beside the live MIDI notes: the note names say which keys are
+   down, this says what they mean. Lime to separate it from the cyan notes. */
+.liveInputChord {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent3);
+  min-width: 4em;
+}

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@auralprimer/av-sync": "*",
+    "@auralprimer/core-music": "*",
     "@auralprimer/viz-beats": "*",
     "@auralprimer/viz-drum-highway": "*",
     "@auralprimer/viz-fretboard": "*",
