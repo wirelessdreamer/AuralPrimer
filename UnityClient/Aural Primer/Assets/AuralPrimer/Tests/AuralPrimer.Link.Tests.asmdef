@@ -3,6 +3,7 @@
     "rootNamespace": "AuralPrimer.Link.Tests",
     "references": [
         "AuralPrimer.Link",
+        "AuralPrimer.Calibration",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
