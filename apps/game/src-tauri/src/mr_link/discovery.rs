@@ -379,6 +379,7 @@ mod tests {
         let mut buf = [0u8; 1024];
         let mut session_port = None;
         let mut host_addr = None;
+        let mut foreign_host = None;
         while std::time::Instant::now() < deadline && session_port.is_none() {
             if let Ok((len, from)) = client.recv_from(&mut buf) {
                 if let Ok(text) = std::str::from_utf8(&buf[..len]) {
@@ -391,10 +392,44 @@ mod tests {
                         if host_name == "TEST-HOST" {
                             session_port = Some(port);
                             host_addr = Some(from);
+                        } else {
+                            foreign_host = Some(host_name);
                         }
                     }
                 }
             }
+        }
+
+        // A second host on this machine makes the unicast leg untestable, for
+        // precisely the reason described above: both are bound to the group
+        // port, and a unicast to it lands on whichever is bound more
+        // specifically -- the real app, not this test's wildcard socket. The
+        // ack then names the wrong session and the assert below fails for a
+        // reason that has nothing to do with the code under test. Skip, in
+        // keeping with how this test already handles no network.
+        //
+        // The loop above stops at the first TEST-HOST beacon, so it can easily
+        // miss a foreign one that simply arrived second. Listen a little longer
+        // before trusting that we are alone; beacons come about once a second.
+        let quiet_until = std::time::Instant::now() + Duration::from_millis(1500);
+        while std::time::Instant::now() < quiet_until && foreign_host.is_none() {
+            if let Ok((len, _)) = client.recv_from(&mut buf) {
+                if let Ok(text) = std::str::from_utf8(&buf[..len]) {
+                    if let Some(DiscoveryMessage::Beacon { host_name, .. }) =
+                        DiscoveryMessage::parse(text)
+                    {
+                        if host_name != "TEST-HOST" {
+                            foreign_host = Some(host_name);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(other) = foreign_host {
+            eprintln!("another AuralPrimer host ('{other}') is beaconing; skipping");
+            server.stop();
+            return;
         }
         let session_port = session_port.expect("no beacon heard within 6s");
         assert_eq!(session_port, 47762);

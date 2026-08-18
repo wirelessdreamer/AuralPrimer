@@ -204,10 +204,20 @@ fn serve_client(
 
     // Reject a version mismatch outright. A protocol that half-works across
     // versions is harder to diagnose than one that refuses.
-    let client_protocol = serde_json::from_slice::<serde_json::Value>(&payload)
-        .ok()
+    let hello_json = serde_json::from_slice::<serde_json::Value>(&payload).ok();
+    let client_protocol = hello_json
+        .as_ref()
         .and_then(|v| v.get("protocol").and_then(|p| p.as_u64()))
         .unwrap_or(0);
+    // Where the client wants its streams. A client that names a port has already
+    // bound it, which is strictly better than the host picking a number and
+    // hoping it happens to be free at the other end. Absent means an older
+    // client that expects the host's own port number, so keep doing that.
+    let client_udp_port = hello_json
+        .as_ref()
+        .and_then(|v| v.get("udpPort").and_then(|p| p.as_u64()))
+        .filter(|p| *p > 0 && *p <= u16::MAX as u64)
+        .map(|p| p as u16);
     if client_protocol != PROTOCOL_VERSION as u64 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -233,9 +243,13 @@ fn serve_client(
     }
 
     // --- streams ---
-    // UDP goes to the peer's address with the port the host chose and told the
-    // client in WELCOME; the client never sends on UDP.
-    let stream_addr = SocketAddr::new(peer.ip(), udp.local_addr()?.port());
+    // UDP goes to the peer's address, on the port the client nominated in HELLO
+    // (falling back to the host's own port for clients that do not name one).
+    // The client never sends on UDP, so the address comes from the TCP peer.
+    let stream_addr = SocketAddr::new(
+        peer.ip(),
+        client_udp_port.unwrap_or(udp.local_addr()?.port()),
+    );
     let stream_state = Arc::clone(&state);
     let stream_running = Arc::clone(&running);
     let streamer = std::thread::Builder::new()
@@ -389,6 +403,47 @@ mod tests {
         // The host's own audio latency travels to the client; its video offset
         // deliberately does not.
         assert!((v["audioOffsetSec"].as_f64().unwrap() - 0.042).abs() < 1e-9);
+    }
+
+    /// The client names its own receive port, and the host must actually use
+    /// it. If the host keeps streaming to its own port number instead, the
+    /// session looks perfectly healthy over TCP while no position or note ever
+    /// arrives — the failure this addressing change exists to prevent.
+    #[test]
+    fn streams_go_to_the_port_the_client_nominated() {
+        let state = Arc::new(HostState::default());
+        state.set_position(12.5, true);
+        let server = SessionServer::start(Arc::clone(&state), "TEST".into()).unwrap();
+
+        // Bind first, exactly as the client does, then advertise that port.
+        let sink = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        sink.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let sink_port = sink.local_addr().unwrap().port();
+
+        let mut client = connect(&server);
+        client
+            .write_all(&encode_frame(
+                frame::HELLO,
+                serde_json::json!({
+                    "client": "test",
+                    "protocol": PROTOCOL_VERSION,
+                    "udpPort": sink_port,
+                })
+                .to_string()
+                .as_bytes(),
+            ))
+            .unwrap();
+
+        let (frame_type, _) = read_frame(&mut client);
+        assert_eq!(frame_type, frame::WELCOME);
+
+        // A port distinct from the host's own proves the nomination was honoured
+        // rather than coincidentally matching.
+        assert_ne!(sink_port, server.udp_port());
+
+        let mut buf = [0u8; 256];
+        let (len, _) = sink.recv_from(&mut buf).expect("no stream on the nominated port");
+        assert!(len > 0);
     }
 
     #[test]

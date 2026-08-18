@@ -106,7 +106,7 @@ than trusted.
 
 | Type | Name | Direction | Payload |
 | --- | --- | --- | --- |
-| `0x01` | `HELLO` | headset → host | JSON: `{ "client": string, "protocol": 1 }` |
+| `0x01` | `HELLO` | headset → host | JSON: `{ "client": string, "protocol": 1, "udpPort": u16 }` |
 | `0x02` | `WELCOME` | host → headset | JSON: `{ "host": string, "protocol": 1, "udpPort": u16, "audioOffsetSec": f64 }` |
 | `0x10` | `CHART` | host → headset | JSON, see §4 |
 | `0x11` | `SONG_CHANGED` | host → headset | JSON: `{ "songId": string }` — headset requests a fresh `CHART` |
@@ -114,8 +114,17 @@ than trusted.
 | `0x21` | `PONG` | host → headset | `u64` echoed client time, `u64` host time at reply |
 | `0x30` | `TRANSPORT` | headset → host | JSON: `{ "action": "play"\|"pause"\|"stop"\|"seek", "tSec": f64? }` |
 
-`udpPort` in `WELCOME` is where the headset listens for the streams in §3; the
-headset sends nothing on UDP, so the host learns the address from the TCP peer.
+`udpPort` in `HELLO` is where the headset listens for the streams in §3. The
+headset binds it before connecting and names it, rather than the host choosing a
+number both ends must have free — coupling two machines to one arbitrary port
+means the streams silently never arrive if anything already holds it there, and
+it makes running headset and host on one machine impossible, which is the normal
+case when testing in the Editor. A `HELLO` without `udpPort` is an older client;
+the host falls back to streaming to its own port number.
+
+`udpPort` in `WELCOME` is the port the host sends *from*, kept for diagnostics.
+The headset sends nothing on UDP, so the host learns the address from the TCP
+peer.
 
 `audioOffsetSec` is the host's measured audio latency (`av_audio_offset_ms`
 ÷ 1000). The host's *video* offset is deliberately **not** sent: the video is no

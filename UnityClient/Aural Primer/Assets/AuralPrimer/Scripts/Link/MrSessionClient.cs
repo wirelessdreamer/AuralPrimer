@@ -81,8 +81,20 @@ namespace AuralPrimer.Link
                 _stream = _tcp.GetStream();
                 _stream.ReadTimeout = 1000;
 
+                // Bind our own receive port before saying hello, and tell the
+                // host where to stream. The host used to nominate the port and
+                // expect us to bind the same number, which couples two machines
+                // to one arbitrary value: if anything here already holds it the
+                // streams simply never arrive. It also makes running the client
+                // on the host itself impossible, and that is the ordinary case
+                // when testing in the Editor. Port 0 lets the OS pick a free one.
+                _udp = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+                _udp.Client.ReceiveTimeout = 500;
+                var localUdpPort = ((IPEndPoint)_udp.Client.LocalEndPoint).Port;
+
                 var hello = Encoding.UTF8.GetBytes(
-                    $"{{\"client\":\"{_clientName}\",\"protocol\":{MrProtocol.ProtocolVersion}}}");
+                    $"{{\"client\":\"{_clientName}\",\"protocol\":{MrProtocol.ProtocolVersion},"
+                  + $"\"udpPort\":{localUdpPort}}}");
                 Send(MrProtocol.FrameHello, hello);
 
                 _tcpThread = new Thread(TcpLoop) { IsBackground = true, Name = "mr-session-tcp" };
@@ -243,26 +255,21 @@ namespace AuralPrimer.Link
             var udpPort = (int)(ExtractNumber(json, "udpPort") ?? 0);
             Clock.AudioOffsetSec = ExtractNumber(json, "audioOffsetSec") ?? 0.0;
 
-            if (udpPort <= 0)
+            if (_udp == null)
             {
-                Debug.LogError("[mr-link] WELCOME carried no usable udpPort");
+                Debug.LogError("[mr-link] no stream socket; the session cannot receive");
                 return;
             }
 
-            try
-            {
-                _udp = new UdpClient();
-                _udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                _udp.Client.Bind(new IPEndPoint(IPAddress.Any, udpPort));
-                _udp.Client.ReceiveTimeout = 500;
-                _udpThread = new Thread(UdpLoop) { IsBackground = true, Name = "mr-session-udp" };
-                _udpThread.Start();
-                Debug.Log($"[mr-link] streams on udp/{udpPort}, host audio offset {Clock.AudioOffsetSec:F3}s");
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[mr-link] could not bind stream port {udpPort}: {e.Message}");
-            }
+            // udpPort in WELCOME is the host's own send port. It is informational
+            // now that the client nominates where streams land, and is logged
+            // only because it is the first thing worth knowing when they don't.
+            _udpThread = new Thread(UdpLoop) { IsBackground = true, Name = "mr-session-udp" };
+            _udpThread.Start();
+
+            var localPort = ((IPEndPoint)_udp.Client.LocalEndPoint).Port;
+            Debug.Log($"[mr-link] streams inbound on udp/{localPort} (host sends from udp/{udpPort}), "
+                    + $"host audio offset {Clock.AudioOffsetSec:F3}s");
         }
 
         void UdpLoop()
