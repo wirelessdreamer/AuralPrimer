@@ -83,6 +83,13 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
   let jogTimer: number | null = null;
   let jogTick = 0;
   let jogDir = 0;
+  // Where the jog is steering to. Deliberately NOT re-read from the transport
+  // each tick: during playback `state.t` comes from the audio clock, which both
+  // lags an in-flight seek and keeps advancing on its own. Re-reading it made
+  // the jog fight playback -- a rewind at the slow end of the ramp (0.25 s per
+  // 100 ms tick) barely out-ran the 0.1 s of playback happening in the same
+  // window, so it crawled, and above 1x playback rate it moved the wrong way.
+  let jogTargetSec = 0;
 
   function cancelJog(): void {
     if (jogTimer !== null) {
@@ -99,9 +106,8 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
   }
 
   function jogOnce(): void {
-    const st = transportController.getState();
-    const next = Math.max(0, st.t + jogStepSecForTick(jogTick) * jogDir);
-    transportController.seek(next);
+    jogTargetSec = Math.max(0, jogTargetSec + jogStepSecForTick(jogTick) * jogDir);
+    transportController.seek(jogTargetSec);
     jogTick += 1;
     afterTransportChange();
   }
@@ -110,6 +116,8 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
     if (!deps.isSessionRunning()) return;
     cancelJog();
     jogDir = direction;
+    // Anchor to wherever playback actually is, once, at the moment of press.
+    jogTargetSec = Math.max(0, transportController.getState().t);
     jogOnce(); // respond on the press itself, not a tick later
     jogTimer = window.setInterval(jogOnce, JOG_TICK_MS);
   }

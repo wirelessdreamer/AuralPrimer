@@ -129,16 +129,6 @@ export function appShellHtml(): string {
                   hold rewind or fast fwd to jog, accelerating.
                 </div>
 
-                <div class="row" id="nashvilleRow">
-                  <label class="meta" for="nashvilleMode" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                    <input id="nashvilleMode" type="checkbox" />
-                    Nashville numbers
-                  </label>
-                  <span class="meta" style="opacity:0.7;font-size:11px">
-                    Label piano-roll notes by scale degree (1-7) in the song's key.
-                  </span>
-                </div>
-
                 <div class="row">
                   <button id="vizStart">Start visualizer</button>
                   <button id="vizStop" disabled>Stop</button>
@@ -218,6 +208,17 @@ export function appShellHtml(): string {
                   </div>
                 </div>
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
+
+                <div class="practiceRow" id="nashvilleRow">
+                  <label class="practiceToggle" for="nashvilleMode">
+                    <input id="nashvilleMode" type="checkbox" />
+                    <span>Nashville numbers</span>
+                  </label>
+                  <span class="meta practiceHint">
+                    Stamps the scale degree (1-7) on each falling note, so the song reads as
+                    numbers in its key instead of note names.
+                  </span>
+                </div>
 
                 <div class="practiceRow" id="learnModeRow">
                   <label class="practiceToggle" for="learnMode">

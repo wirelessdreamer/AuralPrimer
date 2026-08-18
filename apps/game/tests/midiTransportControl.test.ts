@@ -264,6 +264,45 @@ describe("midiTransportControl", () => {
       expect(tBeforeSwitch - firstRewind).toBeCloseTo(JOG_STEP_START_SEC, 6);
     });
 
+    it("holds its own target instead of re-reading the drifting audio clock", () => {
+      // While playing, state.t comes from the audio clock: playback keeps
+      // advancing it after each seek lands. Re-reading it per tick leaked that
+      // drift into every step, so a rewind covered less ground than the ramp
+      // called for (and above 1x playback rate could move forward). Model the
+      // drift explicitly and require the exact ramp regardless.
+      const DRIFT = 0.1;
+      const state = { t: 100, isPlaying: true };
+      const tc = {
+        getState: vi.fn(() => state),
+        seek: vi.fn((t: number) => {
+          state.t = t + DRIFT; // seek lands, then playback rolls on
+        }),
+        play: vi.fn(async () => {}),
+        pause: vi.fn(),
+        stop: vi.fn(),
+      };
+      handle = initMidiTransportControl({
+        transportController: tc as unknown as MidiTransportDeps["transportController"],
+        getBindings: () => defaultBindings(),
+        getCurrentRoute: () => "play",
+        isPauseMenuVisible: () => false,
+        isSessionRunning: () => true,
+        canStartSession: () => true,
+        startSession: vi.fn(),
+      } as MidiTransportDeps);
+
+      press(MIDI_TRANSPORT_CC.rewind);
+      vi.advanceTimersByTime(JOG_TICK_MS * 5);
+
+      const targets = tc.seek.mock.calls.map((c) => c[0] as number);
+      let expected = 100;
+      targets.forEach((actual, i) => {
+        expected -= jogStepSecForTick(i);
+        expect(actual).toBeCloseTo(expected, 6);
+      });
+      expect(targets.length).toBe(6); // press + 5 ticks
+    });
+
     it("does not jog when no session is running", () => {
       const h = setup({ isSessionRunning: () => false }, { t: 30, isPlaying: false });
       press(MIDI_TRANSPORT_CC.fastForward);
