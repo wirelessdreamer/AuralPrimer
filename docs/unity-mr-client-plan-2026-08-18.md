@@ -456,33 +456,33 @@ consumes them yet.
 
 ---
 
-## Questions I need answered
+## Requirements — settled and outstanding
 
-**Blocking the plan's shape**
+### Settled
 
-1. ~~Target device~~ — **answered: Quest 3 / 3S / Pro**, multiplatform where free.
-2. ~~MIDI on the headset~~ — **answered: the host keeps all MIDI.** Risk closed.
-3. ~~Playback-only?~~ — **answered by the architecture**: the headset renders, the
-   host owns MIDI, time and ingest.
-4. ~~Where does audio come out?~~ — **answered: the host.** "Mixed reality only a
-   display" settles it; audio stays on the desk where it is already calibrated.
+| | Decision |
+|---|---|
+| Target | Quest 3 / 3S / Pro; multiplatform where free (OpenXR/ARFoundation first) |
+| Architecture | Host-served — desktop is the app, headset is a display |
+| MIDI | Host keeps all of it; risk of on-headset MIDI closed |
+| MIDI sharing | Ableton and AuralPrimer read the Axiom concurrently (WinRT multi-client) |
+| Transport master | AuralPrimer, outright; Ableton is unaware and voices the performance |
+| Timebase | Desktop authoritative; headset compensates automatically, no calibration screen |
+| Audio | Host, through the existing interface |
+| Discovery | UDP multicast on `239.255.61.88:47761`, AugmentedDefense pattern, own magic |
+| v1 surface | Piano roll on keys — sheet music, drums, fretboard, multi-player deferred |
+| Input | Hand tracking; calibration by pinch, play mode gesture-free |
+| Scoring | Later — v1 is a learning tool |
+| Ingest | Stays on desktop in AuralStudio |
+| Pack delivery | Moot — the host serves the chart, the headset stores nothing |
 
-**Scope**
+### Still outstanding
 
-4. **Which instruments matter for v1?** Calibration implies keys first; do
-   drums/guitar/vocals need parity in the first release or later?
-5. **Multi-player stages** — needed in MR, or single player?
-6. **Sheet music mode** — required for parity, or is the piano roll enough at first?
-
-**Product**
-
-5. ~~Multi-player stages~~ / ~~sheet music~~ — **answered: piano roll only for v1.**
-6. ~~Hand tracking or controllers~~ — **answered: hand tracking.**
-7. ~~Scoring~~ — **answered: later.** Learning tool for now, which usefully relaxes
-   the input-latency budget for v1.
-8. ~~Pack delivery~~ — **moot**: the host serves the chart, the headset stores nothing.
-9. ~~Ableton or AuralPrimer as transport master?~~ — **answered: AuralPrimer.**
-   Ableton voices the performance and is otherwise unaware; both read the Axiom
-   concurrently.
-10. **Seated at the keyboard in passthrough** — assumed primary posture. Any
-    standing or room-scale use worth designing for?
+1. **Posture.** Seated at the keyboard in passthrough is assumed throughout. Any
+   standing or room-scale use worth designing for now rather than retrofitting?
+2. **Repo layout.** `UnityClient/Aural Primer` is a nested git repo, untracked by
+   the parent, and Unity's `Library/` churns heavily. Submodule, separate repo,
+   or same repo with ignores? (see §7)
+3. **GPLv3 and the Unity runtime.** Needs a decision before anything is
+   distributed — a linking exception on our code, or licensing the Unity client
+   separately (see §7). Not urgent for development; blocking for release.
