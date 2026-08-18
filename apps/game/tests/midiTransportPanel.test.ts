@@ -164,7 +164,31 @@ describe("midiTransportPanel", () => {
 
   it("reports nothing received before any traffic", () => {
     setup();
-    expect(statusText()).toContain("nothing received yet");
+    expect(statusText()).toContain("no MIDI received yet");
+  });
+
+  it("annotates each message with the action it drives and the edge it reads as", () => {
+    // The whole point of the monitor: a controller that repeats its press value
+    // on release shows two PRESS lines, which is why momentary hold cannot work
+    // for it. That has to be visible as a sequence, not one overwritten line.
+    setup();
+    send({ data1: 31, data2: 127 });
+    send({ data1: 31, data2: 0 });
+    const text = statusText();
+    expect(text).toContain("Start song over: PRESS");
+    expect(text).toContain("Start song over: RELEASE");
+  });
+
+  it("marks traffic that matches no binding", () => {
+    setup();
+    send({ data1: 77, data2: 127 });
+    expect(statusText()).toContain("(unbound)");
+  });
+
+  it("keeps a rolling window rather than one line", () => {
+    setup();
+    for (let i = 0; i < 4; i += 1) send({ data1: 31, data2: i % 2 === 0 ? 127 : 0 });
+    expect(statusText().split(String.fromCharCode(10)).length).toBeGreaterThan(1);
   });
 
   it("prompts for the specific button while learning", () => {

@@ -19,6 +19,7 @@ import {
   TRANSPORT_ACTIONS,
   bindingFromMessage,
   bindingsConflict,
+  matchBinding,
   describeBinding,
   describeMessage,
   type TransportAction,
@@ -52,7 +53,17 @@ export function initMidiTransportPanel(
   }
 
   let learning: TransportAction | null = null;
-  let lastMessage = "";
+  /**
+   * Rolling log of recent input, each line annotated with which action it
+   * matched and whether it read as a press or a release.
+   *
+   * One "last message" line was not enough to debug a button: whether a
+   * controller sends a distinct release (value 0) or repeats its press value on
+   * both edges decides whether momentary hold-to-jog can work at all, and that
+   * is only visible as a sequence.
+   */
+  let recentLines: string[] = [];
+  const RECENT_LIMIT = 10;
 
   const valueEls = new Map<TransportAction, HTMLElement>();
   const learnBtns = new Map<TransportAction, HTMLButtonElement>();
@@ -63,8 +74,19 @@ export function initMidiTransportPanel(
       const info = TRANSPORT_ACTIONS.find((a) => a.id === learning);
       parts.push(`Listening — press the ${info?.label ?? learning} button on your controller...`);
     }
-    parts.push(lastMessage ? `last message: ${lastMessage}` : "last message: (nothing received yet)");
+    if (!recentLines.length) parts.push("(no MIDI received yet - connect an input port above)");
+    else parts.push(...recentLines);
     statusEl!.textContent = parts.join("\n");
+  }
+
+  /** Describe a message and how the current bindings interpret it. */
+  function annotate(msg: MidiInputMessageEvent): string {
+    const bindings = deps.getBindings();
+    for (const { id, label } of TRANSPORT_ACTIONS) {
+      const edge = matchBinding(bindings[id], msg);
+      if (edge) return `${describeMessage(msg)}  ->  ${label}: ${edge.toUpperCase()}`;
+    }
+    return `${describeMessage(msg)}  ->  (unbound)`;
   }
 
   function renderBindings(): void {
@@ -140,7 +162,8 @@ export function initMidiTransportPanel(
     const msg = (evt as CustomEvent<MidiInputMessageEvent>).detail;
     if (!msg || msg.message_type === "clock") return;
 
-    lastMessage = describeMessage(msg);
+    recentLines.push(annotate(msg));
+    if (recentLines.length > RECENT_LIMIT) recentLines = recentLines.slice(-RECENT_LIMIT);
 
     if (learning) {
       const binding = bindingFromMessage(msg);
