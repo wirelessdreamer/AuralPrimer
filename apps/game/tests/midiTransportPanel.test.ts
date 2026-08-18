@@ -75,8 +75,17 @@ describe("midiTransportPanel", () => {
 
   it("renders a row per action showing the current binding", () => {
     setup();
-    expect(rows()).toHaveLength(5);
+    expect(rows()).toHaveLength(6);
     expect(valueText(0)).toBe("CC 31 (any ch)");
+  });
+
+  it("offers wait mode as a learnable action, unassigned by default", () => {
+    const h = setup();
+    expect(valueText(5)).toBe("unassigned");
+
+    learnBtn(5).click();
+    send({ data1: 50, data2: 127, channel: 1 });
+    expect(h.current().waitMode).toEqual({ kind: "cc", number: 50, channel: 1 });
   });
 
   it("is not learning until asked", () => {

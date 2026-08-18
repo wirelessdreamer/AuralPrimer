@@ -68,6 +68,8 @@ export type MidiTransportDeps = {
   onTransportChanged?: () => void;
   /** Told about seeks so the MIDI clock output can follow. */
   onSeeked?: (tSec: number) => void;
+  /** Flip wait mode (advance-on-note-play) on or off. */
+  toggleWaitMode?: () => void;
 };
 
 export type MidiTransportControl = {
@@ -186,6 +188,9 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
         break;
       case "play":
         playPause();
+        break;
+      case "waitMode":
+        deps.toggleWaitMode?.();
         break;
     }
   }

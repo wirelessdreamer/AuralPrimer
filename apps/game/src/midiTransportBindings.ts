@@ -12,7 +12,13 @@
 
 import type { MidiInputMessageEvent } from "./midiInput";
 
-export type TransportAction = "restart" | "rewind" | "fastForward" | "stop" | "play";
+export type TransportAction =
+  | "restart"
+  | "rewind"
+  | "fastForward"
+  | "stop"
+  | "play"
+  | "waitMode";
 
 export type TransportActionInfo = {
   id: TransportAction;
@@ -27,6 +33,7 @@ export const TRANSPORT_ACTIONS: TransportActionInfo[] = [
   { id: "fastForward", label: "Fast forward", hint: "Hold to jog forward" },
   { id: "stop", label: "Stop", hint: "Halt and return to the beginning" },
   { id: "play", label: "Play / pause", hint: "Toggles — pauses if already playing" },
+  { id: "waitMode", label: "Wait mode on/off", hint: "Toggles advance-on-note-play" },
 ];
 
 /**
@@ -53,6 +60,7 @@ export function defaultBindings(): TransportBindings {
     fastForward: { kind: "cc", number: 33, channel: null },
     stop: { kind: "cc", number: 34, channel: null },
     play: { kind: "cc", number: 35, channel: null },
+    waitMode: null,
   };
 }
 

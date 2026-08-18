@@ -173,6 +173,42 @@ describe("midiTransportControl", () => {
     });
   });
 
+  describe("wait mode toggle", () => {
+    it("fires the wait-mode toggle for a learned binding", () => {
+      const toggleWaitMode = vi.fn();
+      setup({
+        toggleWaitMode,
+        getBindings: () => ({
+          ...defaultBindings(),
+          waitMode: { kind: "cc", number: 50, channel: null },
+        }),
+      });
+      press(50);
+      expect(toggleWaitMode).toHaveBeenCalledTimes(1);
+    });
+
+    it("toggles on press only, not on the release", () => {
+      const toggleWaitMode = vi.fn();
+      setup({
+        toggleWaitMode,
+        getBindings: () => ({
+          ...defaultBindings(),
+          waitMode: { kind: "cc", number: 50, channel: null },
+        }),
+      });
+      press(50);
+      release(50);
+      expect(toggleWaitMode).toHaveBeenCalledTimes(1);
+    });
+
+    it("does nothing while wait mode is unassigned", () => {
+      const toggleWaitMode = vi.fn();
+      setup({ toggleWaitMode });
+      press(50);
+      expect(toggleWaitMode).not.toHaveBeenCalled();
+    });
+  });
+
   describe("hold to jog", () => {
     it("moves immediately on press rather than waiting for a tick", () => {
       const h = setup({}, { t: 30, isPlaying: true });

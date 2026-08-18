@@ -319,6 +319,12 @@ let viz: Visualizer | null = null;
 let vizRaf: number | null = null;
 let lastFrameMs: number | null = null;
 let selectedAuralSongPath: string | null = null;
+
+// True once the start flow has actually run for the current selection.
+// `viz` is NOT a proxy for this: the visualizer auto-starts as soon as a song
+// is selected, so it is already non-null while the user is still looking at
+// the Start button. Play/pause needs to know the difference.
+let sessionStarted = false;
 let selectedAuralSongDetails: AuralSongDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
 let selectedMelodicTracks: MelodicTrackSelection[] = [];
@@ -927,6 +933,7 @@ async function selectAuralSong(containerPath: string) {
     renderPlaybackLyrics(transport.t);
 
     // Selecting an AuralSong enables audio load.
+    if (selectedAuralSongPath !== containerPath) sessionStarted = false;
     selectedAuralSongPath = containerPath;
     if (songChanged) {
       lastLoadedAuralSongPath = null;
@@ -1034,7 +1041,7 @@ async function startSelectedSongSession() {
       // Let the normal start path retry load and surface the real error.
     }
   }
-  await startSelectedSongSessionFlow(
+  const startResult = await startSelectedSongSessionFlow(
     {
       selectedAuralSongPath,
       lastLoadedAuralSongPath,
@@ -1057,6 +1064,9 @@ async function startSelectedSongSession() {
       onFallbackStartError: (err) => errorConsole("play", "fallback playback start failed", err)
     }
   );
+  if (startResult.kind === "started" || startResult.kind === "fallback_started") {
+    sessionStarted = true;
+  }
 }
 
 function stopAudio() {
@@ -1472,7 +1482,7 @@ const transportHostDeps = {
   transportController,
   getCurrentRoute: () => routeController.getCurrentRoute(),
   isPauseMenuVisible: () => pauseMenu.isVisible(),
-  isSessionRunning: () => Boolean(viz),
+  isSessionRunning: () => sessionStarted,
   canStartSession: () => !playStartBtn.disabled,
   startSession: () => {
     void startSelectedSongSession();
@@ -1502,6 +1512,12 @@ const midiTransportPanel = initMidiTransportPanel({
 initMidiTransportControl({
   ...transportHostDeps,
   getBindings: () => midiTransportBindings,
+  // Drive the checkbox rather than the flag, so the learned button and the
+  // on-screen toggle stay in agreement and the existing change handler does
+  // the rebuild / un-stick work.
+  toggleWaitMode: () => {
+    if (learnCheckbox) learnCheckbox.click();
+  },
   // Don't fire the transport while the panel is capturing that same button.
   isSuppressed: () => midiTransportPanel.isLearning(),
 });
