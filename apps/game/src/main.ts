@@ -34,7 +34,12 @@ import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
 import { initMidiTransportPanel } from "./midiTransportPanel";
-import { loadBindings, saveBindings, type TransportBindings } from "./midiTransportBindings";
+import {
+  defaultBindings,
+  loadBindings,
+  saveBindings,
+  type TransportBindings,
+} from "./midiTransportBindings";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
 import {
@@ -1500,13 +1505,19 @@ initTransportHotkeys(transportHostDeps);
 // The same transport, driven from the control surface's buttons. Which button
 // does what is learned in Configure -> MIDI -> Transport control, because
 // controllers disagree about whether they send CC or notes and on what numbers.
-let midiTransportBindings: TransportBindings = loadBindings();
+// Start on the defaults so the panel can render immediately, then swap in the
+// durable set from settings.json once it arrives.
+let midiTransportBindings: TransportBindings = defaultBindings();
 const midiTransportPanel = initMidiTransportPanel({
   getBindings: () => midiTransportBindings,
   setBindings: (next) => {
     midiTransportBindings = next;
-    saveBindings(next);
+    void saveBindings(next);
   },
+});
+void loadBindings().then((loaded) => {
+  midiTransportBindings = loaded;
+  midiTransportPanel.refresh();
 });
 
 initMidiTransportControl({

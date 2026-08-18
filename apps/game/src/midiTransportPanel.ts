@@ -34,6 +34,8 @@ export type MidiTransportPanelDeps = {
 export type MidiTransportPanelHandle = {
   /** True while waiting to capture a button — transport action is suppressed. */
   isLearning: () => boolean;
+  /** Re-read the bindings and redraw; used after the async durable load. */
+  refresh: () => void;
   dispose: () => void;
 };
 
@@ -163,6 +165,7 @@ export function initMidiTransportPanel(
 
   return {
     isLearning: () => learning !== null,
+    refresh: renderBindings,
     dispose: () => {
       window.removeEventListener("auralprimer:midi-input", onMidiInput);
       window.removeEventListener("keydown", onKeyDown);

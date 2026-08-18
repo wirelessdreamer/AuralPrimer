@@ -191,7 +191,8 @@ export function parseBindings(raw: string | null): TransportBindings {
   return out;
 }
 
-export function loadBindings(): TransportBindings {
+/** localStorage read — the fallback when the native settings file is absent. */
+export function loadBindingsLocal(): TransportBindings {
   try {
     return parseBindings(window.localStorage.getItem(STORAGE_KEY));
   } catch {
@@ -199,10 +200,53 @@ export function loadBindings(): TransportBindings {
   }
 }
 
-export function saveBindings(bindings: TransportBindings): void {
+/** localStorage write — mirrors the durable copy, and is all browser dev gets. */
+export function saveBindingsLocal(bindings: TransportBindings): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(bindings));
   } catch {
     // Best-effort — session-only persistence is acceptable.
+  }
+}
+
+// Loaded lazily so this module stays importable (and testable) outside Tauri.
+async function invokeTauri<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<T>(cmd, args);
+}
+
+/**
+ * Read the durable bindings.
+ *
+ * Bindings live in the app's settings.json, NOT webview localStorage: the
+ * portable packer deletes the webview data directory on every repack, so
+ * anything stored there is silently lost between builds — which is exactly how
+ * learned bindings kept disappearing. localStorage remains the fallback for
+ * browser dev, and is migrated forward the first time a native read comes back
+ * empty.
+ */
+export async function loadBindings(): Promise<TransportBindings> {
+  try {
+    const raw = await invokeTauri<string | null>("midi_transport_bindings_get");
+    if (raw) return parseBindings(raw);
+    // Nothing durable yet — adopt whatever the old localStorage copy holds and
+    // write it through, so a user who already learned bindings keeps them.
+    const local = loadBindingsLocal();
+    await saveBindings(local);
+    return local;
+  } catch {
+    return loadBindingsLocal();
+  }
+}
+
+/** Persist bindings durably, mirroring to localStorage for browser dev. */
+export async function saveBindings(bindings: TransportBindings): Promise<void> {
+  saveBindingsLocal(bindings);
+  try {
+    await invokeTauri("midi_transport_bindings_set", {
+      value: JSON.stringify(bindings),
+    });
+  } catch {
+    // Not running under Tauri — the localStorage mirror above is all we get.
   }
 }

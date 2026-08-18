@@ -644,8 +644,34 @@ New-Item -ItemType Directory -Path $portableAssetsModelsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableConfigDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableSongsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $portableVisualizersDir -Force | Out-Null
+# Clear the webview's cached assets so a rebuilt frontend is never served from
+# a stale cache -- but KEEP "Local Storage" / "Session Storage". Wiping the whole
+# directory also discarded every localStorage-backed preference (learned MIDI
+# transport bindings, Nashville numbers, wait mode, note spacing) on every
+# repack, which read to users as "the app didn't save my settings".
 if (Test-Path -LiteralPath $portableWebviewDir) {
-  Remove-Item -LiteralPath $portableWebviewDir -Recurse -Force
+  $preserveWebviewDirs = @("Local Storage", "Session Storage", "IndexedDB", "Local State")
+  Get-ChildItem -LiteralPath $portableWebviewDir -Force | ForEach-Object {
+    $entry = $_
+    $keep = $false
+    if ($entry.PSIsContainer) {
+      if ($preserveWebviewDirs -contains $entry.Name) { $keep = $true }
+      else {
+        # A profile dir (e.g. EBWebView\Default) holds the storage folders.
+        $nested = Get-ChildItem -LiteralPath $entry.FullName -Force -Recurse -Directory -ErrorAction SilentlyContinue |
+          Where-Object { $preserveWebviewDirs -contains $_.Name }
+        if ($nested) { $keep = $true }
+      }
+    }
+    if (-not $keep) {
+      Remove-Item -LiteralPath $entry.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+  # Inside a preserved profile, drop only the cache subtrees.
+  $cacheDirNames = @("Cache", "Code Cache", "GPUCache", "DawnCache", "DawnGraphiteCache", "DawnWebGPUCache", "ScriptCache", "Service Worker")
+  Get-ChildItem -LiteralPath $portableWebviewDir -Force -Recurse -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $cacheDirNames -contains $_.Name } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 $portableGameExe = Join-Path $portableRootAbs "AuralPrimer.exe"

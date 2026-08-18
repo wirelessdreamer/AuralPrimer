@@ -71,6 +71,14 @@ struct Settings {
     #[serde(default)]
     native_audio_output_device: Option<native_audio::NativeAudioDeviceSelection>,
 
+    // --- MIDI transport button bindings ---
+    // Stored as the frontend's own JSON so the binding schema lives in one
+    // place. Kept here rather than in webview localStorage because the portable
+    // packer wipes the webview data directory on every repack, which silently
+    // discarded learned bindings between builds.
+    #[serde(default)]
+    midi_transport_bindings: Option<String>,
+
     // --- A/V sync calibration (shared with AuralStudio via the portable's
     //     common settings.json: calibrate once, both apps honor it) ---
     #[serde(default)]
@@ -2440,6 +2448,8 @@ pub fn run() {
             midi_clock_input_start_and_persist,
             midi_clock_input_get_saved_settings,
             midi_clock_input_is_connected,
+            midi_transport_bindings_get,
+            midi_transport_bindings_set,
             midi_clock_input_stop
         ])
         .run(tauri::generate_context!())
@@ -2491,6 +2501,20 @@ fn set_midi_input_port_selection(
     let paths = get_paths(app)?;
     let mut settings = load_settings(&paths);
     settings.midi_input_port = sel;
+    save_settings(&paths, &settings)
+}
+
+#[tauri::command]
+fn midi_transport_bindings_get(app: AppHandle) -> Result<Option<String>, String> {
+    let paths = get_paths(&app)?;
+    Ok(load_settings(&paths).midi_transport_bindings)
+}
+
+#[tauri::command]
+fn midi_transport_bindings_set(app: AppHandle, value: Option<String>) -> Result<(), String> {
+    let paths = get_paths(&app)?;
+    let mut settings = load_settings(&paths);
+    settings.midi_transport_bindings = value;
     save_settings(&paths, &settings)
 }
 

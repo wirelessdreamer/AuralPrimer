@@ -5,7 +5,10 @@
  * are recognised at all, so they carry the edge cases: note-on-with-velocity-0
  * as a release, channel scoping, and tolerating junk in localStorage.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+const invoke = vi.fn();
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 import {
   CC_PRESS_THRESHOLD,
   STORAGE_KEY,
@@ -14,10 +17,12 @@ import {
   describeBinding,
   describeMessage,
   loadBindings,
+  loadBindingsLocal,
   bindingsConflict,
   matchBinding,
   parseBindings,
   saveBindings,
+  saveBindingsLocal,
   type MidiBinding,
 } from "../src/midiTransportBindings";
 import type { MidiInputMessageEvent } from "../src/midiInput";
@@ -168,8 +173,8 @@ describe("persistence", () => {
 
   it("round-trips through localStorage", () => {
     const next = { ...defaultBindings(), play: { kind: "note", number: 36, channel: 9 } as MidiBinding };
-    saveBindings(next);
-    expect(loadBindings()).toEqual(next);
+    saveBindingsLocal(next);
+    expect(loadBindingsLocal()).toEqual(next);
   });
 
   it("keeps an explicit null as a deliberate unassignment", () => {
@@ -189,6 +194,61 @@ describe("persistence", () => {
 
   it("survives a corrupt stored value", () => {
     window.localStorage.setItem(STORAGE_KEY, "[]");
-    expect(loadBindings()).toEqual(defaultBindings());
+    expect(loadBindingsLocal()).toEqual(defaultBindings());
+  });
+});
+
+describe("durable persistence", () => {
+  // Bindings must live in settings.json, not webview localStorage: the portable
+  // packer clears webview data, which is how learned bindings kept vanishing
+  // between builds.
+  beforeEach(() => {
+    window.localStorage.clear();
+    invoke.mockReset();
+  });
+
+  it("reads the settings-backed copy in preference to localStorage", async () => {
+    const durable = { ...defaultBindings(), stop: { kind: "note", number: 41, channel: 2 } as MidiBinding };
+    saveBindingsLocal({ ...defaultBindings(), stop: { kind: "cc", number: 99, channel: null } as MidiBinding });
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "midi_transport_bindings_get" ? JSON.stringify(durable) : undefined,
+    );
+    expect(await loadBindings()).toEqual(durable);
+  });
+
+  it("writes through to settings.json", async () => {
+    invoke.mockResolvedValue(undefined);
+    const next = { ...defaultBindings(), play: { kind: "cc", number: 60, channel: 0 } as MidiBinding };
+    await saveBindings(next);
+    expect(invoke).toHaveBeenCalledWith("midi_transport_bindings_set", {
+      value: JSON.stringify(next),
+    });
+  });
+
+  it("migrates an existing localStorage copy the first time nothing is stored", async () => {
+    const legacy = { ...defaultBindings(), rewind: { kind: "note", number: 20, channel: 1 } as MidiBinding };
+    saveBindingsLocal(legacy);
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "midi_transport_bindings_get" ? null : undefined,
+    );
+    expect(await loadBindings()).toEqual(legacy);
+    // ...and it is written through, so the next launch reads it durably.
+    expect(invoke).toHaveBeenCalledWith("midi_transport_bindings_set", {
+      value: JSON.stringify(legacy),
+    });
+  });
+
+  it("falls back to localStorage when there is no Tauri backend", async () => {
+    const local = { ...defaultBindings(), stop: { kind: "cc", number: 7, channel: null } as MidiBinding };
+    saveBindingsLocal(local);
+    invoke.mockRejectedValue(new Error("no tauri"));
+    expect(await loadBindings()).toEqual(local);
+  });
+
+  it("still mirrors to localStorage when the native write fails", async () => {
+    invoke.mockRejectedValue(new Error("no tauri"));
+    const next = { ...defaultBindings(), play: { kind: "cc", number: 8, channel: null } as MidiBinding };
+    await expect(saveBindings(next)).resolves.toBeUndefined();
+    expect(loadBindingsLocal()).toEqual(next);
   });
 });
