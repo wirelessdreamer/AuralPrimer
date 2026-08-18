@@ -19,6 +19,8 @@ src/aural_ingest/melodic_benchmark_suite.py
 src/aural_ingest/meter_tracker.py
 src/aural_ingest/model_setup.py
 src/aural_ingest/mt3_compat.py
+src/aural_ingest/musicxml_feedpak.py
+src/aural_ingest/musicxml_import.py
 src/aural_ingest/pack_paths.py
 src/aural_ingest/piano_benchmark.py
 src/aural_ingest/piano_benchmark_suite.py
@@ -180,6 +182,8 @@ tests/test_model_upgrade_evidence_writers.py
 tests/test_mt3_compat.py
 tests/test_muscriptor_adapter.py
 tests/test_musdb_separation_sdr_runner.py
+tests/test_musicxml_feedpak.py
+tests/test_musicxml_import.py
 tests/test_pack_paths.py
 tests/test_piano_benchmark.py
 tests/test_piano_cleanup.py
