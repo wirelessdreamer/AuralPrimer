@@ -105,21 +105,6 @@ export function appShellHtml(): string {
                   <button id="addPlayer">Add</button>
                 </div>
 
-                <div class="row" id="scrollSpeedRow">
-                  <label class="meta" for="scrollSpeedSlider">Note spacing</label>
-                  <input
-                    id="scrollSpeedSlider"
-                    type="range"
-                    min="0.5"
-                    max="6"
-                    step="0.05"
-                    value="1"
-                    aria-label="Scroll speed multiplier"
-                    style="flex:1"
-                  />
-                  <span id="scrollSpeedValue" class="meta" style="min-width:3.5em;text-align:right">1.00x</span>
-                  <button id="scrollSpeedReset" title="Reset to 1.00x">Reset</button>
-                </div>
                 <div class="meta" style="margin: 4px 0 0 6px; opacity: 0.7; font-size: 11px">
                   In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.<br />
                   <kbd>Space</kbd> start / pause / resume &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> jog 5s
@@ -211,6 +196,25 @@ export function appShellHtml(): string {
                     <span class="liveInputLabel">MIDI IN</span>
                     <span id="liveInputNotes" class="liveInputNotes"></span>
                   </div>
+                  <div
+                    class="stageSpacing"
+                    id="scrollSpeedRow"
+                    title="Spreads the notes further apart without changing when they arrive: they travel faster to cover more distance in the same time, which makes dense passages easier to read. [ and ] adjust it live."
+                  >
+                    <label class="stageSpacingLabel" for="scrollSpeedSlider">Spacing</label>
+                    <input
+                      id="scrollSpeedSlider"
+                      type="range"
+                      min="0.5"
+                      max="6"
+                      step="0.05"
+                      value="1"
+                      aria-label="Note spacing multiplier"
+                    />
+                    <span id="scrollSpeedValue" class="stageSpacingValue">1.00x</span>
+                    <button id="scrollSpeedReset" class="stageSpacingReset" title="Reset to 1.00x">Reset</button>
+                  </div>
+
                   <label
                     class="practiceToggle"
                     for="nashvilleMode"

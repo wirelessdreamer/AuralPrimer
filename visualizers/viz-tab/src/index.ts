@@ -749,6 +749,10 @@ export class TabRenderer {
     ctx.fillText("PLAY HERE", layoutPadX + keyboardWidth, hitBandY - 4);
     ctx.restore();
 
+    // Nashville labels are collected here and drawn after the note pass: drawn
+    // inline, a later note's body would paint over an earlier note's number.
+    const nashvilleLabels: { left: number; right: number; y: number; text: string; color: string }[] = [];
+
     for (const note of track.notes) {
       if (note.t_off < t - lookBehindSec || note.t_on > t + lookAheadSec) continue;
 
@@ -865,26 +869,55 @@ export class TabRenderer {
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fillRect(noteX + 1, onsetTop, Math.max(1, noteW - 2), 1.6);
 
-      // Nashville mode: stamp the scale-degree number on the onset cap so
-      // the falling note reads as its number in the key. Only drawn when
-      // the cap is wide enough to fit a glyph legibly.
-      if (nashville && noteW >= 9) {
+      // Nashville mode: queue the scale degree to sit BESIDE the note. Stamped
+      // inside the onset cap it was limited to the cap's 12-21px width, which
+      // capped the type at 8-10px -- too small to read while the notes move.
+      // Alongside, it can be half again as large on a backing pill.
+      if (nashville) {
         const degree = pitchToNashville(note.pitch, this.keySignature);
         if (degree) {
-          ctx.save();
-          ctx.fillStyle = "#08111c";
-          ctx.font = `700 ${noteW >= 13 ? 10 : 8}px ui-monospace, SFMono-Regular, Consolas, monospace`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          const capCenterY = clamp((onsetTop + onsetBottomVisible) * 0.5, rollTop + 5, hitY - 5);
-          ctx.fillText(degree, noteX + noteW * 0.5, capCenterY);
-          ctx.restore();
+          nashvilleLabels.push({
+            left: noteX,
+            right: noteX + noteW,
+            y: clamp((onsetTop + onsetBottomVisible) * 0.5, rollTop + 12, hitY - 12),
+            text: degree,
+            color: bodyColor,
+          });
         }
       }
 
       if (dt <= 0.08 && note.t_off >= t - 0.02) {
         activeKeys.set(note.pitch, Math.max(activeKeys.get(note.pitch) ?? 0, 0.35 + velocity * 0.65));
       }
+    }
+
+    // Draw the queued Nashville degrees on top of every note body.
+    if (nashvilleLabels.length) {
+      const fontPx = 14;
+      const padX = 5;
+      const boxH = fontPx + 6;
+      const rollRight = layoutPadX + keyboardWidth;
+      ctx.save();
+      ctx.font = `800 ${fontPx}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (const label of nashvilleLabels) {
+        const boxW = ctx.measureText(label.text).width + padX * 2;
+        // Prefer the right of the note; flip to its left at the roll's edge.
+        let bx = label.right + 3;
+        if (bx + boxW > rollRight) bx = label.left - boxW - 3;
+        if (bx < layoutPadX) bx = layoutPadX;
+        ctx.fillStyle = "rgba(3,7,13,0.86)";
+        roundRectPath(ctx, bx, label.y - boxH * 0.5, boxW, boxH, 5);
+        ctx.fill();
+        // Border in the note's own colour, so a number is tied to its note.
+        ctx.strokeStyle = label.color;
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+        ctx.fillStyle = "#eaf3ff";
+        ctx.fillText(label.text, bx + boxW * 0.5, label.y);
+      }
+      ctx.restore();
     }
 
     for (const note of opts.liveInputNotes ?? []) {

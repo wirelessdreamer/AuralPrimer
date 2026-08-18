@@ -1500,6 +1500,37 @@ li {
   background: rgba(10, 14, 24, 0.55);
 }
 
+/* Note-spacing multiplier, on the stage rather than in the rail: it changes
+   what the falling notes look like, so it belongs where they are. */
+.stageSpacing {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.stageSpacingLabel {
+  opacity: 0.65;
+  white-space: nowrap;
+}
+
+.stageSpacing input[type="range"] {
+  width: clamp(90px, 12vw, 170px);
+  accent-color: var(--accent2);
+}
+
+.stageSpacingValue {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-width: 3.6em;
+  text-align: right;
+  opacity: 0.8;
+}
+
+.stageSpacingReset {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
 .practiceToggle {
   display: flex;
   align-items: center;
