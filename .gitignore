@@ -183,3 +183,13 @@ sysinfo.txt
 /[Aa]ssets/Plugins/Editor/JetBrains*
 *.pdb.meta
 *.mdb.meta
+
+# Unity template + package sample content: ~109 MB of skyboxes, an onboarding
+# video and baked lightmaps that ship with the MR Template and the XRI samples.
+# None of it is ours, all of it is re-importable (Package Manager -> Samples),
+# and we replace the template scene with our own. Keeping it out of history
+# matters because git bloat is permanent without a rewrite.
+UnityClient/**/Assets/MRTemplateAssets/
+UnityClient/**/Assets/MRTemplateAssets.meta
+UnityClient/**/Assets/Samples/
+UnityClient/**/Assets/Samples.meta

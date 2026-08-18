@@ -1,0 +1,26 @@
+Aural Primer — Mixed Reality client
+Copyright 2026 Nathanael Anderson
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+This subtree is deliberately licensed differently from the rest of the
+AuralPrimer repository, which is GPL-3.0-or-later. The Unity runtime is
+proprietary and cannot be sublicensed under the GPL, so a GPL-licensed Unity
+binary would be a combined work that could not be conveyed under the GPL in
+full. Apache-2.0 removes that conflict outright rather than papering over it
+with a GPLv3 section 7 linking exception.
+
+Third-party components (Unity engine, packages installed via the Package
+Manager, and any imported assets) retain their own licenses.
