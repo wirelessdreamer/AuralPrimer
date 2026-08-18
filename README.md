@@ -54,6 +54,85 @@ See [`BUILDING.md`](BUILDING.md) for the full install / test / package
 matrix and [`docs/local-dev-prereqs.md`](docs/local-dev-prereqs.md) for
 OS-level prerequisites.
 
+## Playing with a MIDI keyboard
+
+Live MIDI input is native (Rust `midir`: WinRT on Windows, CoreMIDI on macOS,
+ALSA on Linux). Browser-only `vite` mode cannot see MIDI devices — use the
+Tauri app or the portable build.
+
+**Connect once.** `Configure -> MIDI -> MIDI Input`: *Refresh*, pick the port,
+*Connect*. The choice persists in `settings.json`, and the app reconnects it at
+launch — the status line says `auto-connected` when it did. The **MIDI IN**
+readout above the *Start* button reports what the app is hearing on every
+instrument and display mode, and names the case where nothing is connected, so
+a silent device is never mistaken for a silent passage.
+
+### Transport buttons (MIDI learn)
+
+`Configure -> MIDI -> Transport control` binds your controller's transport
+strip. Click **Learn**, press the button, and whatever it sends becomes the
+binding — CC or note, any number, any channel. Controllers disagree wildly
+here, so nothing is assumed. Bindings persist in `settings.json`, and learning
+a button already in use reassigns it rather than letting one press drive two
+actions.
+
+| Action | Behaviour |
+| --- | --- |
+| Start song over | Return to zero and play |
+| Rewind / Fast forward | Jog while held, accelerating 0.25 s -> 4 s per 100 ms |
+| Stop | Halt and return to zero |
+| Play / pause | Toggle; starts the song if it has not started |
+| Wait mode on/off | Toggle advance-on-note-play (no default binding) |
+
+The log under those rows shows every incoming message **and how it was read**
+(`CC 21 = 127 ch1 -> Rewind: PRESS`). That is the first thing to check when a
+button misbehaves: it distinguishes a silent device from a mis-bound one.
+
+### Hold-to-jog needs a controller that sends a release
+
+A button can only express *held* if it sends something on release. Two
+families exist, and the app handles both:
+
+- **Momentary** — a value on press, `0` on release. Rewind and fast forward
+  jog for exactly as long as you hold them.
+- **Toggle / one-shot** — one message per press, nothing on release. A hold is
+  physically undetectable, so pressing the same button again stops the jog.
+
+Momentary is worth setting up if your controller supports it. On an
+**M-Audio Axiom 49/61**, whose buttons ship in toggle mode, assign each one to
+controller **146** ("MIDI CC on/off"):
+
+```text
+Ctrl Assign 146  ->  Data 1 <cc>  ->  Data 2 000  ->  Data 3 127
+```
+
+Those are dedicated buttons on the 49/61 — there is no Edit/Advanced key
+(that is the 25-note model) and no Enter to confirm. `scripts/axiom_tool.py`
+prints the procedure (`steps`), reports momentary-vs-toggle per button as you
+press it (`check`), and backs up the device's presets first (`backup`), since
+restoring a dump overwrites all of them. Changing the mode does not change the
+CC number, so learned bindings keep working.
+
+### Keyboard shortcuts (play route)
+
+| Key | Action |
+| --- | --- |
+| <kbd>Space</kbd> | Start / pause / resume |
+| <kbd>&larr;</kbd> <kbd>&rarr;</kbd> | Jog 5 s (hold <kbd>Shift</kbd> for 1 s) |
+| <kbd>[</kbd> <kbd>]</kbd> | Spread / compress note spacing |
+| <kbd>Ctrl</kbd>+<kbd>[</kbd> <kbd>]</kbd> <kbd>0</kbd> | Nudge / reset the A/V sync offset |
+| <kbd>Esc</kbd> | Pause menu |
+
+### Practice toggles
+
+Both sit directly above the *Start* button:
+
+- **Wait mode — advance on note play**: holds at each note or chord until you
+  play it, then advances. Needs a connected keyboard; the MIDI IN readout
+  names the note it is waiting for.
+- **Nashville numbers**: stamps the scale degree (1-7) on each falling note
+  instead of note names.
+
 ## Design principles
 
 - **Test-driven development.** Tests first, implementation second; CI

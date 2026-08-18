@@ -2,6 +2,11 @@
 
 This covers hardware keyboard input through the Tauri/midir path. Browser-only Vite mode cannot see native MIDI devices in this app.
 
+For day-to-day setup — connecting a port, binding transport buttons with MIDI
+learn, and the momentary-vs-toggle requirement for hold-to-jog — see
+[Playing with a MIDI keyboard](../README.md#playing-with-a-midi-keyboard) in
+the README. This document stays focused on verifying the input path itself.
+
 ## Quick Test
 
 1. Plug in the MIDI keyboard before launching AuralPrimer.
