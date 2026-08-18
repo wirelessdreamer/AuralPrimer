@@ -1,13 +1,10 @@
 {
-    "name": "AuralPrimer.UI",
-    "rootNamespace": "AuralPrimer.UI",
-    "references": [
-        "Unity.TextMeshPro",
-        "Unity.XR.Interaction.Toolkit",
-        "Unity.InputSystem",
-        "Unity.XR.CoreUtils"
+    "name": "AuralPrimer.Editor",
+    "rootNamespace": "AuralPrimer.EditorTools",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
     ],
-    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,

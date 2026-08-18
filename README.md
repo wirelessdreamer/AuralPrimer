@@ -209,6 +209,7 @@ shell, and native audio/MIDI:
 | App | **VoidZero** — Evan You · Anthony Fu | [**Vite**](https://github.com/vitejs/vite) · [**Vitest**](https://github.com/vitest-dev/vitest) — build & test | MIT |
 | App | **Microsoft** | [**TypeScript**](https://github.com/microsoft/TypeScript) · [**Playwright**](https://github.com/microsoft/playwright) | Apache-2.0 |
 | Native | **RustAudio + independent Rust** | [**cpal**](https://github.com/RustAudio/cpal) · [**rtrb**](https://github.com/mgeier/rtrb) · [**symphonia**](https://github.com/pdeljanov/Symphonia) · [**midir**](https://github.com/Boddlnagg/midir) · [**midly**](https://github.com/kovaxis/midly) — native audio/MIDI | Apache / MIT / MPL-2.0 |
+| MR | **Unity Technologies** | [**XR Interaction Toolkit**](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.5/manual/index.html) · [**XR Hands**](https://docs.unity3d.com/Packages/com.unity.xr.hands@1.5/manual/index.html) · [**OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.14/manual/index.html) · [**AR Foundation**](https://docs.unity3d.com/Packages/com.unity.xr.arfoundation@6.1/manual/index.html) · [**Input System**](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.14/manual/index.html) — the Quest client's runtime and interaction stack | Unity Companion / Package Distribution License |
 
 *Lineage: Google/Magenta's **MT3** → Sony's **MR-MT3** (fine-tuned for drums).
 Full per-component detail — including build/test-only deps — is in the tables
@@ -280,6 +281,36 @@ below.*
 | [**socket2**](https://github.com/rust-lang/socket2) (multicast socket options) | rust-lang | MIT / Apache-2.0 |
 | [**serde**](https://github.com/serde-rs/serde)(+`json`/`yaml`) | David Tolnay | MIT / Apache-2.0 |
 | [**zip**](https://github.com/zip-rs/zip2), [**sha2**](https://github.com/RustCrypto/hashes), [**hex**](https://github.com/KokaKiwi/rust-hex), [**notify**](https://github.com/notify-rs/notify) | zip-rs · RustCrypto · rust-hex · notify-rs | MIT / Apache-2.0 / CC0 |
+
+### Mixed-reality client (Unity packages)
+
+Shipped inside the Quest APK built from `UnityClient/Aural Primer`. Unity's own
+packages stay under Unity's terms — the [Unity Companion
+License](https://unity.com/legal/licenses/unity-companion-license) (UCL) and,
+for redistributed binaries, the [Unity Package Distribution
+License](https://unity.com/legal/licenses/unity-package-distribution-license)
+(UPDL). Both permit distributing a Unity-dependent project; neither is
+GPL-compatible, which is exactly why the MR client is Apache-2.0 and sits
+outside the copyleft boundary described under *Licensing* below.
+
+| Component | Role in the MR client | License |
+|---|---|---|
+| [**XR Interaction Toolkit**](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.5/manual/index.html) | ray and grab interaction — the grabbable menu, and every pointer press | UCL |
+| [**Input System**](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.14/manual/index.html) | the hand/controller action bindings XRI reads | UCL |
+| [**XR Hands**](https://docs.unity3d.com/Packages/com.unity.xr.hands@1.5/manual/index.html) | joint poses for marking keyboard edges during calibration | UPDL |
+| [**OpenXR Plugin**](https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.14/manual/index.html) | the runtime, and the predicted display time the note lane is drawn against | UCL / UPDL |
+| [**XR Plugin Management**](https://docs.unity3d.com/Packages/com.unity.xr.management@4.5/manual/index.html) | loader startup | UCL |
+| [**AR Foundation**](https://docs.unity3d.com/Packages/com.unity.xr.arfoundation@6.1/manual/index.html) | passthrough session and camera, so the real keyboard stays visible | UCL |
+| [**Meta OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.meta-openxr@2.1/manual/index.html) | Quest 3 / 3S / Pro feature set | UCL / UPDL |
+| [**Android XR OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.androidxr-openxr@1.0/manual/index.html) | keeps the build multiplatform beyond Quest | UCL |
+| [**XR Core Utilities**](https://docs.unity3d.com/Packages/com.unity.xr.core-utils@2.5/manual/index.html) | XR Origin and shared XR math | UCL |
+| [**Universal Render Pipeline**](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@17.3/manual/index.html) | the mobile-XR renderer | UCL |
+
+Present from the Unity project template but **not used** by AuralPrimer code,
+and listed here so the manifest and this table can be reconciled line by line:
+XR Composition Layers, Newtonsoft Json (the client decodes with `JsonUtility`),
+Test Framework, Android Logcat, AI Assistant, AI Inference, IET Framework and
+Multiplayer Center. The last six are editor-only and never reach the APK.
 
 > **License-gate note.** Checked against primary sources: (1) the *Demucs*
 > `htdemucs_*` weights are **MIT** (the CC-BY-NC claim circulating in
