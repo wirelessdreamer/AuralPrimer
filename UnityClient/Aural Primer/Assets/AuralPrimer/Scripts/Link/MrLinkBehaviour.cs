@@ -65,11 +65,20 @@ namespace AuralPrimer.Link
         {
             // Hand a discovered host to the session. Discovery marshals results
             // through a queue precisely so this happens on the main thread.
-            if (_discovery is { IsRunning: true } && _discovery.Poll(out var host))
+            //
+            // Poll whether or not discovery is still running. It stops itself
+            // the moment a handshake succeeds — so gating the poll on IsRunning
+            // discarded the single result the whole search existed to produce,
+            // and the block below then started the search over. The host was
+            // found every time and connected to never.
+            if (_discovery != null && _discovery.Poll(out var host))
             {
                 Debug.Log($"[mr-link] found {host}");
                 _discovery.Stop();
                 _session.Connect(host);
+                // Let the session finish coming up before rediscovery is
+                // considered, or it restarts on top of a connection in progress.
+                _reconnectAt = Time.unscaledTime + reconnectDelaySeconds;
             }
 
             // Rediscover after a drop. The host beacons continuously, so this
@@ -138,7 +147,13 @@ namespace AuralPrimer.Link
             }
             else if (autoConnect)
             {
-                BeginDiscovery();
+                // Let Update's reconnect path do the actual work. Starting
+                // discovery here as well means two clients and two sessions
+                // racing: this fires once before Start on the first frame, and
+                // again on every unpause — and on Quest an unpause is just the
+                // headset going back on. Clearing the backoff resumes at once
+                // without duplicating anything.
+                _reconnectAt = 0f;
             }
         }
     }
