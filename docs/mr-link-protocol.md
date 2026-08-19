@@ -18,17 +18,27 @@ Conventions used throughout:
 
 ---
 
-## 1. Discovery — UDP multicast
+## 1. Discovery — UDP multicast *and* broadcast
 
 | | |
 | --- | --- |
 | Group | `239.255.61.88` |
+| Broadcast | `255.255.255.255` |
 | Port | `47761` |
 | Beacon interval | 1 s |
 | Client timeout | 30 s without traffic |
 
 `239.255/16` is the IPv4 Local Scope (RFC 2365): meant for local use and not
 forwarded beyond it.
+
+**Each beacon is sent twice — once to the group, once as a broadcast.** Access
+points routinely treat the two differently: IGMP snooping drops multicast for a
+group nothing has joined on that segment, so a desktop on Ethernet can beacon
+correctly while a headset on Wi-Fi hears nothing, with no error reported
+anywhere. Broadcast is not subject to that. Both were measured reaching a Quest 3
+on Wi-Fi from a host on Ethernet. The client binds `INADDR_ANY` on the port and
+receives either, so it needs no knowledge of which arrived; duplicates are
+already handled by the once-only handshake.
 
 Discovery messages are UTF-8 text, pipe-delimited, no trailing newline. Every
 message begins with a magic and a protocol version, and **both ends must ignore

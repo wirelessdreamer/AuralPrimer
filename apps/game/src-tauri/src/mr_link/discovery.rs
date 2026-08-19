@@ -134,6 +134,8 @@ fn bind_discovery_socket(interface_ip: Ipv4Addr) -> io::Result<UdpSocket> {
     // cannot leave via a different adapter than the one we advertised.
     socket.set_multicast_if_v4(&interface_ip)?;
     socket.set_multicast_loop_v4(true)?;
+    // The beacon also goes out as a broadcast; see `serve`.
+    socket.set_broadcast(true)?;
     socket.set_read_timeout(Some(Duration::from_millis(200)))?;
     Ok(socket.into())
 }
@@ -192,6 +194,16 @@ fn serve(
     running: Arc<AtomicBool>,
 ) {
     let group = SocketAddrV4::new(MULTICAST_GROUP, MULTICAST_PORT);
+    // Every beacon goes out twice: once to the group, once as a broadcast.
+    //
+    // Access points routinely treat the two differently. IGMP snooping drops
+    // multicast for a group nothing has joined *on that segment*, so a desktop
+    // on Ethernet can beacon perfectly while a headset on Wi-Fi hears nothing —
+    // which is indistinguishable, from the headset, from the app not running.
+    // Broadcast is not subject to that, and both were measured reaching a Quest
+    // on this network. The client binds INADDR_ANY on this port and so receives
+    // either without caring which arrived.
+    let broadcast = SocketAddrV4::new(Ipv4Addr::BROADCAST, MULTICAST_PORT);
     let beacon = DiscoveryMessage::Beacon {
         host_ip: interface_ip.to_string(),
         session_port,
@@ -206,7 +218,11 @@ fn serve(
         let now = std::time::Instant::now();
         if now >= next_beacon {
             if let Err(e) = socket.send_to(beacon.as_bytes(), group) {
-                eprintln!("mr-link: beacon send failed: {e}");
+                eprintln!("mr-link: multicast beacon send failed: {e}");
+            }
+            // A failure here is not fatal: multicast may well have carried it.
+            if let Err(e) = socket.send_to(beacon.as_bytes(), broadcast) {
+                eprintln!("mr-link: broadcast beacon send failed: {e}");
             }
             next_beacon = now + BEACON_INTERVAL;
         }
@@ -237,6 +253,65 @@ fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The beacon must also arrive without joining the multicast group.
+    ///
+    /// This is the path that carries discovery when an access point drops
+    /// multicast between its wired and wireless segments — the desktop beacons
+    /// happily, the headset hears nothing, and nothing anywhere reports an
+    /// error. A listener that never joins the group can only be hearing the
+    /// broadcast copy.
+    #[test]
+    fn the_beacon_is_also_broadcast_for_listeners_outside_the_group() {
+        use socket2::{Domain, Protocol, Socket, Type};
+
+        let Ok(_interface_ip) = primary_local_ipv4() else {
+            eprintln!("no network; skipping broadcast beacon test");
+            return;
+        };
+
+        let listener = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
+        listener.set_reuse_address(true).unwrap();
+        if listener
+            .bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, MULTICAST_PORT)).into())
+            .is_err()
+        {
+            eprintln!("could not share the discovery port; skipping");
+            return;
+        }
+        listener
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        let listener: UdpSocket = listener.into();
+
+        let server = match DiscoveryServer::start(47763, "BROADCAST-TEST".into()) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("could not bind discovery socket ({e}); skipping");
+                return;
+            }
+        };
+
+        // Ignore anything else on the port: a real AuralPrimer may be running,
+        // and other software shares this kind of traffic freely.
+        let deadline = std::time::Instant::now() + Duration::from_secs(6);
+        let mut buf = [0u8; 1024];
+        let mut heard = false;
+        while std::time::Instant::now() < deadline && !heard {
+            if let Ok((len, _)) = listener.recv_from(&mut buf) {
+                if let Ok(text) = std::str::from_utf8(&buf[..len]) {
+                    if let Some(DiscoveryMessage::Beacon { host_name, .. }) =
+                        DiscoveryMessage::parse(text)
+                    {
+                        heard = host_name == "BROADCAST-TEST";
+                    }
+                }
+            }
+        }
+
+        server.stop();
+        assert!(heard, "no broadcast beacon reached a listener outside the group");
+    }
 
     #[test]
     fn beacon_round_trips() {
