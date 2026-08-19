@@ -36,16 +36,36 @@ namespace AuralPrimer.UI
         TextMeshProUGUI _status;
         BoxCollider _grabBounds;
         bool _placed;
+        float _waitedSeconds;
 
         public bool IsVisible => _canvas != null && _canvas.enabled;
 
         void Awake() => Build();
 
-        void Start()
+        void Update()
         {
-            // Place on the first frame so there is never a "nothing appeared"
-            // state, then leave it alone.
-            if (!_placed) PlaceInFrontOfUser();
+            // Place once the headset actually knows where it is looking.
+            //
+            // On Quest the camera still reads as identity for the first frames
+            // while the XR session comes up, so placing in Start pinned the
+            // panel to the rig origin — which is the user's head, and looks
+            // exactly like a panel that was never unpinned. Waiting for a real
+            // pose costs a few frames and puts it where the user is facing.
+            if (_placed) return;
+
+            var camera = Camera.main;
+            if (camera == null) return;
+
+            _waitedSeconds += Time.unscaledDeltaTime;
+
+            var pose = camera.transform;
+            var posed = pose.position.sqrMagnitude > 1e-6f
+                     || Quaternion.Angle(pose.rotation, Quaternion.identity) > 0.5f;
+
+            // Place anyway after a moment: seated dead ahead at the origin is a
+            // legitimate pose, and a panel that never appears is worse than one
+            // placed from a default.
+            if (posed || _waitedSeconds > 2f) PlaceInFrontOfUser();
         }
 
         /// <summary>
@@ -142,11 +162,27 @@ namespace AuralPrimer.UI
                               new Vector2(0f, 250f), new Vector2(920f, 60f));
             _status.alignment = TextAlignmentOptions.Bottom;
 
-            // --- Grab ---------------------------------------------------
-            // Bounds match the visible panel so the grab target is exactly what
-            // the user sees, with a little depth to make it catchable.
+            // --- Drag handle --------------------------------------------
+            // A bar along the bottom edge, the way every windowed thing is
+            // moved. The grab target is the handle alone rather than the whole
+            // face: a panel that moves wherever you touch it is a panel whose
+            // buttons you cannot press.
+            var handle = NewChild(canvasGo.transform, "Drag Handle");
+            handle.anchorMin = new Vector2(0.5f, 0f);
+            handle.anchorMax = new Vector2(0.5f, 0f);
+            handle.pivot = new Vector2(0.5f, 0f);
+            handle.anchoredPosition = new Vector2(0f, 14f);
+            handle.sizeDelta = new Vector2(300f, 16f);
+            var handleImage = handle.gameObject.AddComponent<UnityEngine.UI.Image>();
+            handleImage.color = new Color(0.55f, 0.65f, 0.80f, 0.85f);
+            handleImage.raycastTarget = false;
+
+            var handleHeightMetres = 46f * scale;
             _grabBounds = gameObject.AddComponent<BoxCollider>();
-            _grabBounds.size = new Vector3(widthMetres, canvasHeight * scale, 0.02f);
+            _grabBounds.size = new Vector3(widthMetres, handleHeightMetres, 0.02f);
+            // Sit the collider over the bar at the bottom of the canvas, which is
+            // centred on the panel origin.
+            _grabBounds.center = new Vector3(0f, -(canvasHeight * scale) * 0.5f + handleHeightMetres * 0.5f, 0f);
             _grabBounds.isTrigger = true;
 
             // XRGrabInteractable requires a Rigidbody and AddComponent would
