@@ -48,7 +48,13 @@ namespace AuralPrimer.Link
         }
 
         public HostClock Clock { get; } = new();
-        public bool IsConnected => _running && _tcp is { Connected: true };
+        // Deliberately not TcpClient.Connected: that reports the state of the
+        // last I/O, and a read timeout — which this loop takes once a second by
+        // design, because the host has nothing to say on TCP while a song is
+        // idle — flips it to false on a perfectly healthy socket. Reading it
+        // here made the link drop and rediscover every two seconds forever.
+        // _running is the honest signal: the loop clears it when the link dies.
+        public bool IsConnected => _running && _tcp != null;
         public string HostName { get; private set; } = "";
 
         /// <summary>Local monotonic microseconds — the clock all client-side
@@ -124,9 +130,15 @@ namespace AuralPrimer.Link
 
         void Send(byte frameType, byte[] payload)
         {
+            // Copy the reference: Disconnect can null it between the check and
+            // the write, which is where "Object reference not set" came from
+            // while the link was reconnecting every two seconds.
+            var stream = _stream;
+            if (stream == null) return;
+
             var frame = MrProtocol.EncodeFrame(frameType, payload);
-            _stream.Write(frame, 0, frame.Length);
-            _stream.Flush();
+            stream.Write(frame, 0, frame.Length);
+            stream.Flush();
         }
 
         /// <summary>Ask the host to change transport state. The host stays the
@@ -162,7 +174,9 @@ namespace AuralPrimer.Link
                         nextPing = DateTime.UtcNow.AddMilliseconds(PingIntervalMs);
                     }
 
-                    if (!ReadExact(header, 5)) continue;
+                    var headerRead = ReadExact(header, 5);
+                    if (headerRead == ReadOutcome.TimedOut) continue;
+                    if (headerRead == ReadOutcome.Closed) break;
                     if (!MrProtocol.TryDecodeFrameHeader(header, out var length, out var frameType))
                     {
                         // An implausible prefix means the stream is desynchronised;
@@ -173,7 +187,7 @@ namespace AuralPrimer.Link
                     }
 
                     var payload = length > 0 ? new byte[length] : Array.Empty<byte>();
-                    if (length > 0 && !ReadExact(payload, length)) break;
+                    if (length > 0 && ReadExact(payload, length) != ReadOutcome.Complete) break;
 
                     HandleFrame(frameType, payload);
                 }
@@ -195,27 +209,47 @@ namespace AuralPrimer.Link
             _running = false;
         }
 
+        enum ReadOutcome
+        {
+            /// <summary>The requested bytes are in the buffer.</summary>
+            Complete,
+            /// <summary>Nothing arrived in time. Normal, and how this loop stays
+            /// responsive to Disconnect while the host has nothing to send.</summary>
+            TimedOut,
+            /// <summary>The peer closed. Retrying reads zero bytes forever.</summary>
+            Closed,
+        }
+
         /// <summary>Read exactly <paramref name="count"/> bytes. A short read is
         /// normal on TCP; treating one as a whole frame desynchronises the
         /// stream permanently.</summary>
-        bool ReadExact(byte[] buffer, int count)
+        ReadOutcome ReadExact(byte[] buffer, int count)
         {
+            var stream = _stream;
+            if (stream == null) return ReadOutcome.Closed;
+
             var read = 0;
             while (read < count)
             {
                 int n;
                 try
                 {
-                    n = _stream.Read(buffer, read, count - read);
+                    n = stream.Read(buffer, read, count - read);
                 }
                 catch (IOException)
                 {
-                    return false; // timeout mid-frame; caller retries
+                    return ReadOutcome.TimedOut;
                 }
-                if (n <= 0) return false;
+                catch (ObjectDisposedException)
+                {
+                    return ReadOutcome.Closed;
+                }
+                // Zero from a blocking read is the peer having gone away, not a
+                // timeout. Treated as retryable it spins at full speed forever.
+                if (n <= 0) return ReadOutcome.Closed;
                 read += n;
             }
-            return true;
+            return ReadOutcome.Complete;
         }
 
         void HandleFrame(byte frameType, byte[] payload)
