@@ -771,6 +771,15 @@ export class TabRenderer {
       const approach = clamp(1 - dt / lookAheadSec, 0, 1);
       const noteTop = hitY - (note.t_off - t) * pxPerSec;
       const noteBottom = hitY - (note.t_on - t) * pxPerSec;
+      // A note whose whole span sits past the hit line has nothing left to
+      // draw. It still reaches here because the cull above deliberately keeps
+      // notes for lookBehindSec after they end, and the clamping below then
+      // collapses the note onto the hit line itself: a few pixels of glow, plus
+      // — in Nashville mode — a scale degree parked just above the line with no
+      // note under it to explain it. Same at the top of the roll for a note that
+      // has not entered yet.
+      if (noteTop >= hitY || noteBottom <= rollTop) continue;
+
       const visibleTop = clamp(noteTop, rollTop, hitY);
       const visibleBottom = clamp(noteBottom, rollTop, hitY);
       const height = Math.max(6, visibleBottom - visibleTop);
