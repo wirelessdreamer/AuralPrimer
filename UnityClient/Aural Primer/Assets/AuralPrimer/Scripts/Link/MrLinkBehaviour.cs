@@ -21,9 +21,15 @@ namespace AuralPrimer.Link
         [Tooltip("Seconds between reconnection attempts after the link drops.")]
         [SerializeField] float reconnectDelaySeconds = 2f;
 
+        [Tooltip("How many times to reconnect straight to a host we already know "
+               + "before going back to searching for one.")]
+        [SerializeField] int directReconnectAttempts = 3;
+
         MrDiscoveryClient _discovery;
         MrSessionClient _session;
         float _reconnectAt;
+        HostEndpoint? _lastHost;
+        int _directRetries;
 
         readonly List<(byte pitch, byte velocity)> _heldNotes = new();
 
@@ -44,6 +50,12 @@ namespace AuralPrimer.Link
 
         /// <summary>Host named by the last beacon heard, or "".</summary>
         public string LastBeaconHost => _discovery?.LastBeaconHost ?? "";
+
+        /// <summary>Down, but with a host already known and worth retrying.</summary>
+        public bool IsReconnecting => !IsConnected && _lastHost.HasValue;
+
+        /// <summary>Name of the host being reconnected to, or "".</summary>
+        public string LastHostName => _lastHost?.HostName ?? "";
 
         /// <summary>Raised when the host delivers a chart (protocol §4).</summary>
         public event System.Action<string> ChartReceived;
@@ -75,6 +87,8 @@ namespace AuralPrimer.Link
             {
                 Debug.Log($"[mr-link] found {host}");
                 _discovery.Stop();
+                _lastHost = host;
+                _directRetries = 0;
                 _session.Connect(host);
                 // Let the session finish coming up before rediscovery is
                 // considered, or it restarts on top of a connection in progress.
@@ -88,7 +102,26 @@ namespace AuralPrimer.Link
                 if (Time.unscaledTime >= _reconnectAt)
                 {
                     _reconnectAt = Time.unscaledTime + reconnectDelaySeconds;
-                    BeginDiscovery();
+
+                    // Go straight back to a host we already know before hunting
+                    // for one again. Discovery exists to find a host, not to
+                    // recover a dropped link, and running the whole search on
+                    // every blip is what turned a momentary drop into the
+                    // headset flashing "searching / found / no reply" at the
+                    // user. Fall back to searching once direct attempts run out,
+                    // since by then the host has probably moved or restarted.
+                    if (_lastHost.HasValue && _directRetries < directReconnectAttempts)
+                    {
+                        _directRetries++;
+                        Debug.Log($"[mr-link] reconnecting to {_lastHost.Value} "
+                                + $"({_directRetries}/{directReconnectAttempts})");
+                        _session.Connect(_lastHost.Value);
+                    }
+                    else
+                    {
+                        _directRetries = 0;
+                        BeginDiscovery();
+                    }
                 }
             }
 

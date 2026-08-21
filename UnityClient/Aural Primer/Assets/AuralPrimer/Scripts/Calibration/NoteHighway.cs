@@ -42,6 +42,20 @@ namespace AuralPrimer.Calibration
 
         CalibrationProfile _profile;
         KeyboardLayout _layout;
+        float _nextReportAt;
+        Transform _backdrop;
+        Transform _hitLine;
+
+        [Header("Materials")]
+        [Tooltip("Assigned from project assets so the build keeps the shader AND "
+               + "the transparent variant it needs.")]
+        [SerializeField] Material noteWhiteMaterial;
+        [SerializeField] Material noteBlackMaterial;
+        [SerializeField] Material laneBackdropMaterial;
+        [SerializeField] Material hitLineMaterial;
+
+        Material _backdropMaterial;
+        Material _hitLineMaterial;
         Material _whiteMaterial;
         Material _blackMaterial;
         int _cursor;
@@ -80,6 +94,7 @@ namespace AuralPrimer.Calibration
             _layout = _profile?.BuildLayout();
             _cursor = 0;
             HideAll();
+            BuildBackdrop();
         }
 
         void OnChart(string json)
@@ -104,6 +119,7 @@ namespace AuralPrimer.Calibration
         {
             if (_profile == null || link == null || _notes.Count == 0)
             {
+                Report($"idle: profile={(_profile != null)} link={(link != null)} notes={_notes.Count}");
                 HideAll();
                 return;
             }
@@ -136,6 +152,13 @@ namespace AuralPrimer.Calibration
                 var note = _notes[i];
                 if (note.On > horizon) break; // sorted, so everything after is further away
 
+                // A chart can range wider than the instrument in front of the
+                // player — this one runs to pitch 31 against a keyboard starting
+                // at 36. Those notes have no key to fall onto, and placing them
+                // by extrapolation would hang them off the end of the keyboard
+                // as if they belonged there.
+                if (note.Pitch < _layout.LowestPitch || note.Pitch > _layout.HighestPitch) continue;
+
                 var key = _profile.KeyPosition(_layout, note.Pitch);
                 var isBlack = KeyboardLayout.IsBlack(note.Pitch);
 
@@ -161,6 +184,75 @@ namespace AuralPrimer.Calibration
             {
                 if (_pool[i] != null) _pool[i].gameObject.SetActive(false);
             }
+
+            Report($"t={now:F2}s drew={used} cursor={_cursor}/{_notes.Count} "
+                 + $"laneOrigin={transform.position} parent={(transform.parent != null ? transform.parent.name : "none")} "
+                 + $"firstSlab={(used > 0 ? _pool[0].position.ToString() : "n/a")}");
+        }
+
+        /// <summary>Once a second, so the log stays readable at 72 fps.</summary>
+        void Report(string message)
+        {
+            if (Time.unscaledTime < _nextReportAt) return;
+            _nextReportAt = Time.unscaledTime + 1f;
+            Debug.Log($"[highway] {message}");
+        }
+
+        /// <summary>
+        /// The lane's own surface, matching the desktop's roll background.
+        /// </summary>
+        /// <remarks>
+        /// Without it the notes hang in mid-air with nothing to read them
+        /// against, and in passthrough they compete with whatever is behind the
+        /// keyboard. Deliberately translucent rather than opaque: this is mixed
+        /// reality, and a solid panel would wall off the room.
+        /// </remarks>
+        void BuildBackdrop()
+        {
+            if (_profile == null)
+            {
+                if (_backdrop != null) _backdrop.gameObject.SetActive(false);
+                if (_hitLine != null) _hitLine.gameObject.SetActive(false);
+                return;
+            }
+
+            if (_backdrop == null) _backdrop = NewSurface("Lane Backdrop", _backdropMaterial);
+            if (_hitLine == null) _hitLine = NewSurface("Hit Line", _hitLineMaterial);
+
+            var right = _profile.RightAxis;
+            var up = _profile.up.sqrMagnitude > 1e-6f ? _profile.up.normalized : Vector3.up;
+            var forward = Vector3.Cross(right, up).normalized;
+            var tilt = Quaternion.AngleAxis(_profile.laneTiltDegrees, right);
+            var laneUp = tilt * up;
+
+            var width = _profile.WidthMetres;
+            var height = _profile.laneHeightMetres * Mathf.Max(0.01f, _profile.spacingMultiplier);
+            var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f);
+
+            // Sit a few millimetres behind the notes so they read as being on it.
+            const float behind = 0.004f;
+
+            _backdrop.gameObject.SetActive(true);
+            _backdrop.localPosition = centre + laneUp * (height * 0.5f) - forward * behind;
+            _backdrop.localRotation = Quaternion.LookRotation(forward, laneUp);
+            _backdrop.localScale = new Vector3(width, 0.001f, height);
+
+            // The line the note has to be on when you play it — the desktop's
+            // "PLAY HERE" band.
+            _hitLine.gameObject.SetActive(true);
+            _hitLine.localPosition = centre + laneUp * 0.004f - forward * (behind * 0.5f);
+            _hitLine.localRotation = Quaternion.LookRotation(forward, laneUp);
+            _hitLine.localScale = new Vector3(width, 0.001f, 0.012f);
+        }
+
+        Transform NewSurface(string name, Material material)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = name;
+            Destroy(go.GetComponent<Collider>());
+            go.transform.SetParent(transform, false);
+            if (go.TryGetComponent<Renderer>(out var r)) r.sharedMaterial = material;
+            return go.transform;
         }
 
         Transform Rent(int index, bool isBlack)
@@ -196,8 +288,15 @@ namespace AuralPrimer.Calibration
 
         void BuildMaterials()
         {
-            _whiteMaterial = NewMaterial(new Color(0.42f, 0.78f, 1f, 0.85f));
-            _blackMaterial = NewMaterial(new Color(0.72f, 0.55f, 1f, 0.85f));
+            _whiteMaterial = noteWhiteMaterial != null
+                ? noteWhiteMaterial : NewMaterial(new Color(0.42f, 0.78f, 1f, 0.85f));
+            _blackMaterial = noteBlackMaterial != null
+                ? noteBlackMaterial : NewMaterial(new Color(0.72f, 0.55f, 1f, 0.85f));
+            // Matching the desktop roll: deep navy ground, warm hit line.
+            _backdropMaterial = laneBackdropMaterial != null
+                ? laneBackdropMaterial : NewMaterial(new Color(0.04f, 0.06f, 0.12f, 0.55f));
+            _hitLineMaterial = hitLineMaterial != null
+                ? hitLineMaterial : NewMaterial(new Color(1f, 0.78f, 0.42f, 0.75f));
         }
 
         static Material NewMaterial(Color color)

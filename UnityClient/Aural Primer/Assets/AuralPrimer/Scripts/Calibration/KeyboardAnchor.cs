@@ -90,7 +90,11 @@ namespace AuralPrimer.Calibration
                 return null;
             }
 
-            var id = saved.value.ToString();
+            // SerializableGuid.ToString() writes "{low:X16}-{high:X16}", which is
+            // not a GUID string and cannot be parsed back as one — saving that
+            // form meant every restore failed and the user re-calibrated on every
+            // launch, even without moving. Store the real GUID it wraps.
+            var id = saved.value.guid.ToString();
             Debug.Log($"[anchor] keyboard anchored and saved as {id}");
             return id;
         }

@@ -30,6 +30,14 @@ namespace AuralPrimer.Calibration
         readonly Dictionary<int, Transform> _keyMarkers = new();
         readonly List<int> _litLastFrame = new();
 
+        [Header("Materials")]
+        [Tooltip("Assigned from project assets so the build keeps the shader AND "
+               + "the transparent variant. Built at runtime instead, the variant "
+               + "is stripped and the markers render as nothing at all.")]
+        [SerializeField] Material idleWhiteMaterial;
+        [SerializeField] Material idleBlackMaterial;
+        [SerializeField] Material litMaterial;
+
         Material _idleWhite;
         Material _idleBlack;
         Material _lit;
@@ -48,6 +56,8 @@ namespace AuralPrimer.Calibration
 
             _layout = profile.BuildLayout();
             Rebuild();
+            Debug.Log($"[overlay] built {_keyMarkers.Count} key markers; "
+                    + $"root={transform.position} parent={(transform.parent != null ? transform.parent.name : "none")}");
         }
 
         void Update()
@@ -126,11 +136,17 @@ namespace AuralPrimer.Calibration
 
         void BuildMaterials()
         {
-            _idleWhite = NewTransparent(new Color(0.55f, 0.75f, 1f, 0.16f));
-            _idleBlack = NewTransparent(new Color(0.25f, 0.40f, 0.75f, 0.22f));
+            // Runtime construction is the fallback, not the plan: a material
+            // built here can only use shader variants some asset already pulled
+            // into the build.
+            _idleWhite = idleWhiteMaterial != null
+                ? idleWhiteMaterial : NewTransparent(new Color(0.55f, 0.75f, 1f, 0.16f));
+            _idleBlack = idleBlackMaterial != null
+                ? idleBlackMaterial : NewTransparent(new Color(0.25f, 0.40f, 0.75f, 0.22f));
             // Cyan matches the live-key highlight the 2D client already uses for
             // exactly this, so the two clients read the same way.
-            _lit = NewTransparent(new Color(0.13f, 0.83f, 0.93f, 0.85f));
+            _lit = litMaterial != null
+                ? litMaterial : NewTransparent(new Color(0.13f, 0.83f, 0.93f, 0.85f));
         }
 
         static Material NewTransparent(Color color)

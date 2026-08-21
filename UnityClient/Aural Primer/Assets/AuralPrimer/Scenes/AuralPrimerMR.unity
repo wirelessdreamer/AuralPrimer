@@ -213,6 +213,10 @@ MonoBehaviour:
   noteThicknessMetres: 0.006
   minimumNoteLengthMetres: 0.012
   maxVisibleNotes: 256
+  noteWhiteMaterial: {fileID: 2100000, guid: d5d5ba5066928a745a62e65c28ae9c16, type: 2}
+  noteBlackMaterial: {fileID: 2100000, guid: 50b26ed0ceecb824fa289bdceefbfc2c, type: 2}
+  laneBackdropMaterial: {fileID: 2100000, guid: 6d228f2ffba9d34439b80e4bd1f6dc14, type: 2}
+  hitLineMaterial: {fileID: 2100000, guid: e0b30752e00e9694b95a050a0da51dce, type: 2}
 --- !u!4 &286128298
 Transform:
   m_ObjectHideFlags: 0
@@ -2156,6 +2160,9 @@ MonoBehaviour:
   whiteKeyDepth: 0.14
   blackKeyDepth: 0.09
   hoverMetres: 0.004
+  idleWhiteMaterial: {fileID: 2100000, guid: 6f5581d08fc91b24d89dca6dce06d947, type: 2}
+  idleBlackMaterial: {fileID: 2100000, guid: 53755d023b1b0c240bdb2c43a5e86c39, type: 2}
+  litMaterial: {fileID: 2100000, guid: 8d5d8ee9de107b04ba8b85778f72ec0f, type: 2}
 --- !u!4 &1203704251
 Transform:
   m_ObjectHideFlags: 0
