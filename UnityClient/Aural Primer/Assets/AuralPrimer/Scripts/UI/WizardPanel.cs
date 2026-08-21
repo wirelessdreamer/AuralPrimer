@@ -13,6 +13,7 @@
 
 using TMPro;
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Attachment;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
@@ -89,6 +90,21 @@ namespace AuralPrimer.UI
             transform.rotation = Quaternion.LookRotation(forward, Vector3.up);
             _placed = true;
             SetVisible(true);
+        }
+
+        /// <summary>
+        /// Show the panel where it already is.
+        /// </summary>
+        /// <remarks>
+        /// Distinct from summoning on purpose. Anything that merely wants the
+        /// panel on screen — a step change, a status update — must use this, or
+        /// the panel teleports to wherever the user happens to be looking and
+        /// becomes indistinguishable from one bolted to their face.
+        /// </remarks>
+        public void Show()
+        {
+            if (!_placed) PlaceInFrontOfUser();
+            else SetVisible(true);
         }
 
         public void SetVisible(bool visible)
@@ -194,6 +210,10 @@ namespace AuralPrimer.UI
             body.useGravity = false;
 
             var grab = gameObject.AddComponent<XRGrabInteractable>();
+            // Force grab: pointing at the panel from across the room and
+            // selecting brings it to the hand, rather than leaving it out of
+            // reach to be nudged from a distance.
+            grab.farAttachMode = InteractableFarAttachMode.Near;
             // Kinematic and gravity-free: this is a panel being repositioned, not
             // an object being thrown. Instantaneous tracking so it sits where the
             // hand puts it rather than lagging behind.

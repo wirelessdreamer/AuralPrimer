@@ -87,7 +87,13 @@ namespace AuralPrimer.Calibration
                     {
                         // Skip calibration entirely if this keyboard is already
                         // known: re-calibrating every session would be absurd.
-                        if (_profile is { IsCalibrated: true })
+                        // But a saved profile holds world coordinates, and the
+                        // headset re-localises between sessions — so yesterday's
+                        // numbers can put the keyboard across the room or under
+                        // the floor. Rather than draw the overlay somewhere the
+                        // user will never find it, treat an implausible profile
+                        // as no profile and ask for the two edges again.
+                        if (_profile is { IsCalibrated: true } && !ProfileLooksStale(_profile))
                         {
                             ApplyProfile();
                             EnterStep(Step.Done);
@@ -165,7 +171,11 @@ namespace AuralPrimer.Calibration
             _step = step;
             _verifiedKeys = 0;
             _lastVerifyPitch = -1;
-            panel?.PlaceInFrontOfUser();
+            // Show it, do not move it. Re-placing on every step change meant the
+            // panel jumped to wherever the user was looking each time the wizard
+            // advanced, which reads exactly like a panel pinned to the head.
+            // Only an explicit summon repositions it.
+            panel?.Show();
             RenderStep();
         }
 
@@ -262,8 +272,41 @@ namespace AuralPrimer.Calibration
             }
         }
 
+        /// <summary>Is this saved placement too far from the user to be real?</summary>
+        static bool ProfileLooksStale(CalibrationProfile profile)
+        {
+            var camera = Camera.main;
+            if (camera == null) return false;
+
+            var centre = (profile.leftEdge + profile.rightEdge) * 0.5f;
+            var toKeyboard = centre - camera.transform.position;
+
+            // A keyboard you are playing is within arm's reach and roughly at
+            // desk height relative to the head. Anything else is a coordinate
+            // from a session that no longer exists.
+            var tooFar = toKeyboard.magnitude > 2.5f;
+            var tooHigh = toKeyboard.y > 0.5f;
+            var tooLow = toKeyboard.y < -1.5f;
+
+            if (tooFar || tooHigh || tooLow)
+            {
+                Debug.Log($"[wizard] saved keyboard is {toKeyboard.magnitude:F2} m away "
+                        + $"({toKeyboard.y:F2} m vertically) — re-calibrating");
+                return true;
+            }
+            return false;
+        }
+
         void ApplyProfile()
         {
+            if (_profile != null)
+            {
+                Debug.Log($"[wizard] applying profile: calibrated={_profile.IsCalibrated} "
+                        + $"pitches={_profile.lowestPitch}..{_profile.highestPitch} "
+                        + $"width={_profile.WidthMetres:F3}m "
+                        + $"left={_profile.leftEdge} right={_profile.rightEdge}");
+            }
+
             if (overlay != null) overlay.Apply(_profile);
             // The lane hangs off the same calibration: without it there is no
             // keyboard for the notes to line up above.
