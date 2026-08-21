@@ -26,9 +26,19 @@ namespace AuralPrimer.Calibration
         [Tooltip("Seconds a palm must face the user before the menu is summoned.")]
         [SerializeField] float palmUpHoldSeconds = 0.8f;
 
+        [Tooltip("How long the palm may look away before the hold is abandoned. "
+               + "Absorbs tracking blips rather than restarting the gesture.")]
+        [SerializeField] float palmUpGraceSeconds = 0.25f;
+
+        [Tooltip("How squarely the palm must face the user, as a dot product. "
+               + "1 is exactly on; lower is a wider, more forgiving cone.")]
+        [SerializeField] float palmFacingDot = 0.6f;
+
         XRHandSubsystem _hands;
         bool _leftPinching, _rightPinching;
         float _palmUpSince = -1f;
+        float _lastFacingAt = float.NegativeInfinity;
+        bool _summonLatched;
 
         /// <summary>Fired once when a pinch closes, with the pinch point in world space.</summary>
         public event Action<Vector3> PinchStarted;
@@ -103,20 +113,32 @@ namespace AuralPrimer.Calibration
         void UpdatePalmUp()
         {
             var facing = IsPalmFacingUser(_hands.leftHand) || IsPalmFacingUser(_hands.rightHand);
+            var now = Time.unscaledTime;
+            if (facing) _lastFacingAt = now;
 
-            if (!facing)
+            // Tolerate a blink. Requiring every frame of the hold to pass meant
+            // one dropped frame — or one wobble across the edge of the cone —
+            // silently restarted the whole gesture, so the menu appeared only
+            // sometimes and for no reason the user could see.
+            if (now - _lastFacingAt > palmUpGraceSeconds)
             {
                 _palmUpSince = -1f;
+                _summonLatched = false;
                 return;
             }
 
+            // Summon once per gesture: the palm must drop before it re-arms,
+            // or holding it up would fire again every hold-length.
+            if (_summonLatched) return;
+
             if (_palmUpSince < 0f)
             {
-                _palmUpSince = Time.unscaledTime;
+                _palmUpSince = now;
             }
-            else if (Time.unscaledTime - _palmUpSince >= palmUpHoldSeconds)
+            else if (now - _palmUpSince >= palmUpHoldSeconds)
             {
                 _palmUpSince = -1f;
+                _summonLatched = true;
                 MenuSummoned?.Invoke();
             }
         }
@@ -133,7 +155,7 @@ namespace AuralPrimer.Calibration
             // palm turned toward the face points its -up at the camera.
             var toCamera = (camera.transform.position - palm.position).normalized;
             var palmNormal = palm.rotation * Vector3.up;
-            return Vector3.Dot(-palmNormal, toCamera) > 0.75f;
+            return Vector3.Dot(-palmNormal, toCamera) > palmFacingDot;
         }
 
         static bool TryGetJointPosition(XRHand hand, XRHandJointID id, out Vector3 position)
