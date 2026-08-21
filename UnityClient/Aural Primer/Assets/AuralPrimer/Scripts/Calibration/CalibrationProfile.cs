@@ -28,7 +28,15 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         public const int CurrentVersion = 2;
 
-        public int version = CurrentVersion;
+        /// <remarks>
+        /// Deliberately defaults to 0, not CurrentVersion. JsonUtility only
+        /// overwrites fields the JSON actually contains, so a profile written
+        /// before this field existed keeps whatever the initialiser said — and
+        /// an initialiser of CurrentVersion would make every old profile claim
+        /// to be current, which is exactly the check failing to do its job.
+        /// Absent must mean old.
+        /// </remarks>
+        public int version;
 
         public string profileName = "My keyboard";
         public int lowestPitch = 36;
@@ -116,6 +124,8 @@ namespace AuralPrimer.Calibration
 
         public void Save()
         {
+            // Stamp on the way out: anything written now is by definition current.
+            version = CurrentVersion;
             try
             {
                 File.WriteAllText(PathFor(profileName), JsonUtility.ToJson(this, true));
