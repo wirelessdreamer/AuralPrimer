@@ -179,6 +179,21 @@ fn serve_client(
     host_name: String,
     running: Arc<AtomicBool>,
 ) -> io::Result<()> {
+    // Undo the listener's non-blocking mode, which Windows hands down to every
+    // socket it accepts.
+    //
+    // Left non-blocking, a write that cannot be satisfied immediately fails with
+    // WouldBlock instead of waiting, and `write_all` returns that as an error.
+    // The only write here big enough to overflow a send buffer is the CHART, so
+    // the session died within milliseconds of the handshake — but only to a peer
+    // whose buffer actually fills, and only once a song was loaded. Over
+    // loopback the whole 88 KB is accepted at once and nothing looks wrong,
+    // which is exactly why every desktop-side test of this passed.
+    //
+    // It also silently disables the read timeout below: timeouts do not apply to
+    // a socket that never blocks in the first place.
+    stream.set_nonblocking(false)?;
+
     stream.set_nodelay(true)?;
     // A read timeout keeps a silent peer from pinning this thread forever, and
     // gives the loop a chance to notice shutdown.
@@ -409,6 +424,73 @@ mod tests {
     /// it. If the host keeps streaming to its own port number instead, the
     /// session looks perfectly healthy over TCP while no position or note ever
     /// arrives — the failure this addressing change exists to prevent.
+    /// A client that is slow to drain its socket must not be hung up on.
+    ///
+    /// The CHART is the only frame large enough to overflow a send buffer, so
+    /// this only ever bit a real headset over Wi-Fi with a song loaded — never
+    /// over loopback, where the whole thing is accepted at once. A non-blocking
+    /// socket turns "wait a moment" into an error, and the session died
+    /// milliseconds after the handshake.
+    /// Accepted sockets inherit the listener's non-blocking mode on Windows.
+    ///
+    /// This is the hazard `serve_client` undoes with `set_nonblocking(false)`.
+    /// Left inherited, a write that cannot complete at once fails with
+    /// WouldBlock rather than waiting, and `write_all` surfaces that as an
+    /// error — which killed the session the moment the CHART was large enough
+    /// to fill a real peer's send buffer. The handshake still succeeded,
+    /// because the HELLO was already buffered by the time it was read, so the
+    /// failure looked like the host hanging up for no reason.
+    ///
+    /// Not reproducible over loopback at any practical chart size: the loopback
+    /// buffer accepts megabytes without blocking, which is why every
+    /// desktop-side test of this passed while a headset on Wi-Fi failed every
+    /// time. So assert the platform behaviour that makes the fix necessary,
+    /// rather than a symptom this machine cannot produce.
+    #[test]
+    fn accepted_sockets_inherit_the_listeners_non_blocking_mode() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        listener.set_nonblocking(true).unwrap();
+
+        let _client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+
+        let mut accepted = None;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline && accepted.is_none() {
+            match listener.accept() {
+                Ok((s, _)) => accepted = Some(s),
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                Err(e) => panic!("accept failed: {e}"),
+            }
+        }
+        let mut server = accepted.expect("no connection accepted");
+
+        let mut buf = [0u8; 1];
+        let inherited = matches!(
+            server.read(&mut buf),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock
+        );
+
+        // Putting it back to blocking is what makes reads honour the timeout and
+        // writes wait instead of failing.
+        server.set_nonblocking(false).unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let timed_out = matches!(
+            server.read(&mut buf),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut
+        );
+
+        assert!(
+            inherited,
+            "accepted socket was already blocking; if this ever holds, revisit              the set_nonblocking(false) in serve_client and the reasoning above"
+        );
+        assert!(timed_out, "the read timeout did not take effect after clearing non-blocking");
+    }
+
     #[test]
     fn streams_go_to_the_port_the_client_nominated() {
         let state = Arc::new(HostState::default());
