@@ -32,6 +32,7 @@ namespace AuralPrimer.Calibration
         [SerializeField] WizardPanel panel;
         [SerializeField] HandGestures hands;
         [SerializeField] KeyboardOverlay overlay;
+        [SerializeField] NoteHighway highway;
         [SerializeField] string profileName = "My keyboard";
 
         readonly List<(byte pitch, byte velocity)> _previousNotes = new();
@@ -264,6 +265,9 @@ namespace AuralPrimer.Calibration
         void ApplyProfile()
         {
             if (overlay != null) overlay.Apply(_profile);
+            // The lane hangs off the same calibration: without it there is no
+            // keyboard for the notes to line up above.
+            if (highway != null) highway.Apply(_profile);
         }
 
         void UpdateStatusLine()
@@ -277,6 +281,14 @@ namespace AuralPrimer.Calibration
             else if (link.IsConnected)
             {
                 panel.SetStatus($"connected to {link.HostName}", new Color(0.4f, 0.95f, 0.55f));
+            }
+            else if (link.IsReconnecting)
+            {
+                // Distinct from the firewall case below: we reached this host
+                // once, so telling the user to go change firewall rules over a
+                // momentary drop would send them after the wrong thing.
+                panel.SetStatus($"reconnecting to {link.LastHostName}…",
+                                new Color(0.98f, 0.82f, 0.35f));
             }
             else if (link.HostHeardButNotConnected)
             {

@@ -179,6 +179,55 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &286128296
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 286128298}
+  - component: {fileID: 286128297}
+  m_Layer: 0
+  m_Name: Note Highway
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &286128297
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 286128296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c6e7829a434f476387c3ebca88c1b648, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AuralPrimer.Calibration::AuralPrimer.Calibration.NoteHighway
+  link: {fileID: 302477619}
+  lookAheadSeconds: 3
+  noteThicknessMetres: 0.006
+  minimumNoteLengthMetres: 0.012
+  maxVisibleNotes: 256
+--- !u!4 &286128298
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 286128296}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &293072303
 GameObject:
   m_ObjectHideFlags: 0
@@ -408,6 +457,7 @@ MonoBehaviour:
   clientName: Quest
   autoConnect: 1
   reconnectDelaySeconds: 2
+  directReconnectAttempts: 3
 --- !u!4 &302477620
 Transform:
   m_ObjectHideFlags: 0
@@ -1171,6 +1221,21 @@ MonoBehaviour:
   m_SwapMaterials: 0
   m_BaseLineMaterial: {fileID: 0}
   m_EmptyHitMaterial: {fileID: 0}
+--- !u!114 &312847756
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 312847746}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c834b184384741e98aa6ccc5e2c2aff5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  leftHand: 1
+  pinchEnterMetres: 0.02
+  pinchExitMetres: 0.035
 --- !u!1 &350902411
 GameObject:
   m_ObjectHideFlags: 0
@@ -1203,6 +1268,8 @@ MonoBehaviour:
   pinchEnterMetres: 0.02
   pinchExitMetres: 0.035
   palmUpHoldSeconds: 0.8
+  palmUpGraceSeconds: 0.25
+  palmFacingDot: 0.6
 --- !u!4 &350902413
 Transform:
   m_ObjectHideFlags: 0
@@ -2007,6 +2074,21 @@ MonoBehaviour:
   m_SwapMaterials: 0
   m_BaseLineMaterial: {fileID: 0}
   m_EmptyHitMaterial: {fileID: 0}
+--- !u!114 &892410618
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 892410608}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c834b184384741e98aa6ccc5e2c2aff5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  leftHand: 0
+  pinchEnterMetres: 0.02
+  pinchExitMetres: 0.035
 --- !u!1 &944801142
 GameObject:
   m_ObjectHideFlags: 0
@@ -2122,6 +2204,7 @@ MonoBehaviour:
   panel: {fileID: 2088425082}
   hands: {fileID: 350902412}
   overlay: {fileID: 1203704250}
+  highway: {fileID: 286128297}
   profileName: My keyboard
 --- !u!4 &1657762553
 Transform:
@@ -2471,33 +2554,4 @@ SceneRoots:
   - {fileID: 2135731689}
   - {fileID: 1715917247}
   - {fileID: 1692336443}
---- !u!114 &312847756
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 312847746}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c834b184384741e98aa6ccc5e2c2aff5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  leftHand: 1
-  pinchEnterMetres: 0.02
-  pinchExitMetres: 0.035
---- !u!114 &892410618
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 892410608}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c834b184384741e98aa6ccc5e2c2aff5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  leftHand: 0
-  pinchEnterMetres: 0.02
-  pinchExitMetres: 0.035
+  - {fileID: 286128298}
