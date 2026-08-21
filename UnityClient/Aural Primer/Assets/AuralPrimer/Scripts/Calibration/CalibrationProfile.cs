@@ -16,6 +16,20 @@ namespace AuralPrimer.Calibration
     [Serializable]
     public class CalibrationProfile
     {
+        /// <summary>
+        /// Which calibration scheme produced this profile.
+        /// </summary>
+        /// <remarks>
+        /// Bumped whenever a fix changes what the stored numbers mean. A profile
+        /// from an older scheme is not wrong-looking — it restores cleanly and
+        /// puts the keyboard in the wrong place, which is worse than failing,
+        /// because the wizard then skips calibration and the user is left with a
+        /// silently misplaced overlay and nothing to act on.
+        /// </remarks>
+        public const int CurrentVersion = 2;
+
+        public int version = CurrentVersion;
+
         public string profileName = "My keyboard";
         public int lowestPitch = 36;
         public int highestPitch = 96;
@@ -50,7 +64,8 @@ namespace AuralPrimer.Calibration
         public bool IsCalibrated => (rightEdge - leftEdge).sqrMagnitude > 0.0001f;
 
         /// <summary>Calibrated and tied to an anchor that can be re-localised.</summary>
-        public bool IsAnchored => IsCalibrated && !string.IsNullOrEmpty(anchorId);
+        public bool IsAnchored =>
+            IsCalibrated && !string.IsNullOrEmpty(anchorId) && version == CurrentVersion;
 
         /// <summary>
         /// Re-express world-space edges against an anchor.

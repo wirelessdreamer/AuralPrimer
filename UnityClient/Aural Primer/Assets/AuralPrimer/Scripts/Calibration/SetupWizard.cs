@@ -95,7 +95,14 @@ namespace AuralPrimer.Calibration
                         // then knowing, not guessing.
                         if (_busy) break;
 
-                        if (_profile is { IsAnchored: true }) RestoreAsync();
+                        if (_profile is { IsCalibrated: true } && _profile.version != CalibrationProfile.CurrentVersion)
+                        {
+                            Debug.Log($"[wizard] calibration v{_profile.version} predates the current "
+                                    + $"scheme (v{CalibrationProfile.CurrentVersion}); re-calibrating");
+                            _profile = new CalibrationProfile { profileName = profileName };
+                            EnterStep(Step.LowestKey);
+                        }
+                        else if (_profile is { IsAnchored: true }) RestoreAsync();
                         else
                         {
                             _profile = new CalibrationProfile { profileName = profileName };

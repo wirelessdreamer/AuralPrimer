@@ -37,6 +37,20 @@ namespace AuralPrimer.Calibration
 
         XRHandSubsystem _hands;
         XROrigin _origin;
+
+        /// <summary>Tracking space, as a world transform.</summary>
+        /// <remarks>
+        /// The mapping from tracking space to world is the camera-offset
+        /// transform, not the origin's. It is the object XROrigin moves by
+        /// CameraYOffset — 1.1176 m by default — when the runtime only offers a
+        /// Device tracking origin, which is this headset's case. Going through
+        /// the origin instead drops that offset, and everything derived from a
+        /// joint lands about a metre from where the hand really is.
+        /// </remarks>
+        Transform TrackingSpace =>
+            _origin != null && _origin.CameraFloorOffsetObject != null
+                ? _origin.CameraFloorOffsetObject.transform
+                : null;
         bool _leftPinching, _rightPinching;
         float _palmUpSince = -1f;
         float _lastFacingAt = float.NegativeInfinity;
@@ -176,8 +190,8 @@ namespace AuralPrimer.Calibration
         {
             if (hand.GetJoint(id).TryGetPose(out var pose))
             {
-                position = _origin != null
-                    ? _origin.Origin.transform.TransformPoint(pose.position)
+                position = TrackingSpace != null
+                    ? TrackingSpace.TransformPoint(pose.position)
                     : pose.position;
                 return true;
             }
