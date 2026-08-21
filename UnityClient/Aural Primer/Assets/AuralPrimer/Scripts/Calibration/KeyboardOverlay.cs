@@ -56,8 +56,13 @@ namespace AuralPrimer.Calibration
 
             _layout = profile.BuildLayout();
             Rebuild();
-            Debug.Log($"[overlay] built {_keyMarkers.Count} key markers; "
-                    + $"root={transform.position} parent={(transform.parent != null ? transform.parent.name : "none")}");
+            var head = Camera.main;
+            var eye = head != null ? head.transform.position : Vector3.zero;
+            var lowest = _keyMarkers.TryGetValue(_layout.LowestPitch, out var lo) ? lo.position : Vector3.zero;
+            var highest = _keyMarkers.TryGetValue(_layout.HighestPitch, out var hi) ? hi.position : Vector3.zero;
+            Debug.Log($"[overlay] {_keyMarkers.Count} markers | eye={eye} "
+                    + $"| lowestKey={lowest} (dHead={lowest - eye}) "
+                    + $"| highestKey={highest} (dHead={highest - eye})");
         }
 
         void Update()
@@ -117,7 +122,10 @@ namespace AuralPrimer.Calibration
                 marker.transform.localRotation = Quaternion.LookRotation(forward, up);
                 // Deliberately flat: a thin plate reads as an overlay ON the real
                 // key rather than a block sitting on top of it.
-                marker.transform.localScale = new Vector3(keyWidth * 0.85f, 0.002f, depth);
+                // 2 mm at 22% alpha was invisible against a real keyboard in
+                // passthrough. Thick enough to read as an object, still flat
+                // enough to read as an overlay on the key rather than a block.
+                marker.transform.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
 
                 SetMaterial(marker.transform, isBlack ? _idleBlack : _idleWhite);
                 _keyMarkers[pitch] = marker.transform;

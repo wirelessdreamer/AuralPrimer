@@ -8,6 +8,7 @@
 // both simpler and more precise for that.
 
 using System;
+using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.XR.Hands;
 using UnityEngine.XR.Management;
@@ -35,6 +36,7 @@ namespace AuralPrimer.Calibration
         [SerializeField] float palmFacingDot = 0.6f;
 
         XRHandSubsystem _hands;
+        XROrigin _origin;
         bool _leftPinching, _rightPinching;
         float _palmUpSince = -1f;
         float _lastFacingAt = float.NegativeInfinity;
@@ -69,6 +71,7 @@ namespace AuralPrimer.Calibration
         {
             var loader = XRGeneralSettings.Instance?.Manager?.activeLoader;
             _hands = loader?.GetLoadedSubsystem<XRHandSubsystem>();
+            if (_origin == null) _origin = FindFirstObjectByType<XROrigin>();
         }
 
         void UpdateHand(XRHand hand, ref bool pinching)
@@ -158,11 +161,24 @@ namespace AuralPrimer.Calibration
             return Vector3.Dot(-palmNormal, toCamera) > palmFacingDot;
         }
 
-        static bool TryGetJointPosition(XRHand hand, XRHandJointID id, out Vector3 position)
+        /// <summary>
+        /// A joint position in world space.
+        /// </summary>
+        /// <remarks>
+        /// Joint poses are relative to the XR Origin, not the world. This
+        /// headset reports a Device tracking origin — Floor is unsupported — so
+        /// the origin carries a camera offset of over a metre, and the two
+        /// spaces are nowhere near each other. Using a raw joint pose as a world
+        /// position put every calibration mark somewhere that was not the
+        /// keyboard, and the overlay dutifully appeared there.
+        /// </remarks>
+        bool TryGetJointPosition(XRHand hand, XRHandJointID id, out Vector3 position)
         {
             if (hand.GetJoint(id).TryGetPose(out var pose))
             {
-                position = pose.position;
+                position = _origin != null
+                    ? _origin.Origin.transform.TransformPoint(pose.position)
+                    : pose.position;
                 return true;
             }
             position = default;

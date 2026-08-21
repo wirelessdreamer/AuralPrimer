@@ -185,9 +185,21 @@ namespace AuralPrimer.Calibration
                 if (_pool[i] != null) _pool[i].gameObject.SetActive(false);
             }
 
-            Report($"t={now:F2}s drew={used} cursor={_cursor}/{_notes.Count} "
-                 + $"laneOrigin={transform.position} parent={(transform.parent != null ? transform.parent.name : "none")} "
-                 + $"firstSlab={(used > 0 ? _pool[0].position.ToString() : "n/a")}");
+            // Everything relative to the head, because "I can see it at the top
+            // of my view" is a statement about where the player is, and absolute
+            // world numbers cannot be checked against that.
+            var head = Camera.main;
+            var eye = head != null ? head.transform.position : Vector3.zero;
+            var laneTopLocal = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f)
+                             + laneUp * (_profile.laneHeightMetres
+                                       * Mathf.Max(0.01f, _profile.spacingMultiplier));
+            var laneTop = transform.TransformPoint(laneTopLocal);
+            var keyMid = transform.TransformPoint(
+                Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f));
+
+            Report($"t={now:F2}s drew={used} | eye={eye} | keyMid={keyMid} "
+                 + $"(dHead={(keyMid - eye)}) | laneTop={laneTop} (dHead={(laneTop - eye)}) "
+                 + $"| firstSlab={(used > 0 ? _pool[0].position.ToString() : "n/a")}");
         }
 
         /// <summary>Once a second, so the log stays readable at 72 fps.</summary>
