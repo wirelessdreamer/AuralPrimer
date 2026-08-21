@@ -40,6 +40,11 @@ namespace AuralPrimer.Link
         UdpClient _udp;
         Thread _tcpThread;
         Thread _udpThread;
+        /// <summary>How long to keep waiting for the rest of a frame already in
+        /// flight before deciding the peer is gone. Generous: it only bounds a
+        /// genuinely dead link, and the CHART can be large on a slow Wi-Fi hop.</summary>
+        const double MidFrameTimeoutSeconds = 10.0;
+
         volatile bool _running;
 
         public MrSessionClient(string clientName)
@@ -176,7 +181,11 @@ namespace AuralPrimer.Link
 
                     var headerRead = ReadExact(header, 5);
                     if (headerRead == ReadOutcome.TimedOut) continue;
-                    if (headerRead == ReadOutcome.Closed) break;
+                    if (headerRead == ReadOutcome.Closed)
+                    {
+                        Debug.Log("[mr-link] host closed the session");
+                        break;
+                    }
                     if (!MrProtocol.TryDecodeFrameHeader(header, out var length, out var frameType))
                     {
                         // An implausible prefix means the stream is desynchronised;
@@ -187,7 +196,11 @@ namespace AuralPrimer.Link
                     }
 
                     var payload = length > 0 ? new byte[length] : Array.Empty<byte>();
-                    if (length > 0 && ReadExact(payload, length) != ReadOutcome.Complete) break;
+                    if (length > 0 && ReadExact(payload, length) != ReadOutcome.Complete)
+                    {
+                        Debug.LogWarning($"[mr-link] incomplete {length}B payload; dropping session");
+                        break;
+                    }
 
                     HandleFrame(frameType, payload);
                 }
@@ -229,6 +242,8 @@ namespace AuralPrimer.Link
             if (stream == null) return ReadOutcome.Closed;
 
             var read = 0;
+            var deadline = DateTime.UtcNow.AddSeconds(MidFrameTimeoutSeconds);
+
             while (read < count)
             {
                 int n;
@@ -238,7 +253,17 @@ namespace AuralPrimer.Link
                 }
                 catch (IOException)
                 {
-                    return ReadOutcome.TimedOut;
+                    // Between frames, a timeout is just quiet: hand control back
+                    // so the loop can ping and notice Disconnect.
+                    if (read == 0) return ReadOutcome.TimedOut;
+
+                    // Mid-frame it means the rest has not arrived yet, which is
+                    // ordinary for a payload that spans many segments — the CHART
+                    // is tens of kilobytes. Treating that as failure tore down a
+                    // perfectly healthy session the moment a song was loaded, and
+                    // did it silently. Keep waiting, but not forever.
+                    if (DateTime.UtcNow >= deadline) return ReadOutcome.Closed;
+                    continue;
                 }
                 catch (ObjectDisposedException)
                 {
