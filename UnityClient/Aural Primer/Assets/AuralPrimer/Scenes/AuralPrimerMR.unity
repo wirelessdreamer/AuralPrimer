@@ -439,6 +439,7 @@ GameObject:
   - component: {fileID: 312847752}
   - component: {fileID: 312847751}
   - component: {fileID: 312847755}
+  - component: {fileID: 312847756}
   m_Layer: 0
   m_Name: Left Hand Interactor
   m_TagString: Untagged
@@ -1274,6 +1275,7 @@ GameObject:
   - component: {fileID: 892410614}
   - component: {fileID: 892410613}
   - component: {fileID: 892410617}
+  - component: {fileID: 892410618}
   m_Layer: 0
   m_Name: Right Hand Interactor
   m_TagString: Untagged
@@ -2469,3 +2471,33 @@ SceneRoots:
   - {fileID: 2135731689}
   - {fileID: 1715917247}
   - {fileID: 1692336443}
+--- !u!114 &312847756
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 312847746}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c834b184384741e98aa6ccc5e2c2aff5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  leftHand: 1
+  pinchEnterMetres: 0.02
+  pinchExitMetres: 0.035
+--- !u!114 &892410618
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 892410608}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c834b184384741e98aa6ccc5e2c2aff5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  leftHand: 0
+  pinchEnterMetres: 0.02
+  pinchExitMetres: 0.035
