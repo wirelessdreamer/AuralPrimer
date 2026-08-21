@@ -20,12 +20,24 @@ namespace AuralPrimer.Calibration
         public int lowestPitch = 36;
         public int highestPitch = 96;
 
-        /// <summary>Outer left edge of the lowest white key, in world space.</summary>
+        /// <summary>
+        /// Persistent spatial anchor this calibration is expressed against.
+        /// </summary>
+        /// <remarks>
+        /// Edges used to be stored in world space, which does not survive a
+        /// restart: the headset re-localises, so the same numbers describe a
+        /// different place in the room. The anchor is the platform's own record
+        /// of a place, re-localised against the room on load — so restoring is
+        /// knowing rather than guessing.
+        /// </remarks>
+        public string anchorId;
+
+        /// <summary>Outer left edge of the lowest white key, relative to the anchor.</summary>
         public Vector3 leftEdge;
-        /// <summary>Outer right edge of the highest white key.</summary>
+        /// <summary>Outer right edge of the highest white key, relative to the anchor.</summary>
         public Vector3 rightEdge;
-        /// <summary>Up direction of the key bed — lets the lane tilt with an
-        /// instrument that is not perfectly level.</summary>
+        /// <summary>Up direction of the key bed, relative to the anchor — lets the
+        /// lane tilt with an instrument that is not perfectly level.</summary>
         public Vector3 up = Vector3.up;
 
         /// <summary>How far the falling-note lane extends above the keys.</summary>
@@ -36,6 +48,27 @@ namespace AuralPrimer.Calibration
         public float spacingMultiplier = 1f;
 
         public bool IsCalibrated => (rightEdge - leftEdge).sqrMagnitude > 0.0001f;
+
+        /// <summary>Calibrated and tied to an anchor that can be re-localised.</summary>
+        public bool IsAnchored => IsCalibrated && !string.IsNullOrEmpty(anchorId);
+
+        /// <summary>
+        /// Re-express world-space edges against an anchor.
+        /// </summary>
+        public void RebaseOnto(Transform anchorSpace, Vector3 worldLeft, Vector3 worldRight, Vector3 worldUp)
+        {
+            if (anchorSpace == null)
+            {
+                leftEdge = worldLeft;
+                rightEdge = worldRight;
+                up = worldUp;
+                return;
+            }
+
+            leftEdge = anchorSpace.InverseTransformPoint(worldLeft);
+            rightEdge = anchorSpace.InverseTransformPoint(worldRight);
+            up = anchorSpace.InverseTransformDirection(worldUp);
+        }
 
         public float WidthMetres => Vector3.Distance(leftEdge, rightEdge);
 
@@ -51,7 +84,7 @@ namespace AuralPrimer.Calibration
 
         public KeyboardLayout BuildLayout() => new(lowestPitch, highestPitch);
 
-        /// <summary>World position of a key's centre, on the key bed.</summary>
+        /// <summary>A key's centre on the key bed, in the anchor's space.</summary>
         public Vector3 KeyPosition(KeyboardLayout layout, int pitch)
         {
             var t = (float)layout.NormalisedX(pitch);

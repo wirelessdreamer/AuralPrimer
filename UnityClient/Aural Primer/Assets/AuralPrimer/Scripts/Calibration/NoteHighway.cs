@@ -147,8 +147,10 @@ namespace AuralPrimer.Calibration
                 var length = Mathf.Max(minimumNoteLengthMetres, endHeight - startHeight);
 
                 var slab = Rent(used, isBlack);
-                slab.position = key + laneUp * (startHeight + length * 0.5f);
-                slab.rotation = Quaternion.LookRotation(forward, laneUp);
+                // Local: this lane is parented to the spatial anchor along with
+                // the keys it belongs above.
+                slab.localPosition = key + laneUp * (startHeight + length * 0.5f);
+                slab.localRotation = Quaternion.LookRotation(forward, laneUp);
 
                 var width = (float)_layout.NormalisedWidth(note.Pitch) * _profile.WidthMetres;
                 slab.localScale = new Vector3(width * 0.85f, noteThicknessMetres, length);

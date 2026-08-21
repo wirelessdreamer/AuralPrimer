@@ -98,10 +98,13 @@ namespace AuralPrimer.Calibration
                 var keyWidth = (float)_layout.NormalisedWidth(pitch) * width;
                 var depth = isBlack ? blackKeyDepth : whiteKeyDepth;
 
-                marker.transform.position = _profile.KeyPosition(_layout, pitch)
-                                          + up * hoverMetres
-                                          + forward * (depth * 0.5f);
-                marker.transform.rotation = Quaternion.LookRotation(forward, up);
+                // Local, not world: this object is parented to the spatial
+                // anchor, so the anchor's transform carries the whole keyboard
+                // when the runtime re-localises it.
+                marker.transform.localPosition = _profile.KeyPosition(_layout, pitch)
+                                               + up * hoverMetres
+                                               + forward * (depth * 0.5f);
+                marker.transform.localRotation = Quaternion.LookRotation(forward, up);
                 // Deliberately flat: a thin plate reads as an overlay ON the real
                 // key rather than a block sitting on top of it.
                 marker.transform.localScale = new Vector3(keyWidth * 0.85f, 0.002f, depth);

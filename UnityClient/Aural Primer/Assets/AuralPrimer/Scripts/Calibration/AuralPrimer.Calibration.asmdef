@@ -5,7 +5,10 @@
         "AuralPrimer.Link",
         "AuralPrimer.UI",
         "Unity.XR.Hands",
-        "Unity.XR.Management"
+        "Unity.XR.Management",
+        "Unity.XR.ARFoundation",
+        "Unity.XR.ARSubsystems",
+        "Unity.XR.CoreUtils"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -8,6 +8,7 @@
 // off-by-one-key error — the classic failure, and subtly wrong for a whole
 // session — becomes obvious the moment a key is played.
 
+using System;
 using System.Collections.Generic;
 using AuralPrimer.Link;
 using AuralPrimer.UI;
@@ -33,6 +34,7 @@ namespace AuralPrimer.Calibration
         [SerializeField] HandGestures hands;
         [SerializeField] KeyboardOverlay overlay;
         [SerializeField] NoteHighway highway;
+        [SerializeField] KeyboardAnchor keyboardAnchor;
         [SerializeField] string profileName = "My keyboard";
 
         readonly List<(byte pitch, byte velocity)> _previousNotes = new();
@@ -44,6 +46,8 @@ namespace AuralPrimer.Calibration
         float _widthErrorRatio;
         int _verifiedKeys;
         int _lastVerifyPitch = -1;
+        Vector3 _worldLeftEdge;
+        bool _busy;
 
         public Step Current => _step;
         public CalibrationProfile Profile => _profile;
@@ -86,18 +90,12 @@ namespace AuralPrimer.Calibration
                     if (link != null && link.IsConnected)
                     {
                         // Skip calibration entirely if this keyboard is already
-                        // known: re-calibrating every session would be absurd.
-                        // But a saved profile holds world coordinates, and the
-                        // headset re-localises between sessions — so yesterday's
-                        // numbers can put the keyboard across the room or under
-                        // the floor. Rather than draw the overlay somewhere the
-                        // user will never find it, treat an implausible profile
-                        // as no profile and ask for the two edges again.
-                        if (_profile is { IsCalibrated: true } && !ProfileLooksStale(_profile))
-                        {
-                            ApplyProfile();
-                            EnterStep(Step.Done);
-                        }
+                        // known — but only once the runtime has re-localised its
+                        // anchor and told us where it actually is. Restoring is
+                        // then knowing, not guessing.
+                        if (_busy) break;
+
+                        if (_profile is { IsAnchored: true }) RestoreAsync();
                         else
                         {
                             _profile = new CalibrationProfile { profileName = profileName };
@@ -135,22 +133,14 @@ namespace AuralPrimer.Calibration
             switch (_step)
             {
                 case Step.MarkLeftEdge:
-                    _profile.leftEdge = position;
+                    // Held in world space until there is an anchor to rebase onto.
+                    _worldLeftEdge = position;
                     EnterStep(Step.MarkRightEdge);
                     break;
 
                 case Step.MarkRightEdge:
-                    _profile.rightEdge = position;
-                    _profile.up = Vector3.up;
-
-                    // Cross-check the span against the instrument's real size
-                    // before trusting it. A measurement well off expectation is
-                    // a mis-tap, and silently building a skewed lane from it
-                    // would be wrong for the whole session.
-                    var layout = _profile.BuildLayout();
-                    _widthErrorRatio = (float)layout.WidthErrorRatio(_profile.WidthMetres);
-                    ApplyProfile();
-                    EnterStep(Step.Verify);
+                    if (_busy) break;
+                    AnchorAndApplyAsync(_worldLeftEdge, position);
                     break;
 
                 case Step.Done:
@@ -272,29 +262,88 @@ namespace AuralPrimer.Calibration
             }
         }
 
-        /// <summary>Is this saved placement too far from the user to be real?</summary>
-        static bool ProfileLooksStale(CalibrationProfile profile)
+        /// <summary>
+        /// Anchor the calibration just measured, then apply it.
+        /// </summary>
+        async void AnchorAndApplyAsync(Vector3 worldLeft, Vector3 worldRight)
         {
-            var camera = Camera.main;
-            if (camera == null) return false;
-
-            var centre = (profile.leftEdge + profile.rightEdge) * 0.5f;
-            var toKeyboard = centre - camera.transform.position;
-
-            // A keyboard you are playing is within arm's reach and roughly at
-            // desk height relative to the head. Anything else is a coordinate
-            // from a session that no longer exists.
-            var tooFar = toKeyboard.magnitude > 2.5f;
-            var tooHigh = toKeyboard.y > 0.5f;
-            var tooLow = toKeyboard.y < -1.5f;
-
-            if (tooFar || tooHigh || tooLow)
+            _busy = true;
+            try
             {
-                Debug.Log($"[wizard] saved keyboard is {toKeyboard.magnitude:F2} m away "
-                        + $"({toKeyboard.y:F2} m vertically) — re-calibrating");
-                return true;
+                var up = Vector3.up;
+                var right = worldRight - worldLeft;
+                var forward = right.sqrMagnitude > 1e-6f
+                    ? Vector3.Cross(right.normalized, up)
+                    : Vector3.forward;
+
+                // Anchor at the left edge, oriented along the instrument, so the
+                // saved pose means something on its own rather than being an
+                // arbitrary point with numbers hanging off it.
+                var pose = new Pose(worldLeft, Quaternion.LookRotation(forward, up));
+
+                string anchorId = null;
+                if (keyboardAnchor != null) anchorId = await keyboardAnchor.CreateAndSaveAsync(pose);
+
+                _profile.anchorId = anchorId;
+                _profile.RebaseOnto(keyboardAnchor != null ? keyboardAnchor.Space : null,
+                                    worldLeft, worldRight, up);
+
+                // Cross-check the span against the instrument's real size before
+                // trusting it. A measurement well off expectation is a mis-tap,
+                // and silently building a skewed lane from it would be wrong for
+                // the whole session.
+                var layout = _profile.BuildLayout();
+                _widthErrorRatio = (float)layout.WidthErrorRatio(_profile.WidthMetres);
+
+                ApplyProfile();
+                EnterStep(Step.Verify);
             }
-            return false;
+            catch (Exception e)
+            {
+                Debug.LogError($"[wizard] anchoring failed: {e.Message}");
+                EnterStep(Step.MarkLeftEdge);
+            }
+            finally
+            {
+                _busy = false;
+            }
+        }
+
+        /// <summary>
+        /// Re-localise a saved anchor and reuse its calibration, or ask for the
+        /// edges again if the room no longer matches.
+        /// </summary>
+        async void RestoreAsync()
+        {
+            _busy = true;
+            try
+            {
+                var restored = keyboardAnchor != null
+                            && await keyboardAnchor.TryLoadAsync(_profile.anchorId);
+
+                if (restored)
+                {
+                    ApplyProfile();
+                    EnterStep(Step.Done);
+                }
+                else
+                {
+                    // Not a failure worth alarming anyone about: a room can
+                    // change, and re-marking two edges is quick.
+                    _profile = new CalibrationProfile { profileName = profileName };
+                    EnterStep(Step.LowestKey);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[wizard] restoring the anchor failed: {e.Message}");
+                _profile = new CalibrationProfile { profileName = profileName };
+                EnterStep(Step.LowestKey);
+            }
+            finally
+            {
+                _busy = false;
+            }
         }
 
         void ApplyProfile()
@@ -305,6 +354,16 @@ namespace AuralPrimer.Calibration
                         + $"pitches={_profile.lowestPitch}..{_profile.highestPitch} "
                         + $"width={_profile.WidthMetres:F3}m "
                         + $"left={_profile.leftEdge} right={_profile.rightEdge}");
+            }
+
+            // Both renderers work in the anchor's space, so parent them to it.
+            // Re-localisation then moves the keys and the lane together, with no
+            // per-frame bookkeeping here.
+            var space = keyboardAnchor != null ? keyboardAnchor.Space : null;
+            if (space != null)
+            {
+                if (overlay != null) overlay.transform.SetParent(space, false);
+                if (highway != null) highway.transform.SetParent(space, false);
             }
 
             if (overlay != null) overlay.Apply(_profile);
