@@ -43,17 +43,22 @@ namespace AuralPrimer.UI
 
         /// <summary>Tracking space, as a world transform.</summary>
         /// <remarks>
-        /// The mapping from tracking space to world is the camera-offset
-        /// transform, not the origin's. It is the object XROrigin moves by
-        /// CameraYOffset — 1.1176 m by default — when the runtime only offers a
-        /// Device tracking origin, which is this headset's case. Going through
-        /// the origin instead drops that offset, and everything derived from a
-        /// joint lands about a metre from where the hand really is.
+        /// The camera's own parent, by definition: tracked poses are placed in
+        /// whatever space the runtime puts the camera in, so converting a joint
+        /// through anything else puts hands and head in different rooms.
+        /// Reaching for CameraFloorOffsetObject added an offset the camera was
+        /// not itself receiving, which lifted every hand-derived position about
+        /// a metre — rays overhead, and a keyboard above the player's eyeline.
         /// </remarks>
-        Transform TrackingSpace =>
-            _origin != null && _origin.CameraFloorOffsetObject != null
-                ? _origin.CameraFloorOffsetObject.transform
-                : null;
+        Transform TrackingSpace
+        {
+            get
+            {
+                var cam = _origin != null && _origin.Camera != null ? _origin.Camera.transform : null;
+                if (cam == null && Camera.main != null) cam = Camera.main.transform;
+                return cam != null ? cam.parent : null;
+            }
+        }
         NearFarInteractor _interactor;
         bool _pinching;
         bool _posed;

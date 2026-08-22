@@ -107,6 +107,22 @@ namespace AuralPrimer.UI
             else SetVisible(true);
         }
 
+        /// <summary>
+        /// Park the panel at a specific pose and keep it there.
+        /// </summary>
+        /// <remarks>
+        /// Used once the keyboard is calibrated: the panel belongs above the
+        /// instrument, in the world, where it is always findable. A calibrated
+        /// keyboard with nothing over it reads as an app that has stopped
+        /// working, even when everything behind it is fine.
+        /// </remarks>
+        public void PlaceAt(Vector3 position, Quaternion rotation)
+        {
+            transform.SetPositionAndRotation(position, rotation);
+            _placed = true;
+            SetVisible(true);
+        }
+
         public void SetVisible(bool visible)
         {
             if (_canvas != null) _canvas.enabled = visible;

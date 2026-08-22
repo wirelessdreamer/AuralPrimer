@@ -151,7 +151,8 @@ namespace AuralPrimer.Calibration
                     break;
 
                 case Step.Done:
-                    panel?.SetVisible(false);
+                    // Not hidden: parked above the instrument. See ParkAboveKeyboard.
+                    ParkAboveKeyboard();
                     break;
             }
         }
@@ -353,6 +354,33 @@ namespace AuralPrimer.Calibration
             }
         }
 
+        /// <summary>
+        /// Put the panel above the calibrated keyboard, facing the player.
+        /// </summary>
+        void ParkAboveKeyboard()
+        {
+            if (panel == null || _profile is not { IsCalibrated: true }) return;
+
+            var space = keyboardAnchor != null ? keyboardAnchor.Space : null;
+            var centreLocal = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f);
+            var upLocal = _profile.up.sqrMagnitude > 1e-6f ? _profile.up.normalized : Vector3.up;
+
+            // Clear of the top of the note lane, so it never sits over the music.
+            var laneHeight = _profile.laneHeightMetres * Mathf.Max(0.01f, _profile.spacingMultiplier);
+            var aboveLocal = centreLocal + upLocal * (laneHeight + 0.18f);
+
+            var position = space != null ? space.TransformPoint(aboveLocal) : aboveLocal;
+
+            // Face the player rather than the instrument's own axis: this is
+            // something to read, and it is directly above what it describes.
+            var camera = Camera.main;
+            var toPlayer = camera != null ? camera.transform.position - position : Vector3.back;
+            toPlayer.y = 0f;
+            if (toPlayer.sqrMagnitude < 1e-4f) toPlayer = Vector3.back;
+
+            panel.PlaceAt(position, Quaternion.LookRotation(-toPlayer.normalized, Vector3.up));
+        }
+
         void ApplyProfile()
         {
             if (_profile != null)
@@ -377,6 +405,8 @@ namespace AuralPrimer.Calibration
             // The lane hangs off the same calibration: without it there is no
             // keyboard for the notes to line up above.
             if (highway != null) highway.Apply(_profile);
+
+            ParkAboveKeyboard();
         }
 
         void UpdateStatusLine()
