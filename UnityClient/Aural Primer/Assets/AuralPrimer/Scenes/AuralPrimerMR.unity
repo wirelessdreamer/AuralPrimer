@@ -319,37 +319,61 @@ MonoBehaviour:
   m_PositionInput:
     m_UseReference: 0
     m_Action:
-      m_Name: Position
+      m_Name: Head Position
       m_Type: 0
       m_ExpectedControlType: Vector3
       m_Id: d90b8d80-be95-4cbb-be48-3c11505004e7
       m_Processors: 
       m_Interactions: 
-      m_SingletonActionBindings: []
+      m_SingletonActionBindings:
+      - m_Name: 
+        m_Id: 
+        m_Path: <XRHMD>/centerEyePosition
+        m_Interactions: 
+        m_Processors: 
+        m_Groups: 
+        m_Action: Head Position
+        m_Flags: 0
       m_Flags: 0
     m_Reference: {fileID: 0}
   m_RotationInput:
     m_UseReference: 0
     m_Action:
-      m_Name: Rotation
+      m_Name: Head Rotation
       m_Type: 0
       m_ExpectedControlType: Quaternion
       m_Id: 67864cdc-ca2c-493a-b98f-0ed13c17fd31
       m_Processors: 
       m_Interactions: 
-      m_SingletonActionBindings: []
+      m_SingletonActionBindings:
+      - m_Name: 
+        m_Id: 
+        m_Path: <XRHMD>/centerEyeRotation
+        m_Interactions: 
+        m_Processors: 
+        m_Groups: 
+        m_Action: Head Rotation
+        m_Flags: 0
       m_Flags: 0
     m_Reference: {fileID: 0}
   m_TrackingStateInput:
     m_UseReference: 0
     m_Action:
-      m_Name: Tracking State
+      m_Name: Head Tracking State
       m_Type: 0
       m_ExpectedControlType: Integer
       m_Id: 56cb4644-ec6b-4b93-bb3c-03352cd1025f
       m_Processors: 
       m_Interactions: 
-      m_SingletonActionBindings: []
+      m_SingletonActionBindings:
+      - m_Name: 
+        m_Id: 
+        m_Path: <XRHMD>/trackingState
+        m_Interactions: 
+        m_Processors: 
+        m_Groups: 
+        m_Action: Head Tracking State
+        m_Flags: 0
       m_Flags: 0
     m_Reference: {fileID: 0}
   m_PositionAction:
