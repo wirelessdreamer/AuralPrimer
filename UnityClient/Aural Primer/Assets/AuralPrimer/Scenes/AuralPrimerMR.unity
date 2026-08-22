@@ -2196,6 +2196,10 @@ MonoBehaviour:
   overlay: {fileID: 1203704250}
   highway: {fileID: 286128297}
   keyboardAnchor: {fileID: 1764251373}
+  showPinchMarkers: 1
+  leftPinchMaterial: {fileID: 2100000, guid: 87a6a6e39c2cc924eb1700c6da8837c9, type: 2}
+  rightPinchMaterial: {fileID: 2100000, guid: 8d94b2fe13a07d44e9e0378b42f61da4, type: 2}
+  pinchMarkerSizeMetres: 0.03
   profileName: My keyboard
 --- !u!4 &1657762553
 Transform:

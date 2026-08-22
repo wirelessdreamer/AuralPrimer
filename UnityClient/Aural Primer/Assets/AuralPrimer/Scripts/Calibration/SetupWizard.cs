@@ -35,6 +35,17 @@ namespace AuralPrimer.Calibration
         [SerializeField] KeyboardOverlay overlay;
         [SerializeField] NoteHighway highway;
         [SerializeField] KeyboardAnchor keyboardAnchor;
+
+        [Header("Pinch debug markers")]
+        [Tooltip("A cube is left at each pinch so the captured point can be "
+               + "compared against the real key it was meant to mark. The whole "
+               + "class of bug this session has been the app placing things "
+               + "somewhere other than where the hand was, which is invisible "
+               + "until something is drawn at the captured point itself.")]
+        [SerializeField] bool showPinchMarkers = true;
+        [SerializeField] Material leftPinchMaterial;
+        [SerializeField] Material rightPinchMaterial;
+        [SerializeField] float pinchMarkerSizeMetres = 0.03f;
         [SerializeField] string profileName = "My keyboard";
 
         readonly List<(byte pitch, byte velocity)> _previousNotes = new();
@@ -48,6 +59,7 @@ namespace AuralPrimer.Calibration
         int _lastVerifyPitch = -1;
         Vector3 _worldLeftEdge;
         bool _busy;
+        readonly List<GameObject> _pinchMarkers = new();
 
         public Step Current => _step;
         public CalibrationProfile Profile => _profile;
@@ -100,6 +112,7 @@ namespace AuralPrimer.Calibration
                             Debug.Log($"[wizard] calibration v{_profile.version} predates the current "
                                     + $"scheme (v{CalibrationProfile.CurrentVersion}); re-calibrating");
                             _profile = new CalibrationProfile { profileName = profileName };
+                            ClearPinchMarkers();
                             EnterStep(Step.LowestKey);
                         }
                         else if (_profile is { IsAnchored: true }) RestoreAsync();
@@ -142,11 +155,13 @@ namespace AuralPrimer.Calibration
                 case Step.MarkLeftEdge:
                     // Held in world space until there is an anchor to rebase onto.
                     _worldLeftEdge = position;
+                    DropPinchMarker(position, leftPinchMaterial, "Pinch L");
                     EnterStep(Step.MarkRightEdge);
                     break;
 
                 case Step.MarkRightEdge:
                     if (_busy) break;
+                    DropPinchMarker(position, rightPinchMaterial, "Pinch R");
                     AnchorAndApplyAsync(_worldLeftEdge, position);
                     break;
 
@@ -352,6 +367,42 @@ namespace AuralPrimer.Calibration
             {
                 _busy = false;
             }
+        }
+
+        /// <summary>
+        /// Leave a cube where a pinch was captured.
+        /// </summary>
+        /// <remarks>
+        /// World space and unparented on purpose: this must show the raw
+        /// captured point, not the point after it has been rebased onto an
+        /// anchor. If the cube is not on the key the user pinched, the capture
+        /// is wrong; if it is on the key but the overlay is not, the placement
+        /// downstream is wrong. Nothing else distinguishes those two.
+        /// </remarks>
+        void DropPinchMarker(Vector3 world, Material material, string name)
+        {
+            Debug.Log($"[wizard] {name} captured at {world} "
+                    + $"(head at {(Camera.main != null ? Camera.main.transform.position.ToString() : "?")})");
+
+            if (!showPinchMarkers) return;
+
+            var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            marker.name = name;
+            Destroy(marker.GetComponent<Collider>());
+            marker.transform.SetPositionAndRotation(world, Quaternion.identity);
+            marker.transform.localScale = Vector3.one * pinchMarkerSizeMetres;
+            if (material != null && marker.TryGetComponent<Renderer>(out var r)) r.sharedMaterial = material;
+            _pinchMarkers.Add(marker);
+        }
+
+        /// <summary>Clear markers from a previous calibration attempt.</summary>
+        void ClearPinchMarkers()
+        {
+            foreach (var m in _pinchMarkers)
+            {
+                if (m != null) Destroy(m);
+            }
+            _pinchMarkers.Clear();
         }
 
         /// <summary>
