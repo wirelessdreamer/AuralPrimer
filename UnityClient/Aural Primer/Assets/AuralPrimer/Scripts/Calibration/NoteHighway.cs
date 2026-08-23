@@ -28,7 +28,21 @@ namespace AuralPrimer.Calibration
         [SerializeField] float lookAheadSeconds = 3f;
 
         [Tooltip("Thickness of a note slab, in metres.")]
-        [SerializeField] float noteThicknessMetres = 0.006f;
+        [SerializeField] float noteThicknessMetres = 0.003f;
+
+        [Tooltip("Depth of the bright cap on a note's leading edge — the moment "
+               + "it wants to be struck.")]
+        [SerializeField] float strikeHeadMetres = 0.014f;
+
+        [Tooltip("Gap left at the tail of every note so a re-struck note reads as "
+               + "two events rather than one long one.")]
+        [SerializeField] float articulationGapMetres = 0.006f;
+
+        [Tooltip("Width of the held part of a note, as a fraction of the key. The "
+               + "strike head stays key-wide; the tail is a thinner stem, so an "
+               + "onset and a hold are told apart by shape rather than by "
+               + "brightness alone.")]
+        [SerializeField] float holdWidthFraction = 0.42f;
 
         [Tooltip("Shortest a note may be drawn, so a staccato note is still visible.")]
         [SerializeField] float minimumNoteLengthMetres = 0.012f;
@@ -39,6 +53,7 @@ namespace AuralPrimer.Calibration
         readonly List<ChartNote> _notes = new();
         readonly List<Transform> _pool = new();
         readonly List<Renderer> _poolRenderers = new();
+        readonly List<Transform> _heads = new();
 
         CalibrationProfile _profile;
         KeyboardLayout _layout;
@@ -72,6 +87,49 @@ namespace AuralPrimer.Calibration
                 Off = off;
                 Pitch = pitch;
             }
+        }
+
+        /// <summary>
+        /// The lane's basis: X across the keys, Z up the lane, Y out of the
+        /// lane's face toward the player.
+        /// </summary>
+        /// <remarks>
+        /// Every axis here is derived from a cross product, whose sign depends
+        /// on which physical edge the user happened to pinch first. Left
+        /// unresolved, half of all calibrations put the backdrop in front of the
+        /// notes it is meant to back — hiding them behind a tinted sheet — and
+        /// raked the lane away from the player rather than toward them. Which
+        /// way is "toward the player" is not a guess, so take it from the head.
+        /// </remarks>
+        (Vector3 Up, Vector3 Normal, Quaternion Rotation) LaneBasis()
+        {
+            var right = _profile.RightAxis;
+            var bedUp = _profile.CantedUp;
+
+            var face = Vector3.Cross(right, bedUp).normalized;
+            var head = Camera.main;
+            if (head != null)
+            {
+                var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f);
+                var toPlayer = transform.InverseTransformDirection(
+                    head.transform.position - transform.TransformPoint(centre));
+                if (Vector3.Dot(face, toPlayer) < 0f) face = -face;
+            }
+
+            // The lane leans back over the keys rather than rising straight up:
+            // vertical, it would be edge-on to a seated player and unreadable.
+            // Rotating the pair keeps them perpendicular without reintroducing a
+            // cross product whose sign depends on the pinch order.
+            var tilt = _profile.laneTiltDegrees * Mathf.Deg2Rad;
+            var laneUp = (bedUp * Mathf.Cos(tilt) + face * Mathf.Sin(tilt)).normalized;
+            var laneNormal = (face * Mathf.Cos(tilt) - bedUp * Mathf.Sin(tilt)).normalized;
+
+            // A cube's length is its local Z, so local Z must run up the lane.
+            // Aimed at the keyboard's forward instead, a note's duration
+            // stretched across the room rather than up the lane, and the
+            // backdrop became a horizontal sheet at mid-lane height — the plane
+            // notes appeared to land on, well above the keys they belong to.
+            return (laneUp, laneNormal, Quaternion.LookRotation(laneUp, laneNormal));
         }
 
         void Awake() => BuildMaterials();
@@ -133,14 +191,7 @@ namespace AuralPrimer.Calibration
             while (_cursor > 0 && _notes[_cursor - 1].Off >= now) _cursor--;
             while (_cursor < _notes.Count && _notes[_cursor].Off < now) _cursor++;
 
-            var right = _profile.RightAxis;
-            var up = _profile.up.sqrMagnitude > 1e-6f ? _profile.up.normalized : Vector3.up;
-            var forward = Vector3.Cross(right, up).normalized;
-
-            // The lane leans back over the keys rather than rising straight up:
-            // vertical, it would be edge-on to a seated player and unreadable.
-            var tilt = Quaternion.AngleAxis(_profile.laneTiltDegrees, right);
-            var laneUp = tilt * up;
+            var (laneUp, _, laneRotation) = LaneBasis();
 
             var metresPerSecond = _profile.laneHeightMetres
                                 * Mathf.Max(0.01f, _profile.spacingMultiplier)
@@ -155,29 +206,61 @@ namespace AuralPrimer.Calibration
                 // A chart can range wider than the instrument in front of the
                 // player — this one runs to pitch 31 against a keyboard starting
                 // at 36. Those notes have no key to fall onto, and placing them
-                // by extrapolation would hang them off the end of the keyboard
-                // as if they belonged there.
-                if (note.Pitch < _layout.LowestPitch || note.Pitch > _layout.HighestPitch) continue;
+                // by extrapolation would hang them off the end of the keyboard as
+                // if they belonged there. The profile decides: drop them, or fold
+                // them into range by whole octaves.
+                var pitch = _profile.FoldPitch(_layout, note.Pitch);
+                if (pitch < 0) continue;
 
-                var key = _profile.KeyPosition(_layout, note.Pitch);
-                var isBlack = KeyboardLayout.IsBlack(note.Pitch);
+                // Lifted clear of the real keys. Notes arrive at the "play now"
+                // line, so the lift must move the notes and the line together or
+                // they stop meaning the same instant.
+                var key = _profile.KeyPosition(_layout, pitch)
+                        + _profile.CantedUp * _profile.laneLiftMetres;
+                var isBlack = KeyboardLayout.IsBlack(pitch);
 
                 // Distance above the keys is time-until-played. A note being held
                 // now has already crossed the keys, so it is clamped there rather
                 // than sinking through the keyboard.
                 var startHeight = Mathf.Max(0f, note.On - now) * metresPerSecond;
                 var endHeight = Mathf.Max(0f, note.Off - now) * metresPerSecond;
-                var length = Mathf.Max(minimumNoteLengthMetres, endHeight - startHeight);
+                // Leave a gap at the tail. Without it, a note re-struck the
+                // instant the last one ends draws as one unbroken bar, and the
+                // player has no way to see that they are meant to lift and
+                // strike again — the thing that was hardest to read in MR.
+                var span = Mathf.Max(minimumNoteLengthMetres, endHeight - startHeight);
+                var length = Mathf.Max(minimumNoteLengthMetres, span - articulationGapMetres);
 
                 var slab = Rent(used, isBlack);
                 // Local: this lane is parented to the spatial anchor along with
                 // the keys it belongs above.
                 slab.localPosition = key + laneUp * (startHeight + length * 0.5f);
-                slab.localRotation = Quaternion.LookRotation(forward, laneUp);
+                slab.localRotation = laneRotation;
 
-                var width = (float)_layout.NormalisedWidth(note.Pitch) * _profile.WidthMetres;
-                slab.localScale = new Vector3(width * 0.85f, noteThicknessMetres, length);
+                // The head says WHICH key and is drawn key-wide; the tail only
+                // says how long to hold, and is drawn as a thinner stem. Same
+                // width for both made a long note one solid bar with its onset
+                // lost inside it — there was nothing to tell a strike from a
+                // sustain except brightness.
+                var width = (float)_layout.NormalisedWidth(pitch) * _profile.WidthMetres;
+                // X across the keys, Y through the lane's face, Z up the lane.
+                slab.localScale = new Vector3(width * holdWidthFraction, noteThicknessMetres, length);
+
+                // The head is the note: a bright cap on the leading edge, sitting
+                // at the height that reaches the keys at the onset. The tail
+                // behind it only says how long to hold. Two repeats therefore
+                // read as two heads, where two bars read as one hold.
+                var strike = RentHead(used);
+                var strikeLength = Mathf.Min(strikeHeadMetres, length);
+                strike.localPosition = key + laneUp * (startHeight + strikeLength * 0.5f);
+                strike.localRotation = laneRotation;
+                strike.localScale = new Vector3(width, noteThicknessMetres * 1.6f, strikeLength);
                 used++;
+            }
+
+            for (var i = used; i < _heads.Count; i++)
+            {
+                if (_heads[i] != null) _heads[i].gameObject.SetActive(false);
             }
 
             for (var i = used; i < _pool.Count; i++)
@@ -231,29 +314,29 @@ namespace AuralPrimer.Calibration
             if (_backdrop == null) _backdrop = NewSurface("Lane Backdrop", _backdropMaterial);
             if (_hitLine == null) _hitLine = NewSurface("Hit Line", _hitLineMaterial);
 
-            var right = _profile.RightAxis;
-            var up = _profile.up.sqrMagnitude > 1e-6f ? _profile.up.normalized : Vector3.up;
-            var forward = Vector3.Cross(right, up).normalized;
-            var tilt = Quaternion.AngleAxis(_profile.laneTiltDegrees, right);
-            var laneUp = tilt * up;
+            var (laneUp, laneNormal, laneRotation) = LaneBasis();
 
             var width = _profile.WidthMetres;
             var height = _profile.laneHeightMetres * Mathf.Max(0.01f, _profile.spacingMultiplier);
-            var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f);
+            // Same lift the notes get, so the hit line stays the place they land.
+            var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f)
+                       + _profile.CantedUp * _profile.laneLiftMetres;
 
             // Sit a few millimetres behind the notes so they read as being on it.
             const float behind = 0.004f;
 
             _backdrop.gameObject.SetActive(true);
-            _backdrop.localPosition = centre + laneUp * (height * 0.5f) - forward * behind;
-            _backdrop.localRotation = Quaternion.LookRotation(forward, laneUp);
+            // Behind the notes along the lane's own normal, which faces the
+            // player — so "behind" is away from them, not further into the room.
+            _backdrop.localPosition = centre + laneUp * (height * 0.5f) - laneNormal * behind;
+            _backdrop.localRotation = laneRotation;
             _backdrop.localScale = new Vector3(width, 0.001f, height);
 
             // The line the note has to be on when you play it — the desktop's
             // "PLAY HERE" band.
             _hitLine.gameObject.SetActive(true);
-            _hitLine.localPosition = centre + laneUp * 0.004f - forward * (behind * 0.5f);
-            _hitLine.localRotation = Quaternion.LookRotation(forward, laneUp);
+            _hitLine.localPosition = centre + laneUp * 0.004f - laneNormal * (behind * 0.5f);
+            _hitLine.localRotation = laneRotation;
             _hitLine.localScale = new Vector3(width, 0.001f, 0.012f);
         }
 
@@ -265,6 +348,30 @@ namespace AuralPrimer.Calibration
             go.transform.SetParent(transform, false);
             if (go.TryGetComponent<Renderer>(out var r)) r.sharedMaterial = material;
             return go.transform;
+        }
+
+        /// <summary>
+        /// The bright cap on a note's leading edge. Always the strike colour,
+        /// whichever key it belongs to — it means "now", like the hit line.
+        /// </summary>
+        Transform RentHead(int index)
+        {
+            while (_heads.Count <= index)
+            {
+                var head = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                head.name = $"Strike {_heads.Count}";
+                Destroy(head.GetComponent<Collider>());
+                head.transform.SetParent(transform, false);
+                if (head.TryGetComponent<Renderer>(out var renderer))
+                {
+                    renderer.sharedMaterial = _hitLineMaterial != null ? _hitLineMaterial : _whiteMaterial;
+                }
+                _heads.Add(head.transform);
+            }
+
+            var t = _heads[index];
+            if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
+            return t;
         }
 
         Transform Rent(int index, bool isBlack)
@@ -293,6 +400,12 @@ namespace AuralPrimer.Calibration
         void HideAll()
         {
             foreach (var t in _pool)
+            {
+                if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);
+            }
+            // Heads are pooled separately, so hiding the bodies alone would leave
+            // a row of bright caps floating over a lane with no notes in it.
+            foreach (var t in _heads)
             {
                 if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);
             }

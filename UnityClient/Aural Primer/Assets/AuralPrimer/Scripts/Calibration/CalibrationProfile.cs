@@ -69,7 +69,116 @@ namespace AuralPrimer.Calibration
         /// <summary>Note spacing multiplier — same meaning as the desktop control.</summary>
         public float spacingMultiplier = 1f;
 
+        /// <summary>
+        /// Gap between the real keys and the "play now" line, in metres.
+        /// </summary>
+        /// <remarks>
+        /// The line used to sit 4 mm off the key bed, which reads as buried in
+        /// the keys rather than hovering over them: at that distance passthrough
+        /// gives no parallax to separate the two, so an arriving note looks like
+        /// it is inside the keyboard.
+        /// </remarks>
+        public float laneLiftMetres = 0.05f;
+
+        /// <summary>
+        /// Roll of the key plane about the instrument's own axis, in degrees.
+        /// </summary>
+        /// <remarks>
+        /// Two pinched points fix a line, not a plane — the roll around that line
+        /// is unconstrained, so the drawn keys can sit canted against the real
+        /// ones with the span and position both perfectly correct. This is the
+        /// missing degree of freedom, exposed rather than guessed.
+        /// </remarks>
+        public float keyCantDegrees;
+
+        /// <summary>Largest cant worth offering; beyond it the marks are wrong.</summary>
+        public const float MaxCantDegrees = 15f;
+
+        /// <summary>
+        /// Drop notes the instrument physically cannot play.
+        /// </summary>
+        /// <remarks>
+        /// A chart can range wider than the keyboard in front of you. Off, those
+        /// notes are folded into range by whole octaves so the line stays
+        /// playable; on, they are simply not drawn, which is honest about the
+        /// part being incomplete rather than quietly transposing it.
+        /// </remarks>
+        public bool ignoreOutOfRangeNotes = true;
+
+        /// <summary>Which end of the keyboard the menu hangs off.</summary>
+        public bool menuOnHighEnd = true;
+
+        /// <summary>
+        /// Swing of the menu about its hinge, in degrees.
+        /// </summary>
+        /// <remarks>
+        /// The menu is pinned by its inner vertical edge to the corner of the
+        /// instrument and swings like a door. Zero is straight out along the key
+        /// bed; positive swings the outer edge toward the player.
+        /// </remarks>
+        public float menuYawDegrees = 35f;
+
+        /// <summary>The octave-folded pitch, or -1 when it should be dropped.</summary>
+        public int FoldPitch(KeyboardLayout layout, int pitch)
+        {
+            if (layout.Contains(pitch)) return pitch;
+            if (ignoreOutOfRangeNotes) return -1;
+
+            // Whole octaves only: anything else changes which note it is.
+            var folded = pitch;
+            while (folded < layout.LowestPitch) folded += 12;
+            while (folded > layout.HighestPitch) folded -= 12;
+            return layout.Contains(folded) ? folded : -1;
+        }
+
+        /// <summary>The key bed's up axis with the cant applied.</summary>
+        public Vector3 CantedUp
+        {
+            get
+            {
+                var level = up.sqrMagnitude > 1e-6f ? up.normalized : Vector3.up;
+                return Mathf.Abs(keyCantDegrees) < 1e-3f
+                    ? level
+                    : Quaternion.AngleAxis(keyCantDegrees, RightAxis) * level;
+            }
+        }
+
+        /// <summary>
+        /// How far the key bed tilts off level, in degrees.
+        /// </summary>
+        /// <remarks>
+        /// A real keyboard is level to within a degree or two even on a wobbly
+        /// stand. Large values mean the two edges were not both captured on the
+        /// instrument.
+        /// </remarks>
+        public float TiltDegrees
+        {
+            get
+            {
+                var axis = rightEdge - leftEdge;
+                if (axis.sqrMagnitude < 1e-6f) return 0f;
+                var level = up.sqrMagnitude > 1e-6f ? up.normalized : Vector3.up;
+                // 90 degrees from the up axis is level; anything else is rake.
+                return Mathf.Abs(90f - Vector3.Angle(axis, level));
+            }
+        }
+
+        /// <summary>Beyond this, the marks describe something that is not a keyboard.</summary>
+        public const float MaxTiltDegrees = 10f;
+
         public bool IsCalibrated => (rightEdge - leftEdge).sqrMagnitude > 0.0001f;
+
+        /// <summary>
+        /// Calibrated, and level enough to actually be an instrument.
+        /// </summary>
+        /// <remarks>
+        /// Width alone does not catch a bad edge. A right edge captured at head
+        /// height still measured 0.97 m from the left one — a plausible span for
+        /// 61 keys — so the width check passed it and the overlay drew a
+        /// staircase climbing 79 cm across the instrument. The span was right;
+        /// the direction was not.
+        /// </remarks>
+        public bool IsPlausible => IsCalibrated && TiltDegrees <= MaxTiltDegrees;
 
         /// <summary>Calibrated and tied to an anchor that can be re-localised.</summary>
         public bool IsAnchored =>
@@ -146,7 +255,20 @@ namespace AuralPrimer.Calibration
                 var profile = JsonUtility.FromJson<CalibrationProfile>(File.ReadAllText(path));
                 // A profile that never completed calibration is worse than none:
                 // it would place the overlay at the origin and look like a bug.
-                return profile is { IsCalibrated: true } ? profile : null;
+                if (profile is not { IsCalibrated: true }) return null;
+
+                // Nor is a saved-but-impossible one worth restoring. Silently
+                // re-running the wizard beats drawing a keyboard that climbs into
+                // the ceiling and leaving the player to work out why.
+                if (!profile.IsPlausible)
+                {
+                    Debug.LogWarning($"[calibration] {profileName} tilts "
+                                   + $"{profile.TiltDegrees:F0}° off level — discarding it "
+                                   + "and asking for the edges again");
+                    return null;
+                }
+
+                return profile;
             }
             catch (Exception e)
             {

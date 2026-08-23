@@ -65,9 +65,26 @@ namespace AuralPrimer.Calibration
                     + $"| highestKey={highest} (dHead={highest - eye})");
         }
 
+        /// <summary>
+        /// When set, keys light from this instead of the live link.
+        /// </summary>
+        /// <remarks>
+        /// Playback needs the same lit keys as the live performance, and
+        /// duplicating the lighting logic in the player would let the two drift
+        /// until a replay lit different keys than the take it came from.
+        /// </remarks>
+        public IReadOnlyList<(byte pitch, byte velocity)> PlaybackNotes { get; set; }
+
         void Update()
         {
-            if (_profile == null || link == null || _keyMarkers.Count == 0) return;
+            if (_profile == null || _keyMarkers.Count == 0) return;
+
+            var notes = PlaybackNotes;
+            if (notes == null)
+            {
+                if (link == null) return;
+                notes = link.HeldNotes;
+            }
 
             // Restore anything lit last frame, then light what is held now. The
             // host sends the full held set, so this needs no note-off tracking:
@@ -82,7 +99,7 @@ namespace AuralPrimer.Calibration
             }
             _litLastFrame.Clear();
 
-            foreach (var note in link.HeldNotes)
+            foreach (var note in notes)
             {
                 if (!_keyMarkers.TryGetValue(note.pitch, out var marker) || marker == null) continue;
                 SetMaterial(marker, _lit);
@@ -90,45 +107,103 @@ namespace AuralPrimer.Calibration
             }
         }
 
+        /// <summary>
+        /// Make sure a marker exists for every key, then place them all.
+        /// </summary>
+        /// <remarks>
+        /// Creation is separated from placement because the edge handles move
+        /// the calibration every frame while a player drags one. Destroying and
+        /// recreating sixty-one objects at that rate is a stutter you can feel,
+        /// and it throws away the lit state mid-press.
+        /// </remarks>
         void Rebuild()
         {
-            Clear();
+            var expected = _layout.HighestPitch - _layout.LowestPitch + 1;
+            if (_keyMarkers.Count != expected || !_keyMarkers.ContainsKey(_layout.LowestPitch))
+            {
+                Clear();
+                for (var pitch = _layout.LowestPitch; pitch <= _layout.HighestPitch; pitch++)
+                {
+                    var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    marker.name = $"Key {pitch}";
+                    // Colliders would fight hand tracking and the passthrough
+                    // scene for no benefit; these are pure visuals.
+                    Destroy(marker.GetComponent<Collider>());
+                    marker.transform.SetParent(transform, false);
+                    SetMaterial(marker.transform,
+                                KeyboardLayout.IsBlack(pitch) ? _idleBlack : _idleWhite);
+                    _keyMarkers[pitch] = marker.transform;
+                }
+            }
+
+            Place();
+        }
+
+        /// <summary>Put every marker where the current calibration says it goes.</summary>
+        void Place()
+        {
+            // Tell the interactors where the keys ended up, so the hand rays can
+            // get out of the way when a hand is over them. Published on every
+            // placement rather than once, because an edge drag moves the bed.
+            AuralPrimer.UI.KeyboardProximity.Publish(
+                transform.TransformPoint(_profile.leftEdge),
+                transform.TransformPoint(_profile.rightEdge));
 
             var right = _profile.RightAxis;
-            var up = _profile.up.sqrMagnitude > 1e-6f ? _profile.up.normalized : Vector3.up;
+            // Canted: two pinched points fix a line, not a plane, so the roll
+            // about that line is the one thing calibration cannot know.
+            var up = _profile.CantedUp;
             var forward = Vector3.Cross(right, up).normalized;
             var width = _profile.WidthMetres;
 
+            // Point the keys at the player. Which way the cross product faces
+            // depends on which physical edge the user happened to mark first, so
+            // half the time the keys extend away from them — the overlay reads as
+            // a mirrored keyboard, and pressing a real key lights one that is
+            // facing the wrong direction. Decide it from where the player is,
+            // rather than from the order the edges were pinched.
+            var head = Camera.main;
+            if (head != null)
+            {
+                var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f);
+                var centreWorld = transform.TransformPoint(centre);
+                var toPlayer = transform.InverseTransformDirection(
+                    head.transform.position - centreWorld);
+                if (Vector3.Dot(forward, toPlayer) < 0f) forward = -forward;
+            }
+
             for (var pitch = _layout.LowestPitch; pitch <= _layout.HighestPitch; pitch++)
             {
+                if (!_keyMarkers.TryGetValue(pitch, out var marker) || marker == null) continue;
+
                 var isBlack = KeyboardLayout.IsBlack(pitch);
-
-                var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                marker.name = $"Key {pitch}";
-                // Colliders would fight hand tracking and the passthrough scene
-                // for no benefit; these are pure visuals.
-                Destroy(marker.GetComponent<Collider>());
-                marker.transform.SetParent(transform, false);
-
                 var keyWidth = (float)_layout.NormalisedWidth(pitch) * width;
                 var depth = isBlack ? blackKeyDepth : whiteKeyDepth;
+
+                // Black keys stand above the white ones, as they do on the
+                // instrument. Drawn at the same height they were coplanar with
+                // the wider white plates and simply not visible — the user saw
+                // an overlay of white keys only.
+                //
+                // Depth needs no such correction: both run from the pinched back
+                // edge toward the player, so the shorter black key already stops
+                // short of the white keys' front edge. Adding a set-back on top
+                // re-centred it on the white key instead, which is the one
+                // arrangement a keyboard never has.
 
                 // Local, not world: this object is parented to the spatial
                 // anchor, so the anchor's transform carries the whole keyboard
                 // when the runtime re-localises it.
-                marker.transform.localPosition = _profile.KeyPosition(_layout, pitch)
-                                               + up * hoverMetres
-                                               + forward * (depth * 0.5f);
-                marker.transform.localRotation = Quaternion.LookRotation(forward, up);
+                marker.localPosition = _profile.KeyPosition(_layout, pitch)
+                                     + up * (hoverMetres + (isBlack ? 0.012f : 0f))
+                                     + forward * (depth * 0.5f);
+                marker.localRotation = Quaternion.LookRotation(forward, up);
                 // Deliberately flat: a thin plate reads as an overlay ON the real
                 // key rather than a block sitting on top of it.
                 // 2 mm at 22% alpha was invisible against a real keyboard in
                 // passthrough. Thick enough to read as an object, still flat
                 // enough to read as an overlay on the key rather than a block.
-                marker.transform.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
-
-                SetMaterial(marker.transform, isBlack ? _idleBlack : _idleWhite);
-                _keyMarkers[pitch] = marker.transform;
+                marker.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
             }
         }
 
@@ -140,6 +215,8 @@ namespace AuralPrimer.Calibration
             }
             _keyMarkers.Clear();
             _litLastFrame.Clear();
+            // No keys drawn means no keys to keep the ray off.
+            AuralPrimer.UI.KeyboardProximity.Clear();
         }
 
         void BuildMaterials()
