@@ -1,0 +1,27 @@
+{
+    "name": "AuralPrimer.Editor",
+    "rootNamespace": "AuralPrimer.EditorTools",
+    "references": [
+        "AuralPrimer.Calibration",
+        "AuralPrimer.Link",
+        "AuralPrimer.Recording",
+        "Unity.XR.OpenXR",
+        "Unity.XR.OpenXR.Editor",
+        "Oculus.VR",
+        "Oculus.VR.Editor",
+        "AuralPrimer.UI",
+        "Unity.XR.Interaction.Toolkit",
+        "Unity.TextMeshPro"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -31,6 +31,17 @@ import { listen } from "@tauri-apps/api/event";
 import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "./chartLoader";
 // TabRenderer + the melodic-surface logic live in playSurfaceController.ts (Phase 2.O).
 import { initScrollSpeedController } from "./scrollSpeedController";
+import { initTransportHotkeys } from "./transportHotkeys";
+import { initMidiTransportControl } from "./midiTransportControl";
+import { initMrLinkPanel, buildChart } from "./mrLinkPanel";
+import { nameChord, chordLabels } from "@auralprimer/core-music";
+import { initMidiTransportPanel } from "./midiTransportPanel";
+import {
+  defaultBindings,
+  loadBindings,
+  saveBindings,
+  type TransportBindings,
+} from "./midiTransportBindings";
 import { initAudioOutputPanel, type AudioOutputPanelHandle } from "./audioOutputPanel";
 import { initSongLibraryPanel, type SongLibraryPanelHandle } from "./songLibraryPanel";
 import {
@@ -315,6 +326,19 @@ let viz: Visualizer | null = null;
 let vizRaf: number | null = null;
 let lastFrameMs: number | null = null;
 let selectedAuralSongPath: string | null = null;
+
+// True once the start flow has actually run for the current selection.
+// `viz` is NOT a proxy for this: the visualizer auto-starts as soon as a song
+// is selected, so it is already non-null while the user is still looking at
+// the Start button. Play/pause needs to know the difference.
+let sessionStarted = false;
+
+/**
+ * Chord names for the loaded melodic track, computed once when the song loads.
+ * Naming a chord walks a template table; doing that per frame for every visible
+ * group would be real work repeated on a value that never changes.
+ */
+let songChordLabels: { tSec: number; label: string }[] = [];
 let selectedAuralSongDetails: AuralSongDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
 let selectedMelodicTracks: MelodicTrackSelection[] = [];
@@ -894,6 +918,25 @@ async function selectAuralSong(containerPath: string) {
     songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack?.notes ?? null, keyModeArtifacts);
     if (learnMode) buildLearnGroups();
 
+    // Chord names for the roll, from the same track the piano surface renders.
+    const chordTrack =
+      selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+    songChordLabels = chordTrack ? chordLabels(chordTrack.notes) : [];
+
+    // Hand the headset this song's chart. Prefers keys, since that is what the
+    // MR client renders against a real keyboard.
+    const mrTrack =
+      selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+    mrLink.setChart(
+      buildChart(
+        containerPath,
+        containerPath.split(/[\/]/).pop()?.replace(/\.(feedpak|auralsong)$/i, "") ?? "song",
+        mrTrack,
+        transport.bpm,
+        transport.timeSignature?.[0] ?? 4,
+      ),
+    );
+
     // Populate instrument selector with available melodic tracks.
     updateInstrumentSelector();
 
@@ -923,6 +966,7 @@ async function selectAuralSong(containerPath: string) {
     renderPlaybackLyrics(transport.t);
 
     // Selecting an AuralSong enables audio load.
+    if (selectedAuralSongPath !== containerPath) sessionStarted = false;
     selectedAuralSongPath = containerPath;
     if (songChanged) {
       lastLoadedAuralSongPath = null;
@@ -1030,7 +1074,7 @@ async function startSelectedSongSession() {
       // Let the normal start path retry load and surface the real error.
     }
   }
-  await startSelectedSongSessionFlow(
+  const startResult = await startSelectedSongSessionFlow(
     {
       selectedAuralSongPath,
       lastLoadedAuralSongPath,
@@ -1053,6 +1097,9 @@ async function startSelectedSongSession() {
       onFallbackStartError: (err) => errorConsole("play", "fallback playback start failed", err)
     }
   );
+  if (startResult.kind === "started" || startResult.kind === "fallback_started") {
+    sessionStarted = true;
+  }
 }
 
 function stopAudio() {
@@ -1123,7 +1170,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     lastFrameMs = ms;
 
     transport = transportController.tick(dt);
-    if (learnMode) {
+    if (learnMode || graceMode) {
       learnGateTick();
       transport = transportController.getState();
     }
@@ -1158,8 +1205,16 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
         liveInputNotes: midiPanel.inputActiveNotes().activeNotes,
         scrollSpeedMultiplier: transport.scrollSpeedMultiplier,
         nashville: nashvilleMode,
+        chordLabels: songChordLabels,
       });
     }
+
+    // Feed the MR headset. Rate-limited inside the panel; a no-op when off.
+    mrLink.publish(
+      transport.t,
+      transport.isPlaying,
+      midiPanel.inputActiveNotes().activeNotes,
+    );
 
     vizRaf = requestAnimationFrame(tick);
   };
@@ -1233,6 +1288,9 @@ function readNashvilleMode(): boolean {
   }
 }
 let nashvilleMode = readNashvilleMode();
+// MR headset link: serves the chart, playhead and live notes to the Quest app.
+const mrLink = initMrLinkPanel();
+
 const nashvilleCheckbox = document.getElementById("nashvilleMode") as HTMLInputElement | null;
 if (nashvilleCheckbox) {
   nashvilleCheckbox.checked = nashvilleMode;
@@ -1250,10 +1308,27 @@ if (nashvilleCheckbox) {
 // Playback waits at each note onset until the correct note(s) are played on
 // MIDI input, then advances. Notes are grouped by onset (chords held together).
 const LEARN_STORAGE_KEY = "auralprimer.learnMode";
+const GRACE_STORAGE_KEY = "auralprimer.graceMode";
+// Half-window either side of a note's onset. A hit inside it counts, so the
+// full window is twice this — early and late are forgiven equally, because a
+// player rushing and a player dragging are the same mistake in opposite
+// directions and neither deserves a stutter.
+const GRACE_WINDOW_SEC = 0.05;
+// Playhead jump that means "seeked", not "played on". Comfortably above a
+// frame's worth of playback (even a slow frame at 2x rate) and below the
+// smallest jog step, so a Shift+arrow nudge still counts as a seek.
+const LEARN_SEEK_EPSILON_SEC = 0.35;
 type LearnGroup = { t: number; pitches: number[] };
 let learnMode = (() => {
   try {
     return window.localStorage.getItem(LEARN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+})();
+let graceMode = (() => {
+  try {
+    return window.localStorage.getItem(GRACE_STORAGE_KEY) === "1";
   } catch {
     return false;
   }
@@ -1263,6 +1338,10 @@ let learnIdx = 0;
 const learnHit = new Set<number>();
 let learnPrevActive = new Set<number>();
 let learnWaiting = false;
+// Last playhead we saw in the gate. A jump larger than a frame means someone
+// seeked (arrow-key jog, seek box, loop wrap) and our position in the note
+// list is stale — see learnGateTick.
+let learnLastT = 0;
 
 function learnNoteName(p: number): string {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -1291,17 +1370,41 @@ function resetLearnFromTime(t: number): void {
   learnHit.clear();
   learnWaiting = false;
   learnPrevActive = new Set();
+  learnLastT = t;
   const idx = learnGroups.findIndex((g) => g.t >= t - 0.02);
   learnIdx = idx < 0 ? learnGroups.length : idx;
 }
 
 function learnRegisterPlayed(pitch: number): void {
-  if (!learnWaiting || learnIdx >= learnGroups.length) return;
+  if (learnIdx >= learnGroups.length) return;
   const g = learnGroups[learnIdx];
+
+  // Count the hit if we are already holding for it, OR if the playhead is
+  // inside the grace window around its onset.
+  //
+  // The second case is what stops Wait mode asking twice. The gate only pauses
+  // once the playhead reaches the onset, so a note played a few milliseconds
+  // early used to arrive while learnWaiting was still false and was dropped on
+  // the floor — then the transport stopped and asked for the note you had just
+  // played.
+  // Grace widens what counts as "on time"; without it only the gate's own
+  // tolerance applies. The two stack rather than exclude: Wait mode still
+  // stops when a note is genuinely missed, Grace just stops it stopping for
+  // a note you played a few milliseconds off.
+  const t = transportController.getState().t;
+  const window = graceMode ? GRACE_WINDOW_SEC : 0.02;
+  const inWindow = Math.abs(t - g.t) <= window;
+  if (!learnWaiting && !inWindow) return;
+
   if (g.pitches.includes(pitch)) learnHit.add(pitch);
-  if (g.pitches.every((p) => learnHit.has(p))) {
-    learnIdx += 1;
-    learnHit.clear();
+  if (!g.pitches.every((p) => learnHit.has(p))) return;
+
+  learnIdx += 1;
+  learnHit.clear();
+
+  // Grace mode never pauses, so there is nothing to resume; calling play() here
+  // would fight a transport that is already running.
+  if (learnWaiting) {
     learnWaiting = false;
     void transportController.play();
   }
@@ -1309,6 +1412,17 @@ function learnRegisterPlayed(pitch: number): void {
 
 function learnGateTick(): void {
   if (!learnGroups.length) return;
+
+  // Re-sync after a seek. Playback advances by at most a frame per tick, so a
+  // bigger jump means the playhead was moved out from under us (arrow-key jog,
+  // seek box, loop wrap). Without this, learnIdx still points at the old spot
+  // and the mode has to be toggled off and on to recover.
+  const tNow = transportController.getState().t;
+  if (Math.abs(tNow - learnLastT) > LEARN_SEEK_EPSILON_SEC) {
+    resetLearnFromTime(tNow);
+  }
+  learnLastT = tNow;
+
   // Rising-edge MIDI note detection (newly pressed = note-on).
   const snap = midiPanel.inputActiveNotes();
   const active = new Set<number>(
@@ -1322,7 +1436,28 @@ function learnGateTick(): void {
   if (learnIdx >= learnGroups.length) return;
   const g = learnGroups[learnIdx];
   const st = transportController.getState();
-  if (!learnWaiting && st.isPlaying && st.t >= g.t - 0.02) {
+
+  // Grace mode scores without ever taking the transport. Once a note's window
+  // has closed it is retired, missed or not, and the song carries on — that is
+  // the whole point of it, and it is why it cannot share the gate below.
+  if (graceMode && !learnMode) {
+    // Grace on its own scores without ever taking the transport: once a note's
+    // window closes it is retired, missed or not, and the song carries on.
+    while (
+      learnIdx < learnGroups.length &&
+      st.t - learnGroups[learnIdx].t > GRACE_WINDOW_SEC
+    ) {
+      learnIdx += 1;
+      learnHit.clear();
+    }
+    return;
+  }
+
+  // With Grace on, hold off until the late half of the window has passed —
+  // otherwise the gate stops the song at the onset and the forgiveness never
+  // gets a chance to apply.
+  const gateAt = graceMode ? g.t + GRACE_WINDOW_SEC : g.t - 0.02;
+  if (!learnWaiting && st.isPlaying && st.t >= gateAt) {
     if (g.pitches.every((p) => learnHit.has(p))) {
       learnIdx += 1;
       learnHit.clear();
@@ -1351,6 +1486,32 @@ if (learnCheckbox) {
       // Un-stick: if we were holding, let playback continue.
       learnWaiting = false;
       void transportController.play();
+    }
+  });
+}
+
+function persistGrace(): void {
+  try {
+    window.localStorage.setItem(GRACE_STORAGE_KEY, graceMode ? "1" : "0");
+  } catch {
+    // best-effort
+  }
+}
+
+const graceCheckbox = document.getElementById("graceMode") as HTMLInputElement | null;
+if (graceCheckbox) {
+  graceCheckbox.checked = graceMode;
+  graceCheckbox.addEventListener("change", () => {
+    graceMode = graceCheckbox.checked;
+    persistGrace();
+    if (graceMode) {
+      // Turning Grace on while Wait mode is holding releases the transport:
+      // the note it stopped for is inside the widened window now.
+      if (learnWaiting) {
+        learnWaiting = false;
+        void transportController.play();
+      }
+      buildLearnGroups();
     }
   });
 }
@@ -1392,6 +1553,114 @@ window.addEventListener("keydown", (ev) => {
 
   ev.preventDefault();
   pauseMenu.show("loaded");
+});
+
+// --- Live MIDI input readout -------------------------------------------
+// Says out loud what the app is hearing from the keyboard. The 88-key cyan
+// highlight only exists in piano-roll mode, so on any other instrument or in
+// sheet mode there was previously no sign that MIDI was working at all — and
+// no sign when it wasn't (an unconnected port looks identical to silence).
+// Wait mode also announces the note it is holding for here.
+const liveInputHudEl = document.getElementById("liveInputHud");
+const liveInputNotesEl = document.getElementById("liveInputNotes");
+const liveInputChordEl = document.getElementById("liveInputChord");
+const LIVE_INPUT_HUD_INTERVAL_MS = 60;
+
+function renderLiveInputHud(): void {
+  if (!liveInputHudEl || !liveInputNotesEl) return;
+  liveInputHudEl.hidden = false;
+
+  const heldNotes = midiPanel.inputActiveNotes().activeNotes ?? [];
+  const held = heldNotes.map((n) => n.noteName).join("  ");
+
+  // Name what is being held, beside the note names rather than instead of them:
+  // the names say which keys are down, the chord says what they mean.
+  if (liveInputChordEl) {
+    const chord = heldNotes.length >= 2 ? nameChord(heldNotes.map((n) => n.pitch)) : null;
+    const chordText = chord ?? "";
+    if (liveInputChordEl.textContent !== chordText) liveInputChordEl.textContent = chordText;
+  }
+
+  let text: string;
+  let state: string;
+  if (!midiPanel.inputIsConnected()) {
+    text = "no keyboard connected — Configure → MIDI";
+    state = "off";
+  } else if (learnMode && !learnGroups.length) {
+    // Wait mode on with nothing to wait for is otherwise a silent no-op.
+    text = "wait mode on, but this song has no melodic notes to follow";
+    state = "off";
+  } else if (learnMode && learnWaiting && learnIdx < learnGroups.length) {
+    const want = learnGroups[learnIdx].pitches.map(learnNoteName).join(" + ");
+    text = held ? `waiting for ${want}  —  holding ${held}` : `waiting for ${want}`;
+    state = "waiting";
+  } else if (held) {
+    text = held;
+    state = "playing";
+  } else {
+    text = learnMode ? "wait mode armed" : "listening";
+    state = "idle";
+  }
+
+  // Guard the writes: this runs on a timer and most ticks change nothing.
+  if (liveInputNotesEl.textContent !== text) liveInputNotesEl.textContent = text;
+  if (liveInputHudEl.dataset.state !== state) liveInputHudEl.dataset.state = state;
+}
+
+renderLiveInputHud();
+window.setInterval(renderLiveInputHud, LIVE_INPUT_HUD_INTERVAL_MS);
+
+// --- Play-mode transport hotkeys ---------------------------------------
+// Space start/pause/resume + Left/Right jog. Logic lives in
+// transportHotkeys.ts; the wiring here supplies the host state it needs.
+const transportHostDeps = {
+  transportController,
+  getCurrentRoute: () => routeController.getCurrentRoute(),
+  isPauseMenuVisible: () => pauseMenu.isVisible(),
+  isSessionRunning: () => sessionStarted,
+  canStartSession: () => !playStartBtn.disabled,
+  startSession: () => {
+    void startSelectedSongSession();
+  },
+  onTransportChanged: () => {
+    transport = transportController.getState();
+  },
+  onSeeked: (tSec: number) => {
+    void midiPanel.outSeek(tSec);
+  },
+};
+
+initTransportHotkeys(transportHostDeps);
+
+// The same transport, driven from the control surface's buttons. Which button
+// does what is learned in Configure -> MIDI -> Transport control, because
+// controllers disagree about whether they send CC or notes and on what numbers.
+// Start on the defaults so the panel can render immediately, then swap in the
+// durable set from settings.json once it arrives.
+let midiTransportBindings: TransportBindings = defaultBindings();
+const midiTransportPanel = initMidiTransportPanel({
+  getBindings: () => midiTransportBindings,
+  setBindings: (next) => {
+    midiTransportBindings = next;
+    void saveBindings(next);
+  },
+});
+void loadBindings().then((loaded) => {
+  midiTransportBindings = loaded;
+  midiTransportPanel.refresh();
+});
+
+initMidiTransportControl({
+  ...transportHostDeps,
+  getBindings: () => midiTransportBindings,
+  // Drive the checkbox rather than the flag, so the learned button and the
+  // on-screen toggle stay in agreement and the existing change handler does
+  // the rebuild / un-stick work.
+  toggleWaitMode: () => {
+    if (learnCheckbox) learnCheckbox.click();
+  },
+  // Don't fire the transport while the panel is capturing that same button.
+  isSuppressed: () => midiTransportPanel.isLearning(),
 });
 
 // --- Audio/visual sync calibration -------------------------------------

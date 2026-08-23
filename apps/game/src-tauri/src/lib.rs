@@ -24,6 +24,7 @@ pub mod demo_auralsong;
 pub mod ingest_sidecar;
 mod midi_clock;
 mod midi_clock_input;
+mod mr_link;
 mod midi_clock_service;
 mod models;
 mod native_audio;
@@ -70,6 +71,14 @@ struct Settings {
 
     #[serde(default)]
     native_audio_output_device: Option<native_audio::NativeAudioDeviceSelection>,
+
+    // --- MIDI transport button bindings ---
+    // Stored as the frontend's own JSON so the binding schema lives in one
+    // place. Kept here rather than in webview localStorage because the portable
+    // packer wipes the webview data directory on every repack, which silently
+    // discarded learned bindings between builds.
+    #[serde(default)]
+    midi_transport_bindings: Option<String>,
 
     // --- A/V sync calibration (shared with AuralStudio via the portable's
     //     common settings.json: calibrate once, both apps honor it) ---
@@ -183,6 +192,13 @@ pub struct JsBlob {
 #[derive(Default)]
 struct MidiClockOutputState {
     svc: Mutex<Option<midi_clock_service::MidiClockService>>,
+}
+
+/// The mixed-reality link, when running. Absent until the user starts it: a
+/// beacon advertising a session nobody asked for is noise on the network.
+#[derive(Default)]
+struct MrLinkState {
+    link: Mutex<Option<mr_link::MrLink>>,
 }
 
 #[derive(Default)]
@@ -2267,6 +2283,7 @@ fn install_modelpack_from_path(app: AppHandle, path: String) -> Result<(), Strin
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(MrLinkState::default())
         .manage(MidiClockOutputState::default())
         .manage(MidiClockInputState::default())
         .manage(NativeAudioState::default())
@@ -2439,6 +2456,15 @@ pub fn run() {
             midi_clock_input_start,
             midi_clock_input_start_and_persist,
             midi_clock_input_get_saved_settings,
+            midi_clock_input_is_connected,
+            mr_link_start,
+            mr_link_stop,
+            mr_link_status,
+            mr_link_publish,
+            mr_link_set_chart,
+            mr_link_set_audio_offset,
+            midi_transport_bindings_get,
+            midi_transport_bindings_set,
             midi_clock_input_stop
         ])
         .run(tauri::generate_context!())
@@ -2490,6 +2516,20 @@ fn set_midi_input_port_selection(
     let paths = get_paths(app)?;
     let mut settings = load_settings(&paths);
     settings.midi_input_port = sel;
+    save_settings(&paths, &settings)
+}
+
+#[tauri::command]
+fn midi_transport_bindings_get(app: AppHandle) -> Result<Option<String>, String> {
+    let paths = get_paths(&app)?;
+    Ok(load_settings(&paths).midi_transport_bindings)
+}
+
+#[tauri::command]
+fn midi_transport_bindings_set(app: AppHandle, value: Option<String>) -> Result<(), String> {
+    let paths = get_paths(&app)?;
+    let mut settings = load_settings(&paths);
+    settings.midi_transport_bindings = value;
     save_settings(&paths, &settings)
 }
 
@@ -2934,6 +2974,95 @@ fn midi_clock_input_stop(state: tauri::State<MidiClockInputState>) -> Result<(),
     let mut lock = state.conn.lock().unwrap();
     *lock = None;
     Ok(())
+}
+
+/// Is an input port open right now?
+///
+/// The persisted port is reconnected during setup(), so the connection can
+/// already be live before the frontend has done anything. The UI asks instead
+/// of assuming, so a restore that failed — device unplugged since last run —
+/// still reads as disconnected rather than showing a phantom connection.
+/// Start advertising and serving the mixed-reality client.
+#[tauri::command]
+fn mr_link_start(state: tauri::State<MrLinkState>) -> Result<serde_json::Value, String> {
+    let mut slot = state.link.lock().unwrap();
+    if let Some(link) = slot.as_ref() {
+        // Idempotent: starting twice should report the running link, not bind a
+        // second beacon that competes with the first.
+        return Ok(serde_json::json!({ "running": true, "host": link.host_name() }));
+    }
+    let host_name = hostname_or_default();
+    let link = mr_link::MrLink::start(host_name.clone()).map_err(|e| e.to_string())?;
+    *slot = Some(link);
+    Ok(serde_json::json!({ "running": true, "host": host_name }))
+}
+
+#[tauri::command]
+fn mr_link_stop(state: tauri::State<MrLinkState>) -> Result<(), String> {
+    *state.link.lock().unwrap() = None;
+    Ok(())
+}
+
+#[tauri::command]
+fn mr_link_status(state: tauri::State<MrLinkState>) -> serde_json::Value {
+    let slot = state.link.lock().unwrap();
+    match slot.as_ref() {
+        Some(link) => serde_json::json!({ "running": true, "host": link.host_name() }),
+        None => serde_json::json!({ "running": false }),
+    }
+}
+
+/// Publish the current song position and held notes.
+///
+/// Called from the game's frame loop, which already has both. Silently does
+/// nothing when the link is not running, so the caller needs no branch.
+#[tauri::command]
+fn mr_link_publish(
+    state: tauri::State<MrLinkState>,
+    song_time_sec: f64,
+    playing: bool,
+    held_notes: Vec<Vec<u8>>,
+) {
+    let slot = state.link.lock().unwrap();
+    let Some(link) = slot.as_ref() else { return };
+    link.state.set_position(song_time_sec, playing);
+    link.state.set_notes(
+        held_notes
+            .into_iter()
+            .filter_map(|pair| match pair.as_slice() {
+                [pitch, vel] => Some((*pitch, *vel)),
+                _ => None,
+            })
+            .collect(),
+    );
+}
+
+/// Publish the chart for the current song (protocol §4), or clear it.
+#[tauri::command]
+fn mr_link_set_chart(state: tauri::State<MrLinkState>, chart_json: Option<String>) {
+    if let Some(link) = state.link.lock().unwrap().as_ref() {
+        link.state.set_chart(chart_json);
+    }
+}
+
+/// Tell the link the host's measured audio latency, so the headset can align
+/// its render to what is actually audible without asking the user anything.
+#[tauri::command]
+fn mr_link_set_audio_offset(state: tauri::State<MrLinkState>, offset_sec: f64) {
+    if let Some(link) = state.link.lock().unwrap().as_ref() {
+        link.state.set_audio_offset_sec(offset_sec);
+    }
+}
+
+fn hostname_or_default() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "AuralPrimer".to_string())
+}
+
+#[tauri::command]
+fn midi_clock_input_is_connected(state: tauri::State<MidiClockInputState>) -> bool {
+    state.conn.lock().unwrap().is_some()
 }
 
 #[cfg(test)]

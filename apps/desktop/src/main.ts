@@ -597,7 +597,56 @@ root.innerHTML = `
                 <div class="menuTitle">A folder of separated stems</div>
                 <div class="meta">You already have drums/bass/vocals as separate files. We skip separation and go straight to writing the notes.</div>
               </button>
+              <button class="menuCard importChoiceCard" id="importKindMusicxml"
+                      type="button" data-import-kind="musicxml">
+                <div class="menuTitle">A MusicXML score</div>
+                <div class="meta">A .musicxml/.mxl from a transcription tool (e.g. Mirelo). We read the written notes directly &mdash; no transcription needed. Bring the matching audio too.</div>
+              </button>
             </div>
+          </section>
+
+          <!-- Step 2d. MusicXML score. Hidden until chosen. -->
+          <section class="panel importStep" id="importPanelMusicxml" hidden>
+            <div class="panelHeader">
+              <h2>Import a MusicXML score</h2>
+              <div class="meta">step 2 of 2</div>
+            </div>
+            <p class="meta importStageNote">
+              We read the notes, tempo and bar grid straight from the score &mdash; the highest-fidelity
+              path when you already have notation. Pick the score and its matching audio; the song plays
+              back over that audio.
+            </p>
+
+            <div class="importField">
+              <label class="importLabel" for="musicxmlScorePath">Score (.musicxml / .mxl)</label>
+              <div class="row">
+                <input id="musicxmlScorePath" class="grow" type="text" placeholder="C:\\music\\song.musicxml" />
+                <button id="musicxmlBrowseScore" type="button">Browse...</button>
+              </div>
+            </div>
+
+            <div class="importField">
+              <label class="importLabel" for="musicxmlAudioPath">Audio</label>
+              <div class="row">
+                <input id="musicxmlAudioPath" class="grow" type="text" placeholder="(leave blank to use a render beside the score)" />
+                <button id="musicxmlBrowseAudio" type="button">Browse...</button>
+              </div>
+              <div class="meta">A feedpak plays over audio. If the render sits next to the score with the same name, we find it automatically.</div>
+            </div>
+
+            <div class="importField">
+              <label class="importLabel" for="musicxmlTitle">What is it called?</label>
+              <div class="row">
+                <input id="musicxmlTitle" class="grow" type="text" placeholder="Title" />
+                <input id="musicxmlArtist" class="grow" type="text" placeholder="Artist" />
+              </div>
+              <div class="meta">Some exporters put the key (e.g. &ldquo;F&#9839; minor&rdquo;) in the title field &mdash; set a real name here.</div>
+            </div>
+
+            <div class="row importRunRow">
+              <button id="musicxmlRun" class="importRunBtn">Build feedpak from score</button>
+            </div>
+            <pre id="musicxmlStatus" class="meta">(not started)</pre>
           </section>
 
           <!-- Step 2a. Suno: same controls and ids as before. -->
@@ -1271,15 +1320,94 @@ const ingestRuntimeStatusEl = document.getElementById("ingestRuntimeStatus") as 
 // side by side with nothing saying which one applied to you; it now asks first
 // and reveals only the matching form. Both panels stay in the DOM (hidden, never
 // removed) so every getElementById handle above keeps resolving.
-type ImportKind = "suno" | "audio" | "stems";
+type ImportKind = "suno" | "audio" | "stems" | "musicxml";
 
 const importChoiceCards = Array.from(
   document.querySelectorAll<HTMLButtonElement>(".importChoiceCard")
 );
 const importPanelSunoEl = document.getElementById("importPanelSuno") as HTMLElement;
 const importPanelAnalysisEl = document.getElementById("importPanelAnalysis") as HTMLElement;
+const importPanelMusicxmlEl = document.getElementById("importPanelMusicxml") as HTMLElement;
 const importAnalysisHeadingEl = document.getElementById("importAnalysisHeading") as HTMLElement;
 const importOpenModelsBtn = document.getElementById("importOpenModels") as HTMLButtonElement;
+
+const musicxmlScorePathInput = document.getElementById("musicxmlScorePath") as HTMLInputElement;
+const musicxmlAudioPathInput = document.getElementById("musicxmlAudioPath") as HTMLInputElement;
+const musicxmlTitleInput = document.getElementById("musicxmlTitle") as HTMLInputElement;
+const musicxmlArtistInput = document.getElementById("musicxmlArtist") as HTMLInputElement;
+const musicxmlRunBtn = document.getElementById("musicxmlRun") as HTMLButtonElement;
+const musicxmlStatusEl = document.getElementById("musicxmlStatus") as HTMLPreElement;
+
+function setMusicxmlStatus(text: string): void {
+  musicxmlStatusEl.textContent = text;
+}
+
+async function runMusicxmlImport(): Promise<void> {
+  const score = musicxmlScorePathInput.value.trim();
+  if (!score) {
+    setMusicxmlStatus("Pick a .musicxml or .mxl score first.");
+    return;
+  }
+  if (!haveTauri()) {
+    setMusicxmlStatus("MusicXML import requires the desktop app.");
+    return;
+  }
+  musicxmlRunBtn.disabled = true;
+  // The sidecar has a cold start (~40s the first time each session) during which
+  // it emits nothing — a static message reads as a hang. Tick elapsed seconds
+  // and name the phase so it visibly progresses.
+  const started = Date.now();
+  let phase = "Starting the import engine";
+  const tick = () => {
+    const s = Math.round((Date.now() - started) / 1000);
+    const hint = s >= 8 && phase.startsWith("Starting")
+      ? "  (first run warms up the engine — this is normal, ~40s)"
+      : "";
+    setMusicxmlStatus(`${phase}… ${s}s${hint}`);
+  };
+  tick();
+  const ticker = window.setInterval(tick, 1000);
+  try {
+    const outDir = await invoke<string>("get_songs_folder");
+    phase = "Reading the score and writing the pack";
+    tick();
+    const res = await invoke<{
+      ok: boolean;
+      stdout: string;
+      stderr: string;
+      payload?: Record<string, unknown>;
+    }>("ingest_import_musicxml", {
+      musicxmlPath: score,
+      outDir,
+      audioPath: musicxmlAudioPathInput.value.trim() || null,
+      title: musicxmlTitleInput.value.trim() || null,
+      artist: musicxmlArtistInput.value.trim() || null,
+    });
+    window.clearInterval(ticker);
+    const payload = res.payload;
+    if (res.ok && payload?.ok) {
+      const roles = payload.roles as Record<string, number> | undefined;
+      const roleStr = roles ? Object.entries(roles).map(([r, n]) => `${r} ${n}`).join(", ") : "";
+      setMusicxmlStatus(
+        `✓ Built ${payload.title}\n` +
+          `  ${payload.notes} notes (${roleStr})\n` +
+          `  ${payload.measures} measures · ${payload.tempo_bpm} BPM · ${payload.time_signature}\n` +
+          `  audio ${payload.audio_attached ? "attached" : "MISSING"}\n` +
+          `  ${payload.feedpak}\n\nAdded to your library below.`,
+      );
+      // Rescan so the new pack shows without a manual Refresh.
+      void refresh();
+    } else {
+      const err = payload?.error || res.stderr || res.stdout || "import failed";
+      setMusicxmlStatus(`Import failed: ${err}`);
+    }
+  } catch (e) {
+    window.clearInterval(ticker);
+    setMusicxmlStatus(`Import failed: ${String(e)}`);
+  } finally {
+    musicxmlRunBtn.disabled = false;
+  }
+}
 
 function importAnalysisHeadingFor(kind: ImportKind): string {
   return kind === "stems" ? "Point us at your stems folder" : "Point us at your audio";
@@ -1293,9 +1421,11 @@ function markImportKindActive(kind: ImportKind): void {
 
 function setImportKind(kind: ImportKind): void {
   markImportKindActive(kind);
+  // Analysis handles both audio and stems; suno and musicxml get their own panel.
   importPanelSunoEl.hidden = kind !== "suno";
-  importPanelAnalysisEl.hidden = kind === "suno";
-  if (kind === "suno") return;
+  importPanelMusicxmlEl.hidden = kind !== "musicxml";
+  importPanelAnalysisEl.hidden = kind === "suno" || kind === "musicxml";
+  if (kind === "suno" || kind === "musicxml") return;
 
   importAnalysisHeadingEl.textContent = importAnalysisHeadingFor(kind);
   // Keep the mode select in step with the card, but don't fight a user who
@@ -1310,7 +1440,8 @@ function setImportKind(kind: ImportKind): void {
 
 /** Keep the cards honest when the mode select is changed directly. */
 function syncImportKindFromMode(): void {
-  if (!importPanelSunoEl.hidden) return;
+  // Only meaningful while the analysis panel is the visible one.
+  if (importPanelAnalysisEl.hidden) return;
   const kind: ImportKind = ingestModeSelect.value === "stem-dir" ? "stems" : "audio";
   markImportKindActive(kind);
   importAnalysisHeadingEl.textContent = importAnalysisHeadingFor(kind);
@@ -2045,13 +2176,18 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       const res = await safeInvoke<SidecarRunResult>("ingest_spectrogram", {
         req: { container_path: pack, instruments: roles },
       });
+      const parsed = parseSidecarStatusLine(res.stdout);
+      const reason = typeof parsed?.error === "string" ? parsed.error : "";
       if (res.ok) {
-        const parsed = parseSidecarStatusLine(res.stdout);
         const rolesObj = (parsed?.roles ?? {}) as Record<string, { n_frames?: number }>;
         const summary = Object.entries(rolesObj)
           .map(([k, v]) => `${roleLabel(k)}=${v?.n_frames ?? "?"}f`)
           .join(", ");
         setRunStatus(`Spectrogram built: ${summary || `exit ${res.exit_code}`}`);
+      } else if (reason) {
+        // The sidecar explained why (e.g. no per-instrument stem in a
+        // score-imported pack) — show that, not a bare "exit 1".
+        setRunStatus(reason);
       } else {
         const tail = res.stderr.trim().split(/\r?\n/).slice(-3).join("\n");
         setRunStatus(`Build failed (exit ${res.exit_code}):\n${tail || "(no stderr)"}`);
@@ -2070,13 +2206,16 @@ async function renderCleanupAction(details: AuralSongDetails): Promise<void> {
       const res = await safeInvoke<SidecarRunResult>("ingest_refine_candidates", {
         req: { container_path: pack, instruments: [role] },
       });
+      const parsed = parseSidecarStatusLine(res.stdout);
+      const reason = typeof parsed?.error === "string" ? parsed.error : "";
       if (res.ok) {
-        const parsed = parseSidecarStatusLine(res.stdout);
         const instsObj = (parsed?.instruments ?? {}) as Record<string, { regions?: number }>;
         const summary = Object.entries(instsObj)
           .map(([k, v]) => `${roleLabel(k)}=${v?.regions ?? "?"}r`)
           .join(", ");
         setRunStatus(`Candidates ready: ${summary || `exit ${res.exit_code}`}`);
+      } else if (reason) {
+        setRunStatus(reason);
       } else {
         const tail = res.stderr.trim().split(/\r?\n/).slice(-3).join("\n");
         setRunStatus(`Compute failed (exit ${res.exit_code}):\n${tail || "(no stderr)"}`);
@@ -2217,9 +2356,15 @@ async function buildSpectrogramForSong(
     invalidateCleanupCache(path);
     const kind = classifySpectroResult(res);
     if (kind === "ok") return { kind, msg: "Spectrogram built" };
-    if (kind === "nostem") return { kind, msg: "No melodic stem — nothing to build" };
+    // Prefer the sidecar's own reason (it now explains *why* — e.g. a mix-only
+    // / score-imported pack has no per-instrument stem) over a generic line.
+    const parsed = parseSidecarStatusLine(res.stdout);
+    const reason = typeof parsed?.error === "string" ? parsed.error : "";
+    if (kind === "nostem") {
+      return { kind, msg: reason || "No separated instrument stem to build a spectrogram against." };
+    }
     const tail = res.stderr.trim().split(/\r?\n/).slice(-2).join(" ");
-    return { kind, msg: `Build failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
+    return { kind, msg: reason || `Build failed (exit ${res.exit_code}): ${tail || "(no stderr)"}` };
   } catch (e) {
     invalidateCleanupCache(path);
     return { kind: "error", msg: `Build failed: ${String(e)}` };
@@ -4971,10 +5116,39 @@ async function refresh() {
       return arr;
     };
 
-    const inlineBuild = async (path: string, btn: HTMLButtonElement): Promise<void> => {
+    // These sidecar ops have a ~40s cold start that emits nothing, so a static
+    // "Building…" reads as a hang. Tick elapsed seconds on the button, and note
+    // the first-run warm-up in the status line, so it visibly progresses.
+    const packName = (path: string): string =>
+      path.split(/[\/]/).pop()?.replace(/\.(feedpak|sloppak|auralsong)$/i, "") ?? path;
+    const withElapsed = async <T>(
+      btn: HTMLButtonElement,
+      verb: string,
+      songName: string,
+      fn: () => Promise<T>,
+    ): Promise<T> => {
+      const started = Date.now();
       btn.disabled = true;
-      btn.textContent = "Building…";
-      const res = await buildSpectrogramForSong(path);
+      const tick = (): void => {
+        const s = Math.round((Date.now() - started) / 1000);
+        btn.textContent = `${verb}… ${s}s`;
+        statusEl.textContent =
+          `${verb} ${songName}… ${s}s` +
+          (s >= 8 ? "  (first run warms up the engine — normal, ~40s)" : "");
+      };
+      tick();
+      const id = window.setInterval(tick, 1000);
+      try {
+        return await fn();
+      } finally {
+        window.clearInterval(id);
+      }
+    };
+
+    const inlineBuild = async (path: string, btn: HTMLButtonElement): Promise<void> => {
+      const res = await withElapsed(btn, "Building", packName(path), () =>
+        buildSpectrogramForSong(path),
+      );
       statusEl.textContent = res.msg;
       try {
         applyRowReadiness(path, await probeRowReadiness(path));
@@ -4987,9 +5161,9 @@ async function refresh() {
     };
 
     const inlinePrep = async (path: string, btn: HTMLButtonElement): Promise<void> => {
-      btn.disabled = true;
-      btn.textContent = "Prepping…";
-      const res = await prepArrangementsForSong(path);
+      const res = await withElapsed(btn, "Prepping", packName(path), () =>
+        prepArrangementsForSong(path),
+      );
       statusEl.textContent = res.msg;
       try {
         applyRowReadiness(path, await probeRowReadiness(path));
@@ -5142,6 +5316,30 @@ ingestBrowseSourceBtn.addEventListener("click", () => {
 
 ingestRunBtn.addEventListener("click", () => {
   void runIngestImport();
+});
+
+document.getElementById("musicxmlBrowseScore")?.addEventListener("click", () => {
+  void (async () => {
+    const [p] = await pickFiles(["musicxml", "mxl"], false);
+    if (!p) return;
+    musicxmlScorePathInput.value = p;
+    // Prefill title from the filename; the score's own title is often the key.
+    if (!musicxmlTitleInput.value.trim()) {
+      const stem = p.split(/[\\/]/).pop()?.replace(/\.(musicxml|mxl)$/i, "") ?? "";
+      musicxmlTitleInput.value = stem;
+    }
+  })().catch((e) => setMusicxmlStatus(String(e)));
+});
+
+document.getElementById("musicxmlBrowseAudio")?.addEventListener("click", () => {
+  void (async () => {
+    const [p] = await pickFiles(["wav", "mp3", "flac", "ogg", "m4a"], false);
+    if (p) musicxmlAudioPathInput.value = p;
+  })().catch((e) => setMusicxmlStatus(String(e)));
+});
+
+musicxmlRunBtn.addEventListener("click", () => {
+  void runMusicxmlImport();
 });
 
 stemMidiPickFolderBtn.addEventListener("click", () => {

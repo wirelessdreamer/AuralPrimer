@@ -105,43 +105,14 @@ export function appShellHtml(): string {
                   <button id="addPlayer">Add</button>
                 </div>
 
-                <div class="row" id="scrollSpeedRow">
-                  <label class="meta" for="scrollSpeedSlider">Note spacing</label>
-                  <input
-                    id="scrollSpeedSlider"
-                    type="range"
-                    min="0.5"
-                    max="6"
-                    step="0.05"
-                    value="1"
-                    aria-label="Scroll speed multiplier"
-                    style="flex:1"
-                  />
-                  <span id="scrollSpeedValue" class="meta" style="min-width:3.5em;text-align:right">1.00x</span>
-                  <button id="scrollSpeedReset" title="Reset to 1.00x">Reset</button>
-                </div>
                 <div class="meta" style="margin: 4px 0 0 6px; opacity: 0.7; font-size: 11px">
-                  In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.
-                </div>
-
-                <div class="row" id="nashvilleRow">
-                  <label class="meta" for="nashvilleMode" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                    <input id="nashvilleMode" type="checkbox" />
-                    Nashville numbers
-                  </label>
-                  <span class="meta" style="opacity:0.7;font-size:11px">
-                    Label piano-roll notes by scale degree (1-7) in the song's key.
-                  </span>
-                </div>
-
-                <div class="row" id="learnModeRow">
-                  <label class="meta" for="learnMode" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                    <input id="learnMode" type="checkbox" />
-                    Note progression (wait for MIDI)
-                  </label>
-                  <span class="meta" style="opacity:0.7;font-size:11px">
-                    Playback pauses at each note until you play it on your MIDI keyboard.
-                  </span>
+                  In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.<br />
+                  <kbd>Space</kbd> start / pause / resume &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> jog 5s
+                  (hold <kbd>Shift</kbd> for 1s).<br />
+                  MIDI transport buttons (start over / rewind / fast fwd / stop / play) are
+                  assignable in <strong>Configure &rarr; MIDI &rarr; Transport control</strong>;
+                  rewind / fast fwd jog while held, accelerating &mdash; and since many
+                  controllers send nothing on release, pressing the same button again stops it.
                 </div>
 
                 <div class="row">
@@ -219,6 +190,57 @@ export function appShellHtml(): string {
                   </div>
                 </div>
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
+
+                <div class="stageBar">
+                  <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
+                    <span class="liveInputLabel">MIDI IN</span>
+                    <span id="liveInputNotes" class="liveInputNotes"></span>
+                    <span id="liveInputChord" class="liveInputChord"></span>
+                  </div>
+                  <div
+                    class="stageSpacing"
+                    id="scrollSpeedRow"
+                    title="Spreads the notes further apart without changing when they arrive: they travel faster to cover more distance in the same time, which makes dense passages easier to read. [ and ] adjust it live."
+                  >
+                    <label class="stageSpacingLabel" for="scrollSpeedSlider">Spacing</label>
+                    <input
+                      id="scrollSpeedSlider"
+                      type="range"
+                      min="0.5"
+                      max="6"
+                      step="0.05"
+                      value="1"
+                      aria-label="Note spacing multiplier"
+                    />
+                    <span id="scrollSpeedValue" class="stageSpacingValue">1.00x</span>
+                    <button id="scrollSpeedReset" class="stageSpacingReset" title="Reset to 1.00x">Reset</button>
+                  </div>
+
+                  <label
+                    class="practiceToggle"
+                    for="nashvilleMode"
+                    title="Stamps the scale degree (1-7) on each falling note, so the song reads as numbers in its key instead of note names."
+                  >
+                    <input id="nashvilleMode" type="checkbox" />
+                    <span>Nashville numbers</span>
+                  </label>
+                  <label
+                    class="practiceToggle"
+                    for="learnMode"
+                    title="Steps through the song one note at a time, holding at each until you play it on your MIDI keyboard. Needs a keyboard connected in Configure -> MIDI."
+                  >
+                    <input id="learnMode" type="checkbox" />
+                    <span>Wait mode</span>
+                  </label>
+                  <label
+                    class="practiceToggle"
+                    for="graceMode"
+                    title="Counts a note as correct if you play it within a tenth of a second of its onset. On its own the song never stops. Combined with Wait mode it only stops when you actually miss."
+                  >
+                    <input id="graceMode" type="checkbox" />
+                    <span>Grace mode</span>
+                  </label>
+                </div>
 
                 <div class="startRow">
                   <button id="playStart" class="playStartBtn" disabled>Start</button>
@@ -337,6 +359,30 @@ export function appShellHtml(): string {
             <pre id="midiStatus" class="meta">(midi input: not connected)</pre>
             <pre id="midiInActiveNotes" class="meta">(no active notes)</pre>
             <pre id="midiInEvents" class="meta">(midi input events)</pre>
+
+            <h3>Mixed-reality headset</h3>
+            <div class="row">
+              <label><input id="mrLinkEnabled" type="checkbox" checked /> serve the MR headset on this network</label>
+            </div>
+            <div class="meta" style="margin: 0 0 6px 6px; opacity: 0.7; font-size: 11px">
+              Streams the chart, playhead and your played notes to the AuralPrimer app on a
+              Quest. The headset finds this PC by itself &mdash; same Wi-Fi is all it needs.
+            </div>
+            <pre id="mrLinkStatus" class="meta">(starting)</pre>
+
+            <h3>Transport control (MIDI learn)</h3>
+            <div class="meta" style="margin-bottom:6px;opacity:0.75">
+              Drive playback from your controller's transport buttons. Click
+              <strong>Learn</strong>, then press the button on your device &mdash; whatever it
+              sends becomes the binding, whether that's a CC or a note. Connect the input
+              port above first; the log below shows each message and how it was read.
+              <br />
+              Rewind / fast forward jog while held on controllers that send a release. Many
+              send only a single message per press and cannot signal a hold &mdash; for those,
+              press the same button again to stop the jog.
+            </div>
+            <div id="midiTransportRows"></div>
+            <pre id="midiTransportStatus" class="meta">last message: (nothing received yet)</pre>
 
             <h3>MIDI Sync (clock out)</h3>
             <div class="row">

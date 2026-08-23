@@ -1,0 +1,254 @@
+// @vitest-environment jsdom
+/**
+ * Unit tests for the transport binding model — matching, Learn capture, and
+ * persistence. These are the parts that decide whether a controller's buttons
+ * are recognised at all, so they carry the edge cases: note-on-with-velocity-0
+ * as a release, channel scoping, and tolerating junk in localStorage.
+ */
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+const invoke = vi.fn();
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+import {
+  CC_PRESS_THRESHOLD,
+  STORAGE_KEY,
+  bindingFromMessage,
+  defaultBindings,
+  describeBinding,
+  describeMessage,
+  loadBindings,
+  loadBindingsLocal,
+  bindingsConflict,
+  matchBinding,
+  parseBindings,
+  saveBindings,
+  saveBindingsLocal,
+  type MidiBinding,
+} from "../src/midiTransportBindings";
+import type { MidiInputMessageEvent } from "../src/midiInput";
+
+function msg(over: Partial<MidiInputMessageEvent>): MidiInputMessageEvent {
+  return {
+    timestamp_us: 0,
+    message_type: "control_change",
+    status: 0xb0,
+    channel: 0,
+    data1: 31,
+    data2: 127,
+    bytes: [],
+    ...over,
+  } as MidiInputMessageEvent;
+}
+
+const ccBinding: MidiBinding = { kind: "cc", number: 31, channel: null };
+const noteBinding: MidiBinding = { kind: "note", number: 60, channel: 0 };
+
+describe("matchBinding", () => {
+  it("reads a CC at or above the threshold as a press", () => {
+    expect(matchBinding(ccBinding, msg({ data2: CC_PRESS_THRESHOLD }))).toBe("press");
+    expect(matchBinding(ccBinding, msg({ data2: 127 }))).toBe("press");
+  });
+
+  it("reads a CC below the threshold as a release", () => {
+    expect(matchBinding(ccBinding, msg({ data2: CC_PRESS_THRESHOLD - 1 }))).toBe("release");
+    expect(matchBinding(ccBinding, msg({ data2: 0 }))).toBe("release");
+  });
+
+  it("ignores a different CC number", () => {
+    expect(matchBinding(ccBinding, msg({ data1: 32 }))).toBeNull();
+  });
+
+  it("ignores a note that happens to share the CC number", () => {
+    expect(matchBinding(ccBinding, msg({ message_type: "note_on", data1: 31 }))).toBeNull();
+  });
+
+  it("reads note-on as press and note-off as release", () => {
+    expect(matchBinding(noteBinding, msg({ message_type: "note_on", data1: 60, data2: 100 }))).toBe("press");
+    expect(matchBinding(noteBinding, msg({ message_type: "note_off", data1: 60, data2: 0 }))).toBe("release");
+  });
+
+  it("treats note-on with velocity 0 as a release, as many keyboards send", () => {
+    expect(matchBinding(noteBinding, msg({ message_type: "note_on", data1: 60, data2: 0 }))).toBe("release");
+  });
+
+  it("scopes a channel-pinned binding to that channel", () => {
+    expect(matchBinding(noteBinding, msg({ message_type: "note_on", data1: 60, data2: 90, channel: 1 }))).toBeNull();
+    expect(matchBinding(noteBinding, msg({ message_type: "note_on", data1: 60, data2: 90, channel: 0 }))).toBe("press");
+  });
+
+  it("matches any channel when the binding is not pinned", () => {
+    expect(matchBinding(ccBinding, msg({ channel: 9 }))).toBe("press");
+  });
+
+  it("ignores an unassigned binding", () => {
+    expect(matchBinding(null, msg({}))).toBeNull();
+  });
+
+  it("ignores malformed data bytes", () => {
+    expect(matchBinding(ccBinding, msg({ data1: null }))).toBeNull();
+    expect(matchBinding(ccBinding, msg({ data2: null }))).toBeNull();
+  });
+});
+
+describe("bindingFromMessage (Learn capture)", () => {
+  it("captures a CC press", () => {
+    expect(bindingFromMessage(msg({ data1: 44, data2: 127, channel: 2 }))).toEqual({
+      kind: "cc",
+      number: 44,
+      channel: 2,
+    });
+  });
+
+  it("refuses a CC release, so it can't overwrite what the press just set", () => {
+    expect(bindingFromMessage(msg({ data1: 44, data2: 0 }))).toBeNull();
+  });
+
+  it("captures a note press and pins its channel", () => {
+    expect(bindingFromMessage(msg({ message_type: "note_on", data1: 36, data2: 88, channel: 9 }))).toEqual({
+      kind: "note",
+      number: 36,
+      channel: 9,
+    });
+  });
+
+  it("refuses a note release", () => {
+    expect(bindingFromMessage(msg({ message_type: "note_on", data1: 36, data2: 0 }))).toBeNull();
+    expect(bindingFromMessage(msg({ message_type: "note_off", data1: 36, data2: 0 }))).toBeNull();
+  });
+
+  it("ignores message types that aren't buttons", () => {
+    expect(bindingFromMessage(msg({ message_type: "pitch_bend" }))).toBeNull();
+    expect(bindingFromMessage(msg({ message_type: "clock" }))).toBeNull();
+  });
+});
+
+describe("describe helpers", () => {
+  it("names bindings, including the unassigned case", () => {
+    expect(describeBinding(ccBinding)).toBe("CC 31 (any ch)");
+    expect(describeBinding(noteBinding)).toBe("Note 60 (ch 1)");
+    expect(describeBinding(null)).toBe("unassigned");
+  });
+
+  it("summarises incoming messages for the monitor", () => {
+    expect(describeMessage(msg({ data1: 31, data2: 127 }))).toBe("CC 31 = 127 ch1");
+    expect(describeMessage(msg({ message_type: "note_on", data1: 60, data2: 90 }))).toBe("Note 60 on, vel 90 ch1");
+    expect(describeMessage(msg({ message_type: "note_off", data1: 60 }))).toBe("Note 60 off ch1");
+  });
+});
+
+describe("bindingsConflict", () => {
+  it("flags the same button on the same channel", () => {
+    expect(bindingsConflict({ kind: "cc", number: 31, channel: 0 }, { kind: "cc", number: 31, channel: 0 })).toBe(true);
+  });
+
+  it("flags an any-channel binding against a pinned one on the same number", () => {
+    // The case that matters: a learned button (pinned) must displace an
+    // any-channel default, or one press drives two actions.
+    expect(bindingsConflict({ kind: "cc", number: 31, channel: null }, { kind: "cc", number: 31, channel: 3 })).toBe(true);
+    expect(bindingsConflict({ kind: "cc", number: 31, channel: 3 }, { kind: "cc", number: 31, channel: null })).toBe(true);
+  });
+
+  it("does not flag different channels, numbers, or kinds", () => {
+    expect(bindingsConflict({ kind: "cc", number: 31, channel: 1 }, { kind: "cc", number: 31, channel: 2 })).toBe(false);
+    expect(bindingsConflict({ kind: "cc", number: 31, channel: null }, { kind: "cc", number: 32, channel: null })).toBe(false);
+    expect(bindingsConflict({ kind: "cc", number: 31, channel: null }, { kind: "note", number: 31, channel: null })).toBe(false);
+  });
+
+  it("never flags an unassigned binding", () => {
+    expect(bindingsConflict(null, { kind: "cc", number: 31, channel: null })).toBe(false);
+    expect(bindingsConflict({ kind: "cc", number: 31, channel: null }, null)).toBe(false);
+  });
+});
+
+describe("persistence", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("falls back to defaults with nothing stored", () => {
+    expect(parseBindings(null)).toEqual(defaultBindings());
+  });
+
+  it("falls back to defaults on unparseable JSON", () => {
+    expect(parseBindings("{not json")).toEqual(defaultBindings());
+  });
+
+  it("round-trips through localStorage", () => {
+    const next = { ...defaultBindings(), play: { kind: "note", number: 36, channel: 9 } as MidiBinding };
+    saveBindingsLocal(next);
+    expect(loadBindingsLocal()).toEqual(next);
+  });
+
+  it("keeps an explicit null as a deliberate unassignment", () => {
+    expect(parseBindings(JSON.stringify({ play: null })).play).toBeNull();
+  });
+
+  it("ignores an invalid entry without discarding the valid ones", () => {
+    const parsed = parseBindings(
+      JSON.stringify({
+        play: { kind: "cc", number: 999, channel: null }, // out of range
+        stop: { kind: "note", number: 40, channel: 3 },
+      }),
+    );
+    expect(parsed.play).toEqual(defaultBindings().play); // fell back
+    expect(parsed.stop).toEqual({ kind: "note", number: 40, channel: 3 });
+  });
+
+  it("survives a corrupt stored value", () => {
+    window.localStorage.setItem(STORAGE_KEY, "[]");
+    expect(loadBindingsLocal()).toEqual(defaultBindings());
+  });
+});
+
+describe("durable persistence", () => {
+  // Bindings must live in settings.json, not webview localStorage: the portable
+  // packer clears webview data, which is how learned bindings kept vanishing
+  // between builds.
+  beforeEach(() => {
+    window.localStorage.clear();
+    invoke.mockReset();
+  });
+
+  it("reads the settings-backed copy in preference to localStorage", async () => {
+    const durable = { ...defaultBindings(), stop: { kind: "note", number: 41, channel: 2 } as MidiBinding };
+    saveBindingsLocal({ ...defaultBindings(), stop: { kind: "cc", number: 99, channel: null } as MidiBinding });
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "midi_transport_bindings_get" ? JSON.stringify(durable) : undefined,
+    );
+    expect(await loadBindings()).toEqual(durable);
+  });
+
+  it("writes through to settings.json", async () => {
+    invoke.mockResolvedValue(undefined);
+    const next = { ...defaultBindings(), play: { kind: "cc", number: 60, channel: 0 } as MidiBinding };
+    await saveBindings(next);
+    expect(invoke).toHaveBeenCalledWith("midi_transport_bindings_set", {
+      value: JSON.stringify(next),
+    });
+  });
+
+  it("migrates an existing localStorage copy the first time nothing is stored", async () => {
+    const legacy = { ...defaultBindings(), rewind: { kind: "note", number: 20, channel: 1 } as MidiBinding };
+    saveBindingsLocal(legacy);
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "midi_transport_bindings_get" ? null : undefined,
+    );
+    expect(await loadBindings()).toEqual(legacy);
+    // ...and it is written through, so the next launch reads it durably.
+    expect(invoke).toHaveBeenCalledWith("midi_transport_bindings_set", {
+      value: JSON.stringify(legacy),
+    });
+  });
+
+  it("falls back to localStorage when there is no Tauri backend", async () => {
+    const local = { ...defaultBindings(), stop: { kind: "cc", number: 7, channel: null } as MidiBinding };
+    saveBindingsLocal(local);
+    invoke.mockRejectedValue(new Error("no tauri"));
+    expect(await loadBindings()).toEqual(local);
+  });
+
+  it("still mirrors to localStorage when the native write fails", async () => {
+    invoke.mockRejectedValue(new Error("no tauri"));
+    const next = { ...defaultBindings(), play: { kind: "cc", number: 8, channel: null } as MidiBinding };
+    await expect(saveBindings(next)).resolves.toBeUndefined();
+    expect(loadBindingsLocal()).toEqual(next);
+  });
+});

@@ -895,3 +895,61 @@ describe("navigation + wiring", () => {
     expect(loadSessionMock).toHaveBeenCalledWith("/songs/x.auralsong", "bass");
   });
 });
+
+describe("instrument dropdown on a freshly imported pack", () => {
+  /**
+   * Regression: a pack straight out of import has spectrograms for every
+   * melodic role but no refine_candidates (those come from the separate
+   * precompute step). The dropdown filtered on candidates alone, so it offered
+   * nothing but Drums and read as "the transcription only produced drums" even
+   * though bass and guitar were sitting in the pack.
+   */
+  function mockFreshImport(): void {
+    invokeMock.mockImplementation((cmd: string, args: { relPath?: string }) => {
+      if (cmd !== "read_auralsong_json") return Promise.reject(new Error("nope"));
+      const rel = args?.relPath ?? "";
+      // Spectrograms exist for the melodic roles the pack carries.
+      if (/^aural\/spectrogram\/(keys|bass|lead_guitar|rhythm_guitar|vocals|drums)\/spectrogram\.json$/.test(rel)) {
+        return Promise.resolve({ tiles: [] });
+      }
+      // Drum chart exists; melodic candidates do not.
+      if (rel === "drum_tab.json") return Promise.resolve({ lanes: [] });
+      if (rel.startsWith("aural/refine_candidates.")) return Promise.reject(new Error("missing"));
+      return Promise.reject(new Error("missing"));
+    });
+  }
+
+  it("offers every melodic role the pack carries, not just drums", async () => {
+    mockFreshImport();
+    loadSessionMock.mockResolvedValue(null);
+    const h = initRefineWorkspace(makeDeps());
+    await h.openForAuralSong("/songs/never_enough.feedpak");
+    await flush();
+
+    const select = document.getElementById("refineInstrumentSelect") as HTMLSelectElement;
+    const values = [...select.options].map((o) => o.value);
+    expect(values).toContain("bass");
+    expect(values).toContain("keys");
+    expect(values).toContain("vocals");
+    expect(values).toContain("drums");
+    // NB: lead_guitar / rhythm_guitar are deliberately absent -- MELODIC_ROLES
+    // collapses guitar to a single role and treats the splits as legacy, even
+    // though ingest still writes them. That mismatch is a separate decision.
+    expect(values.length).toBeGreaterThan(1);
+  });
+
+  it("flags the roles that still need precompute instead of hiding them", async () => {
+    mockFreshImport();
+    loadSessionMock.mockResolvedValue(null);
+    const h = initRefineWorkspace(makeDeps());
+    await h.openForAuralSong("/songs/never_enough.feedpak");
+    await flush();
+
+    const select = document.getElementById("refineInstrumentSelect") as HTMLSelectElement;
+    const bass = [...select.options].find((o) => o.value === "bass")!;
+    const drums = [...select.options].find((o) => o.value === "drums")!;
+    expect(bass.textContent).toContain("needs precompute");
+    // Drums are editable straight away (drum_tab is their "candidates").
+    expect(drums.textContent).not.toContain("needs precompute");
+  });
+});

@@ -134,6 +134,39 @@ describe("midiPanel", () => {
     expect(txt("midiStatus")).toContain("on");
   });
 
+  it("reflects a connection the backend restored at startup", async () => {
+    // setup() reconnects the persisted port before the frontend runs, so the
+    // panel must report connected without anyone clicking Connect -- otherwise
+    // play mode says "no keyboard" while MIDI is actually flowing.
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_midi_input_ports") return [{ id: 1, name: "Keystation", backend: "winrt" }];
+      if (cmd === "midi_clock_input_get_saved_settings")
+        return { port: { id: 1, name: "Keystation" }, tempo_scale: 1, allow_sysex: false };
+      if (cmd === "midi_clock_input_is_connected") return true;
+      return undefined;
+    });
+    const handle = initMidiPanel(makeDeps());
+    await handle.refreshAll();
+    expect(handle.inputIsConnected()).toBe(true);
+    expect(txt("midiStatus")).toContain("auto-connected");
+  });
+
+  it("does not claim a connection when the startup restore failed", async () => {
+    // Device unplugged since last run: the port is still persisted, but there
+    // is no live connection and the UI must not imply one.
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_midi_input_ports") return [{ id: 1, name: "Keystation", backend: "winrt" }];
+      if (cmd === "midi_clock_input_get_saved_settings")
+        return { port: { id: 9, name: "Gone" }, tempo_scale: 1, allow_sysex: false };
+      if (cmd === "midi_clock_input_is_connected") return false;
+      return undefined;
+    });
+    const handle = initMidiPanel(makeDeps());
+    await handle.refreshAll();
+    expect(handle.inputIsConnected()).toBe(false);
+    expect(txt("midiStatus")).not.toContain("auto-connected");
+  });
+
   it("refreshInputPorts: renders ports, applies saved settings, sets status", async () => {
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "list_midi_input_ports")

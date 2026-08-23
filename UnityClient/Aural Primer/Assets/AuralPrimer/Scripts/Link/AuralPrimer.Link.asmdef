@@ -1,0 +1,14 @@
+{
+    "name": "AuralPrimer.Link",
+    "rootNamespace": "AuralPrimer.Link",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

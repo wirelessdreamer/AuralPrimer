@@ -5973,6 +5973,34 @@ def _convert_auralsong_to_feedpak(working_dir: Path) -> Path:
     return desired
 
 
+def cmd_import_musicxml(args: argparse.Namespace) -> int:
+    """Build a ``.feedpak`` directly from a MusicXML score (no transcription).
+
+    The score already carries notes, tempo, time signature and a metronomic bar
+    grid, so this bypasses audio transcription entirely. A co-located render is
+    attached as the pack's audio when present (or via ``--audio``).
+    """
+    from aural_ingest.musicxml_feedpak import build_feedpak_from_musicxml
+
+    src = Path(args.input_musicxml_path)
+    if not src.exists():
+        print(json.dumps({"ok": False, "error": f"no such file: {src}"}))
+        return 2
+    try:
+        result = build_feedpak_from_musicxml(
+            src,
+            Path(args.out),
+            audio_path=args.audio or None,
+            title=args.title or None,
+            artist=args.artist or None,
+        )
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    print(json.dumps(result))
+    return 0
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     src = Path(args.input_audio_path)
     out = Path(args.out)
@@ -6919,15 +6947,51 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
         present[role] = stem_path
 
     requested = list(args.instrument or [])
+    available = sorted(present.keys())
+    mix_stem = present.get("mix")
+
+    # role -> (audio source, built_from_mix). A pack imported from a MusicXML
+    # score carries only the full mix (the notes come from the score, not from
+    # separating stems), so a requested role has no dedicated stem. Build its
+    # overlay from the mix instead of refusing — the spectrogram is a pitch view
+    # of the audio to edit notes against, and the mix is the audio the user
+    # supplied. Only when there is NO audio at all is there nothing to do.
+    targets: dict[str, tuple[Path, bool]] = {}
     if requested and "melodic" not in requested:
-        target_roles = [r for r in requested if r in present]
+        for role in requested:
+            if role in present:
+                targets[role] = (present[role], False)
+            elif mix_stem is not None:
+                targets[role] = (mix_stem, True)
     else:
-        # Default (or explicit "melodic"): all melodic stems present.
-        target_roles = sorted(r for r in present if r not in default_excluded)
+        # Default (or explicit "melodic"): all separated melodic stems present.
+        for role in present:
+            if role not in default_excluded and role != "mix":
+                targets[role] = (present[role], False)
+
+    if not targets:
+        reason = (
+            "This pack has no audio to build a spectrogram from."
+            if not available
+            else (
+                f"No audio available for the requested role(s) {requested or ['melodic']}. "
+                f"Stems: {available}."
+            )
+        )
+        payload_err: dict[str, object] = {
+            "ok": False,
+            "roles": {},
+            "error": reason,
+            "requested_roles": requested or ["melodic"],
+            "available_stems": available,
+        }
+        if args.instrument:
+            payload_err["instrument"] = list(args.instrument)
+        print(json.dumps(payload_err, sort_keys=True))
+        return 1
 
     results: dict[str, dict[str, object]] = {}
-    for role in target_roles:
-        stem_path = present[role]
+    for role, (stem_path, from_mix) in targets.items():
         try:
             geom = write_spectrogram_artifact(
                 stem_path,
@@ -6938,12 +7002,21 @@ def cmd_build_spectrogram(args: argparse.Namespace) -> int:
                 "ok": True,
                 "n_frames": int(geom.get("n_frames", 0)),
                 "tiles": len(geom.get("tiles", []) or []),
+                "from_mix": from_mix,
             }
         except Exception as exc:  # noqa: BLE001
             results[role] = {"ok": False, "error": str(exc)}
 
     overall_ok = bool(results) and any(bool(r.get("ok")) for r in results.values())
-    payload: dict[str, object] = {"ok": overall_ok, "roles": results}
+    payload: dict[str, object] = {"ok": overall_ok, "roles": results, "available_stems": available}
+    if not overall_ok:
+        # Every requested role errored — surface the first reason so the UI has
+        # something to show beyond "ok:false".
+        first_err = next(
+            (str(r.get("error")) for r in results.values() if not r.get("ok") and r.get("error")),
+            "spectrogram build failed for all requested roles",
+        )
+        payload["error"] = first_err
     if args.instrument:
         payload["instrument"] = list(args.instrument)
     print(json.dumps(payload, sort_keys=True))
@@ -7571,6 +7644,14 @@ def build_parser() -> argparse.ArgumentParser:
     s_refine_piano.add_argument("--label", default="piano-refinement")
     s_refine_piano.add_argument("--out-root", default="benchmarks/piano/refinement_runs")
     s_refine_piano.set_defaults(func=cmd_refine_piano)
+
+    s_import_xml = sub.add_parser("import-musicxml")
+    s_import_xml.add_argument("input_musicxml_path")
+    s_import_xml.add_argument("--out", required=True, help="output directory for <stem>.feedpak")
+    s_import_xml.add_argument("--audio", default="", help="audio to attach (defaults to a render beside the score)")
+    s_import_xml.add_argument("--title", default="")
+    s_import_xml.add_argument("--artist", default="")
+    s_import_xml.set_defaults(func=cmd_import_musicxml)
 
     s_import = sub.add_parser("import")
     s_import.add_argument("input_audio_path")

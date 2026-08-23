@@ -1,0 +1,25 @@
+{
+    "name": "AuralPrimer.Recording",
+    "rootNamespace": "AuralPrimer.Recording",
+    "references": [
+        "AuralPrimer.Link",
+        "Unity.XR.Hands",
+        "Unity.XR.Management",
+        "Oculus.VR"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.meta.xr.sdk.core",
+            "expression": "",
+            "define": "META_XR_CORE"
+        }
+    ],
+    "noEngineReferences": false
+}

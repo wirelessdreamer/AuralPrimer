@@ -1049,6 +1049,21 @@ fn native_audio_init(
     replace_native_audio_engine(&state, sample_rate_hz, channels)
 }
 
+/// Warm up the output engine/stream ahead of the first real load.
+///
+/// The first audio load in a session otherwise creates the engine and starts
+/// the device stream *at the same time* as loading the buffer — a cold start
+/// where the first playback doesn't engage until a second load (the "select an
+/// instrument first" workaround). Initializing at the device's preferred rate
+/// and stereo here means the first real stereo load (the common case) reuses
+/// the already-running stream instead of reinitializing it. A no-op if the
+/// engine already matches this format.
+#[tauri::command]
+fn native_audio_warm_up(state: tauri::State<NativeAudioState>) -> Result<(), String> {
+    let target_sr = preferred_native_audio_sample_rate_hz(&state, 48_000)?;
+    ensure_native_audio_engine_format(&state, target_sr, 2)
+}
+
 #[tauri::command]
 fn native_audio_get_selected_output_host(
     state: tauri::State<NativeAudioState>,
@@ -1442,6 +1457,30 @@ async fn ingest_muscriptor_download(
     .await
 }
 
+/// Build a `.feedpak` from a MusicXML score (no transcription). Used by the
+/// Import route's "A MusicXML score" path.
+#[tauri::command]
+async fn ingest_import_musicxml(
+    app: AppHandle,
+    musicxml_path: String,
+    out_dir: String,
+    audio_path: Option<String>,
+    title: Option<String>,
+    artist: Option<String>,
+) -> Result<ingest_sidecar::IngestRuntimeCheckResult, String> {
+    run_blocking_command("ingest import musicxml", move || {
+        ingest_sidecar::run_ingest_import_musicxml(
+            musicxml_path.clone(),
+            out_dir.clone(),
+            audio_path.clone(),
+            title.clone(),
+            artist.clone(),
+            Some(&app),
+        )
+    })
+    .await
+}
+
 /// Open an external http(s) URL in the user's default browser. Used by the
 /// "Model setup" surface to direct users to license-acceptance pages
 /// (a gated HuggingFace model page, or any other host). Only http(s) is
@@ -1774,6 +1813,21 @@ fn native_audio_load_auralsong_audio(
 /// Base stems the refine "All" playback sums (mirrors the game's mixer set).
 const MIXER_BASE_STEMS: &[&str] = &["bass", "drums", "vocals", "guitar", "keys", "other"];
 
+/// Whether a stem should be included when loading pack audio.
+///
+/// - `solo = Some(role)`: play exactly that stem.
+/// - `solo = None` ("all"): a pack carrying a single `mix` stem (separation
+///   skipped, or a MusicXML-score import) has no separated stems to sum — the
+///   `mix` IS the full mix, so play it directly. Otherwise sum the separated
+///   base stems.
+fn should_take_stem(stem_id: &str, solo: Option<&str>, has_mix_stem: bool) -> bool {
+    match solo {
+        Some(r) => stem_id == r,
+        None if has_mix_stem => stem_id == "mix",
+        None => MIXER_BASE_STEMS.contains(&stem_id),
+    }
+}
+
 fn audio_mime_for_path(rel: &str) -> &'static str {
     let lower = rel.to_ascii_lowercase();
     if lower.ends_with(".ogg") {
@@ -1823,11 +1877,9 @@ fn native_audio_load_pack_audio(
     let mut fmt: Option<(u32, u16)> = None;
     let mut max_frames: usize = 0;
     let mut mime_out = "audio/wav";
+    let has_mix_stem = manifest.stems.iter().any(|s| s.id.as_str() == "mix");
     for stem in &manifest.stems {
-        let take = match &solo {
-            Some(r) => stem.id.as_str() == r.as_str(),
-            None => MIXER_BASE_STEMS.contains(&stem.id.as_str()),
-        };
+        let take = should_take_stem(stem.id.as_str(), solo.as_deref(), has_mix_stem);
         if !take {
             continue;
         }
@@ -2657,6 +2709,7 @@ pub fn run() {
             native_audio_list_output_hosts,
             native_audio_list_output_devices,
             native_audio_init,
+            native_audio_warm_up,
             native_audio_get_selected_output_host,
             native_audio_set_output_host,
             native_audio_set_output_host_and_persist,
@@ -2682,6 +2735,7 @@ pub fn run() {
             ingest_runtime_check,
             ingest_model_setup,
             ingest_muscriptor_download,
+            ingest_import_musicxml,
             open_external_url,
             ingest_refine_candidates,
             ingest_spectrogram,
@@ -3233,6 +3287,38 @@ fn midi_clock_input_stop(state: tauri::State<MidiClockInputState>) -> Result<(),
     let mut lock = state.conn.lock().unwrap();
     *lock = None;
     Ok(())
+}
+
+#[cfg(test)]
+mod stem_selection_tests {
+    use super::should_take_stem;
+
+    #[test]
+    fn all_sums_base_stems_when_no_mix() {
+        // A transcribed pack: "all" sums the separated base stems.
+        assert!(should_take_stem("keys", None, false));
+        assert!(should_take_stem("drums", None, false));
+        assert!(!should_take_stem("mix", None, false)); // no mix stem present
+        assert!(!should_take_stem("guitar_split_source", None, false));
+    }
+
+    #[test]
+    fn all_plays_the_mix_stem_when_present() {
+        // A mix-only pack (separation skipped / MusicXML import): "all" plays
+        // the single mix stem — this is the bug that left such packs silent.
+        assert!(should_take_stem("mix", None, true));
+        // With a mix present, base-stem names are NOT summed (avoids doubling
+        // if a pack ever carried both).
+        assert!(!should_take_stem("keys", None, true));
+    }
+
+    #[test]
+    fn solo_plays_exactly_that_role() {
+        assert!(should_take_stem("keys", Some("keys"), false));
+        assert!(!should_take_stem("mix", Some("keys"), true));
+        // Solo the mix explicitly.
+        assert!(should_take_stem("mix", Some("mix"), true));
+    }
 }
 
 #[cfg(test)]

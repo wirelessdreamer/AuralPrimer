@@ -54,6 +54,85 @@ See [`BUILDING.md`](BUILDING.md) for the full install / test / package
 matrix and [`docs/local-dev-prereqs.md`](docs/local-dev-prereqs.md) for
 OS-level prerequisites.
 
+## Playing with a MIDI keyboard
+
+Live MIDI input is native (Rust `midir`: WinRT on Windows, CoreMIDI on macOS,
+ALSA on Linux). Browser-only `vite` mode cannot see MIDI devices — use the
+Tauri app or the portable build.
+
+**Connect once.** `Configure -> MIDI -> MIDI Input`: *Refresh*, pick the port,
+*Connect*. The choice persists in `settings.json`, and the app reconnects it at
+launch — the status line says `auto-connected` when it did. The **MIDI IN**
+readout above the *Start* button reports what the app is hearing on every
+instrument and display mode, and names the case where nothing is connected, so
+a silent device is never mistaken for a silent passage.
+
+### Transport buttons (MIDI learn)
+
+`Configure -> MIDI -> Transport control` binds your controller's transport
+strip. Click **Learn**, press the button, and whatever it sends becomes the
+binding — CC or note, any number, any channel. Controllers disagree wildly
+here, so nothing is assumed. Bindings persist in `settings.json`, and learning
+a button already in use reassigns it rather than letting one press drive two
+actions.
+
+| Action | Behaviour |
+| --- | --- |
+| Start song over | Return to zero and play |
+| Rewind / Fast forward | Jog while held, accelerating 0.25 s -> 4 s per 100 ms |
+| Stop | Halt and return to zero |
+| Play / pause | Toggle; starts the song if it has not started |
+| Wait mode on/off | Toggle advance-on-note-play (no default binding) |
+
+The log under those rows shows every incoming message **and how it was read**
+(`CC 21 = 127 ch1 -> Rewind: PRESS`). That is the first thing to check when a
+button misbehaves: it distinguishes a silent device from a mis-bound one.
+
+### Hold-to-jog needs a controller that sends a release
+
+A button can only express *held* if it sends something on release. Two
+families exist, and the app handles both:
+
+- **Momentary** — a value on press, `0` on release. Rewind and fast forward
+  jog for exactly as long as you hold them.
+- **Toggle / one-shot** — one message per press, nothing on release. A hold is
+  physically undetectable, so pressing the same button again stops the jog.
+
+Momentary is worth setting up if your controller supports it. On an
+**M-Audio Axiom 49/61**, whose buttons ship in toggle mode, assign each one to
+controller **146** ("MIDI CC on/off"):
+
+```text
+Ctrl Assign 146  ->  Data 1 <cc>  ->  Data 2 000  ->  Data 3 127
+```
+
+Those are dedicated buttons on the 49/61 — there is no Edit/Advanced key
+(that is the 25-note model) and no Enter to confirm. `scripts/axiom_tool.py`
+prints the procedure (`steps`), reports momentary-vs-toggle per button as you
+press it (`check`), and backs up the device's presets first (`backup`), since
+restoring a dump overwrites all of them. Changing the mode does not change the
+CC number, so learned bindings keep working.
+
+### Keyboard shortcuts (play route)
+
+| Key | Action |
+| --- | --- |
+| <kbd>Space</kbd> | Start / pause / resume |
+| <kbd>&larr;</kbd> <kbd>&rarr;</kbd> | Jog 5 s (hold <kbd>Shift</kbd> for 1 s) |
+| <kbd>[</kbd> <kbd>]</kbd> | Spread / compress note spacing |
+| <kbd>Ctrl</kbd>+<kbd>[</kbd> <kbd>]</kbd> <kbd>0</kbd> | Nudge / reset the A/V sync offset |
+| <kbd>Esc</kbd> | Pause menu |
+
+### Practice toggles
+
+Both sit directly above the *Start* button:
+
+- **Wait mode — advance on note play**: holds at each note or chord until you
+  play it, then advances. Needs a connected keyboard; the MIDI IN readout
+  names the note it is waiting for.
+- **Nashville numbers**: stamps the scale degree (1-7) on each falling note
+  instead of note names.
+
 ## Design principles
 
 - **Test-driven development.** Tests first, implementation second; CI
@@ -130,6 +209,9 @@ shell, and native audio/MIDI:
 | App | **VoidZero** — Evan You · Anthony Fu | [**Vite**](https://github.com/vitejs/vite) · [**Vitest**](https://github.com/vitest-dev/vitest) — build & test | MIT |
 | App | **Microsoft** | [**TypeScript**](https://github.com/microsoft/TypeScript) · [**Playwright**](https://github.com/microsoft/playwright) | Apache-2.0 |
 | Native | **RustAudio + independent Rust** | [**cpal**](https://github.com/RustAudio/cpal) · [**rtrb**](https://github.com/mgeier/rtrb) · [**symphonia**](https://github.com/pdeljanov/Symphonia) · [**midir**](https://github.com/Boddlnagg/midir) · [**midly**](https://github.com/kovaxis/midly) — native audio/MIDI | Apache / MIT / MPL-2.0 |
+| MR | **Meta Platforms** | [**Meta XR Core SDK**](https://developers.meta.com/horizon/documentation/unity/unity-package-manager/) — body / face / eye tracking for the Quest client's performance capture | Oculus SDK License (proprietary) |
+| MR | **Cadson Demak** — Chakra Petch project authors | [**Chakra Petch**](https://github.com/google/fonts/tree/main/ofl/chakrapetch) — the MR client's interface typeface | SIL OFL 1.1 |
+| MR | **Unity Technologies** | [**XR Interaction Toolkit**](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.5/manual/index.html) · [**XR Hands**](https://docs.unity3d.com/Packages/com.unity.xr.hands@1.5/manual/index.html) · [**OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.14/manual/index.html) · [**AR Foundation**](https://docs.unity3d.com/Packages/com.unity.xr.arfoundation@6.1/manual/index.html) · [**Input System**](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.14/manual/index.html) — the Quest client's runtime and interaction stack | Unity Companion / Package Distribution License |
 
 *Lineage: Google/Magenta's **MT3** → Sony's **MR-MT3** (fine-tuned for drums).
 Full per-component detail — including build/test-only deps — is in the tables
@@ -198,8 +280,54 @@ below.*
 | [**symphonia**](https://github.com/pdeljanov/Symphonia) (pure-Rust decode) | Philip Deljanov | MPL-2.0 |
 | [**midir**](https://github.com/Boddlnagg/midir) / [**midly**](https://github.com/kovaxis/midly) (MIDI I/O + `.mid` parse) | Patrick Reisert · Martín Andrighetti | MIT · Unlicense |
 | [**tokio**](https://github.com/tokio-rs/tokio) (async runtime) | tokio-rs | MIT |
+| [**socket2**](https://github.com/rust-lang/socket2) (multicast socket options) | rust-lang | MIT / Apache-2.0 |
 | [**serde**](https://github.com/serde-rs/serde)(+`json`/`yaml`) | David Tolnay | MIT / Apache-2.0 |
 | [**zip**](https://github.com/zip-rs/zip2), [**sha2**](https://github.com/RustCrypto/hashes), [**hex**](https://github.com/KokaKiwi/rust-hex), [**notify**](https://github.com/notify-rs/notify) | zip-rs · RustCrypto · rust-hex · notify-rs | MIT / Apache-2.0 / CC0 |
+
+### Mixed-reality client (Unity packages)
+
+Shipped inside the Quest APK built from `UnityClient/Aural Primer`. Unity's own
+packages stay under Unity's terms — the [Unity Companion
+License](https://unity.com/legal/licenses/unity-companion-license) (UCL) and,
+for redistributed binaries, the [Unity Package Distribution
+License](https://unity.com/legal/licenses/unity-package-distribution-license)
+(UPDL). Both permit distributing a Unity-dependent project; neither is
+GPL-compatible, which is exactly why the MR client is Apache-2.0 and sits
+outside the copyleft boundary described under *Licensing* below.
+
+| Component | Role in the MR client | License |
+|---|---|---|
+| [**XR Interaction Toolkit**](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.5/manual/index.html) | ray and grab interaction — the grabbable menu, and every pointer press | UCL |
+| [**Input System**](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.14/manual/index.html) | the hand/controller action bindings XRI reads | UCL |
+| [**XR Hands**](https://docs.unity3d.com/Packages/com.unity.xr.hands@1.5/manual/index.html) | joint poses for marking keyboard edges during calibration | UPDL |
+| [**OpenXR Plugin**](https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.14/manual/index.html) | the runtime, and the predicted display time the note lane is drawn against | UCL / UPDL |
+| [**XR Plugin Management**](https://docs.unity3d.com/Packages/com.unity.xr.management@4.5/manual/index.html) | loader startup | UCL |
+| [**AR Foundation**](https://docs.unity3d.com/Packages/com.unity.xr.arfoundation@6.1/manual/index.html) | passthrough session and camera, so the real keyboard stays visible | UCL |
+| [**Meta OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.meta-openxr@2.1/manual/index.html) | Quest 3 / 3S / Pro feature set | UCL / UPDL |
+| [**Android XR OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.androidxr-openxr@1.0/manual/index.html) | keeps the build multiplatform beyond Quest | UCL |
+| [**XR Core Utilities**](https://docs.unity3d.com/Packages/com.unity.xr.core-utils@2.5/manual/index.html) | XR Origin and shared XR math | UCL |
+| [**Universal Render Pipeline**](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@17.3/manual/index.html) | the mobile-XR renderer | UCL |
+| [**Meta XR Core SDK**](https://developers.meta.com/horizon/documentation/unity/unity-package-manager/) | body, face and eye tracking for performance capture — the only source for these on Quest; `OVRPlugin` reads them under the `com.meta.openxr.feature.metaxr` OpenXR feature | [Oculus SDK License](https://developers.meta.com/horizon/licenses/oculussdk/) (proprietary) |
+| [**Chakra Petch**](https://fonts.google.com/specimen/Chakra+Petch) | the MR client's interface typeface — Bold for caps, SemiBold for reading; TTFs bundled and baked into TMP SDF atlases | [SIL OFL 1.1](https://openfontlicense.org/) |
+
+> **Why a proprietary SDK is admissible here.** The Meta XR Core SDK is under
+> the Oculus SDK License, which is *not* GPLv3-compatible and so would fail the
+> gate above. It ships only inside `UnityClient/`, which is
+> [Apache-2.0](UnityClient/Aural%20Primer/LICENSE) precisely because the Unity
+> runtime cannot be sublicensed under the GPL — the same carve-out, for the same
+> reason, and documented in that subtree's
+> [NOTICE](UnityClient/Aural%20Primer/NOTICE). It must not be referenced from
+> the GPL-3.0-or-later trees (`apps/`, `visualizers/`, `python/`, `crates/`).
+>
+> Body, face and eye tracking have no cross-vendor OpenXR equivalent on Quest,
+> so the alternative was hand-binding the `XR_FB_*` extensions rather than a
+> different open library.
+
+Present from the Unity project template but **not used** by AuralPrimer code,
+and listed here so the manifest and this table can be reconciled line by line:
+XR Composition Layers, Newtonsoft Json (the client decodes with `JsonUtility`),
+Test Framework, Android Logcat, AI Assistant, AI Inference, IET Framework and
+Multiplayer Center. The last six are editor-only and never reach the APK.
 
 > **License-gate note.** Checked against primary sources: (1) the *Demucs*
 > `htdemucs_*` weights are **MIT** (the CC-BY-NC claim circulating in
@@ -450,3 +578,26 @@ useful, but WITHOUT ANY WARRANTY — see the LICENSE file for details.
 Third-party components, model weights, and datasets retain their own
 licenses, catalogued in
 [Third-party components & attribution](#third-party-components--attribution).
+
+### Libraries permissive, applications copyleft
+
+| Tree | Licence |
+| --- | --- |
+| `apps/`, `visualizers/`, `python/`, `crates/` | GPL-3.0-or-later |
+| [`packages/`](packages/README.md) — shared libraries | **Apache-2.0** |
+| `UnityClient/` — mixed-reality client | **Apache-2.0** |
+
+The forcing constraint is the MR client: the Unity runtime is proprietary and
+cannot be sublicensed under the GPL, so a GPL-licensed Unity build would be a
+combined work that could not be conveyed under the GPL in full. Apache-2.0
+removes that conflict outright rather than working around it with a GPLv3 §7
+linking exception, and it avoids the same friction with app-store terms.
+
+Because **licence compatibility runs one way** — Apache-2.0 code may be used by
+a GPL work, but not the reverse — the shared libraries under `packages/` are
+Apache-2.0 too. Otherwise every piece of logic both clients need would raise a
+relicensing question on the way across. Nothing about the desktop client changes:
+a GPL application consuming Apache-2.0 libraries is the direction that works.
+
+`packages/feedpak/schemas/` is MIT per-file, set deliberately so the container
+format stays unencumbered for interoperating tools.

@@ -1,0 +1,24 @@
+{
+    "name": "AuralPrimer.Calibration",
+    "rootNamespace": "AuralPrimer.Calibration",
+    "references": [
+        "AuralPrimer.Link",
+        "AuralPrimer.UI",
+        "AuralPrimer.Recording",
+        "Unity.XR.Interaction.Toolkit",
+        "Unity.XR.Hands",
+        "Unity.XR.Management",
+        "Unity.XR.ARFoundation",
+        "Unity.XR.ARSubsystems",
+        "Unity.XR.CoreUtils"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

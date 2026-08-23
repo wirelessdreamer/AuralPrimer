@@ -63,6 +63,8 @@ export type MidiPanelHandle = {
   outShutdown: () => Promise<void>;
   /** Snapshot of currently-pressed MIDI input notes (for tab renderer overlay). */
   inputActiveNotes: () => ReturnType<MidiInputStateTracker["snapshot"]>;
+  /** True once an input port is connected — lets play mode say "no MIDI device". */
+  inputIsConnected: () => boolean;
 };
 
 export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
@@ -197,6 +199,19 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
         savedWarning = `; saved settings ignored: ${String(settingsError)}`;
       }
 
+      // The backend reconnects the persisted port during startup, so the
+      // connection is often already live by the time this runs. Ask it rather
+      // than assume: a restore that failed (device unplugged since last run)
+      // must still read as disconnected, here and in the play-mode readout.
+      let restoredNote = "";
+      try {
+        const live = Boolean(await invoke<boolean>("midi_clock_input_is_connected"));
+        midiConnected = live;
+        if (live) restoredNote = "; auto-connected";
+      } catch {
+        // Older backend without the query — leave the flag as the UI set it.
+      }
+
       if (!ports.length) {
         inPortSelect.value = "";
         setMidiStatus("midi input: 0 ports found via native MIDI backend. Windows uses WinRT; macOS uses CoreMIDI; Linux uses ALSA. If another app sees the keyboard, close apps that may hold the port, replug the keyboard, then refresh.");
@@ -205,7 +220,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
 
       const backend = portBackendLabel(ports);
       const selectedName = inPortSelect.selectedOptions[0]?.textContent?.trim();
-      setMidiStatus(`midi input: ${ports.length} port(s) found via ${backend}: ${portNamesPreview(ports)}${selectedName ? `; selected ${selectedName}` : ""}${savedWarning}`);
+      setMidiStatus(`midi input: ${ports.length} port(s) found via ${backend}: ${portNamesPreview(ports)}${selectedName ? `; selected ${selectedName}` : ""}${restoredNote}${savedWarning}`);
     } catch (e) {
       inPortSelect.innerHTML = renderPortOptions([], "MIDI input refresh failed");
       inPortSelect.value = "";
@@ -516,5 +531,6 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     outSeek,
     outShutdown,
     inputActiveNotes: () => tracker.snapshot(),
+    inputIsConnected: () => midiConnected,
   };
 }
