@@ -232,6 +232,14 @@ export function appShellHtml(): string {
                     <input id="learnMode" type="checkbox" />
                     <span>Wait mode</span>
                   </label>
+                  <label
+                    class="practiceToggle"
+                    for="graceMode"
+                    title="Counts a note as correct if you play it within a tenth of a second of its onset. On its own the song never stops. Combined with Wait mode it only stops when you actually miss."
+                  >
+                    <input id="graceMode" type="checkbox" />
+                    <span>Grace mode</span>
+                  </label>
                 </div>
 
                 <div class="startRow">
