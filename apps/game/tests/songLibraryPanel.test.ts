@@ -222,6 +222,20 @@ describe("songLibraryPanel", () => {
     expect(document.getElementById("details")!.innerHTML).toBe("<p>hi</p>");
   });
 
+  it("keeps the flat, unfiltered list as the default view", async () => {
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "get_songs_folder" ? "/songs" : entries,
+    );
+    const handle = initSongLibraryPanel(makeDeps());
+    await handle.refresh();
+
+    // No composer sections until the user asks for them.
+    expect(list().querySelectorAll("details.songLibraryGroup").length).toBe(0);
+    expect(list().querySelectorAll("ul.songLibraryList").length).toBe(1);
+    // Search/sort noise stays out of the status line while nothing is filtered.
+    expect(status()).not.toContain("showing:");
+  });
+
   it("setSelectedSongCard toggles isSelected + aria-pressed across rows", async () => {
     invoke.mockImplementation(async (cmd: string) =>
       cmd === "get_songs_folder" ? "/songs" : entries,
@@ -241,5 +255,165 @@ describe("songLibraryPanel", () => {
     // null clears all.
     handle.setSelectedSongCard(null);
     expect(zeta.classList.contains("isSelected")).toBe(false);
+  });
+});
+
+/**
+ * The library toolbar — search / sort / group-by-composer. The ordering
+ * itself is unit-tested in packages/auralsong/tests/libraryView.test.ts;
+ * these cases pin the wiring: the controls exist, they rerender from the
+ * last scan (no extra Rust round-trip), and broken packs stay visible.
+ */
+describe("songLibraryPanel toolbar", () => {
+  const classical: AuralSongScanEntry[] = [
+    {
+      container_path: "/songs/nocturne.feedpak",
+      kind: "dir",
+      ok: true,
+      manifest: { song_id: "n", title: "Nocturne Op. 9", artist: "Chopin", duration_sec: 300 } as any,
+    },
+    {
+      container_path: "/songs/invention.feedpak",
+      kind: "dir",
+      ok: true,
+      manifest: { song_id: "i", title: "Invention No. 1", artist: "J.S. Bach", duration_sec: 90 } as any,
+    },
+    {
+      container_path: "/songs/prelude.feedpak",
+      kind: "dir",
+      ok: true,
+      manifest: { song_id: "p", title: "Prelude in C", artist: "J.S. Bach", duration_sec: 118 } as any,
+    },
+    {
+      container_path: "/songs/broken.feedpak",
+      kind: "dir",
+      ok: false,
+      error: "manifest parse error",
+    },
+  ];
+
+  const search = () => document.getElementById("songLibrarySearch") as HTMLInputElement;
+  const sort = () => document.getElementById("songLibrarySort") as HTMLSelectElement;
+  const group = () => document.getElementById("songLibraryGroup") as HTMLInputElement;
+  const titles = () =>
+    Array.from(list().querySelectorAll(".songSelectTitle")).map((e) => e.textContent);
+  const groupLabels = () =>
+    Array.from(list().querySelectorAll(".songLibraryGroupName")).map((e) => e.textContent);
+
+  async function mount(rows: AuralSongScanEntry[] = classical) {
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "get_songs_folder" ? "/songs" : rows,
+    );
+    const handle = initSongLibraryPanel(makeDeps());
+    await handle.refresh();
+    return handle;
+  }
+
+  beforeEach(() => {
+    stageDom();
+    invoke.mockReset();
+    listen.mockReset();
+    listen.mockResolvedValue(() => {});
+  });
+
+  it("injects the toolbar above the list", async () => {
+    await mount();
+    expect(search()).not.toBeNull();
+    expect(group().checked).toBe(false);
+    expect(document.getElementById("songLibraryToolbar")!.nextElementSibling).toBe(list());
+  });
+
+  it("filters incrementally across title and composer without rescanning", async () => {
+    await mount();
+    invoke.mockClear();
+
+    search().value = "bach";
+    search().dispatchEvent(new Event("input"));
+
+    expect(titles()).toEqual(["Invention No. 1", "Prelude in C"]);
+    expect(status()).toContain("tracks: 4");
+    expect(status()).toContain("showing: 2");
+    expect(invoke).not.toHaveBeenCalled();
+
+    search().value = "bach prelude";
+    search().dispatchEvent(new Event("input"));
+    expect(titles()).toEqual(["Prelude in C"]);
+  });
+
+  it("explains an empty result instead of showing a blank list", async () => {
+    await mount();
+
+    search().value = "liszt";
+    search().dispatchEvent(new Event("input"));
+
+    expect(list().textContent).toContain("No songs match");
+    expect(titles()).toEqual([]);
+  });
+
+  it("re-sorts by composer, sinking the composer-less packs", async () => {
+    await mount();
+
+    sort().value = "composer";
+    sort().dispatchEvent(new Event("change"));
+
+    expect(titles()).toEqual([
+      "Nocturne Op. 9",
+      "Invention No. 1",
+      "Prelude in C",
+      "(missing title)",
+    ]);
+  });
+
+  it("groups by composer with per-group counts and the unknown bucket last", async () => {
+    await mount();
+
+    group().checked = true;
+    group().dispatchEvent(new Event("change"));
+
+    expect(groupLabels()).toEqual(["Chopin", "J.S. Bach", "Unknown composer"]);
+    const sections = Array.from(list().querySelectorAll("details.songLibraryGroup"));
+    expect(sections[1].querySelectorAll("button.songSelectBtn").length).toBe(2);
+    // The unparseable pack is flagged, not hidden.
+    expect(sections[2].textContent).toContain("1 invalid");
+    expect(status()).toContain("needs attention: 1");
+  });
+
+  it("remembers which composer groups the user collapsed across rerenders", async () => {
+    await mount();
+    group().checked = true;
+    group().dispatchEvent(new Event("change"));
+
+    const chopin = list().querySelector('details[data-group="Chopin"]') as HTMLDetailsElement;
+    chopin.open = false;
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Any rerender (here: a keystroke) must not spring the group open again.
+    search().value = "o";
+    search().dispatchEvent(new Event("input"));
+
+    const after = list().querySelector('details[data-group="Chopin"]') as HTMLDetailsElement;
+    expect(after.open).toBe(false);
+    expect((list().querySelector('details[data-group="J.S. Bach"]') as HTMLDetailsElement).open).toBe(true);
+  });
+
+  it("offers 'Recently added' only when the scan dates the packs", async () => {
+    await mount();
+    expect(Array.from(sort().options).map((o) => o.value)).toEqual([
+      "title",
+      "composer",
+      "duration",
+    ]);
+
+    stageDom();
+    await mount([
+      { ...classical[0], added_at_ms: 1_000 },
+      { ...classical[1], added_at_ms: 9_000 },
+    ]);
+
+    expect(Array.from(sort().options).map((o) => o.value)).toContain("added");
+    sort().value = "added";
+    sort().dispatchEvent(new Event("change"));
+    // Newest first.
+    expect(titles()).toEqual(["Invention No. 1", "Nocturne Op. 9"]);
   });
 });
