@@ -1,0 +1,475 @@
+{
+  "label": "piano-shootout-2026-08-22",
+  "items": [
+    {
+      "id": "center",
+      "name": "Center (Live) \u2014 Bethel Music, Abbie Gamboa",
+      "tier": "song",
+      "instrument": "keys",
+      "case_tags": [
+        "live",
+        "worship",
+        "band_mix",
+        "htdemucs_6s_piano"
+      ],
+      "wav": "D:\\Music\\YouTube\\practice_pack\\Center\\stems\\htdemucs_6s\\piano.wav",
+      "mix": "D:\\Music\\YouTube\\Center (Live) - Bethel Music, Abbie Gamboa [ZKSXhpAi3RE].wav",
+      "midi": null,
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "awaiting official sheet music (MusicXML/MIDI) + chroma-DTW alignment"
+    },
+    {
+      "id": "what_a_god",
+      "name": "What A God \u2014 SEU Worship",
+      "tier": "song",
+      "instrument": "keys",
+      "case_tags": [
+        "studio",
+        "worship",
+        "band_mix",
+        "htdemucs_6s_piano"
+      ],
+      "wav": "D:\\Music\\YouTube\\practice_pack\\What A God\\stems\\htdemucs_6s\\piano.wav",
+      "mix": "D:\\Music\\YouTube\\SEU Worship - What A God (Lyric Video) [HTZVUPhbvvc].wav",
+      "midi": null,
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "awaiting official sheet music (MusicXML/MIDI) + chroma-DTW alignment"
+    },
+    {
+      "id": "king_of_my_heart",
+      "name": "King of My Heart (w spontaneous) \u2014 Steffany Gretzinger, Jeremy Riddle, Christine Rhee",
+      "tier": "song",
+      "instrument": "keys",
+      "case_tags": [
+        "live",
+        "worship",
+        "spontaneous",
+        "long_form",
+        "band_mix",
+        "htdemucs_6s_piano"
+      ],
+      "wav": "D:\\Music\\YouTube\\practice_pack\\King of My Heart\\stems\\htdemucs_6s\\piano.wav",
+      "mix": "D:\\Music\\YouTube\\King of My Heart (w spontaneous) - Steffany Gretzinger, Jeremy Riddle, & Christine Rhee [g6_BLuhr0HQ].wav",
+      "midi": null,
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "awaiting official sheet music (MusicXML/MIDI) + chroma-DTW alignment"
+    },
+    {
+      "id": "king_of_my_heart_edit",
+      "name": "King of My Heart (edit, chart form) \u2014 Steffany Gretzinger, Jeremy Riddle, Christine Rhee",
+      "tier": "song",
+      "instrument": "keys",
+      "case_tags": [
+        "live",
+        "worship",
+        "band_mix",
+        "htdemucs_6s_piano",
+        "chart_form_edit"
+      ],
+      "wav": "D:\\Music\\YouTube\\practice_pack\\King of My Heart\\stems\\htdemucs_6s_edit\\piano.wav",
+      "mix": "D:\\Music\\YouTube\\practice_pack\\King of My Heart\\King of My Heart (edit).wav",
+      "midi": null,
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "sheet-music alignment target; cropped to one pass through the chart form",
+      "edit_note": "cropped 00:00-06:05.36 (1.2s fade). The full 17:26 take runs the form several times then leaves it: at 06:04 drums drop -29->-86 dBFS and guitar -28->-80 while the piano takes over, and 10:15-11:45 is a near-total band dropout. Chroma self-similarity cannot segment this song (every section matches every other at >0.98 because it is one 4-chord vamp), so the cut is taken from the arrangement: the last beat boundary after the band's final hit."
+    },
+    {
+      "id": "psalm_10_why_piano_instrumental",
+      "name": "Psalm 10 - Why - Piano Instrumental \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\Psalm 10 - Why - Piano Instrumental Stems\\Psalm 10 - Why - Piano Instrumental (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\Psalm 10 - Why - Piano Instrumental Stems\\Psalm 10 - Why - Piano Instrumental (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_10_why_piano",
+      "name": "Psalm 10 - Why - piano \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\Psalm 10 - Why - piano Stems\\Psalm 10 - Why - piano (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\Psalm 10 - Why - piano Stems\\Psalm 10 - Why - piano (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_10_piano_first_person_psalm_10_why_piano",
+      "name": "Psalm 10 - Why - piano (Psalm 10 - piano - first person) \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\Psalm 10 - piano - first person\\Psalm 10 - Why - piano Stems\\Psalm 10 - Why - piano (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\Psalm 10 - piano - first person\\Psalm 10 - Why - piano Stems\\Psalm 10 - Why - piano (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_121_my_help_piano",
+      "name": "Psalm 121 - My Help - Piano \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\Psalm 121 - My Help - Piano Stems\\Psalm 121 - My Help - Piano (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\Psalm 121 - My Help - Piano Stems\\Psalm 121 - My Help - Piano (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_5_every_morning_piano",
+      "name": "Psalm 5 - Every Morning - Piano \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\Psalm 5 - Every Morning - Piano Stems\\Psalm 5 - Every Morning - Piano (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\Psalm 5 - Every Morning - Piano Stems\\Psalm 5 - Every Morning - Piano (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_6_how_long_piano_instrumental",
+      "name": "Psalm 6 - How Long - piano - instrumental \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\Psalm 6 - How Long - piano - instrumental Stems\\Psalm 6 - How Long - piano - instrumental (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\Psalm 6 - How Long - piano - instrumental Stems\\Psalm 6 - How Long - piano - instrumental (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_6_how_long_piano",
+      "name": "Psalm 6 - How Long - piano \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\Psalm 6 - How Long - piano Stems\\Psalm 6 - How Long - piano (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\Psalm 6 - How Long - piano Stems\\Psalm 6 - How Long - piano (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_130_please_hear_me_instrumental",
+      "name": "psalm 130 - Please Hear Me - instrumental \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\psalm 130 - Please Hear Me - instrumental Stems\\psalm 130 - Please Hear Me - instrumental (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\psalm 130 - Please Hear Me - instrumental Stems\\psalm 130 - Please Hear Me - instrumental (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_130_please_hear_me",
+      "name": "psalm 130 - Please Hear Me \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\psalm 130 - Please Hear Me Stems\\psalm 130 - Please Hear Me (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\psalm 130 - Please Hear Me Stems\\psalm 130 - Please Hear Me (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "psalm_5_every_morning_instrumental",
+      "name": "psalm 5 - Every Morning - Instrumental \u2014 Keyboard stem",
+      "tier": "gold",
+      "instrument": "keys",
+      "case_tags": [
+        "piano_only",
+        "suno_reference",
+        "gold_midi",
+        "psalms"
+      ],
+      "wav": "D:\\Psalms\\Piano Psalms\\psalm 5 - Every Morning - Instrumental Stems\\psalm 5 - Every Morning - Instrumental (Keyboard).wav",
+      "mix": null,
+      "midi": "D:\\Psalms\\Piano Psalms\\psalm 5 - Every Morning - Instrumental Stems\\psalm 5 - Every Morning - Instrumental (Keyboard).mid",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "paired Suno stem MIDI; offset calibrated at run time"
+    },
+    {
+      "id": "maestro_domenico_scarlatti_sonata_k_525",
+      "name": "Domenico Scarlatti \u2014 Sonata K. 525 (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2008_MIDI-Unprocessed_09_R3_2008_01-07_ORIG_MID--AUDIO_09_R3_2008_wav--2.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2008_MIDI-Unprocessed_09_R3_2008_01-07_ORIG_MID--AUDIO_09_R3_2008_wav--2.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_domenico_scarlatti_sonata_in_d_minor_k_9_l_413",
+      "name": "Domenico Scarlatti \u2014 Sonata in D Minor, K. 9 L. 413 (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2008_MIDI-Unprocessed_10_R2_2008_01-05_ORIG_MID--AUDIO_10_R2_2008_wav--1.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2008_MIDI-Unprocessed_10_R2_2008_01-05_ORIG_MID--AUDIO_10_R2_2008_wav--1.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_sergei_rachmaninoff_prelude_op_32_no_8_in_a_minor",
+      "name": "Sergei Rachmaninoff \u2014 Prelude Op. 32 No. 8 in A Minor (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2015_MIDI-Unprocessed_R1_D1-9-12_mid--AUDIO-from_mp3_11_R1_2015_wav--5.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2015_MIDI-Unprocessed_R1_D1-9-12_mid--AUDIO-from_mp3_11_R1_2015_wav--5.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_franz_schubert_impromptu_op_90_no_4_in_a_flat_major",
+      "name": "Franz Schubert \u2014 Impromptu Op. 90 No. 4 in A-flat Major (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2015_MIDI-Unprocessed_R2_D1-2-3-6-7-8-11_mid--AUDIO-from_mp3_03_R2_2015_wav--1.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2015_MIDI-Unprocessed_R2_D1-2-3-6-7-8-11_mid--AUDIO-from_mp3_03_R2_2015_wav--1.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_fr_d_ric_chopin_etudes_op_10_nos_9",
+      "name": "Fr\u00e9d\u00e9ric Chopin \u2014 Etudes Op. 10 Nos. 9 (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2011_MIDI-Unprocessed_24_R1_2011_MID--AUDIO_R1-D9_11_Track11_wav.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2011_MIDI-Unprocessed_24_R1_2011_MID--AUDIO_R1-D9_11_Track11_wav.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_sergei_rachmaninoff_prelude_in_g_sharp_minor_op_32_n",
+      "name": "Sergei Rachmaninoff \u2014 Prelude in G-Sharp Minor,Op. 32 No. 12 (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2011_MIDI-Unprocessed_03_R2_2011_MID--AUDIO_R2-D1_06_Track06_wav.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2011_MIDI-Unprocessed_03_R2_2011_MID--AUDIO_R2-D1_06_Track06_wav.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_claude_debussy_etude_no_7_study_in_chromatic_steps",
+      "name": "Claude Debussy \u2014 Etude No. 7 \"Study in Chromatic Steps\" (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2004_MIDI-Unprocessed_SMF_17_R1_2004_03-06_ORIG_MID--AUDIO_20_R2_2004_12_Track12_wav--1.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2004_MIDI-Unprocessed_SMF_17_R1_2004_03-06_ORIG_MID--AUDIO_20_R2_2004_12_Track12_wav--1.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_fr_d_ric_chopin_etude_op_10_no_12",
+      "name": "Fr\u00e9d\u00e9ric Chopin \u2014 Etude Op. 10 No. 12 (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2015_MIDI-Unprocessed_R1_D1-1-8_mid--AUDIO-from_mp3_06_R1_2015_wav--6.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2015_MIDI-Unprocessed_R1_D1-1-8_mid--AUDIO-from_mp3_06_R1_2015_wav--6.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_alexander_scriabin_etude_op_42_nos_4_5",
+      "name": "Alexander Scriabin \u2014 Etude Op. 42, Nos. 4 & 5 (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2009_MIDI-Unprocessed_02_R1_2009_03-06_ORIG_MID--AUDIO_02_R1_2009_02_R1_2009_04_WAV.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2009_MIDI-Unprocessed_02_R1_2009_03-06_ORIG_MID--AUDIO_02_R1_2009_02_R1_2009_04_WAV.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    },
+    {
+      "id": "maestro_domenico_scarlatti_sonata_in_d_major_k_118",
+      "name": "Domenico Scarlatti \u2014 Sonata in D Major, K. 118 (MAESTRO v3 test)",
+      "tier": "gold_maestro",
+      "instrument": "keys",
+      "case_tags": [
+        "solo_piano",
+        "classical",
+        "disklavier",
+        "maestro_v3",
+        "gold_midi"
+      ],
+      "wav": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2014_MIDI-UNPROCESSED_01-03_R1_2014_MID--AUDIO_01_R1_2014_wav--1.wav",
+      "mix": null,
+      "midi": "D:\\AudioSourceOfTruthData\\maestro_v3_subset\\2014_MIDI-UNPROCESSED_01-03_R1_2014_MID--AUDIO_01_R1_2014_wav--1.midi",
+      "offset_sec": 0.0,
+      "start_sec": 0.0,
+      "duration_sec": null,
+      "reference_note": "MAESTRO v3 Disklavier capture; MIDI is aligned to the audio to ~3 ms by the recording rig. CC BY-NC-SA 4.0, Google Magenta (Hawthorne et al.)."
+    }
+  ]
+}
