@@ -13,6 +13,7 @@
     "./refinement": "./src/refinement.ts",
     "./refineCandidates": "./src/refineCandidates.ts",
     "./packKind": "./src/packKind.ts",
+    "./libraryView": "./src/libraryView.ts",
     "./feedpak": "./src/feedpak/index.ts"
   },
   "dependencies": {
