@@ -183,6 +183,8 @@ shell, and native audio/MIDI:
 | Model | **Spotify · Audio Intelligence Lab** | [**Basic Pitch**](https://github.com/spotify/basic-pitch) — piano / polyphonic melodic transcription | Apache-2.0 |
 | Model | **Qiuqiang Kong / ByteDance + Edwards et al.** | [**piano_transcription_inference**](https://github.com/qiuqiangkong/piano_transcription_inference) plus Edwards robust piano checkpoint — optional PTI piano cleanup path | MIT code / CC BY 4.0 checkpoint |
 | Model | **Kim · Kwon · Nam** | [**D3RM**](https://github.com/hanshounsu/d3rm) — optional external piano transcription research candidate | MIT code / checkpoint license per artifact |
+| Benchmark | **International Audio Laboratories Erlangen** — Müller · Zalkow · Özer · Krause et al. | [**synctoolbox**](https://github.com/meinardmueller/synctoolbox) — MrMsDTW + DLNCO score↔audio alignment for sheet-derived piano references (with [**libfmp**](https://github.com/meinardmueller/libfmp)) | MIT |
+| Benchmark | **MIT Music & Theater Arts** — cuthbertLab | [**music21**](https://github.com/cuthbertLab/music21) — score toolkit pulled in by synctoolbox | BSD-3-Clause |
 | Model | **CPJKU · JKU Linz** — Foscarin · Schlüter · Widmer | [**Beat This!**](https://github.com/CPJKU/beat_this) — beat / downbeat / meter (drives the editor grid) | MIT (code + weights) |
 | Model | **Dream-High / RMVPE contributors** | [**RMVPE**](https://github.com/Dream-High/RMVPE) — optional external vocal F0 scaffold; checkpoint not bundled | Apache-2.0 code / checkpoint license pending review |
 | Model | **MZehren / ADTOF contributors** | [**ADTOF**](https://github.com/MZehren/ADTOF) — optional external drum benchmark engine; not sidecar-bundled | CC BY-NC-SA 4.0 |
@@ -258,6 +260,9 @@ below.*
 | [**museval**](https://github.com/sigsep/sigsep-mus-eval) | SigSep community | MIT |
 | [**beartype**](https://github.com/beartype/beartype) | Cecil Curry | MIT |
 | [**ffmpeg**](https://ffmpeg.org) (bundled binary) | The FFmpeg project | LGPL-2.1+ (dynamic) |
+| [**synctoolbox**](https://github.com/meinardmueller/synctoolbox) (benchmark tool — score↔audio alignment) | International Audio Laboratories Erlangen (Müller · Zalkow · Özer · Krause · Prätzlich · Driedger) | MIT |
+| [**libfmp**](https://github.com/meinardmueller/libfmp) (benchmark tool — synctoolbox dependency) | Meinard Müller · Frank Zalkow | MIT |
+| [**music21**](https://github.com/cuthbertLab/music21) (benchmark tool — synctoolbox dependency) | cuthbertLab, MIT Music & Theater Arts | BSD-3-Clause |
 | [**PyInstaller**](https://github.com/pyinstaller/pyinstaller) (build tool) | PyInstaller Development Team | GPL-2.0+ w/ bootloader exception |
 
 ### Desktop app, frontend & build
@@ -412,7 +417,7 @@ canonical event list the `gt-benchmark` runner consumes live under
 | **Drums** | [**E-GMD v1.0.0**](https://magenta.withgoogle.com/datasets/e-gmd) — Expanded Groove MIDI Dataset (Google Magenta; 444.5 h, 45k sequences, 43 kits) | CC BY 4.0 | per-class onset F1 (kick / snare / hi-hat / toms / cymbals), stratified across style · drummer · tempo |
 | **Bass** | [**GuitarSet**](https://zenodo.org/records/3371780) — low strings (hex-debleeded E/A), used as a bass proxy | CC BY 4.0 | monophonic low-register pitch F1 |
 | **Guitar** | [**GuitarSet**](https://zenodo.org/records/3371780) (mic) + [**Guitar-TECHS**](https://zenodo.org/records/14963133) (direct-input + amp-mic electric) | CC BY 4.0 | acoustic + electric note F1, lead vs rhythm |
-| **Keys / piano** | in-house synthetic corpus (authored MIDI → rendered WAV) · optional [**MAESTRO v3.0.0**](https://magenta.tensorflow.org/datasets/maestro) for real grand-piano timbre | project-owned · CC BY-NC-SA 4.0 | isolated-note lower bound (synthetic) → realistic-timbre ceiling (MAESTRO, gated on `AURAL_MAESTRO_ROOT`) |
+| **Keys / piano** | in-house synthetic corpus (authored MIDI → rendered WAV) · paired Suno keyboard stems with reference MIDI · [**MAESTRO v3.0.0**](https://magenta.tensorflow.org/datasets/maestro) test subset (10 pieces, 19.7 min, Disklavier-aligned) | project-owned · CC BY-NC-SA 4.0 | isolated-note lower bound (synthetic) → worship-idiom accuracy (Suno stems) → canonical solo-piano accuracy comparable to published numbers (MAESTRO) |
 
 Datasets carry attribution obligations (the CC BY family) — this table
 is that attribution; keep it in sync when a benchmark round adds a corpus.
