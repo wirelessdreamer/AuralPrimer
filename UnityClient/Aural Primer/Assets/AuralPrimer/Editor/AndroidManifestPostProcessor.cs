@@ -43,6 +43,12 @@ namespace AuralPrimer.EditorTools
             "android.permission.ACCESS_NETWORK_STATE",
             // Hand tracking on Horizon OS.
             "com.oculus.permission.HAND_TRACKING",
+            // Voice search records a few seconds of speech and sends it to the
+            // host to transcribe. Android gates this one behind a runtime
+            // prompt as well as the manifest, so Microphone.Start returns null
+            // until the user has actually granted it -- see the wizard, which
+            // reports that rather than appearing to record nothing.
+            "android.permission.RECORD_AUDIO",
         };
 
         public void OnPostGenerateGradleAndroidProject(string path)

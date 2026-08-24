@@ -1,6 +1,6 @@
 //! AuralSong `manifest.json` parsing shared by both Tauri shells.
 //!
-//! The parser is intentionally permissive: it pulls out the five summary fields
+//! The parser is intentionally permissive: it pulls out the summary fields
 //! the library panel renders and leaves everything else untyped. A wrong field
 //! type degrades to `None` rather than an error (see the regression tests).
 
@@ -9,13 +9,14 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-/// Best-effort summary of the five fields the library panel renders.
+/// Best-effort summary of the fields the library panel renders and filters on.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ManifestSummary {
     pub schema_version: Option<String>,
     pub song_id: Option<String>,
     pub title: Option<String>,
     pub artist: Option<String>,
+    pub genre: Option<String>,
     pub duration_sec: Option<f64>,
 }
 
@@ -63,6 +64,10 @@ pub fn parse_manifest_json(raw: &str) -> Result<ManifestSummary, String> {
             .map(|s| s.to_string()),
         artist: v
             .get("artist")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string()),
+        genre: v
+            .get("genre")
             .and_then(|x| x.as_str())
             .map(|s| s.to_string()),
         duration_sec: v.get("duration_sec").and_then(|x| x.as_f64()),

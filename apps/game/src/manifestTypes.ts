@@ -15,5 +15,6 @@ export type ManifestSummary = {
   song_id?: string;
   title?: string;
   artist?: string;
+  genre?: string;
   duration_sec?: number;
 };

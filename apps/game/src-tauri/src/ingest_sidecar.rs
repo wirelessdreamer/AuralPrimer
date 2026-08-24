@@ -635,6 +635,63 @@ pub fn run_ingest_runtime_check(
     run_tauri_sidecar_capture(app, &args)
 }
 
+/// Transcribe a spoken search query from the MR client (protocol §6).
+///
+/// The audio arrives as WAV bytes over a socket and the sidecar takes a path,
+/// so it lands in a temp file on the way through. The file is removed whatever
+/// happens: these are a few seconds of the user's speech, and leaving them
+/// accumulating in the temp directory is not a thing anyone consented to.
+///
+/// Never returns the sidecar's stderr verbatim. That text goes to the headset,
+/// which has a status line rather than a log view, and a Python traceback
+/// rendered there tells the user nothing they can act on.
+pub fn transcribe_voice_query(app: &AppHandle, wav: &[u8]) -> Result<String, String> {
+    if wav.is_empty() {
+        return Err("no audio received".to_string());
+    }
+
+    let path = std::env::temp_dir().join(format!(
+        "auralprimer-voice-{}.wav",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::write(&path, wav).map_err(|e| format!("could not stage the audio: {e}"))?;
+
+    let args = vec![
+        "transcribe-query".to_string(),
+        path.to_string_lossy().to_string(),
+    ];
+    let result = run_tauri_sidecar_capture(app, &args);
+    let _ = std::fs::remove_file(&path);
+
+    let result = result?;
+
+    // The command is built to answer with JSON even when it fails, so a missing
+    // payload means the sidecar itself did not run -- not installed, wrong
+    // architecture, missing runtime.
+    let Some(payload) = result.payload else {
+        eprintln!("mr-link: transcribe-query produced no JSON: {}", result.stderr);
+        return Err("the speech recogniser could not be started".to_string());
+    };
+
+    if payload.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        let reason = payload
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("transcription failed");
+        return Err(reason.to_string());
+    }
+
+    Ok(payload
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

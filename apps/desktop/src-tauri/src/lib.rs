@@ -1685,6 +1685,7 @@ fn feedpak_summary_to_manifest(
         song_id: None,
         title: Some(summary.title.clone()),
         artist: Some(summary.artist.clone()),
+        genre: summary.genre.clone(),
         duration_sec: Some(summary.duration),
     }
 }

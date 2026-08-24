@@ -1243,6 +1243,11 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
         "stems": stem_entries,
         "song_timeline": "song_timeline.json",
     }
+    # Only when the song actually has one. An empty string would filter as a
+    # real genre named "" and quietly collect every untagged song under it.
+    genre = (manifest.get("genre") or "").strip()
+    if genre:
+        fp_manifest["genre"] = genre
     if key_analysis is not None:
         fp_manifest["keys"] = "keys.json"
         fp_manifest["harmony"] = "harmony.json"

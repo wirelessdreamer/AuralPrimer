@@ -47,10 +47,12 @@ namespace AuralPrimer.UI
         [Tooltip("Chakra Petch SemiBold, for body and status copy.")]
         [SerializeField] TMP_FontAsset bodyFont;
 
-        [Tooltip("Panel width in metres. Height follows the canvas aspect. Sized "
-               + "to sit within arm's reach and be touched, rather than to be "
-               + "readable from across the room.")]
-        [SerializeField] float widthMetres = 0.34f;
+        [Tooltip("Panel width in metres. Height follows the canvas aspect, so this "
+               + "scales the whole panel, text and buttons with it. Within arm's "
+               + "reach and meant to be touched rather than read from across the "
+               + "room — but wide enough to browse a song library on, which is what "
+               + "doubled it from the half-metre the calibration steps needed.")]
+        [SerializeField] float widthMetres = 1f;
 
         Canvas _canvas;
         TextMeshProUGUI _title;
@@ -65,6 +67,9 @@ namespace AuralPrimer.UI
         bool _suppressScrubCallback;
         readonly List<GameObject> _buttons = new();
         string[] _buttonLabels = System.Array.Empty<string>();
+        RectTransform _listRow;
+        readonly List<GameObject> _listItems = new();
+        string[] _listLabels = System.Array.Empty<string>();
         bool _placed;
         float _waitedSeconds;
 
@@ -298,6 +303,151 @@ namespace AuralPrimer.UI
             }
         }
 
+        /// <summary>
+        /// Show a vertical list of things to pick from, or hide it when empty.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="SetButtons"/> because the two are different
+        /// shapes of choice. A button row splits one fixed width between its
+        /// entries, which is right for three or four short verbs and wrong for
+        /// song titles: at five entries each label gets 180 px and every title
+        /// reads as an abbreviation. A list gives each row the full width and
+        /// stacks them instead.
+        ///
+        /// Rows are not scrollable. Paging is the caller's job, and deliberately
+        /// so — a scroll view inside a world-space canvas needs a drag that the
+        /// hand ray also uses to grab the panel itself, so the two gestures
+        /// fight. Pages have no such ambiguity.
+        /// </remarks>
+        public void SetList(params (string label, string detail, Action onPress)[] rows)
+        {
+            var labels = new string[rows?.Length ?? 0];
+            for (var i = 0; i < labels.Length; i++)
+            {
+                // Detail is part of the identity: two songs can share a title
+                // and differ only by artist, and swapping just the closures
+                // would leave the wrong one wired up.
+                labels[i] = rows[i].label + "\u241F" + rows[i].detail;
+            }
+
+            if (_listItems.Count == labels.Length && SameListLabels(labels))
+            {
+                for (var i = 0; i < _listItems.Count; i++)
+                {
+                    if (_listItems[i] == null) continue;
+                    if (!_listItems[i].TryGetComponent<UnityEngine.UI.Button>(out var existing)) continue;
+                    existing.onClick.RemoveAllListeners();
+                    var press = rows[i].onPress;
+                    existing.onClick.AddListener(() => press?.Invoke());
+                }
+                return;
+            }
+
+            foreach (var item in _listItems)
+            {
+                if (item == null) continue;
+                if (Application.isPlaying) Destroy(item); else DestroyImmediate(item);
+            }
+            _listItems.Clear();
+            _listLabels = labels;
+
+            if (rows == null || rows.Length == 0)
+            {
+                if (_listRow != null) _listRow.gameObject.SetActive(false);
+                if (_body != null) _body.gameObject.SetActive(true);
+                return;
+            }
+
+            _listRow.gameObject.SetActive(true);
+            // The list stands in for the body, not beside it.
+            if (_body != null) _body.gameObject.SetActive(false);
+
+            var count = Mathf.Min(rows.Length, ListRowsPerPage);
+            for (var i = 0; i < count; i++)
+            {
+                var (label, detail, onPress) = rows[i];
+
+                var rect = NewChild(_listRow, $"Row {i}");
+                // Stretched across, stacked from the top down.
+                rect.anchorMin = new Vector2(0f, 1f);
+                rect.anchorMax = new Vector2(1f, 1f);
+                rect.pivot = new Vector2(0.5f, 1f);
+                rect.offsetMin = new Vector2(0f, 0f);
+                rect.offsetMax = new Vector2(0f, 0f);
+                rect.anchoredPosition = new Vector2(0f, -i * (ListRowHeight + ListRowGap));
+                rect.sizeDelta = new Vector2(0f, ListRowHeight);
+
+                var image = rect.gameObject.AddComponent<UnityEngine.UI.Image>();
+                image.color = new Color(0.482f, 0.247f, 0.949f, 0.16f); // violet fill
+                image.raycastTarget = true;
+
+                var button = rect.gameObject.AddComponent<UnityEngine.UI.Button>();
+                button.targetGraphic = image;
+                var colors = button.colors;
+                colors.highlightedColor = new Color(0.482f, 0.247f, 0.949f, 0.55f); // violet, hot
+                colors.pressedColor = new Color(0.208f, 0.941f, 1f, 1f); // cyan - acting now
+                button.colors = colors;
+
+                var press = onPress;
+                var pressedLabel = label;
+                button.onClick.AddListener(() =>
+                {
+                    Debug.Log($"[panel] picked {pressedLabel}");
+                    press?.Invoke();
+                });
+
+                // Left-aligned and sentence case: these are names, not verbs,
+                // and the upper-case treatment the button row uses makes a list
+                // of titles much harder to scan.
+                var text = NewText(rect, "Label", 32, FontStyles.Normal, Vector2.zero, Vector2.zero);
+                var textRect = (RectTransform)text.transform;
+                Stretch(textRect);
+                textRect.offsetMin = new Vector2(20f, 0f);
+                textRect.offsetMax = new Vector2(-20f, 0f);
+                text.text = label;
+                text.alignment = TextAlignmentOptions.Left;
+                text.enableAutoSizing = true;
+                text.fontSizeMin = 20f;
+                text.fontSizeMax = 32f;
+                text.overflowMode = TextOverflowModes.Ellipsis;
+                text.color = new Color(0.886f, 0.816f, 1f);
+
+                if (!string.IsNullOrEmpty(detail))
+                {
+                    var right = NewText(rect, "Detail", 26, FontStyles.Normal,
+                                        Vector2.zero, Vector2.zero);
+                    var rightRect = (RectTransform)right.transform;
+                    Stretch(rightRect);
+                    rightRect.offsetMin = new Vector2(20f, 0f);
+                    rightRect.offsetMax = new Vector2(-20f, 0f);
+                    right.text = detail;
+                    right.alignment = TextAlignmentOptions.Right;
+                    right.enableAutoSizing = true;
+                    right.fontSizeMin = 16f;
+                    right.fontSizeMax = 26f;
+                    // Dimmer than the name: it is there to disambiguate two
+                    // similar titles, not to compete with them.
+                    right.color = new Color(0.886f, 0.816f, 1f, 0.55f);
+                    // The label already takes the ray; a second graphic over it
+                    // would swallow presses aimed at the right-hand end.
+                    right.raycastTarget = false;
+                }
+
+                text.raycastTarget = false;
+                _listItems.Add(rect.gameObject);
+            }
+        }
+
+        bool SameListLabels(string[] labels)
+        {
+            if (_listLabels.Length != labels.Length) return false;
+            for (var i = 0; i < labels.Length; i++)
+            {
+                if (!string.Equals(_listLabels[i], labels[i], StringComparison.Ordinal)) return false;
+            }
+            return true;
+        }
+
         // Canvas coordinates, measured from its centre; the canvas is 620 tall,
         // so this runs +310 at the top to -310 at the bottom. Laid out as one
         // top-to-bottom stack with no overlaps, because the previous values put
@@ -317,6 +467,21 @@ namespace AuralPrimer.UI
         const float ButtonRowTop = -202f;
         /// <summary>Top of the scrub strip, when one is shown.</summary>
         const float ScrubRowTop = -152f;
+
+        /// <summary>The list fills the body's band, between title and buttons.</summary>
+        const float ListHeight = BodyTop - ButtonRowTop;
+        const float ListCentre = (BodyTop + ButtonRowTop) / 2f;
+
+        /// <summary>Row height and gap. Five rows is what the band holds.</summary>
+        const float ListRowHeight = 56f;
+        const float ListRowGap = 6f;
+
+        /// <summary>How many rows a page of a list may have.</summary>
+        /// <remarks>
+        /// Public because the caller has to page its data to match: asking for
+        /// more than this would silently draw them off the bottom of the panel.
+        /// </remarks>
+        public const int ListRowsPerPage = 5;
 
         /// <summary>Move the body's lower edge, holding its top in place.</summary>
         /// <summary>
@@ -427,6 +592,18 @@ namespace AuralPrimer.UI
             _status = NewText(canvasGo.transform, "Status", 30, FontStyles.Normal,
                               new Vector2(0f, 227f), new Vector2(920f, 46f));
             _status.alignment = TextAlignmentOptions.Center;
+
+            // --- List ---------------------------------------------------
+            // Occupies the body's space, because a list and a paragraph are
+            // alternatives: a step either explains something or offers a set of
+            // things to pick from, and drawing both would overlap them.
+            _listRow = NewChild(canvasGo.transform, "List");
+            _listRow.anchorMin = new Vector2(0.5f, 0.5f);
+            _listRow.anchorMax = new Vector2(0.5f, 0.5f);
+            _listRow.pivot = new Vector2(0.5f, 0.5f);
+            _listRow.anchoredPosition = new Vector2(0f, ListCentre);
+            _listRow.sizeDelta = new Vector2(920f, ListHeight);
+            _listRow.gameObject.SetActive(false);
 
             // --- Button row ---------------------------------------------
             // Above the drag handle, so a press near the bottom edge cannot be

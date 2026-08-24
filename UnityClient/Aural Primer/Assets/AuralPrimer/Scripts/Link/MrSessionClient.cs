@@ -34,6 +34,8 @@ namespace AuralPrimer.Link
         readonly object _notesLock = new();
         readonly List<(byte pitch, byte velocity)> _heldNotes = new();
         readonly ConcurrentQueue<string> _charts = new();
+        readonly ConcurrentQueue<string> _libraryPages = new();
+        readonly ConcurrentQueue<string> _voiceResults = new();
 
         TcpClient _tcp;
         NetworkStream _stream;
@@ -78,6 +80,22 @@ namespace AuralPrimer.Link
 
         /// <summary>Dequeue a chart delivered by the host, if any.</summary>
         public bool TryDequeueChart(out string chartJson) => _charts.TryDequeue(out chartJson);
+
+        public bool TryDequeueLibraryPage(out string json) => _libraryPages.TryDequeue(out json);
+
+        public bool TryDequeueVoiceResult(out string json) => _voiceResults.TryDequeue(out json);
+
+        /// <summary>Optional frames this host said it implements, from WELCOME.</summary>
+        /// <remarks>
+        /// Empty until WELCOME lands, and empty forever against a host built
+        /// before these frames existed. Callers must treat "not listed" as "do
+        /// not offer it" rather than trying and waiting: an old host ignores an
+        /// unknown frame silently, so the reply would simply never arrive.
+        /// </remarks>
+        public bool HostSupports(string feature) =>
+            _features != null && Array.IndexOf(_features, feature) >= 0;
+
+        string[] _features = Array.Empty<string>();
 
         public void Connect(HostEndpoint host)
         {
@@ -145,6 +163,63 @@ namespace AuralPrimer.Link
             stream.Write(frame, 0, frame.Length);
             stream.Flush();
         }
+
+        /// <summary>Ask the host for a page of its song library.</summary>
+        public void RequestLibrary(LibraryQuery query)
+        {
+            if (!IsConnected) return;
+            try
+            {
+                Send(MrProtocol.FrameLibraryRequest, Encoding.UTF8.GetBytes(query.ToJson()));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[mr-link] library request failed: {e.Message}");
+            }
+        }
+
+        /// <summary>Ask the host to load a song.</summary>
+        /// <remarks>
+        /// There is deliberately no reply to wait for. "The song changed" is
+        /// already a fact the host broadcasts, and a second acknowledgement
+        /// would give the headset two sources of truth about what is loaded.
+        /// </remarks>
+        public void SelectSong(string songId)
+        {
+            if (!IsConnected || string.IsNullOrEmpty(songId)) return;
+            try
+            {
+                var json = "{\"songId\":\"" + EscapeJson(songId) + "\"}";
+                Send(MrProtocol.FrameSelectSong, Encoding.UTF8.GetBytes(json));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[mr-link] song selection failed: {e.Message}");
+            }
+        }
+
+        /// <summary>Send recorded speech for the host to transcribe.</summary>
+        public void SendVoiceQuery(byte[] wav)
+        {
+            if (!IsConnected || wav == null || wav.Length == 0) return;
+            try
+            {
+                Send(MrProtocol.FrameVoiceQuery, wav);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[mr-link] voice query failed: {e.Message}");
+            }
+        }
+
+        /// <summary>Escape a string for the small JSON objects built here.</summary>
+        /// <remarks>
+        /// Song ids are Windows paths, so they arrive full of backslashes. Sent
+        /// raw they would form escape sequences the host cannot parse, and the
+        /// selection would silently do nothing.
+        /// </remarks>
+        static string EscapeJson(string text) =>
+            text.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
         /// <summary>Ask the host to change transport state. The host stays the
         /// authority; this is a request, not a command.</summary>
@@ -302,6 +377,14 @@ namespace AuralPrimer.Link
                 case MrProtocol.FrameSongChanged:
                     // The chart follows; nothing to do but wait for it.
                     break;
+
+                case MrProtocol.FrameLibrary:
+                    _libraryPages.Enqueue(Encoding.UTF8.GetString(payload));
+                    break;
+
+                case MrProtocol.FrameVoiceResult:
+                    _voiceResults.Enqueue(Encoding.UTF8.GetString(payload));
+                    break;
             }
         }
 
@@ -313,6 +396,7 @@ namespace AuralPrimer.Link
             HostName = ExtractString(json, "host") ?? "host";
             var udpPort = (int)(ExtractNumber(json, "udpPort") ?? 0);
             Clock.AudioOffsetSec = ExtractNumber(json, "audioOffsetSec") ?? 0.0;
+            _features = ExtractStringArray(json, "features");
 
             if (_udp == null)
             {
@@ -372,6 +456,38 @@ namespace AuralPrimer.Link
             start += marker.Length;
             var end = json.IndexOf('"', start);
             return end < 0 ? null : json.Substring(start, end - start);
+        }
+
+        /// <summary>Pull a flat array of strings out of the WELCOME payload.</summary>
+        /// <remarks>
+        /// Same minimal scan as the fields beside it, for the same reason: this
+        /// is one known key in a known shape and a JSON dependency would be more
+        /// surface than it is worth. An absent key yields an empty array rather
+        /// than null, so "this host is too old to say" and "this host offers
+        /// nothing optional" land on the same, safe answer.
+        /// </remarks>
+        static string[] ExtractStringArray(string json, string key)
+        {
+            var marker = $"\"{key}\":[";
+            var start = json.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0) return Array.Empty<string>();
+            start += marker.Length;
+
+            var end = json.IndexOf(']', start);
+            if (end < 0) return Array.Empty<string>();
+
+            var values = new List<string>();
+            var at = start;
+            while (at < end)
+            {
+                var open = json.IndexOf('"', at);
+                if (open < 0 || open > end) break;
+                var close = json.IndexOf('"', open + 1);
+                if (close < 0 || close > end) break;
+                values.Add(json.Substring(open + 1, close - open - 1));
+                at = close + 1;
+            }
+            return values.ToArray();
         }
 
         static double? ExtractNumber(string json, string key)

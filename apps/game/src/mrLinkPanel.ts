@@ -19,6 +19,11 @@ const STORAGE_KEY = "auralprimer.mrLinkEnabled";
 /** Publishing every frame would be wasteful; the headset disciplines its own
  * clock from these, and 30 Hz is far more than that needs. */
 const PUBLISH_INTERVAL_MS = 33;
+/** How often to ask whether the headset picked a song. Polled rather than
+ * pushed because the link runs on its own thread in Rust with no channel
+ * back into the webview; twice a second is imperceptible for a menu press
+ * and costs a directory scan nobody notices. */
+const SELECTION_POLL_MS = 500;
 
 export type MrLinkStatus = { running: boolean; host?: string };
 
@@ -76,13 +81,21 @@ export function buildChart(
   };
 }
 
-export function initMrLinkPanel(): MrLinkPanelHandle {
+/**
+ *  onSongRequested Called with a container path when the headset picks
+ *   a song from its Songs menu. Already validated host-side against the real
+ *   library, so it is safe to load directly.
+ */
+export function initMrLinkPanel(
+  onSongRequested?: (containerPath: string) => void,
+): MrLinkPanelHandle {
   const toggle = document.getElementById("mrLinkEnabled") as HTMLInputElement | null;
   const statusEl = document.getElementById("mrLinkStatus");
 
   let enabled = readEnabled();
   let lastPublish = 0;
   let lastChartJson: string | null = null;
+  let selectionTimer: ReturnType<typeof setInterval> | null = null;
 
   function setStatus(text: string): void {
     if (statusEl && statusEl.textContent !== text) statusEl.textContent = text;
@@ -101,6 +114,26 @@ export function initMrLinkPanel(): MrLinkPanelHandle {
     }
   }
 
+  function pollSelection(): void {
+    if (selectionTimer !== null) return;
+    selectionTimer = setInterval(() => {
+      void invoke<string | null>("mr_link_take_selection")
+        .then((containerPath) => {
+          if (containerPath) onSongRequested?.(containerPath);
+        })
+        .catch(() => {
+          // The link may be stopping; the next tick either works or the
+          // timer is cleared. Not worth a log line twice a second.
+        });
+    }, SELECTION_POLL_MS);
+  }
+
+  function stopPollingSelection(): void {
+    if (selectionTimer === null) return;
+    clearInterval(selectionTimer);
+    selectionTimer = null;
+  }
+
   async function apply(): Promise<void> {
     try {
       if (enabled) {
@@ -108,7 +141,9 @@ export function initMrLinkPanel(): MrLinkPanelHandle {
         // Re-push whatever we already know, so a link started mid-session is
         // not blank until the next song change.
         if (lastChartJson) await invoke("mr_link_set_chart", { chartJson: lastChartJson });
+        pollSelection();
       } else {
+        stopPollingSelection();
         await invoke("mr_link_stop");
       }
     } catch (e) {

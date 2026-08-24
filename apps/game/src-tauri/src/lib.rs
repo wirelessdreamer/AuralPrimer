@@ -1477,6 +1477,7 @@ fn feedpak_manifest_summary(m: &FeedpakManifest) -> ManifestSummary {
         song_id: None,
         title: Some(m.title.clone()),
         artist: Some(m.artist.clone()),
+        genre: m.genre.clone(),
         duration_sec: Some(m.duration),
     }
 }
@@ -2461,6 +2462,7 @@ pub fn run() {
             mr_link_stop,
             mr_link_status,
             mr_link_publish,
+            mr_link_take_selection,
             mr_link_set_chart,
             mr_link_set_audio_offset,
             midi_transport_bindings_get,
@@ -2984,7 +2986,10 @@ fn midi_clock_input_stop(state: tauri::State<MidiClockInputState>) -> Result<(),
 /// still reads as disconnected rather than showing a phantom connection.
 /// Start advertising and serving the mixed-reality client.
 #[tauri::command]
-fn mr_link_start(state: tauri::State<MrLinkState>) -> Result<serde_json::Value, String> {
+fn mr_link_start(
+    app: AppHandle,
+    state: tauri::State<MrLinkState>,
+) -> Result<serde_json::Value, String> {
     let mut slot = state.link.lock().unwrap();
     if let Some(link) = slot.as_ref() {
         // Idempotent: starting twice should report the running link, not bind a
@@ -2993,8 +2998,88 @@ fn mr_link_start(state: tauri::State<MrLinkState>) -> Result<serde_json::Value, 
     }
     let host_name = hostname_or_default();
     let link = mr_link::MrLink::start(host_name.clone()).map_err(|e| e.to_string())?;
+
+    // Let the headset browse the library. Answered from the same scan the
+    // desktop library panel uses, so the two can never disagree about what is
+    // in the folder or how a song is described.
+    let library_app = app.clone();
+    link.state
+        .set_library_provider(Some(Box::new(move || library_songs(&library_app))));
+
+    // Voice search. The headset records; this machine listens, because it is
+    // the one with a recogniser and the one holding the library being searched.
+    let voice_app = app.clone();
+    link.state.set_transcriber(Some(Box::new(move |wav| {
+        ingest_sidecar::transcribe_voice_query(&voice_app, wav)
+    })));
+
     *slot = Some(link);
     Ok(serde_json::json!({ "running": true, "host": host_name }))
+}
+
+/// The song library as the headset lists it.
+///
+/// Built on `scan_auralsongs` rather than on a second directory walk: one
+/// scanner means the headset and the desktop can never disagree about what
+/// counts as a song. Unreadable containers are dropped, because the headset is
+/// offering a list to pick from and an entry that cannot be loaded is worse
+/// than an entry that is simply not there.
+fn library_songs(app: &AppHandle) -> Vec<mr_link::protocol::LibrarySong> {
+    let entries = match scan_auralsongs(app.clone()) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!("mr-link: library scan failed: {e}");
+            return Vec::new();
+        }
+    };
+
+    entries
+        .into_iter()
+        .filter(|e| e.ok)
+        .map(|e| {
+            let manifest = e.manifest.unwrap_or_default();
+            // A pack with no title still has to be pickable; "" is not
+            // something anyone can aim a hand ray at.
+            let title = manifest
+                .title
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| {
+                    PathBuf::from(&e.container_path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| e.container_path.clone())
+                });
+            mr_link::protocol::LibrarySong {
+                song_id: e.container_path,
+                title,
+                artist: manifest.artist.filter(|a| !a.trim().is_empty()),
+                genre: manifest.genre.filter(|g| !g.trim().is_empty()),
+                duration_sec: manifest.duration_sec,
+            }
+        })
+        .collect()
+}
+
+/// Hand the frontend the song the headset asked for, if any.
+///
+/// The id is checked against a fresh scan before it is returned. It is a path
+/// this host handed out, but it comes back over a socket and a client is free
+/// to send whatever it likes -- opening an arbitrary path supplied by a network
+/// peer is exactly how you end up being asked to load something outside the
+/// songs folder. Anything that is not currently in the library is dropped.
+#[tauri::command]
+fn mr_link_take_selection(app: AppHandle, state: tauri::State<MrLinkState>) -> Option<String> {
+    let wanted = {
+        let slot = state.link.lock().unwrap();
+        slot.as_ref()?.state.take_pending_selection()?
+    };
+
+    if library_songs(&app).iter().any(|s| s.song_id == wanted) {
+        Some(wanted)
+    } else {
+        eprintln!("mr-link: ignoring selection of unknown song {wanted}");
+        None
+    }
 }
 
 #[tauri::command]

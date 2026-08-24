@@ -89,6 +89,7 @@ def build_feedpak_from_musicxml(
     audio_path: str | Path | None = None,
     title: str | None = None,
     artist: str | None = None,
+    genre: str | None = None,
 ) -> dict[str, Any]:
     """Parse a MusicXML score and write a ``.feedpak`` under ``out_dir``.
 
@@ -145,6 +146,7 @@ def build_feedpak_from_musicxml(
     manifest = {
         "title": pack_title,
         "artist": pack_artist,
+        "genre": (genre or "").strip(),
         "duration_sec": duration,
         "source": "musicxml",
         "assets": assets,
