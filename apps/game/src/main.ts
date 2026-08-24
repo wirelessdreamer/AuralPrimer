@@ -2,6 +2,7 @@ import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import { isManifestPack } from "@auralprimer/auralsong/packKind";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
+import { inferKeySignature } from "@auralprimer/viz-tab";
 import { TransportController } from "./transportController";
 import { initAvCalibration } from "@auralprimer/av-sync";
 import {
@@ -921,7 +922,15 @@ async function selectAuralSong(containerPath: string) {
     // Chord names for the roll, from the same track the piano surface renders.
     const chordTrack =
       selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
-    songChordLabels = chordTrack ? chordLabels(chordTrack.notes) : [];
+    // Spell chords the way the key does. Without this every chord came out
+    // sharp regardless of key, so A minor showed "C/A#" where the note is Bb.
+    // Minor counts as flat-side even on a natural tonic (b3/b6/b7 are diatonic).
+    const chordKey = chordTrack ? inferKeySignature(chordTrack.notes) : null;
+    const chordSpelling =
+      chordKey && (chordKey.noteLabelStyle === "flat" || chordKey.mode === "minor")
+        ? "flat"
+        : "sharp";
+    songChordLabels = chordTrack ? chordLabels(chordTrack.notes, chordSpelling) : [];
 
     // Hand the headset this song's chart. Prefers keys, since that is what the
     // MR client renders against a real keyboard.

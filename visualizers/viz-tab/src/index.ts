@@ -235,16 +235,23 @@ export function midiToNoteName(pitch: number, style: NoteLabelStyle = "sharp"): 
 // plain numbers; chromatic degrees are spelled as a flat or sharp of the
 // nearest degree, chosen by the key's note-label convention.
 //
-// Minor-key decision: degrees are spelled relative to the *relative major*
-// is NOT used. Instead we number against the actual minor tonic using the
-// natural-minor scale (1 2 b3 4 5 b6 b7). This is what musicians playing in
-// a minor key expect — the tonic is "1" and the minor third is "b3". The
-// `pitchClass` from inferKeySignature is the minor tonic's pitch class, so
-// no relative-major remapping is needed.
-const NASHVILLE_MAJOR_SHARP = ["1", "#1", "2", "#2", "3", "4", "#4", "5", "#5", "6", "#6", "7"];
-const NASHVILLE_MAJOR_FLAT = ["1", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7"];
-const NASHVILLE_MINOR_SHARP = ["1", "#1", "2", "3", "#3", "4", "#4", "5", "6", "#6", "7", "#7"];
-const NASHVILLE_MINOR_FLAT = ["1", "b2", "2", "3", "b4", "4", "b5", "5", "b6", "6", "b7", "b8"];
+// Minor-key decision: relative-major numbering is NOT used. We number against
+// the actual minor tonic using the natural-minor scale (1 2 b3 4 5 b6 b7) —
+// the tonic is "1" and the minor third is "b3", which is what a minor-key
+// chart shows. `pitchClass` from inferKeySignature is the minor tonic's pitch
+// class, so no relative-major remapping is needed.
+//
+// The semitone -> label mapping is therefore the SAME in both modes: what
+// changes between major and minor is which degrees are diatonic, not what each
+// degree is called. One table per accidental style, used by both modes.
+//
+// The minor tables used to differ, and were wrong three ways: they labelled the
+// minor third "3" (contradicting the comment above), the natural third "b4",
+// and index 11 "b8" — which is not a Nashville degree at all. In A minor that
+// spelled Bb as "#1"; a raised tonic is vanishingly rare, while b2 (the
+// Neapolitan) is ordinary.
+const NASHVILLE_SHARP = ["1", "#1", "2", "#2", "3", "4", "#4", "5", "#5", "6", "#6", "7"];
+const NASHVILLE_FLAT = ["1", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7"];
 
 /**
  * Map a MIDI pitch to its Nashville scale-degree label relative to the
@@ -256,16 +263,12 @@ const NASHVILLE_MINOR_FLAT = ["1", "b2", "2", "3", "b4", "4", "b5", "5", "b6", "
 export function pitchToNashville(pitch: number, analysis: KeySignatureAnalysis | null): string | null {
   if (!analysis) return null;
   const degree = mod(pitch - analysis.pitchClass, 12);
-  const useFlat = analysis.noteLabelStyle === "flat";
-  const table =
-    analysis.mode === "minor"
-      ? useFlat
-        ? NASHVILLE_MINOR_FLAT
-        : NASHVILLE_MINOR_SHARP
-      : useFlat
-        ? NASHVILLE_MAJOR_FLAT
-        : NASHVILLE_MAJOR_SHARP;
-  return table[degree];
+  // Minor keys read as flat-side even when the tonic has no accidental: b3, b6
+  // and b7 are diatonic there, so spelling their neighbours with sharps fights
+  // the key. A natural-tonic minor (A minor) would otherwise take the sharp
+  // table and render Bb as "#1".
+  const useFlat = analysis.noteLabelStyle === "flat" || analysis.mode === "minor";
+  return (useFlat ? NASHVILLE_FLAT : NASHVILLE_SHARP)[degree];
 }
 
 function roundRectPath(
