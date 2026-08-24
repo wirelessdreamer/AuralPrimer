@@ -2399,3 +2399,34 @@ def test_transcribe_drums_mt3_suppresses_known_runtime_warnings(tmp_path: Path, 
     assert [event.note for event in events] == [36]
     assert meta["modelpack_id"] == "yourmt3"
     assert caught == []
+
+
+def test_keys_only_method_does_not_hijack_other_instruments() -> None:
+    """An explicit piano engine must apply to keys only.
+
+    ``--melodic-method`` builds one instrument-agnostic chain, so before this
+    guard a keys-focused override was also handed the bass, guitar and vocal
+    stems. On a real import that dropped bass to 0.50 and returned 81 notes for
+    a 17-minute vocal.
+    """
+    from aural_ingest.transcription import melodic_fallback_chain
+
+    assert melodic_fallback_chain("piano_transkun", instrument="keys")[0] == "piano_transkun"
+
+    for instrument in ("bass", "vocals", "lead_guitar", "rhythm_guitar"):
+        chain = melodic_fallback_chain("piano_transkun", instrument=instrument)
+        assert chain == melodic_fallback_chain("auto", instrument=instrument)
+        assert not chain[0].startswith("piano_")
+
+
+def test_keys_only_method_guard_leaves_non_piano_overrides_global() -> None:
+    """Only piano engines are keys-scoped; other explicit overrides are unchanged."""
+    from aural_ingest.transcription import keys_only_melodic_method, melodic_fallback_chain
+
+    assert keys_only_melodic_method("piano_transkun") is True
+    assert keys_only_melodic_method("piano_auto") is True
+    assert keys_only_melodic_method("torchcrepe") is False
+    assert keys_only_melodic_method("auto") is False
+
+    assert melodic_fallback_chain("torchcrepe", instrument="bass")[0] == "torchcrepe"
+    assert melodic_fallback_chain("torchcrepe", instrument="keys")[0] == "torchcrepe"
