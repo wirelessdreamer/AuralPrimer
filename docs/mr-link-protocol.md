@@ -125,6 +125,7 @@ than trusted.
 | `0x14` | `SELECT_SONG` | headset → host | JSON: `{ "songId": string }` |
 | `0x15` | `VOICE_QUERY` | headset → host | WAV bytes, see §6 |
 | `0x16` | `VOICE_RESULT` | host → headset | JSON: `{ "text": string, "error": string? }` |
+| `0x17` | `KEYBOARD_LAYOUT` | headset → host | JSON, see §7 |
 | `0x20` | `PING` | headset → host | `u64` client send time |
 | `0x21` | `PONG` | host → headset | `u64` echoed client time, `u64` host time at reply |
 | `0x30` | `TRANSPORT` | headset → host | JSON: `{ "action": "play"\|"pause"\|"stop"\|"seek", "tSec": f64? }` |
@@ -352,7 +353,40 @@ which keeps the protocol version at `1`.
 
 ---
 
-## 7. Versioning
+## 7. Keyboard layout
+
+```json
+{ "lowestPitch": 36, "highestPitch": 96, "dropOutOfRange": true }
+```
+
+Sent by the headset after `WELCOME`, and again whenever the calibration
+changes. The host may never receive one — an older client does not send it,
+and a client that has not been calibrated yet has nothing to say.
+
+**This exists because the two ends were free to disagree about which notes are
+playable, and did.** The headset knows the physical instrument's range: the
+player pinched its two ends. It draws only what fits, folding or dropping the
+rest per `dropOutOfRange`. The host knew none of that, so wait mode would hold
+the song open for a note the headset had never drawn and the keyboard could not
+produce — invisible and unplayable at the same time, with no way forward.
+
+The host must apply the same rule the headset does, which is whole octaves only:
+
+```
+if the pitch is in range                      -> play it as written
+else if dropOutOfRange                        -> there is no note to wait for
+else shift by whole octaves until it is in range
+```
+
+Whole octaves and nothing else: any other shift changes which note it is.
+
+`dropOutOfRange` mirrors the headset's own setting rather than being decided
+here, because the thing that must not differ is what the player SEES versus what
+the host WAITS FOR. Either policy is fine as long as both ends run the same one.
+
+---
+
+## 8. Versioning
 
 `protocol` is `1`. Adding an optional frame does **not** increment it — that
 is what the `features` array in §6 is for. Any *incompatible* change does. Both ends reject a

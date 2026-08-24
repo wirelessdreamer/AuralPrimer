@@ -19,6 +19,7 @@ pub mod frame {
     pub const SELECT_SONG: u8 = 0x14;
     pub const VOICE_QUERY: u8 = 0x15;
     pub const VOICE_RESULT: u8 = 0x16;
+    pub const KEYBOARD_LAYOUT: u8 = 0x17;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
     pub const TRANSPORT: u8 = 0x30;

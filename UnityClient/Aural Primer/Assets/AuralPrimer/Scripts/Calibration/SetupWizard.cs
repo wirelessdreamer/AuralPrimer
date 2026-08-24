@@ -140,6 +140,7 @@ namespace AuralPrimer.Calibration
             // and a recording that runs to the cap has nothing to raise one.
             PumpKeyboard();
             PumpListening();
+            PumpKeyboardLayout();
 
             // A rising edge on a pitch is "the player just pressed a key". The
             // host sends the full held set, so this is a set difference rather
@@ -994,6 +995,11 @@ namespace AuralPrimer.Calibration
             // The lane hangs off the same calibration: without it there is no
             // keyboard for the notes to line up above.
             if (highway != null) highway.Apply(_profile);
+
+            // The host needs to know what this instrument can reach, or it
+            // waits for notes that are not on it. Sent here because this is
+            // where the range becomes known and where it changes.
+            PublishKeyboardLayout();
 
             // The bar lives with the display it adjusts.
             ShowLaneHandle();

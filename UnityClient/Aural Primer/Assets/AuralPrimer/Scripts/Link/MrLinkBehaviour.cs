@@ -86,6 +86,10 @@ namespace AuralPrimer.Link
         /// <summary>Ask the host to load a song.</summary>
         public void SelectSong(string songId) => _session?.SelectSong(songId);
 
+        /// <summary>Tell the host what this keyboard can physically play.</summary>
+        public void SendKeyboardLayout(int lowestPitch, int highestPitch, bool dropOutOfRange) =>
+            _session?.SendKeyboardLayout(lowestPitch, highestPitch, dropOutOfRange);
+
         /// <summary>Send recorded speech to be transcribed by the host.</summary>
         public void SendVoiceQuery(byte[] wav) => _session?.SendVoiceQuery(wav);
 

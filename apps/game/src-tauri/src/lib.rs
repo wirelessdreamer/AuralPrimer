@@ -2463,6 +2463,7 @@ pub fn run() {
             mr_link_status,
             mr_link_publish,
             mr_link_take_selection,
+            mr_link_keyboard_layout,
             mr_link_set_chart,
             mr_link_set_audio_offset,
             midi_transport_bindings_get,
@@ -3080,6 +3081,17 @@ fn mr_link_take_selection(app: AppHandle, state: tauri::State<MrLinkState>) -> O
         eprintln!("mr-link: ignoring selection of unknown song {wanted}");
         None
     }
+}
+
+/// What the headset says its keyboard can physically play (protocol §7).
+///
+/// `None` when no headset has said -- an older client, one not yet
+/// calibrated, or nothing connected. Callers must read that as "assume every
+/// note is playable", which is how the app behaved before this existed.
+#[tauri::command]
+fn mr_link_keyboard_layout(state: tauri::State<MrLinkState>) -> Option<serde_json::Value> {
+    let raw = state.link.lock().unwrap().as_ref()?.state.keyboard_layout()?;
+    serde_json::from_str(&raw).ok()
 }
 
 #[tauri::command]

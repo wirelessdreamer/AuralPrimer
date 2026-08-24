@@ -35,6 +35,7 @@ import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
 import { initMrLinkPanel, buildChart } from "./mrLinkPanel";
+import type { MrKeyboardLayout } from "./mrLinkPanel";
 import { nameChord, chordLabels } from "@auralprimer/core-music";
 import { initMidiTransportPanel } from "./midiTransportPanel";
 import {
@@ -1301,9 +1302,14 @@ let nashvilleMode = readNashvilleMode();
 // The headset's Songs menu loads through exactly the same path as a click
 // in the desktop library, so the two cannot drift apart in what "select a
 // song" means.
-const mrLink = initMrLinkPanel((containerPath) => {
-  void selectAuralSong(containerPath);
-});
+const mrLink = initMrLinkPanel(
+  (containerPath) => {
+    void selectAuralSong(containerPath);
+  },
+  // Wait mode must not hold the song open for a note the headset already
+  // decided this keyboard cannot play.
+  setMrKeyboardLayout,
+);
 
 const nashvilleCheckbox = document.getElementById("nashvilleMode") as HTMLInputElement | null;
 if (nashvilleCheckbox) {
@@ -1362,6 +1368,33 @@ function learnNoteName(p: number): string {
   return `${names[((p % 12) + 12) % 12]}${Math.floor(p / 12) - 1}`;
 }
 
+let mrKeyboardLayout: MrKeyboardLayout | null = null;
+
+/**
+ * Put a chart pitch onto a key the player actually has.
+ *
+ * Mirrors `CalibrationProfile.FoldPitch` on the headset exactly, and has to:
+ * the whole point is that what the player SEES and what the host WAITS FOR are
+ * the same note. Returns null when there is no key for it, meaning there is
+ * nothing to wait for.
+ *
+ * Whole octaves only. Any other shift changes which note it is.
+ */
+function playablePitch(pitch: number): number | null {
+  const layout = mrKeyboardLayout;
+  // No headset, an older client, or one not yet calibrated: assume everything
+  // is playable, which is exactly how this behaved before the frame existed.
+  if (!layout) return pitch;
+
+  if (pitch >= layout.lowestPitch && pitch <= layout.highestPitch) return pitch;
+  if (layout.dropOutOfRange) return null;
+
+  let folded = pitch;
+  while (folded < layout.lowestPitch) folded += 12;
+  while (folded > layout.highestPitch) folded -= 12;
+  return folded >= layout.lowestPitch && folded <= layout.highestPitch ? folded : null;
+}
+
 function buildLearnGroups(): void {
   learnGroups = [];
   const track = selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
@@ -1369,15 +1402,38 @@ function buildLearnGroups(): void {
     const sorted = [...track.notes].sort((a, b) => a.t_on - b.t_on);
     let cur: LearnGroup | null = null;
     for (const n of sorted) {
+      // A note with no key on this instrument is not something to wait for.
+      // Waiting for it stopped the song dead: the headset had already dropped
+      // it from the display, so the player was being asked for a note that was
+      // both invisible and impossible.
+      const pitch = playablePitch(n.pitch);
+      if (pitch === null) continue;
+
       if (!cur || n.t_on - cur.t > 0.05) {
-        cur = { t: n.t_on, pitches: [n.pitch] };
+        cur = { t: n.t_on, pitches: [pitch] };
         learnGroups.push(cur);
-      } else if (!cur.pitches.includes(n.pitch)) {
-        cur.pitches.push(n.pitch);
+      } else if (!cur.pitches.includes(pitch)) {
+        cur.pitches.push(pitch);
       }
     }
+    // Folding can empty a group, and an empty one would be waited on forever.
+    learnGroups = learnGroups.filter((g) => g.pitches.length > 0);
   }
   resetLearnFromTime(transportController.getState().t);
+}
+
+/**
+ * Adopt a keyboard layout from the headset and rebuild what we wait for.
+ *
+ * Rebuilt rather than adjusted in place: the groups are derived from it, and a
+ * recalibration mid-song can change which notes are reachable.
+ */
+function setMrKeyboardLayout(layout: MrKeyboardLayout | null): void {
+  const before = JSON.stringify(mrKeyboardLayout);
+  if (JSON.stringify(layout) === before) return;
+  mrKeyboardLayout = layout;
+  console.log("[mr-link] headset keyboard", layout);
+  buildLearnGroups();
 }
 
 function resetLearnFromTime(t: number): void {

@@ -60,9 +60,22 @@ namespace AuralPrimer.Calibration
         /// on it means "about to be played" and "being played" meet as the same
         /// hue at the moment the note lands, so the key does not jump colour at
         /// the instant the player is watching it hardest.
+        ///
+        /// It is also opaque, which is what makes a highlight on a black key
+        /// readable. Black keys are drawn 12 mm above the white ones, but a
+        /// white key's plate still runs underneath -- as it does on the real
+        /// instrument. There, the black key hides it by being solid; here, two
+        /// translucent plates simply showed through each other and a bar on a
+        /// black key could be read as one on the white key beside it. Depth
+        /// writing cannot fix that: transparent geometry draws back-to-front, so
+        /// the white plate has already been drawn by the time the black one is.
+        /// Opacity is the only lever that actually occludes.
+        ///
+        /// Only the highlight goes solid. An unlit key stays see-through,
+        /// because at rest the point is to look at the real keyboard.
         /// </remarks>
-        static readonly Color PreviewFar = new(0.482f, 0.247f, 0.949f, 0.30f);
-        static readonly Color PreviewNear = new(0.208f, 0.941f, 1f, 0.85f);
+        static readonly Color PreviewFar = new(0.482f, 0.247f, 0.949f, 0.45f);
+        static readonly Color PreviewNear = new(0.208f, 0.941f, 1f, 1f);
 
         /// <summary>Shortest bar drawn, so the furthest note is still visible.</summary>
         const float MinimumPreviewFill = 0.14f;

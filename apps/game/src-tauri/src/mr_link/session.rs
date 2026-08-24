@@ -58,6 +58,14 @@ pub struct HostState {
     /// the second choice is the one they meant, and loading the discarded first
     /// one on the way past would be a visible wrong answer.
     pub pending_selection: Mutex<Option<String>>,
+    /// What the headset says its physical keyboard can play, as the JSON it
+    /// sent (protocol §7). Held verbatim rather than parsed here: this layer
+    /// only has to carry it to the app, which is what decides anything.
+    ///
+    /// None means no headset has said -- an older client, or one not yet
+    /// calibrated. The app must treat that as "assume everything is
+    /// playable", which is the behaviour that existed before this frame.
+    pub keyboard_layout: Mutex<Option<String>>,
 }
 
 impl HostState {
@@ -93,6 +101,10 @@ impl HostState {
 
     pub fn set_transcriber(&self, transcriber: Option<Transcriber>) {
         *self.transcriber.lock().unwrap() = transcriber;
+    }
+
+    pub fn keyboard_layout(&self) -> Option<String> {
+        self.keyboard_layout.lock().unwrap().clone()
     }
 
     /// Take the headset's pending song choice, if any, clearing it.
@@ -402,6 +414,18 @@ fn serve_client(
                 } else {
                     // Said so in WELCOME already; answering nothing is correct.
                     eprintln!("mr-link: library requested but no provider is set");
+                }
+            }
+            frame::KEYBOARD_LAYOUT => {
+                // Kept, not consumed: unlike a song choice this is standing
+                // state, and the app reads it every time it rebuilds what it
+                // is waiting for.
+                match std::str::from_utf8(&payload) {
+                    Ok(json) => {
+                        println!("mr-link: headset keyboard {json}");
+                        *state.keyboard_layout.lock().unwrap() = Some(json.to_string());
+                    }
+                    Err(e) => eprintln!("mr-link: keyboard layout was not UTF-8: {e}"),
                 }
             }
             frame::SELECT_SONG => {
