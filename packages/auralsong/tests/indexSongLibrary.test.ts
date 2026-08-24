@@ -1,4 +1,4 @@
-import { indexSongLibrary, type LibraryEntry } from "../src/indexSongLibrary";
+import { indexSongLibrary, libraryItemFromEntry, type LibraryEntry } from "../src/indexSongLibrary";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { zipSync, strToU8 } from "fflate";
 import path from "node:path";
@@ -57,15 +57,14 @@ describe("indexSongLibrary", () => {
 
     const entries = await indexSongLibrary(dir);
 
-    expect(entries).toEqual([
-      {
-        kind: "directory",
-        name: "Missing.auralsong",
-        path: path.join(dir, "Missing.auralsong"),
-        parsed: false,
-        reason: "missing_manifest"
-      }
-    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "directory",
+      name: "Missing.auralsong",
+      path: path.join(dir, "Missing.auralsong"),
+      parsed: false,
+      reason: "missing_manifest"
+    });
   });
 
   it("marks invalid manifest.json as unparsed", async () => {
@@ -78,15 +77,14 @@ describe("indexSongLibrary", () => {
 
     const entries = await indexSongLibrary(dir);
 
-    expect(entries).toEqual([
-      {
-        kind: "directory",
-        name: "Invalid.auralsong",
-        path: path.join(dir, "Invalid.auralsong"),
-        parsed: false,
-        reason: "invalid_manifest"
-      }
-    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "directory",
+      name: "Invalid.auralsong",
+      path: path.join(dir, "Invalid.auralsong"),
+      parsed: false,
+      reason: "invalid_manifest"
+    });
   });
 
   it("parses zip AuralSongs by reading manifest.json inside the zip", async () => {
@@ -126,14 +124,82 @@ describe("indexSongLibrary", () => {
 
     const entries = await indexSongLibrary(dir);
 
-    expect(entries).toEqual([
-      {
-        kind: "zip",
-        name: "NoManifest.auralsong",
-        path: path.join(dir, "NoManifest.auralsong"),
-        parsed: false,
-        reason: "missing_manifest"
-      }
-    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "zip",
+      name: "NoManifest.auralsong",
+      path: path.join(dir, "NoManifest.auralsong"),
+      parsed: false,
+      reason: "missing_manifest"
+    });
+  });
+
+  it("dates every entry so the library can sort by recently added", async () => {
+    dir = tmpDir();
+
+    makeDirAuralSong(dir, "Dated.auralsong", {
+      schema_version: "1.0.0",
+      song_id: "dated",
+      title: "Dated",
+      artist: "Artist",
+      duration_sec: 1
+    });
+    mkdirSync(path.join(dir, "Undatable.auralsong"));
+
+    const entries = await indexSongLibrary(dir);
+
+    expect(entries).toHaveLength(2);
+    for (const e of entries) {
+      expect(e.addedAtMs).toBeGreaterThan(0);
+      expect(e.addedAtMs).toBeLessThanOrEqual(Date.now() + 1000);
+    }
+  });
+});
+
+describe("libraryItemFromEntry", () => {
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it("projects a parsed entry onto the sortable library shape", async () => {
+    dir = tmpDir();
+
+    makeDirAuralSong(dir, "Prelude.auralsong", {
+      schema_version: "1.0.0",
+      song_id: "prelude",
+      title: "Prelude in C",
+      artist: "J.S. Bach",
+      duration_sec: 118.5
+    });
+
+    const [entry] = await indexSongLibrary(dir);
+    const item = libraryItemFromEntry(entry);
+
+    expect(item).toMatchObject({
+      path: path.join(dir, "Prelude.auralsong"),
+      title: "Prelude in C",
+      composer: "J.S. Bach",
+      durationSec: 118.5,
+      ok: true
+    });
+    expect(item.addedAtMs).toBe(entry.addedAtMs);
+  });
+
+  it("keeps an unparseable pack visible, falling back to its basename", async () => {
+    dir = tmpDir();
+
+    mkdirSync(path.join(dir, "Broken.auralsong"));
+
+    const [entry] = await indexSongLibrary(dir);
+
+    expect(libraryItemFromEntry(entry)).toMatchObject({
+      title: "Broken.auralsong",
+      composer: "",
+      durationSec: null,
+      ok: false
+    });
   });
 });

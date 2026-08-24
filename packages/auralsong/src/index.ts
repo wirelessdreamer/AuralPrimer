@@ -1,5 +1,6 @@
 export * from "./discoverAuralSongs";
 export * from "./indexSongLibrary";
+export * from "./libraryView";
 export * from "./manifest";
 export * from "./migrations";
 export * from "./readZipManifest";

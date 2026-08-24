@@ -2173,10 +2173,28 @@ def drum_fallback_chain(requested_filter: str | None) -> list[str]:
     return out
 
 
+def keys_only_melodic_method(method: str | None) -> bool:
+    """Whether ``method`` is a piano/keys engine that no other stem should use.
+
+    Every ``piano_*`` producer is registered for all instruments, so nothing
+    downstream stops a piano model from being handed a bass or vocal stem.
+    """
+    normalized = validate_melodic_method(method)
+    return bool(normalized) and normalized.startswith("piano_")
+
+
 def melodic_fallback_chain(requested_method: str | None, instrument: str = "melodic") -> list[str]:
     normalized = validate_melodic_method(requested_method)
     if normalized is None:
         normalized = DEFAULT_MELODIC_METHOD
+
+    # An explicit method is otherwise instrument-agnostic: it builds ONE chain
+    # that every stem then uses. That silently hands a piano model the bass,
+    # guitar and vocal stems -- measured on a real import, bass fell to 0.50
+    # and a 17-minute vocal came back with 81 notes. A keys-specific override
+    # must mean "use this for keys", so non-keys stems keep their own chains.
+    if normalized != "auto" and instrument != "keys" and keys_only_melodic_method(normalized):
+        normalized = "auto"
 
     if normalized == "auto":
         if instrument == "bass":

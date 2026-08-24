@@ -1280,6 +1280,48 @@ li {
   color: rgba(34, 211, 238, 0.86);
 }
 
+.songLibraryToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+
+.songLibrarySearch {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.songLibraryControl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.songLibraryGroup {
+  margin: 10px 0;
+}
+
+.songLibraryGroupHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(140, 170, 255, 0.16);
+}
+
+.songLibraryGroupName {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.songLibraryList > li.isBroken {
+  border-color: rgba(255, 92, 122, 0.32);
+}
+
 .error {
   background: rgba(255, 40, 94, 0.12);
   border: 1px solid rgba(255, 92, 122, 0.32);
