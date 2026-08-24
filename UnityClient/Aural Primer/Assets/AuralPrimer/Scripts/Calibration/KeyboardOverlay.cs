@@ -25,6 +25,12 @@ namespace AuralPrimer.Calibration
                + "with the real keys in passthrough.")]
         [SerializeField] float hoverMetres = 0.004f;
 
+        [Tooltip("What fraction of its authored opacity an unlit key keeps once the "
+               + "keyboard is calibrated. A fraction rather than a flat value, so the "
+               + "black keys keep the extra strength their material asks for — they "
+               + "are darker and narrower, and fade out first.")]
+        [SerializeField, Range(0f, 1f)] float restingOpacity = 0.35f;
+
         CalibrationProfile _profile;
         KeyboardLayout _layout;
         readonly Dictionary<int, Transform> _keyMarkers = new();
@@ -41,8 +47,44 @@ namespace AuralPrimer.Calibration
         Material _idleWhite;
         Material _idleBlack;
         Material _lit;
+        Material _restingWhite;
+        Material _restingBlack;
+        Material _next;
 
         void Awake() => BuildMaterials();
+
+        /// <summary>
+        /// The lane, for the "play this one next" cue.
+        /// </summary>
+        /// <remarks>
+        /// Assigned rather than serialised so the scene needs no rewiring: the
+        /// wizard already holds both halves, and an overlay left without a lane
+        /// simply shows no preview instead of throwing.
+        /// </remarks>
+        public NoteHighway Highway { get; set; }
+
+        /// <summary>
+        /// Draw the unlit keys at full strength, for placing them.
+        /// </summary>
+        /// <remarks>
+        /// Fine tuning is the one time every key has to be legible at once: the
+        /// whole job is reading the drawn key against the real one under it, and
+        /// a marker dimmed to a hint cannot be lined up with anything. Playing is
+        /// the opposite — at that strength the board reads as permanently lit,
+        /// and "this is the key you play next" has nothing left to say.
+        /// </remarks>
+        public bool Placing
+        {
+            get => _placing;
+            set
+            {
+                if (_placing == value) return;
+                _placing = value;
+                RepaintIdle();
+            }
+        }
+
+        bool _placing;
 
         /// <summary>Rebuild the overlay for a calibration.</summary>
         public void Apply(CalibrationProfile profile)
@@ -75,6 +117,29 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         public IReadOnlyList<(byte pitch, byte velocity)> PlaybackNotes { get; set; }
 
+        /// <summary>How an unlit key is drawn right now.</summary>
+        Material IdleMaterial(int pitch)
+        {
+            var black = KeyboardLayout.IsBlack(pitch);
+            if (_placing) return black ? _idleBlack : _idleWhite;
+            return black ? _restingBlack : _restingWhite;
+        }
+
+        /// <summary>Redraw every key that is not currently lit.</summary>
+        /// <remarks>
+        /// Needed because the idle material is only otherwise reassigned to keys
+        /// that were lit last frame. Without this, entering fine tuning would
+        /// brighten the handful of keys being played and leave the rest faint.
+        /// </remarks>
+        void RepaintIdle()
+        {
+            foreach (var pair in _keyMarkers)
+            {
+                if (pair.Value == null || _litLastFrame.Contains(pair.Key)) continue;
+                SetMaterial(pair.Value, IdleMaterial(pair.Key));
+            }
+        }
+
         void Update()
         {
             if (_profile == null || _keyMarkers.Count == 0) return;
@@ -94,10 +159,24 @@ namespace AuralPrimer.Calibration
             {
                 if (_keyMarkers.TryGetValue(pitch, out var marker) && marker != null)
                 {
-                    SetMaterial(marker, KeyboardLayout.IsBlack(pitch) ? _idleBlack : _idleWhite);
+                    SetMaterial(marker, IdleMaterial(pitch));
                 }
             }
             _litLastFrame.Clear();
+
+            // What is coming, then what is being played. A key that is both
+            // gets the held colour, because that is the one the player needs
+            // confirmed — the preview has already done its job by then.
+            var upcoming = Highway != null ? Highway.UpcomingPitches : null;
+            if (upcoming != null)
+            {
+                foreach (var pitch in upcoming)
+                {
+                    if (!_keyMarkers.TryGetValue(pitch, out var marker) || marker == null) continue;
+                    SetMaterial(marker, _next);
+                    _litLastFrame.Add(pitch);
+                }
+            }
 
             foreach (var note in notes)
             {
@@ -130,8 +209,7 @@ namespace AuralPrimer.Calibration
                     // scene for no benefit; these are pure visuals.
                     Destroy(marker.GetComponent<Collider>());
                     marker.transform.SetParent(transform, false);
-                    SetMaterial(marker.transform,
-                                KeyboardLayout.IsBlack(pitch) ? _idleBlack : _idleWhite);
+                    SetMaterial(marker.transform, IdleMaterial(pitch));
                     _keyMarkers[pitch] = marker.transform;
                 }
             }
@@ -232,6 +310,13 @@ namespace AuralPrimer.Calibration
             // exactly this, so the two clients read the same way.
             _lit = litMaterial != null
                 ? litMaterial : NewTransparent(new Color(0.13f, 0.83f, 0.93f, 0.85f));
+
+            // Derived, not authored. Three more material assets would each need
+            // wiring into the scene by hand, and would sit at the old colour the
+            // first time the ones they shadow were changed.
+            _restingWhite = Dimmed(_idleWhite, restingOpacity);
+            _restingBlack = Dimmed(_idleBlack, restingOpacity);
+            _next = Dimmed(_lit, 0.45f);
         }
 
         static Material NewTransparent(Color color)
@@ -255,6 +340,28 @@ namespace AuralPrimer.Calibration
             material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
             material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             return material;
+        }
+
+        /// <summary>A copy of a material at a fraction of its opacity.</summary>
+        static Material Dimmed(Material source, float scale)
+        {
+            var copy = new Material(source);
+
+            if (copy.HasProperty("_BaseColor"))
+            {
+                var colour = copy.GetColor("_BaseColor");
+                colour.a *= scale;
+                copy.SetColor("_BaseColor", colour);
+            }
+
+            if (copy.HasProperty("_Color"))
+            {
+                var colour = copy.GetColor("_Color");
+                colour.a *= scale;
+                copy.SetColor("_Color", colour);
+            }
+
+            return copy;
         }
 
         static void SetMaterial(Transform marker, Material material)

@@ -226,7 +226,17 @@ namespace AuralPrimer.Calibration
             // where everything it needs to grab lives.
             AuralPrimer.UI.KeyboardProximity.SuppressOverKeys = step != Step.FineTune;
 
+            // Same reason, for the eyes rather than the ray: fine tuning is read
+            // by comparing each drawn key against the real one beneath it, so the
+            // markers go back to full strength for it and drop to a hint again
+            // afterwards.
+            if (overlay != null) overlay.Placing = step == Step.FineTune;
+
             if (step != Step.FineTune) HideEdgeHandles();
+
+            // The picker list belongs to the song steps. Left up, it would draw
+            // a list of songs under whatever title came next.
+            if (step != Step.Songs && step != Step.SongFilter) panel?.SetList();
 
             // Leaving playback tears the take down: recorded hands left floating
             // over the keyboard would be indistinguishable from live tracking,

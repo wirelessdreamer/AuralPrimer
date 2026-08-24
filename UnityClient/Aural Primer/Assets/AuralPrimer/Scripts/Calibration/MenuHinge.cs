@@ -25,6 +25,9 @@ namespace AuralPrimer.Calibration
         [Tooltip("Diameter of the swing anchor on the menu's outer edge.")]
         [SerializeField] float anchorMetres = 0.045f;
 
+        [Tooltip("How far the menu hangs above the key bed, in metres.")]
+        [SerializeField] float liftMetres = 0.3048f;
+
         /// <summary>Raised while the menu is being swung.</summary>
         public event Action Moved;
 
@@ -120,7 +123,12 @@ namespace AuralPrimer.Calibration
         public Vector3 HingePoint()
         {
             var end = _profile.menuOnHighEnd ? _profile.rightEdge : _profile.leftEdge;
-            return end + _profile.CantedUp * _profile.laneLiftMetres;
+
+            // Lifted clear of the key bed on its own number, not on the lane
+            // gap. laneLiftMetres is the play-line's hover over the keys and the
+            // note highway reads the same field, so folding the menu's height
+            // into it would carry the falling notes up with it.
+            return end + _profile.CantedUp * (_profile.laneLiftMetres + liftMetres);
         }
 
         /// <summary>Straight out along the key bed, away from the instrument.</summary>
