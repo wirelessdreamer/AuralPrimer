@@ -364,7 +364,10 @@ human gameplay/listening review is still pending.
 
 | Area | Best current result | Corpus / split | Cases | P | R | F1 | Status |
 |---|---|---:|---:|---:|---:|---:|---|
-| Keys / piano | [`piano_chord_supplement`](benchmarks/melodic/gt_runs/piano_synthetic_chord_supp_v1.json) | `piano_synthetic` | 4 | 0.981 | 0.880 | **0.928** | strongest scored piano path; small synthetic corpus |
+| Keys / piano | [`piano_transkun`](benchmarks/piano/runs) | MAESTRO v3 test subset | 10 | 0.998 | 0.984 | **0.991** | matches published Transkun note-F1; validates the harness itself |
+| Keys / piano | [`piano_pti`](benchmarks/piano/runs) | MAESTRO v3 test subset | 10 | 0.985 | 0.974 | **0.979** | force-enabled past the torch>=2 gate; see the shootout doc |
+| Keys / piano | [`piano_transkun`](benchmarks/piano/runs) | Piano Psalms keyboard stems | 10 | 0.594 | 0.766 | **0.667** | worship idiom — the material this project targets; far harder than solo piano |
+| Keys / piano | [`piano_auto`](benchmarks/piano/runs) (production default) | MAESTRO v3 test subset | 10 | 0.881 | 0.559 | **0.671** | the shipped chooser; it selects `piano_basic_pitch_playable`, not the best engine |
 | Guitar | [`qmul_hr_guitar`](benchmarks/guitar/gt_runs/guitarset_mic_limit40_qmul_hr_guitar.json) | GuitarSet mic test | 40 | 0.866 | 0.894 | **0.880** | best guitar F1; external research runtime |
 | Guitar | [`qmul_hr_guitar`](benchmarks/guitar/gt_runs/guitar_techs_directinput_qmul_hr_guitar.json) | Guitar-TECHS direct-input | 104 | 0.908 | 0.819 | **0.861** | full-suite confirmation; external research runtime |
 | Guitar | [`yourmt3_guitar`](benchmarks/guitar/gt_runs/guitarset_mic_limit40_yourmt3_vs_baselines.json) | GuitarSet mic test | 40 | 0.723 | 0.657 | **0.688** | available in `research_ab`, not default |
@@ -373,7 +376,7 @@ human gameplay/listening review is still pending.
 | Drums | [`adtof_drums`](benchmarks/drums/gt_runs/adtof_test30.json) | E-GMD test | 30 | 0.487 | 0.372 | **0.422** | runtime validated; research-only |
 | Bass | [`melodic_torchcrepe`](benchmarks/bass/gt_runs/bass_hexdebleed_60_strict.json) | GuitarSet low-string strict | 60 | 0.452 | 0.140 | **0.214** | best strict-pitch bass proxy |
 | Bass | [`melodic_combined`](benchmarks/bass/gt_runs/bass_hexdebleed_60_octaveforgiving.json) | GuitarSet low-string octave-forgiving | 60 | 0.326 | 0.538 | **0.406** | useful octave-forgiving sanity check |
-| Vocals | `melodic_rmvpe` | MIR-ST500 test/vocal | pending | - | - | - | runtime/checkpoint ready; benchmark blocked on reviewed test audio |
+| Vocals | `melodic_rmvpe` | MIR-ST500 test/vocal | pending | - | - | - | **inert until `AURAL_RMVPE_REPO` is set** — returns zero notes in ~0.1 s on keys and vocal stems alike; vocals fall through to `torchcrepe` |
 
 Source-separation quality uses SDR rather than F1: default Demucs reaches
 7.324 median SDR on the 10-track MUSDB test sample, while RoFormer reaches
@@ -393,8 +396,8 @@ The current production picks and research challengers:
 | **Bass** | **`torchcrepe`** — neural monophonic pitch (MIT) | octave-clean and best strict low-string proxy among current bass candidates (**F1 0.214** strict; `melodic_combined` reaches **F1 0.406** only in octave-forgiving scoring) | YIN octave+HPS fix → adaptive → YIN-bass80 → octave-fix |
 | **Guitar — lead** | **`torchcrepe`** — monophonic gameplay default | fast, local, and license-clean; `qmul_hr_guitar` is the current benchmark leader (**F1 0.880** GuitarSet, **0.861** Guitar-TECHS) but remains external/research-only | melodic-adaptive → octave-fix → combined → Basic Pitch; QMUL/YourMT3 are selectable for A/B |
 | **Guitar — rhythm** | **`melodic_hpss_combined`** — HPSS + onset gameplay default | keeps the chord voices a monophonic tracker drops; external QMUL is the current quality leader where its runtime is configured | melodic-adaptive → octave-fix → combined |
-| **Keys / piano** | **`piano_auto`** — scored gate: Basic Pitch → PTI (Edwards/Kong) cleanup | picks the best-scoring engine per stem; the tuned `piano_chord_supplement` path benchmarks **F1 0.928 / precision 0.981** on the synthetic piano corpus | PTI-consensus-clean → PTI-clean → polyphonic-clean |
-| **Vocals** | **`melodic_rmvpe`** scaffold *(runtime/checkpoint validated; MIR-ST500 F1 pending)* | first pass at a karaoke-useful vocal pitch lane; lyrics remain the primary vocal surface; the strict gate is waiting on reviewed MIR-ST500 test audio and a full test/vocal benchmark | torchcrepe → pyin when RMVPE assets are absent |
+| **Keys / piano** | **`piano_auto`** — scored gate: Basic Pitch → PTI (Edwards/Kong) cleanup | **under review.** The 2026-08-22 shootout (576 runs, 24 engines) measured `piano_auto` at **F1 0.671** on MAESTRO — identical to `piano_basic_pitch_playable`, which is what it selects — while `piano_transkun` reaches **0.991** on the same audio. `piano_transkun` is not in this profile's keys chain at all. Note that transkun's win does **not** transfer cleanly to Demucs-separated worship stems (35–55% of its notes come back under 50 ms), so the production pick is an open question rather than a settled one — see [the shootout doc](benchmarks/piano/SHOOTOUT_2026-08-22.md) | PTI-consensus-clean → PTI-clean → polyphonic-clean |
+| **Vocals** | **`torchcrepe` in practice** — `melodic_rmvpe` leads the chain but is inert | RMVPE needs `AURAL_RMVPE_REPO` pointing at a reviewed checkout; without it every call returns zero notes in ~0.1 s (verified on both keys and vocal stems), so vocals silently fall through to torchcrepe. It returns `[]` rather than reporting unavailable, which reads identically to "found no notes" | torchcrepe → pyin when RMVPE assets are absent |
 
 Alternate profiles are selectable per import: `fidelity_midi` (denser
 symbolic output for A/B review) and `research_ab` (every local candidate,
