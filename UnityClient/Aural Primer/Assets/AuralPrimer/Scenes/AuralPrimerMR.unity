@@ -2683,7 +2683,7 @@ MonoBehaviour:
   heightOffsetMetres: 0.15
   displayFont: {fileID: 11400000, guid: a5c28fab87ab4724e8bfae5d0b561ebe, type: 2}
   bodyFont: {fileID: 11400000, guid: 4aa3b376a8db40648986d69f47210229, type: 2}
-  widthMetres: 0.5
+  widthMetres: 1
 --- !u!4 &2088425083
 Transform:
   m_ObjectHideFlags: 0

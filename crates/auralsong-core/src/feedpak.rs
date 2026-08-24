@@ -1,4 +1,4 @@
-//! feedpak `manifest.yaml` parsing — the second native container format.
+//! feedpak `manifest.yaml` parsing â the second native container format.
 //!
 //! Stage 2 of migrating the native format from `.auralsong` (manifest.json) to
 //! feedpak. This reader lives alongside the existing [`crate::manifest`] reader;
@@ -64,11 +64,16 @@ pub struct FeedpakStem {
 /// additions and unrecognised AuralPrimer extensions round-trip without loss.
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FeedpakManifest {
-    /// Format version (semver). Absent is treated as 1.0.0 per spec §5.
+    /// Format version (semver). Absent is treated as 1.0.0 per spec Â§5.
     #[serde(default)]
     pub feedpak_version: Option<String>,
     pub title: String,
     pub artist: String,
+    /// Free-text genre. Absent on every pack written before genre existed,
+    /// so it must stay optional — an empty string would filter as a real
+    /// genre named "" and collect every untagged song under it.
+    #[serde(default)]
+    pub genre: Option<String>,
     pub duration: f64,
     #[serde(default)]
     pub arrangements: Vec<FeedpakArrangement>,
@@ -233,6 +238,7 @@ fn is_supported_fingering_role(role: &str) -> bool {
 pub struct FeedpakSummary {
     pub title: String,
     pub artist: String,
+    pub genre: Option<String>,
     pub duration: f64,
     pub feedpak_version: Option<String>,
     pub arrangement_ids: Vec<String>,
@@ -254,6 +260,7 @@ impl FeedpakSummary {
         FeedpakSummary {
             title: m.title.clone(),
             artist: m.artist.clone(),
+            genre: m.genre.clone(),
             duration: m.duration,
             feedpak_version: m.feedpak_version.clone(),
             arrangement_ids: m.arrangements.iter().map(|a| a.id.clone()).collect(),
@@ -609,5 +616,51 @@ aural_fingering:
 
         let summary = scan_feedpak(&pack).expect("scan unsupported fingering feedpak");
         assert!(!summary.has_aural_fingering);
+    }
+}
+
+#[cfg(test)]
+mod genre_tests {
+    use super::*;
+
+    /// Exactly the shape the sidecar writes, and the shape the backfill adds a
+    /// line to. If this drifts, the MR client's genre filter silently offers
+    /// nothing and there is no other signal that anything is wrong.
+    const TAGGED: &str = "feedpak_version: 1.11.0\n\
+title: Prelude and Fugue No. 1 in C major, BWV 846\n\
+artist: J. S. Bach\n\
+genre: Classical\n\
+duration: 226.04166666666666\n";
+
+    const UNTAGGED: &str = "feedpak_version: 1.11.0\n\
+title: NEVER ENOUGH\n\
+artist: Unknown\n\
+duration: 180.0\n";
+
+    #[test]
+    fn genre_round_trips_from_the_manifest() {
+        let manifest = parse_feedpak_manifest_yaml(TAGGED).expect("tagged manifest parses");
+        assert_eq!(manifest.genre.as_deref(), Some("Classical"));
+
+        let summary = FeedpakSummary::from_manifest(&manifest);
+        assert_eq!(summary.genre.as_deref(), Some("Classical"));
+    }
+
+    #[test]
+    fn a_pack_without_a_genre_still_parses() {
+        // Every pack written before genre existed looks like this. Making the
+        // field required would have made the whole library unreadable.
+        let manifest = parse_feedpak_manifest_yaml(UNTAGGED).expect("untagged manifest parses");
+        assert_eq!(manifest.genre, None);
+        assert_eq!(manifest.title, "NEVER ENOUGH");
+    }
+
+    #[test]
+    fn absent_genre_is_none_not_empty() {
+        // The MR host filters an empty genre as "no filter" but would treat a
+        // Some("") as a real genre named "", collecting every untagged song
+        // under a blank chip.
+        let manifest = parse_feedpak_manifest_yaml(UNTAGGED).expect("parses");
+        assert!(manifest.genre.is_none(), "must be None, not Some(\"\")");
     }
 }

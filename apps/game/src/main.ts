@@ -1298,7 +1298,12 @@ function readNashvilleMode(): boolean {
 }
 let nashvilleMode = readNashvilleMode();
 // MR headset link: serves the chart, playhead and live notes to the Quest app.
-const mrLink = initMrLinkPanel();
+// The headset's Songs menu loads through exactly the same path as a click
+// in the desktop library, so the two cannot drift apart in what "select a
+// song" means.
+const mrLink = initMrLinkPanel((containerPath) => {
+  void selectAuralSong(containerPath);
+});
 
 const nashvilleCheckbox = document.getElementById("nashvilleMode") as HTMLInputElement | null;
 if (nashvilleCheckbox) {

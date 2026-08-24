@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::protocol::{
-    decode_frame_header, encode_frame, frame, host_clock_us, NoteState, PositionSample,
-    PROTOCOL_VERSION,
+    decode_frame_header, encode_frame, frame, host_clock_us, query_library, LibraryQuery,
+    LibrarySong, NoteState, PositionSample, PROTOCOL_VERSION,
 };
 
 /// How often position is streamed. Fast enough that the client's clock
@@ -24,7 +24,21 @@ const POSITION_INTERVAL: Duration = Duration::from_millis(16);
 /// dropped change corrects itself rather than persisting.
 const NOTES_KEEPALIVE: Duration = Duration::from_millis(250);
 
-/// What the session serves. The app updates these; the session only reads.
+/// Reads the song library. Supplied by the app rather than implemented here:
+/// the app already scans the songs folder for its own library panel, and a
+/// second scanner in this module would be a second opinion about what counts as
+/// a song, free to drift from the one the desktop shows.
+pub type LibraryProvider = Box<dyn Fn() -> Vec<LibrarySong> + Send + Sync>;
+
+/// Turns recorded speech into text. Also the app's job — it owns the sidecar
+/// this shells out to, and the protocol layer should not have to know that
+/// transcription is a subprocess at all.
+pub type Transcriber = Box<dyn Fn(&[u8]) -> Result<String, String> + Send + Sync>;
+
+/// What the session serves. The app updates these; the session only reads —
+/// except for `pending_selection`, the one thing that travels the other way. It
+/// is a mailbox rather than a call so the session thread never reaches into the
+/// app, which would mean holding an app lock while a socket is mid-write.
 #[derive(Default)]
 pub struct HostState {
     /// Chart JSON for the current song, already serialised (see protocol §4).
@@ -34,6 +48,16 @@ pub struct HostState {
     /// The host's measured audio latency, in seconds. The headset adds its own
     /// predicted display latency on top; see protocol §5.
     pub audio_offset_sec: Mutex<f64>,
+    /// Optional capabilities. Absent means the host does not offer that frame,
+    /// which is exactly what the `features` list in WELCOME tells the headset.
+    pub library: Mutex<Option<LibraryProvider>>,
+    pub transcriber: Mutex<Option<Transcriber>>,
+    /// The song the headset last asked for, waiting for the app to pick it up.
+    ///
+    /// One slot, not a queue: if the user picked twice before the app looked,
+    /// the second choice is the one they meant, and loading the discarded first
+    /// one on the way past would be a visible wrong answer.
+    pub pending_selection: Mutex<Option<String>>,
 }
 
 impl HostState {
@@ -61,6 +85,31 @@ impl HostState {
 
     pub fn set_audio_offset_sec(&self, offset: f64) {
         *self.audio_offset_sec.lock().unwrap() = offset;
+    }
+
+    pub fn set_library_provider(&self, provider: Option<LibraryProvider>) {
+        *self.library.lock().unwrap() = provider;
+    }
+
+    pub fn set_transcriber(&self, transcriber: Option<Transcriber>) {
+        *self.transcriber.lock().unwrap() = transcriber;
+    }
+
+    /// Take the headset's pending song choice, if any, clearing it.
+    pub fn take_pending_selection(&self) -> Option<String> {
+        self.pending_selection.lock().unwrap().take()
+    }
+
+    /// The optional frames this host actually implements, for WELCOME.
+    fn features(&self) -> Vec<&'static str> {
+        let mut features = Vec::new();
+        if self.library.lock().unwrap().is_some() {
+            features.push("library");
+        }
+        if self.transcriber.lock().unwrap().is_some() {
+            features.push("voice");
+        }
+        features
     }
 }
 
@@ -245,6 +294,11 @@ fn serve_client(
         "protocol": PROTOCOL_VERSION,
         "udpPort": udp.local_addr()?.port(),
         "audioOffsetSec": *state.audio_offset_sec.lock().unwrap(),
+        // Which optional frames this host implements. New frame types do not
+        // break an old peer -- both ends ignore types they do not know -- but
+        // silence is indistinguishable from a dropped request, so a headset
+        // that asked an old host for a library would wait forever. See §6.
+        "features": state.features(),
     });
     stream.write_all(&encode_frame(
         frame::WELCOME,
@@ -324,6 +378,75 @@ fn serve_client(
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
                     println!("mr-link: transport request {v}");
                 }
+            }
+            frame::LIBRARY_REQUEST => {
+                // A malformed query is treated as the empty one rather than as
+                // an error: the headset asking badly should see the library, not
+                // lose its connection.
+                let query: LibraryQuery = serde_json::from_slice(&payload).unwrap_or_default();
+
+                // The scan runs under the lock. It is a directory listing, it
+                // happens only when someone opens the Songs menu, and the
+                // alternative -- cloning the provider out -- is not available
+                // for a boxed closure.
+                let songs = state.library.lock().unwrap().as_ref().map(|read| read());
+
+                if let Some(songs) = songs {
+                    let page = query_library(&songs, &query);
+                    match serde_json::to_string(&page) {
+                        Ok(json) => {
+                            stream.write_all(&encode_frame(frame::LIBRARY, json.as_bytes()))?;
+                        }
+                        Err(e) => eprintln!("mr-link: cannot serialise library page: {e}"),
+                    }
+                } else {
+                    // Said so in WELCOME already; answering nothing is correct.
+                    eprintln!("mr-link: library requested but no provider is set");
+                }
+            }
+            frame::SELECT_SONG => {
+                if let Some(id) = serde_json::from_slice::<serde_json::Value>(&payload)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("songId")
+                            .and_then(|s| s.as_str())
+                            .map(str::to_string)
+                    })
+                {
+                    // Posted, not acted on. Loading a song is the app's job, and
+                    // the existing SONG_CHANGED -> CHART flow is what tells the
+                    // headset it worked -- so there is deliberately no reply
+                    // here to become a second source of truth.
+                    println!("mr-link: headset selected song {id}");
+                    *state.pending_selection.lock().unwrap() = Some(id);
+                }
+            }
+            frame::VOICE_QUERY => {
+                // Transcription takes a second or so and this blocks the read
+                // loop while it runs. That is deliberate: the alternative is a
+                // second thread writing frames into the same socket as this one,
+                // which interleaves them. The stall is safe because the client
+                // picks the LOWEST-RTT sample in its window to set its clock
+                // from, so the one delayed PONG is never the sample it uses.
+                let transcribed = state
+                    .transcriber
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|hear| hear(&payload));
+
+                let reply = match transcribed {
+                    Some(Ok(text)) => serde_json::json!({ "text": text, "error": null }),
+                    Some(Err(e)) => serde_json::json!({ "text": "", "error": e }),
+                    None => serde_json::json!({
+                        "text": "",
+                        "error": "this host has no speech recogniser installed",
+                    }),
+                };
+                stream.write_all(&encode_frame(
+                    frame::VOICE_RESULT,
+                    reply.to_string().as_bytes(),
+                ))?;
             }
             other => {
                 eprintln!("mr-link: ignoring unexpected frame type {other:#04x}");

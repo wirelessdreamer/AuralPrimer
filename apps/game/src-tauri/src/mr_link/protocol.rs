@@ -12,6 +12,13 @@ pub mod frame {
     pub const WELCOME: u8 = 0x02;
     pub const CHART: u8 = 0x10;
     pub const SONG_CHANGED: u8 = 0x11;
+    /// Optional frames. A host that does not implement them says so by
+    /// omitting the matching name from `features` in WELCOME; see protocol §6.
+    pub const LIBRARY_REQUEST: u8 = 0x12;
+    pub const LIBRARY: u8 = 0x13;
+    pub const SELECT_SONG: u8 = 0x14;
+    pub const VOICE_QUERY: u8 = 0x15;
+    pub const VOICE_RESULT: u8 = 0x16;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
     pub const TRANSPORT: u8 = 0x30;
@@ -151,6 +158,160 @@ impl NoteState {
             host_clock_us,
             held,
         })
+    }
+}
+
+
+// --- Library browsing (protocol §6) ------------------------------------------
+//
+// The host answers the headset's library questions because it already holds the
+// folder and already answers the same question for its own UI. Shipping the whole
+// library so the headset could filter locally would mean a second copy of the
+// matching rules, free to disagree with the desktop's about what "matches" means.
+//
+// The matching itself lives here, away from any I/O, so the rules are pinned by
+// unit tests rather than by running a headset against a real songs folder.
+
+use serde::{Deserialize, Serialize};
+
+/// One row of the library, as the headset lists it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySong {
+    pub song_id: String,
+    pub title: String,
+    /// All optional: a song is not required to carry them, and a missing genre
+    /// must render as "no genre" rather than as a guess.
+    pub artist: Option<String>,
+    pub genre: Option<String>,
+    pub duration_sec: Option<f64>,
+}
+
+/// What the headset asked for.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LibraryQuery {
+    /// Substring of title or artist.
+    pub search: Option<String>,
+    /// Exact facet filters. `None` means unfiltered.
+    pub artist: Option<String>,
+    pub genre: Option<String>,
+    pub page: u32,
+    pub page_size: u32,
+}
+
+/// One page of results, plus the facets to filter by.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryPage {
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u32,
+    /// Distinct values across the WHOLE library, not just this page — the
+    /// headset builds its filter chips from these, and chips that changed every
+    /// time you paged would be unusable.
+    pub artists: Vec<String>,
+    pub genres: Vec<String>,
+    pub items: Vec<LibrarySong>,
+}
+
+/// Largest page the host will return, whatever was asked for.
+///
+/// A headset panel shows single figures of rows; a client asking for 100000
+/// is either confused or hostile, and either way the host should not build the
+/// allocation to find out.
+const MAX_PAGE_SIZE: u32 = 64;
+const DEFAULT_PAGE_SIZE: u32 = 8;
+
+/// Case-insensitive, accent-naive equality. Facet values come from the library
+/// itself so they should already match exactly; folding case costs nothing and
+/// removes a whole class of "the chip does nothing" bug.
+fn same(a: &str, b: &str) -> bool {
+    a.trim().to_lowercase() == b.trim().to_lowercase()
+}
+
+fn contains_ci(haystack: &str, needle: &str) -> bool {
+    haystack.to_lowercase().contains(&needle.to_lowercase())
+}
+
+/// Filter, sort and page the library.
+///
+/// Sorted by title, case-insensitively, so the order is stable across calls and
+/// matches what the desktop library shows by default. Without a defined order,
+/// paging is meaningless — page 2 could repeat page 1.
+pub fn query_library(all: &[LibrarySong], q: &LibraryQuery) -> LibraryPage {
+    let mut artists: Vec<String> = all
+        .iter()
+        .filter_map(|s| s.artist.clone())
+        .filter(|a| !a.trim().is_empty())
+        .collect();
+    artists.sort_by_key(|a| a.to_lowercase());
+    artists.dedup_by(|a, b| same(a, b));
+
+    let mut genres: Vec<String> = all
+        .iter()
+        .filter_map(|s| s.genre.clone())
+        .filter(|g| !g.trim().is_empty())
+        .collect();
+    genres.sort_by_key(|g| g.to_lowercase());
+    genres.dedup_by(|a, b| same(a, b));
+
+    let search = q.search.as_deref().map(str::trim).filter(|s| !s.is_empty());
+
+    let mut matched: Vec<LibrarySong> = all
+        .iter()
+        .filter(|song| {
+            if let Some(needle) = search {
+                let hit = contains_ci(&song.title, needle)
+                    || song
+                        .artist
+                        .as_deref()
+                        .is_some_and(|a| contains_ci(a, needle));
+                if !hit {
+                    return false;
+                }
+            }
+            if let Some(want) = q.artist.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+                if !song.artist.as_deref().is_some_and(|a| same(a, want)) {
+                    return false;
+                }
+            }
+            if let Some(want) = q.genre.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+                if !song.genre.as_deref().is_some_and(|g| same(g, want)) {
+                    return false;
+                }
+            }
+            true
+        })
+        .cloned()
+        .collect();
+
+    matched.sort_by_key(|s| s.title.to_lowercase());
+
+    let total = matched.len() as u32;
+    let page_size = match q.page_size {
+        0 => DEFAULT_PAGE_SIZE,
+        n => n.min(MAX_PAGE_SIZE),
+    };
+    // Clamp rather than return empty: a headset that asks for page 5 of a list
+    // that just shrank to two pages should see the last page, not a blank panel
+    // it has no obvious way out of.
+    let pages = total.div_ceil(page_size).max(1);
+    let page = q.page.min(pages - 1);
+    let start = (page * page_size) as usize;
+    let items = matched
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
+    LibraryPage {
+        page,
+        page_size,
+        total,
+        artists,
+        genres,
+        items,
     }
 }
 
@@ -336,5 +497,180 @@ mod tests {
         let a = host_clock_us();
         let b = host_clock_us();
         assert!(b >= a);
+    }
+}
+
+#[cfg(test)]
+mod library_tests {
+    use super::*;
+
+    fn song(id: &str, title: &str, artist: Option<&str>, genre: Option<&str>) -> LibrarySong {
+        LibrarySong {
+            song_id: id.to_string(),
+            title: title.to_string(),
+            artist: artist.map(str::to_string),
+            genre: genre.map(str::to_string),
+            duration_sec: Some(60.0),
+        }
+    }
+
+    fn library() -> Vec<LibrarySong> {
+        vec![
+            song("a", "Prelude in C", Some("Bach"), Some("classical")),
+            song("b", "Toccata", Some("Bach"), Some("classical")),
+            song("c", "Eine kleine Nachtmusik", Some("Mozart"), Some("classical")),
+            song("d", "How Long", Some("Psalms"), Some("worship")),
+            song("e", "Untagged Take", None, None),
+        ]
+    }
+
+    fn query(page_size: u32) -> LibraryQuery {
+        LibraryQuery {
+            page_size,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn search_matches_title_or_artist_case_insensitively() {
+        let all = library();
+        let mut q = query(10);
+
+        q.search = Some("BACH".to_string());
+        let by_artist = query_library(&all, &q);
+        assert_eq!(by_artist.total, 2);
+
+        q.search = Some("prelude".to_string());
+        let by_title = query_library(&all, &q);
+        assert_eq!(by_title.total, 1);
+        assert_eq!(by_title.items[0].song_id, "a");
+    }
+
+    #[test]
+    fn blank_search_is_not_a_filter() {
+        // A search box the user cleared must show everything, not nothing --
+        // an empty needle is contained in every string, but a whitespace-only
+        // one would otherwise fall through as a real filter.
+        let all = library();
+        let mut q = query(10);
+        q.search = Some("   ".to_string());
+        assert_eq!(query_library(&all, &q).total, all.len() as u32);
+    }
+
+    #[test]
+    fn facet_filters_are_exact_not_substring() {
+        let all = library();
+        let mut q = query(10);
+
+        q.artist = Some("Bach".to_string());
+        assert_eq!(query_library(&all, &q).total, 2);
+
+        // "Bac" is a substring of "Bach" but not that artist.
+        q.artist = Some("Bac".to_string());
+        assert_eq!(query_library(&all, &q).total, 0);
+    }
+
+    #[test]
+    fn untagged_songs_never_collect_under_an_empty_facet() {
+        // The song with no genre must not appear under a genre named "", and
+        // must not contribute one to the chip list.
+        let all = library();
+        let page = query_library(&all, &query(10));
+        assert!(page.genres.iter().all(|g| !g.trim().is_empty()));
+        assert_eq!(page.genres, vec!["classical", "worship"]);
+
+        let mut q = query(10);
+        q.genre = Some(String::new());
+        assert_eq!(
+            query_library(&all, &q).total,
+            all.len() as u32,
+            "an empty genre filter is no filter"
+        );
+    }
+
+    #[test]
+    fn facets_cover_the_whole_library_not_the_page() {
+        // Chips that changed as you paged would be unusable.
+        let all = library();
+        let mut q = query(1);
+        q.page = 0;
+        let first = query_library(&all, &q);
+        q.page = 3;
+        let last = query_library(&all, &q);
+
+        assert_eq!(first.items.len(), 1);
+        assert_eq!(first.artists, last.artists);
+        assert_eq!(first.genres, last.genres);
+        assert_eq!(first.artists, vec!["Bach", "Mozart", "Psalms"]);
+    }
+
+    #[test]
+    fn results_are_title_sorted_so_paging_means_something() {
+        let all = library();
+        let page = query_library(&all, &query(10));
+        let titles: Vec<&str> = page.items.iter().map(|s| s.title.as_str()).collect();
+        let mut sorted = titles.clone();
+        sorted.sort_by_key(|t| t.to_lowercase());
+        assert_eq!(titles, sorted);
+    }
+
+    #[test]
+    fn page_beyond_the_end_clamps_to_the_last_one() {
+        // A headset holding page 5 of a list that just shrank should land on
+        // the last page, not on a blank panel with no obvious way out.
+        let all = library();
+        let mut q = query(2);
+        q.page = 99;
+        let page = query_library(&all, &q);
+        assert_eq!(page.page, 2, "5 songs at 2 per page is pages 0..=2");
+        assert_eq!(page.items.len(), 1);
+    }
+
+    #[test]
+    fn page_size_is_defaulted_and_capped() {
+        let all = library();
+
+        let unspecified = query_library(&all, &query(0));
+        assert_eq!(unspecified.page_size, DEFAULT_PAGE_SIZE);
+
+        let greedy = query_library(&all, &query(100_000));
+        assert_eq!(greedy.page_size, MAX_PAGE_SIZE);
+    }
+
+    #[test]
+    fn empty_library_still_answers() {
+        let page = query_library(&[], &query(8));
+        assert_eq!(page.total, 0);
+        assert_eq!(page.page, 0);
+        assert!(page.items.is_empty());
+        assert!(page.artists.is_empty());
+    }
+
+    #[test]
+    fn wire_shape_is_camel_case() {
+        // The C# client parses these by hand; a silent rename here would break
+        // the headset with no compile error anywhere.
+        let page = query_library(&library(), &query(1));
+        let json = serde_json::to_string(&page).expect("serialisable");
+        assert!(json.contains("\"pageSize\""), "{json}");
+        assert!(json.contains("\"songId\""), "{json}");
+        assert!(json.contains("\"durationSec\""), "{json}");
+    }
+
+    #[test]
+    fn query_parses_from_the_documented_json() {
+        let q: LibraryQuery = serde_json::from_str(
+            r#"{"search":"bach","artist":null,"genre":"classical","page":0,"pageSize":8}"#,
+        )
+        .expect("documented query must parse");
+        assert_eq!(q.search.as_deref(), Some("bach"));
+        assert_eq!(q.genre.as_deref(), Some("classical"));
+        assert_eq!(q.page_size, 8);
+
+        // Absent fields must not be an error: the doc says null or absent means
+        // unfiltered, and a client is free to omit them.
+        let sparse: LibraryQuery = serde_json::from_str(r#"{"page":1}"#).expect("sparse parses");
+        assert_eq!(sparse.page, 1);
+        assert!(sparse.search.is_none());
     }
 }

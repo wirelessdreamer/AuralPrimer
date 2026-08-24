@@ -27,6 +27,11 @@ namespace AuralPrimer.Calibration
                + "Lower reads as faster; the note still arrives at the same moment.")]
         [SerializeField] float lookAheadSeconds = 3f;
 
+        [Tooltip("How far ahead a note lights its key on the real keyboard. This is "
+               + "the \"play this one next\" cue, so it is much shorter than the "
+               + "look-ahead: the whole lane lit at once names no key in particular.")]
+        [SerializeField] float previewSeconds = 1.2f;
+
         [Tooltip("Thickness of a note slab, in metres.")]
         [SerializeField] float noteThicknessMetres = 0.003f;
 
@@ -54,6 +59,7 @@ namespace AuralPrimer.Calibration
         readonly List<Transform> _pool = new();
         readonly List<Renderer> _poolRenderers = new();
         readonly List<Transform> _heads = new();
+        readonly List<int> _upcoming = new();
 
         CalibrationProfile _profile;
         KeyboardLayout _layout;
@@ -144,6 +150,19 @@ namespace AuralPrimer.Calibration
             if (link != null) link.ChartReceived -= OnChart;
         }
 
+        /// <summary>
+        /// Keys whose notes land within the preview window, for the overlay to
+        /// light.
+        /// </summary>
+        /// <remarks>
+        /// Published from here because the walk that finds them is already
+        /// happening: the draw loop visits exactly these notes every frame, in
+        /// onset order, with the out-of-range folding already applied. Finding
+        /// them again in the overlay would mean a second cursor over the same
+        /// chart, free to disagree with the notes actually on screen.
+        /// </remarks>
+        public IReadOnlyList<int> UpcomingPitches => _upcoming;
+
         /// <summary>Point the lane at a calibration. Without one there is no
         /// keyboard to line notes up with, so nothing is drawn.</summary>
         public void Apply(CalibrationProfile profile)
@@ -191,6 +210,8 @@ namespace AuralPrimer.Calibration
             while (_cursor > 0 && _notes[_cursor - 1].Off >= now) _cursor--;
             while (_cursor < _notes.Count && _notes[_cursor].Off < now) _cursor++;
 
+            _upcoming.Clear();
+
             var (laneUp, _, laneRotation) = LaneBasis();
 
             var metresPerSecond = _profile.laneHeightMetres
@@ -211,6 +232,15 @@ namespace AuralPrimer.Calibration
                 // them into range by whole octaves.
                 var pitch = _profile.FoldPitch(_layout, note.Pitch);
                 if (pitch < 0) continue;
+
+                // About to be played, on the key it will be played on. Notes
+                // already sounding are excluded: their key is under a finger, so
+                // lighting it would say "press this next" about a note in the past.
+                var untilOnset = note.On - now;
+                if (untilOnset > 0f && untilOnset <= previewSeconds && !_upcoming.Contains(pitch))
+                {
+                    _upcoming.Add(pitch);
+                }
 
                 // Lifted clear of the real keys. Notes arrive at the "play now"
                 // line, so the lift must move the notes and the line together or
@@ -399,6 +429,7 @@ namespace AuralPrimer.Calibration
 
         void HideAll()
         {
+            _upcoming.Clear();
             foreach (var t in _pool)
             {
                 if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);

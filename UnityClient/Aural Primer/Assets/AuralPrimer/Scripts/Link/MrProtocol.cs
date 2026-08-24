@@ -27,6 +27,19 @@ namespace AuralPrimer.Link
         public const byte FrameWelcome = 0x02;
         public const byte FrameChart = 0x10;
         public const byte FrameSongChanged = 0x11;
+
+        // Optional frames (protocol §6). A host that does not implement them
+        // omits the matching name from `features` in WELCOME, so the client can
+        // hide the menu rather than wait forever for a reply that never comes.
+        public const byte FrameLibraryRequest = 0x12;
+        public const byte FrameLibrary = 0x13;
+        public const byte FrameSelectSong = 0x14;
+        public const byte FrameVoiceQuery = 0x15;
+        public const byte FrameVoiceResult = 0x16;
+
+        /// <summary>Names used in the WELCOME `features` array.</summary>
+        public const string FeatureLibrary = "library";
+        public const string FeatureVoice = "voice";
         public const byte FramePing = 0x20;
         public const byte FramePong = 0x21;
         public const byte FrameTransport = 0x30;

@@ -3603,6 +3603,17 @@ def cmd_audit_drums(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_transcribe_query_lazy(args: Any) -> int:
+    """Load the recogniser only when a query actually arrives.
+
+    Importing at module scope would drag transformers and torch into every
+    invocation of the CLI, including the ones that just print `stages`.
+    """
+    from .voice_query import cmd_transcribe_query
+
+    return cmd_transcribe_query(args)
+
+
 def cmd_stages(_args: argparse.Namespace) -> int:
     # Keep output stable + simple.
     for st in STAGES:
@@ -5993,6 +6004,7 @@ def cmd_import_musicxml(args: argparse.Namespace) -> int:
             audio_path=args.audio or None,
             title=args.title or None,
             artist=args.artist or None,
+            genre=args.genre or None,
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
@@ -6043,6 +6055,9 @@ def cmd_import(args: argparse.Namespace) -> int:
         "song_id": song_id,
         "title": args.title or src.stem,
         "artist": args.artist or "",
+        # Empty rather than absent so the field always exists; the pack
+        # writer drops it when blank rather than recording a genre of "".
+        "genre": getattr(args, "genre", "") or "",
         "duration_sec": 0.0,
         "source": {
             "original_filename": src.name,
@@ -7645,12 +7660,28 @@ def build_parser() -> argparse.ArgumentParser:
     s_refine_piano.add_argument("--out-root", default="benchmarks/piano/refinement_runs")
     s_refine_piano.set_defaults(func=cmd_refine_piano)
 
+    # Voice search for the MR client (protocol §6). Imported lazily inside the
+    # handler, not here: the module pulls in transformers and torch, and every
+    # other command would pay that import cost for a feature it never uses.
+    s_voice = sub.add_parser(
+        "transcribe-query",
+        help="Transcribe a short spoken search query (mono 16 kHz WAV) to JSON.",
+    )
+    s_voice.add_argument("wav", help="Path to the recorded query.")
+    s_voice.add_argument(
+        "--model",
+        default="",
+        help="Whisper model id; defaults to the smallest English one.",
+    )
+    s_voice.set_defaults(func=cmd_transcribe_query_lazy)
+
     s_import_xml = sub.add_parser("import-musicxml")
     s_import_xml.add_argument("input_musicxml_path")
     s_import_xml.add_argument("--out", required=True, help="output directory for <stem>.feedpak")
     s_import_xml.add_argument("--audio", default="", help="audio to attach (defaults to a render beside the score)")
     s_import_xml.add_argument("--title", default="")
     s_import_xml.add_argument("--artist", default="")
+    s_import_xml.add_argument("--genre", default="", help="Free-text genre, for library filtering.")
     s_import_xml.set_defaults(func=cmd_import_musicxml)
 
     s_import = sub.add_parser("import")
@@ -7660,6 +7691,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_import.add_argument("--config")
     s_import.add_argument("--title")
     s_import.add_argument("--artist")
+    s_import.add_argument("--genre", help="Free-text genre, for library filtering.")
     s_import.add_argument("--duration-sec", type=float, dest="duration_sec")
     _add_transcription_options(s_import)
     s_import.set_defaults(func=cmd_import)
@@ -7671,6 +7703,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_import_dir.add_argument("--config")
     s_import_dir.add_argument("--title")
     s_import_dir.add_argument("--artist")
+    s_import_dir.add_argument("--genre", help="Free-text genre, for library filtering.")
     s_import_dir.add_argument("--duration-sec", type=float, dest="duration_sec")
     _add_transcription_options(s_import_dir)
     s_import_dir.set_defaults(func=cmd_import_dir)

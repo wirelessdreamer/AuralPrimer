@@ -18,7 +18,7 @@ using UnityEngine;
 
 namespace AuralPrimer.Calibration
 {
-    public sealed class SetupWizard : MonoBehaviour
+    public sealed partial class SetupWizard : MonoBehaviour
     {
         public enum Step
         {
@@ -33,6 +33,10 @@ namespace AuralPrimer.Calibration
             FineTune,
             /// <summary>Pick a recording to watch.</summary>
             Recordings,
+            /// <summary>Browse and search the host's song library.</summary>
+            Songs,
+            /// <summary>Pick a value for one of the song filters.</summary>
+            SongFilter,
             /// <summary>Transport for the recording being watched.</summary>
             Playback,
         }
@@ -109,6 +113,8 @@ namespace AuralPrimer.Calibration
                 hands.PinchStarted += OnPinch;
                 hands.MenuSummoned += OnMenuSummoned;
             }
+
+            HookLibrary();
         }
 
         void OnDisable()
@@ -118,11 +124,22 @@ namespace AuralPrimer.Calibration
                 hands.PinchStarted -= OnPinch;
                 hands.MenuSummoned -= OnMenuSummoned;
             }
+
+            UnhookLibrary();
+            // A microphone left open survives this component being disabled and
+            // holds the device against the next thing that wants it.
+            StopListening(send: false);
         }
 
         void Update()
         {
             UpdateStatusLine();
+
+            // Both poll, because neither underlying API reports completion any
+            // other way: TouchScreenKeyboard has no callback on any platform,
+            // and a recording that runs to the cap has nothing to raise one.
+            PumpKeyboard();
+            PumpListening();
 
             // A rising edge on a pitch is "the player just pressed a key". The
             // host sends the full held set, so this is a set difference rather
@@ -226,7 +243,17 @@ namespace AuralPrimer.Calibration
             // where everything it needs to grab lives.
             AuralPrimer.UI.KeyboardProximity.SuppressOverKeys = step != Step.FineTune;
 
+            // Same reason, for the eyes rather than the ray: fine tuning is read
+            // by comparing each drawn key against the real one beneath it, so the
+            // markers go back to full strength for it and drop to a hint again
+            // afterwards.
+            if (overlay != null) overlay.Placing = step == Step.FineTune;
+
             if (step != Step.FineTune) HideEdgeHandles();
+
+            // The picker list belongs to the song steps. Left up, it would draw
+            // a list of songs under whatever title came next.
+            if (step != Step.Songs && step != Step.SongFilter) panel?.SetList();
 
             // Leaving playback tears the take down: recorded hands left floating
             // over the keyboard would be indistinguishable from live tracking,
@@ -240,6 +267,9 @@ namespace AuralPrimer.Calibration
 
             _step = step;
             _verifiedKeys = 0;
+            // Ask on the way in rather than caching: a song imported on the
+            // desktop while the headset sat on the menu should be there.
+            if (step == Step.Songs) RequestSongs();
             _lastVerifyPitch = -1;
             // Show it, do not move it. Re-placing on every step change meant the
             // panel jumped to wherever the user was looking each time the wizard
@@ -323,6 +353,7 @@ namespace AuralPrimer.Calibration
                         ("Configure", () => EnterStep(Step.FineTune)),
                         (capture != null && capture.IsRecording ? "Stop recording" : "Record",
                          ToggleRecording),
+                        ("Songs", () => EnterStep(Step.Songs)),
                         ("Watch", () => EnterStep(Step.Recordings)),
                         ("Flip side", FlipMenuSide),
                         (_profile.ignoreOutOfRangeNotes ? "Fold notes in" : "Drop off-range",
@@ -337,6 +368,16 @@ namespace AuralPrimer.Calibration
                 case Step.Recordings:
                     panel?.SetTitle("Recordings");
                     RenderRecordings();
+                    break;
+
+                case Step.Songs:
+                    panel?.SetTitle("Songs");
+                    RenderSongs();
+                    break;
+
+                case Step.SongFilter:
+                    panel?.SetTitle(_filteringGenre ? "Genre" : "Artist");
+                    RenderSongFilter();
                     break;
 
                 case Step.Playback:
@@ -941,7 +982,15 @@ namespace AuralPrimer.Calibration
                 Reseat(highway != null ? highway.transform : null, space);
             }
 
-            if (overlay != null) overlay.Apply(_profile);
+            if (overlay != null)
+            {
+                overlay.Apply(_profile);
+                // The overlay lights the keys the lane is about to drop notes
+                // onto, so it needs to be told where the lane is. Set here, with
+                // the rest of the calibration, rather than serialised into the
+                // scene — one less field for a scene edit to lose.
+                overlay.Highway = highway;
+            }
             // The lane hangs off the same calibration: without it there is no
             // keyboard for the notes to line up above.
             if (highway != null) highway.Apply(_profile);

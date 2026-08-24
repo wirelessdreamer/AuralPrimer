@@ -60,6 +60,35 @@ namespace AuralPrimer.Link
         /// <summary>Raised when the host delivers a chart (protocol §4).</summary>
         public event System.Action<string> ChartReceived;
 
+        /// <summary>Raised with a page of the host's library (protocol §6).</summary>
+        public event System.Action<LibraryPage> LibraryReceived;
+
+        /// <summary>Raised with what the host heard, or why it could not.</summary>
+        public event System.Action<VoiceResult> VoiceHeard;
+
+        /// <summary>Whether the host offers browsing / voice search at all.</summary>
+        /// <remarks>
+        /// A host built before these frames existed ignores them silently, so
+        /// asking and waiting would hang the menu forever. The Songs step checks
+        /// this and says the host is too old, rather than sitting on "asking the
+        /// host…" with nothing on the way.
+        /// </remarks>
+        public bool CanBrowseLibrary =>
+            _session != null && _session.HostSupports(MrProtocol.FeatureLibrary);
+
+        public bool CanSearchByVoice =>
+            _session != null && _session.HostSupports(MrProtocol.FeatureVoice);
+
+        /// <summary>Ask for a page of the library; the answer arrives on
+        /// <see cref="LibraryReceived"/>.</summary>
+        public void RequestLibrary(LibraryQuery query) => _session?.RequestLibrary(query);
+
+        /// <summary>Ask the host to load a song.</summary>
+        public void SelectSong(string songId) => _session?.SelectSong(songId);
+
+        /// <summary>Send recorded speech to be transcribed by the host.</summary>
+        public void SendVoiceQuery(byte[] wav) => _session?.SendVoiceQuery(wav);
+
         void Start()
         {
             _session = new MrSessionClient(clientName);
@@ -132,6 +161,21 @@ namespace AuralPrimer.Link
                 while (_session.TryDequeueChart(out var chart))
                 {
                     ChartReceived?.Invoke(chart);
+                }
+
+                // Drained here, on the main thread, for the same reason the
+                // chart is: the socket thread must not touch Unity objects, and
+                // every subscriber to these ends up doing exactly that.
+                while (_session.TryDequeueLibraryPage(out var libraryJson))
+                {
+                    var page = LibraryPage.Parse(libraryJson);
+                    if (page != null) LibraryReceived?.Invoke(page);
+                }
+
+                while (_session.TryDequeueVoiceResult(out var voiceJson))
+                {
+                    var heard = VoiceResult.Parse(voiceJson);
+                    if (heard != null) VoiceHeard?.Invoke(heard);
                 }
 
                 // Render for when this frame's photons actually land, not for
