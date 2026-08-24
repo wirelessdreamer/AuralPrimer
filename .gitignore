@@ -69,6 +69,15 @@ python/ingest/build/
 # below), so they are never affected.
 tmp_*
 **/tmp_*
+
+# ...but Windows and macOS match those two case-insensitively, so `tmp_*` also
+# swallows TextMesh Pro's TMP_*.shader files. All 18 of them were silently kept
+# out of the repo: this checkout had them on disk from the original import, so
+# nothing looked wrong here, while a fresh clone built with no TMP shader at all
+# and every glyph rendered as a solid magenta quad -- text vanishing with no
+# error anywhere. Negated by path rather than by narrowing tmp_*, which is
+# load-bearing (see the 677 GB note above).
+!**/TextMesh Pro/Shaders/TMP_*
 # Root-level scratch screenshots only (root-anchored so nested, intentionally
 # committed images elsewhere are untouched).
 /*.png

@@ -355,6 +355,17 @@ namespace AuralPrimer.Calibration
             // Sit a few millimetres behind the notes so they read as being on it.
             const float behind = 0.004f;
 
+            // The backdrop's opacity is a genuine tension, not a free choice.
+            // The rake leans it laneTiltDegrees toward the player, so a 0.6 m
+            // lane reaches 0.6 * sin(20 deg) ~ 0.20 m forward from the back of
+            // the key bed, and a white key is 0.14 m deep -- meaning it hangs
+            // over the whole keyboard, between the eye and the keys. Dropping it
+            // to 0.22 to clear them was tried and reverted: it took away the
+            // thing the notes are read against, and they went back to hanging in
+            // mid-air as unanchored shapes. Clearing the keys needs the backdrop
+            // to stop short of them or fade out at its foot, not to get fainter
+            // everywhere.
+
             _backdrop.gameObject.SetActive(true);
             // Behind the notes along the lane's own normal, which faces the
             // player — so "behind" is away from them, not further into the room.

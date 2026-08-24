@@ -80,6 +80,8 @@ namespace AuralPrimer.Calibration
             {
                 if (_placing == value) return;
                 _placing = value;
+                Debug.Log($"[overlay] placing={_placing} "
+                        + $"({(_placing ? "full" : "resting")} alpha on unlit keys)");
                 RepaintIdle();
             }
         }
@@ -317,6 +319,23 @@ namespace AuralPrimer.Calibration
             _restingWhite = Dimmed(_idleWhite, restingOpacity);
             _restingBlack = Dimmed(_idleBlack, restingOpacity);
             _next = Dimmed(_lit, 0.45f);
+
+            // The resolved numbers, not the intended ones. A serialised field
+            // that did not take, or an asset edited since, both look identical
+            // from inside a headset -- and neither is guessable from outside.
+            Debug.Log($"[overlay] alpha idle={Alpha(_idleWhite):F3}/{Alpha(_idleBlack):F3} "
+                    + $"resting={Alpha(_restingWhite):F3}/{Alpha(_restingBlack):F3} "
+                    + $"(restingOpacity={restingOpacity:F2}) "
+                    + $"lit={Alpha(_lit):F3} next={Alpha(_next):F3}");
+        }
+
+        /// <summary>The alpha a material actually renders at.</summary>
+        static float Alpha(Material material)
+        {
+            if (material == null) return -1f;
+            if (material.HasProperty("_BaseColor")) return material.GetColor("_BaseColor").a;
+            if (material.HasProperty("_Color")) return material.GetColor("_Color").a;
+            return -1f;
         }
 
         static Material NewTransparent(Color color)
