@@ -32,6 +32,12 @@ namespace AuralPrimer.Calibration
                + "look-ahead: the whole lane lit at once names no key in particular.")]
         [SerializeField] float previewSeconds = 1.2f;
 
+        [Tooltip("How long a key stays lit after its note was due. Just enough to "
+               + "see the cue land and to forgive a slightly late hand -- not the "
+               + "note's length, which would leave the key lit through the whole "
+               + "sustain and stop it meaning \"play this now\".")]
+        [SerializeField] float strikeGraceSeconds = 0.12f;
+
         /// <summary>The window `Upcoming` reports over, so a reader can turn a
         /// note's remaining seconds into a fraction of the way there.</summary>
         public float PreviewSeconds => previewSeconds;
@@ -259,22 +265,33 @@ namespace AuralPrimer.Calibration
 
                 // About to be played, on the key it will be played on.
                 //
-                // Notes already due are INCLUDED, clamped to zero. Requiring
-                // untilOnset > 0 dropped a note at the exact instant it became
-                // due -- so the bar grew toward full and vanished just before
-                // reaching it, and the one note the player actually needed next
-                // was the only one never shown. Parked at t=0 it was worse: the
-                // first note of the song sat at exactly zero and never appeared
-                // at all.
+                // The window runs from previewSeconds before the onset to a
+                // short grace after it, and NOT for the note's length. Both ends
+                // were got wrong in turn:
                 //
-                // The walk starts at the cursor, which is already past anything
-                // that has finished sounding, so "due" here means due or still
-                // held -- never a note in the past. The chart is in onset order,
-                // so the first time a key appears is its nearest note, which
-                // makes Add-if-new the same as keeping the soonest, without
-                // sorting.
+                //   Requiring untilOnset > 0 dropped a note at the exact instant
+                //   it became due, so the bar grew toward full and vanished just
+                //   before reaching it -- the one key the player needed next was
+                //   the only one never shown.
+                //
+                //   Holding it until the note stopped sounding was no better.
+                //   Piano charts sustain, so the key stayed lit through the gap
+                //   to the following note and the cue decayed from "play this
+                //   now" into "this was played".
+                //
+                // The grace is for seeing the cue land and forgiving a late
+                // hand. Whether a note is still being HELD is a different
+                // question, and the live note-on set already answers it -- so
+                // this does not have to, and should not try.
+                //
+                // Dedup lives inside the test on purpose: a note that has aged
+                // out of its grace releases the key again, so a repeated note
+                // gets its own cue instead of being swallowed by the one still
+                // sounding underneath it.
                 var untilOnset = note.On - now;
-                if (untilOnset <= previewSeconds && _upcomingPitches.Add(pitch))
+                if (untilOnset <= previewSeconds
+                    && untilOnset > -strikeGraceSeconds
+                    && _upcomingPitches.Add(pitch))
                 {
                     _upcoming.Add(new UpcomingNote(pitch, Mathf.Max(0f, untilOnset)));
                 }
