@@ -211,6 +211,8 @@ shell, and native audio/MIDI:
 | App | **VoidZero** — Evan You · Anthony Fu | [**Vite**](https://github.com/vitejs/vite) · [**Vitest**](https://github.com/vitest-dev/vitest) — build & test | MIT |
 | App | **Microsoft** | [**TypeScript**](https://github.com/microsoft/TypeScript) · [**Playwright**](https://github.com/microsoft/playwright) | Apache-2.0 |
 | Native | **RustAudio + independent Rust** | [**cpal**](https://github.com/RustAudio/cpal) · [**rtrb**](https://github.com/mgeier/rtrb) · [**symphonia**](https://github.com/pdeljanov/Symphonia) · [**midir**](https://github.com/Boddlnagg/midir) · [**midly**](https://github.com/kovaxis/midly) — native audio/MIDI | Apache / MIT / MPL-2.0 |
+| MR | **Meta Platforms** | [**Meta XR Core SDK**](https://developers.meta.com/horizon/documentation/unity/unity-package-manager/) — body / face / eye tracking for the Quest client's performance capture | Oculus SDK License (proprietary) |
+| MR | **Cadson Demak** — Chakra Petch project authors | [**Chakra Petch**](https://github.com/google/fonts/tree/main/ofl/chakrapetch) — the MR client's interface typeface | SIL OFL 1.1 |
 | MR | **Unity Technologies** | [**XR Interaction Toolkit**](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.5/manual/index.html) · [**XR Hands**](https://docs.unity3d.com/Packages/com.unity.xr.hands@1.5/manual/index.html) · [**OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.14/manual/index.html) · [**AR Foundation**](https://docs.unity3d.com/Packages/com.unity.xr.arfoundation@6.1/manual/index.html) · [**Input System**](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.14/manual/index.html) — the Quest client's runtime and interaction stack | Unity Companion / Package Distribution License |
 
 *Lineage: Google/Magenta's **MT3** → Sony's **MR-MT3** (fine-tuned for drums).
@@ -310,6 +312,21 @@ outside the copyleft boundary described under *Licensing* below.
 | [**Android XR OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.androidxr-openxr@1.0/manual/index.html) | keeps the build multiplatform beyond Quest | UCL |
 | [**XR Core Utilities**](https://docs.unity3d.com/Packages/com.unity.xr.core-utils@2.5/manual/index.html) | XR Origin and shared XR math | UCL |
 | [**Universal Render Pipeline**](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@17.3/manual/index.html) | the mobile-XR renderer | UCL |
+| [**Meta XR Core SDK**](https://developers.meta.com/horizon/documentation/unity/unity-package-manager/) | body, face and eye tracking for performance capture — the only source for these on Quest; `OVRPlugin` reads them under the `com.meta.openxr.feature.metaxr` OpenXR feature | [Oculus SDK License](https://developers.meta.com/horizon/licenses/oculussdk/) (proprietary) |
+| [**Chakra Petch**](https://fonts.google.com/specimen/Chakra+Petch) | the MR client's interface typeface — Bold for caps, SemiBold for reading; TTFs bundled and baked into TMP SDF atlases | [SIL OFL 1.1](https://openfontlicense.org/) |
+
+> **Why a proprietary SDK is admissible here.** The Meta XR Core SDK is under
+> the Oculus SDK License, which is *not* GPLv3-compatible and so would fail the
+> gate above. It ships only inside `UnityClient/`, which is
+> [Apache-2.0](UnityClient/Aural%20Primer/LICENSE) precisely because the Unity
+> runtime cannot be sublicensed under the GPL — the same carve-out, for the same
+> reason, and documented in that subtree's
+> [NOTICE](UnityClient/Aural%20Primer/NOTICE). It must not be referenced from
+> the GPL-3.0-or-later trees (`apps/`, `visualizers/`, `python/`, `crates/`).
+>
+> Body, face and eye tracking have no cross-vendor OpenXR equivalent on Quest,
+> so the alternative was hand-binding the `XR_FB_*` extensions rather than a
+> different open library.
 
 Present from the Unity project template but **not used** by AuralPrimer code,
 and listed here so the manifest and this table can be reconciled line by line:

@@ -179,6 +179,111 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &241587015
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 241587016}
+  - component: {fileID: 241587018}
+  - component: {fileID: 241587017}
+  m_Layer: 0
+  m_Name: Right Poke
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &241587016
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 241587015}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 944801143}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &241587017
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 241587015}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 459303d1540069e468379120f26fd1eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AuralPrimer.UI::AuralPrimer.UI.HandPokeDriver
+  leftHand: 0
+--- !u!114 &241587018
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 241587015}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0924bcaa9eb50df458a783ae0e2b59f5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.Interaction.Toolkit::UnityEngine.XR.Interaction.Toolkit.Interactors.XRPokeInteractor
+  m_InteractionManager: {fileID: 0}
+  m_InteractionLayers:
+    m_Bits: 4294967295
+  m_Handedness: 0
+  m_AttachTransform: {fileID: 0}
+  m_KeepSelectedTargetValid: 1
+  m_DisableVisualsWhenBlockedInGroup: 1
+  m_StartingSelectedInteractable: {fileID: 0}
+  m_StartingTargetFilter: {fileID: 0}
+  m_AutoFindParentInteractableInHierarchy: 0
+  m_ParentInteractableObject: {fileID: 0}
+  m_HoverEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_HoverExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_StartingHoverFilters: []
+  m_StartingSelectFilters: []
+  m_PokeDepth: 0.1
+  m_PokeWidth: 0.0075
+  m_PokeSelectWidth: 0.015
+  m_PokeHoverRadius: 0.015
+  m_PokeInteractionOffset: 0.005
+  m_PhysicsLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_PhysicsTriggerInteraction: 1
+  m_SnapVolumeInteraction: 0
+  m_UIDocumentTriggerInteraction: 1
+  m_RequirePokeFilter: 0
+  m_EnableUIInteraction: 1
+  m_ClickUIOnDown: 0
+  m_DebugVisualizationsEnabled: 0
+  m_UIHoverEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_UIHoverExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_EnableMultiPick: 0
 --- !u!1 &286128296
 GameObject:
   m_ObjectHideFlags: 0
@@ -463,6 +568,8 @@ GameObject:
   m_Component:
   - component: {fileID: 302477620}
   - component: {fileID: 302477619}
+  - component: {fileID: 302477621}
+  - component: {fileID: 302477622}
   m_Layer: 0
   m_Name: MR Link
   m_TagString: Untagged
@@ -501,6 +608,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &302477621
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 302477618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fb32c0dada0ff1e419f42ec60903be67, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AuralPrimer.Recording::AuralPrimer.Recording.PerformanceCapture
+  link: {fileID: 302477619}
+  outputDirectory: 
+--- !u!114 &302477622
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 302477618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b210cc9a18d8574ca04c328f35219cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AuralPrimer.Recording::AuralPrimer.Recording.PerformancePlayback
+  handJointMetres: 0.012
+  bodyJointMetres: 0.03
+  handMaterial: {fileID: 2100000, guid: 29f0ba016af8d324eba297e579e678c3, type: 2}
+  bodyMaterial: {fileID: 2100000, guid: 8a342a28bd0f4c440bb91f7d6a8664e7, type: 2}
+  headMaterial: {fileID: 2100000, guid: 241292418aa615a4e9b407ecf4a1bae7, type: 2}
 --- !u!1 &312847746
 GameObject:
   m_ObjectHideFlags: 0
@@ -1264,6 +1402,8 @@ MonoBehaviour:
   leftHand: 1
   pinchEnterMetres: 0.02
   pinchExitMetres: 0.035
+  suppressNearKeysMetres: 0.25
+  restoreNearKeysMetres: 0.32
 --- !u!1 &350902411
 GameObject:
   m_ObjectHideFlags: 0
@@ -2076,6 +2216,113 @@ MonoBehaviour:
   leftHand: 0
   pinchEnterMetres: 0.02
   pinchExitMetres: 0.035
+  suppressNearKeysMetres: 0.25
+  restoreNearKeysMetres: 0.32
+--- !u!1 &910441266
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 910441267}
+  - component: {fileID: 910441269}
+  - component: {fileID: 910441268}
+  m_Layer: 0
+  m_Name: Left Poke
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &910441267
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910441266}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 944801143}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &910441268
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910441266}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 459303d1540069e468379120f26fd1eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AuralPrimer.UI::AuralPrimer.UI.HandPokeDriver
+  leftHand: 1
+--- !u!114 &910441269
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910441266}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0924bcaa9eb50df458a783ae0e2b59f5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.Interaction.Toolkit::UnityEngine.XR.Interaction.Toolkit.Interactors.XRPokeInteractor
+  m_InteractionManager: {fileID: 0}
+  m_InteractionLayers:
+    m_Bits: 4294967295
+  m_Handedness: 0
+  m_AttachTransform: {fileID: 0}
+  m_KeepSelectedTargetValid: 1
+  m_DisableVisualsWhenBlockedInGroup: 1
+  m_StartingSelectedInteractable: {fileID: 0}
+  m_StartingTargetFilter: {fileID: 0}
+  m_AutoFindParentInteractableInHierarchy: 0
+  m_ParentInteractableObject: {fileID: 0}
+  m_HoverEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_HoverExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_StartingHoverFilters: []
+  m_StartingSelectFilters: []
+  m_PokeDepth: 0.1
+  m_PokeWidth: 0.0075
+  m_PokeSelectWidth: 0.015
+  m_PokeHoverRadius: 0.015
+  m_PokeInteractionOffset: 0.005
+  m_PhysicsLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_PhysicsTriggerInteraction: 1
+  m_SnapVolumeInteraction: 0
+  m_UIDocumentTriggerInteraction: 1
+  m_RequirePokeFilter: 0
+  m_EnableUIInteraction: 1
+  m_ClickUIOnDown: 0
+  m_DebugVisualizationsEnabled: 0
+  m_UIHoverEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_UIHoverExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_EnableMultiPick: 0
 --- !u!1 &944801142
 GameObject:
   m_ObjectHideFlags: 0
@@ -2108,6 +2355,8 @@ Transform:
   - {fileID: 293072304}
   - {fileID: 312847747}
   - {fileID: 892410609}
+  - {fileID: 241587016}
+  - {fileID: 910441267}
   m_Father: {fileID: 2110819801}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1203704249
@@ -2196,7 +2445,12 @@ MonoBehaviour:
   overlay: {fileID: 1203704250}
   highway: {fileID: 286128297}
   keyboardAnchor: {fileID: 1764251373}
+  capture: {fileID: 302477621}
+  playback: {fileID: 302477622}
   showPinchMarkers: 1
+  dockMarginMetres: 0.3
+  dockHeightMetres: 0.3
+  dockAngledAway: 1
   leftPinchMaterial: {fileID: 2100000, guid: 87a6a6e39c2cc924eb1700c6da8837c9, type: 2}
   rightPinchMaterial: {fileID: 2100000, guid: 8d94b2fe13a07d44e9e0378b42f61da4, type: 2}
   pinchMarkerSizeMetres: 0.03
@@ -2427,6 +2681,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: AuralPrimer.UI::AuralPrimer.UI.WizardPanel
   distanceMetres: 0.9
   heightOffsetMetres: 0.15
+  displayFont: {fileID: 11400000, guid: a5c28fab87ab4724e8bfae5d0b561ebe, type: 2}
+  bodyFont: {fileID: 11400000, guid: 4aa3b376a8db40648986d69f47210229, type: 2}
   widthMetres: 0.5
 --- !u!4 &2088425083
 Transform:

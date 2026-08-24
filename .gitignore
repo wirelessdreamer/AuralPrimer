@@ -193,3 +193,7 @@ UnityClient/**/Assets/MRTemplateAssets/
 UnityClient/**/Assets/MRTemplateAssets.meta
 UnityClient/**/Assets/Samples/
 UnityClient/**/Assets/Samples.meta
+
+# Offscreen UI renders written by RenderCheck.cs — verification output,
+# regenerated on demand.
+UnityClient/RenderChecks/

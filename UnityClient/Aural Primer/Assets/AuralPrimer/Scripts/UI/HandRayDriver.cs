@@ -38,6 +38,14 @@ namespace AuralPrimer.UI
                + "at the threshold does not chatter the selection on and off.")]
         [SerializeField] float pinchExitMetres = 0.035f;
 
+        [Tooltip("Within this distance of the keys, the ray is put away. A hand "
+               + "over the keyboard is playing, not pointing.")]
+        [SerializeField] float suppressNearKeysMetres = 0.16f;
+
+        [Tooltip("And beyond this it comes back. Wider than the suppress distance "
+               + "so a hand hovering at the boundary does not flicker the ray.")]
+        [SerializeField] float restoreNearKeysMetres = 0.22f;
+
         XRHandSubsystem _hands;
         XROrigin _origin;
 
@@ -62,6 +70,7 @@ namespace AuralPrimer.UI
         NearFarInteractor _interactor;
         bool _pinching;
         bool _posed;
+        bool _nearKeys;
 
         void Awake()
         {
@@ -102,6 +111,35 @@ namespace AuralPrimer.UI
                 Lost();
                 return;
             }
+
+            // Put the ray away over the keyboard. Playing produces a stream of
+            // pinch-like finger poses inches from the keys, and a laser sweeping
+            // the room from each hand while both are busy is noise at best — at
+            // worst it fires selections at whatever it crosses.
+            var distance = KeyboardProximity.SuppressOverKeys
+                ? KeyboardProximity.Distance(knuckle)
+                : -1f;
+            if (distance >= 0f)
+            {
+                // Hysteresis, for the same reason the pinch has it: a hand
+                // resting at the threshold would otherwise strobe the ray.
+                if (_nearKeys ? distance > restoreNearKeysMetres
+                              : distance < suppressNearKeysMetres)
+                {
+                    _nearKeys = !_nearKeys;
+                }
+
+            }
+
+            // Put away the RAY, not the interactor.
+            //
+            // Lost() disables the whole NearFarInteractor, which also kills
+            // near-grab and every press. With the menu docked 0.30 m from the key
+            // bed and the restore threshold once set at 0.32 m, reaching from the
+            // keys to the menu never crossed back — so the interactor stayed off
+            // exactly where it was needed, and both drag bars went dead.
+            if (!KeyboardProximity.SuppressOverKeys) _nearKeys = false;
+            SetRayVisible(!_nearKeys);
 
             Aim(knuckle);
             Press(Vector3.Distance(thumbTip, indexTip));
@@ -144,6 +182,15 @@ namespace AuralPrimer.UI
 
             if (_interactor == null) return;
 
+            if (_pinching != wasPinching)
+            {
+                // Whether the gesture is even being seen, separately from whether
+                // anything reacts to it.
+                Debug.Log($"[pinch] {(leftHand ? "left" : "right")} {(_pinching ? "down" : "up")} "
+                        + $"gap={pinchDistance * 1000f:F0}mm rayVisible={_interactor.enableFarCasting} "
+                        + $"hovering={_interactor.hasHover} selecting={_interactor.hasSelection}");
+            }
+
             // Both readers get the same signal: one press should grab a handle
             // and click a button, not one or the other depending on the target.
             _interactor.selectInput.QueueManualState(
@@ -172,6 +219,28 @@ namespace AuralPrimer.UI
         {
             if (_interactor != null) _interactor.enabled = visible;
             if (TryGetComponent<LineRenderer>(out var line)) line.enabled = visible;
+        }
+
+        /// <summary>
+        /// Hide the ray over the keys. Do NOT disable the interaction.
+        /// </summary>
+        /// <remarks>
+        /// The ask was that a laser should not be drawn coming off a hand that
+        /// is over the keyboard. Turning off enableFarCasting as well went far
+        /// past that: hands rest near the keys, so aiming at the docked menu
+        /// from a resting position put the knuckle inside the suppression radius
+        /// and killed the very cast that was trying to reach it. Nothing on the
+        /// menu could be pressed, and neither drag bar could be grabbed.
+        ///
+        /// Only the line goes away now. The cast stays live, so the menu is
+        /// reachable from wherever the hands happen to be.
+        /// </remarks>
+        void SetRayVisible(bool visible)
+        {
+            if (TryGetComponent<LineRenderer>(out var line) && line.enabled != visible)
+            {
+                line.enabled = visible;
+            }
         }
 
         /// <summary>

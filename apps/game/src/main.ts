@@ -2,6 +2,7 @@ import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import { isManifestPack } from "@auralprimer/auralsong/packKind";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
+import { inferKeySignature } from "@auralprimer/viz-tab";
 import { TransportController } from "./transportController";
 import { initAvCalibration } from "@auralprimer/av-sync";
 import {
@@ -921,7 +922,15 @@ async function selectAuralSong(containerPath: string) {
     // Chord names for the roll, from the same track the piano surface renders.
     const chordTrack =
       selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
-    songChordLabels = chordTrack ? chordLabels(chordTrack.notes) : [];
+    // Spell chords the way the key does. Without this every chord came out
+    // sharp regardless of key, so A minor showed "C/A#" where the note is Bb.
+    // Minor counts as flat-side even on a natural tonic (b3/b6/b7 are diatonic).
+    const chordKey = chordTrack ? inferKeySignature(chordTrack.notes) : null;
+    const chordSpelling =
+      chordKey && (chordKey.noteLabelStyle === "flat" || chordKey.mode === "minor")
+        ? "flat"
+        : "sharp";
+    songChordLabels = chordTrack ? chordLabels(chordTrack.notes, chordSpelling) : [];
 
     // Hand the headset this song's chart. Prefers keys, since that is what the
     // MR client renders against a real keyboard.
@@ -1170,7 +1179,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     lastFrameMs = ms;
 
     transport = transportController.tick(dt);
-    if (learnMode) {
+    if (learnMode || graceMode) {
       learnGateTick();
       transport = transportController.getState();
     }
@@ -1308,6 +1317,12 @@ if (nashvilleCheckbox) {
 // Playback waits at each note onset until the correct note(s) are played on
 // MIDI input, then advances. Notes are grouped by onset (chords held together).
 const LEARN_STORAGE_KEY = "auralprimer.learnMode";
+const GRACE_STORAGE_KEY = "auralprimer.graceMode";
+// Half-window either side of a note's onset. A hit inside it counts, so the
+// full window is twice this — early and late are forgiven equally, because a
+// player rushing and a player dragging are the same mistake in opposite
+// directions and neither deserves a stutter.
+const GRACE_WINDOW_SEC = 0.05;
 // Playhead jump that means "seeked", not "played on". Comfortably above a
 // frame's worth of playback (even a slow frame at 2x rate) and below the
 // smallest jog step, so a Shift+arrow nudge still counts as a seek.
@@ -1316,6 +1331,13 @@ type LearnGroup = { t: number; pitches: number[] };
 let learnMode = (() => {
   try {
     return window.localStorage.getItem(LEARN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+})();
+let graceMode = (() => {
+  try {
+    return window.localStorage.getItem(GRACE_STORAGE_KEY) === "1";
   } catch {
     return false;
   }
@@ -1363,12 +1385,35 @@ function resetLearnFromTime(t: number): void {
 }
 
 function learnRegisterPlayed(pitch: number): void {
-  if (!learnWaiting || learnIdx >= learnGroups.length) return;
+  if (learnIdx >= learnGroups.length) return;
   const g = learnGroups[learnIdx];
+
+  // Count the hit if we are already holding for it, OR if the playhead is
+  // inside the grace window around its onset.
+  //
+  // The second case is what stops Wait mode asking twice. The gate only pauses
+  // once the playhead reaches the onset, so a note played a few milliseconds
+  // early used to arrive while learnWaiting was still false and was dropped on
+  // the floor — then the transport stopped and asked for the note you had just
+  // played.
+  // Grace widens what counts as "on time"; without it only the gate's own
+  // tolerance applies. The two stack rather than exclude: Wait mode still
+  // stops when a note is genuinely missed, Grace just stops it stopping for
+  // a note you played a few milliseconds off.
+  const t = transportController.getState().t;
+  const window = graceMode ? GRACE_WINDOW_SEC : 0.02;
+  const inWindow = Math.abs(t - g.t) <= window;
+  if (!learnWaiting && !inWindow) return;
+
   if (g.pitches.includes(pitch)) learnHit.add(pitch);
-  if (g.pitches.every((p) => learnHit.has(p))) {
-    learnIdx += 1;
-    learnHit.clear();
+  if (!g.pitches.every((p) => learnHit.has(p))) return;
+
+  learnIdx += 1;
+  learnHit.clear();
+
+  // Grace mode never pauses, so there is nothing to resume; calling play() here
+  // would fight a transport that is already running.
+  if (learnWaiting) {
     learnWaiting = false;
     void transportController.play();
   }
@@ -1400,7 +1445,28 @@ function learnGateTick(): void {
   if (learnIdx >= learnGroups.length) return;
   const g = learnGroups[learnIdx];
   const st = transportController.getState();
-  if (!learnWaiting && st.isPlaying && st.t >= g.t - 0.02) {
+
+  // Grace mode scores without ever taking the transport. Once a note's window
+  // has closed it is retired, missed or not, and the song carries on — that is
+  // the whole point of it, and it is why it cannot share the gate below.
+  if (graceMode && !learnMode) {
+    // Grace on its own scores without ever taking the transport: once a note's
+    // window closes it is retired, missed or not, and the song carries on.
+    while (
+      learnIdx < learnGroups.length &&
+      st.t - learnGroups[learnIdx].t > GRACE_WINDOW_SEC
+    ) {
+      learnIdx += 1;
+      learnHit.clear();
+    }
+    return;
+  }
+
+  // With Grace on, hold off until the late half of the window has passed —
+  // otherwise the gate stops the song at the onset and the forgiveness never
+  // gets a chance to apply.
+  const gateAt = graceMode ? g.t + GRACE_WINDOW_SEC : g.t - 0.02;
+  if (!learnWaiting && st.isPlaying && st.t >= gateAt) {
     if (g.pitches.every((p) => learnHit.has(p))) {
       learnIdx += 1;
       learnHit.clear();
@@ -1429,6 +1495,32 @@ if (learnCheckbox) {
       // Un-stick: if we were holding, let playback continue.
       learnWaiting = false;
       void transportController.play();
+    }
+  });
+}
+
+function persistGrace(): void {
+  try {
+    window.localStorage.setItem(GRACE_STORAGE_KEY, graceMode ? "1" : "0");
+  } catch {
+    // best-effort
+  }
+}
+
+const graceCheckbox = document.getElementById("graceMode") as HTMLInputElement | null;
+if (graceCheckbox) {
+  graceCheckbox.checked = graceMode;
+  graceCheckbox.addEventListener("change", () => {
+    graceMode = graceCheckbox.checked;
+    persistGrace();
+    if (graceMode) {
+      // Turning Grace on while Wait mode is holding releases the transport:
+      // the note it stopped for is inside the widened window now.
+      if (learnWaiting) {
+        learnWaiting = false;
+        void transportController.play();
+      }
+      buildLearnGroups();
     }
   });
 }
