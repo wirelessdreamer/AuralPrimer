@@ -35,6 +35,9 @@ namespace AuralPrimer.Calibration
         KeyboardLayout _layout;
         readonly Dictionary<int, Transform> _keyMarkers = new();
         readonly List<int> _litLastFrame = new();
+        readonly Dictionary<int, Renderer> _previewFills = new();
+        MaterialPropertyBlock _previewBlock;
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
         [Header("Materials")]
         [Tooltip("Assigned from project assets so the build keeps the shader AND "
@@ -50,6 +53,19 @@ namespace AuralPrimer.Calibration
         Material _restingWhite;
         Material _restingBlack;
         Material _next;
+
+        /// <summary>Colour of a key at the far edge of the preview window.</summary>
+        /// <remarks>
+        /// The near end is the lit colour on purpose: a preview that converges
+        /// on it means "about to be played" and "being played" meet as the same
+        /// hue at the moment the note lands, so the key does not jump colour at
+        /// the instant the player is watching it hardest.
+        /// </remarks>
+        static readonly Color PreviewFar = new(0.482f, 0.247f, 0.949f, 0.30f);
+        static readonly Color PreviewNear = new(0.208f, 0.941f, 1f, 0.85f);
+
+        /// <summary>Shortest bar drawn, so the furthest note is still visible.</summary>
+        const float MinimumPreviewFill = 0.14f;
 
         void Awake() => BuildMaterials();
 
@@ -119,6 +135,48 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         public IReadOnlyList<(byte pitch, byte velocity)> PlaybackNotes { get; set; }
 
+        /// <summary>Draw one key's "coming up" bar.</summary>
+        void ShowPreview(NoteHighway.UpcomingNote note, float window)
+        {
+            if (!_previewFills.TryGetValue(note.Pitch, out var fill) || fill == null) return;
+
+            // 1 at the far edge of the window, 0 at the moment of the strike.
+            var away = Mathf.Clamp01(note.Seconds / window);
+            var nearness = 1f - away;
+
+            // Grows from the far edge of the key toward the player. The marker
+            // is a unit cube scaled to the key, so this is all in its own space
+            // and needs no knowledge of how big the key actually is.
+            var fraction = Mathf.Lerp(MinimumPreviewFill, 1f, nearness);
+            var t = fill.transform;
+            t.localScale = new Vector3(0.86f, 1.3f, fraction);
+            t.localPosition = new Vector3(0f, 0.25f, -0.5f + fraction * 0.5f);
+            fill.gameObject.SetActive(true);
+
+            // Per-key colour without a material each: a property block keeps one
+            // shared material and still lets all sixty-one differ.
+            _previewBlock ??= new MaterialPropertyBlock();
+            _previewBlock.Clear();
+            _previewBlock.SetColor(BaseColorId, Color.Lerp(PreviewFar, PreviewNear, nearness));
+            fill.SetPropertyBlock(_previewBlock);
+        }
+
+        void HidePreview(int pitch)
+        {
+            if (_previewFills.TryGetValue(pitch, out var fill) && fill != null)
+            {
+                fill.gameObject.SetActive(false);
+            }
+        }
+
+        void HideAllPreviews()
+        {
+            foreach (var fill in _previewFills.Values)
+            {
+                if (fill != null && fill.gameObject.activeSelf) fill.gameObject.SetActive(false);
+            }
+        }
+
         /// <summary>How an unlit key is drawn right now.</summary>
         Material IdleMaterial(int pitch)
         {
@@ -166,18 +224,21 @@ namespace AuralPrimer.Calibration
             }
             _litLastFrame.Clear();
 
-            // What is coming, then what is being played. A key that is both
-            // gets the held colour, because that is the one the player needs
-            // confirmed — the preview has already done its job by then.
-            var upcoming = Highway != null ? Highway.UpcomingPitches : null;
+            // What is coming, drawn inside the keys rather than over them.
+            //
+            // One flat colour across every upcoming key answers "these are
+            // next" but not "in what order", which is the only question worth
+            // asking of a run. So each key gets a bar that grows as its note
+            // approaches and a colour that warms toward the lit one: the key
+            // you play next has the longest bar and the hottest colour, and the
+            // ranking is readable at a glance without counting anything.
+            HideAllPreviews();
+
+            var upcoming = Highway != null ? Highway.Upcoming : null;
             if (upcoming != null)
             {
-                foreach (var pitch in upcoming)
-                {
-                    if (!_keyMarkers.TryGetValue(pitch, out var marker) || marker == null) continue;
-                    SetMaterial(marker, _next);
-                    _litLastFrame.Add(pitch);
-                }
+                var window = Mathf.Max(0.01f, Highway.PreviewSeconds);
+                foreach (var note in upcoming) ShowPreview(note, window);
             }
 
             foreach (var note in notes)
@@ -185,6 +246,10 @@ namespace AuralPrimer.Calibration
                 if (!_keyMarkers.TryGetValue(note.pitch, out var marker) || marker == null) continue;
                 SetMaterial(marker, _lit);
                 _litLastFrame.Add(note.pitch);
+                // Being played beats being due. The bar has done its job by the
+                // time the finger is down, and leaving it under a lit key reads
+                // as a second, contradictory state.
+                HidePreview(note.pitch);
             }
         }
 
@@ -213,6 +278,23 @@ namespace AuralPrimer.Calibration
                     marker.transform.SetParent(transform, false);
                     SetMaterial(marker.transform, IdleMaterial(pitch));
                     _keyMarkers[pitch] = marker.transform;
+
+                    // The "coming up" bar lives inside the key, as a child, so
+                    // it inherits the key's size and rotation and can be
+                    // described purely as a fraction of it. Made once with the
+                    // marker rather than per frame: these are created at the
+                    // rate an edge drag moves the calibration.
+                    var fill = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    fill.name = $"Preview {pitch}";
+                    Destroy(fill.GetComponent<Collider>());
+                    fill.transform.SetParent(marker.transform, false);
+                    fill.transform.localRotation = Quaternion.identity;
+                    if (fill.TryGetComponent<Renderer>(out var fillRenderer))
+                    {
+                        fillRenderer.sharedMaterial = _next;
+                        _previewFills[pitch] = fillRenderer;
+                    }
+                    fill.SetActive(false);
                 }
             }
 
@@ -295,6 +377,9 @@ namespace AuralPrimer.Calibration
             }
             _keyMarkers.Clear();
             _litLastFrame.Clear();
+            // The bars are children of the markers, so destroying those took
+            // them with it; this just drops the now-dangling references.
+            _previewFills.Clear();
             // No keys drawn means no keys to keep the ray off.
             AuralPrimer.UI.KeyboardProximity.Clear();
         }

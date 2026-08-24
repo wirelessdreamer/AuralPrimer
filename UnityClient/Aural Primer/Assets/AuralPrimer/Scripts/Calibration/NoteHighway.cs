@@ -32,6 +32,10 @@ namespace AuralPrimer.Calibration
                + "look-ahead: the whole lane lit at once names no key in particular.")]
         [SerializeField] float previewSeconds = 1.2f;
 
+        /// <summary>The window `Upcoming` reports over, so a reader can turn a
+        /// note's remaining seconds into a fraction of the way there.</summary>
+        public float PreviewSeconds => previewSeconds;
+
         [Tooltip("Thickness of a note slab, in metres.")]
         [SerializeField] float noteThicknessMetres = 0.003f;
 
@@ -59,7 +63,8 @@ namespace AuralPrimer.Calibration
         readonly List<Transform> _pool = new();
         readonly List<Renderer> _poolRenderers = new();
         readonly List<Transform> _heads = new();
-        readonly List<int> _upcoming = new();
+        readonly List<UpcomingNote> _upcoming = new();
+        readonly HashSet<int> _upcomingPitches = new();
 
         CalibrationProfile _profile;
         KeyboardLayout _layout;
@@ -150,9 +155,23 @@ namespace AuralPrimer.Calibration
             if (link != null) link.ChartReceived -= OnChart;
         }
 
+        /// <summary>A key that is about to be played, and how soon.</summary>
+        public readonly struct UpcomingNote
+        {
+            public readonly int Pitch;
+            /// <summary>Seconds until this key should be struck.</summary>
+            public readonly float Seconds;
+
+            public UpcomingNote(int pitch, float seconds)
+            {
+                Pitch = pitch;
+                Seconds = seconds;
+            }
+        }
+
         /// <summary>
         /// Keys whose notes land within the preview window, for the overlay to
-        /// light.
+        /// light, each with how long until it is due.
         /// </summary>
         /// <remarks>
         /// Published from here because the walk that finds them is already
@@ -160,8 +179,12 @@ namespace AuralPrimer.Calibration
         /// onset order, with the out-of-range folding already applied. Finding
         /// them again in the overlay would mean a second cursor over the same
         /// chart, free to disagree with the notes actually on screen.
+        ///
+        /// Sorted soonest-first, and one entry per key: a trill inside the
+        /// window would otherwise report the same key several times, and the
+        /// only one worth drawing is the next one.
         /// </remarks>
-        public IReadOnlyList<int> UpcomingPitches => _upcoming;
+        public IReadOnlyList<UpcomingNote> Upcoming => _upcoming;
 
         /// <summary>Point the lane at a calibration. Without one there is no
         /// keyboard to line notes up with, so nothing is drawn.</summary>
@@ -211,6 +234,7 @@ namespace AuralPrimer.Calibration
             while (_cursor < _notes.Count && _notes[_cursor].Off < now) _cursor++;
 
             _upcoming.Clear();
+            _upcomingPitches.Clear();
 
             var (laneUp, _, laneRotation) = LaneBasis();
 
@@ -233,13 +257,26 @@ namespace AuralPrimer.Calibration
                 var pitch = _profile.FoldPitch(_layout, note.Pitch);
                 if (pitch < 0) continue;
 
-                // About to be played, on the key it will be played on. Notes
-                // already sounding are excluded: their key is under a finger, so
-                // lighting it would say "press this next" about a note in the past.
+                // About to be played, on the key it will be played on.
+                //
+                // Notes already due are INCLUDED, clamped to zero. Requiring
+                // untilOnset > 0 dropped a note at the exact instant it became
+                // due -- so the bar grew toward full and vanished just before
+                // reaching it, and the one note the player actually needed next
+                // was the only one never shown. Parked at t=0 it was worse: the
+                // first note of the song sat at exactly zero and never appeared
+                // at all.
+                //
+                // The walk starts at the cursor, which is already past anything
+                // that has finished sounding, so "due" here means due or still
+                // held -- never a note in the past. The chart is in onset order,
+                // so the first time a key appears is its nearest note, which
+                // makes Add-if-new the same as keeping the soonest, without
+                // sorting.
                 var untilOnset = note.On - now;
-                if (untilOnset > 0f && untilOnset <= previewSeconds && !_upcoming.Contains(pitch))
+                if (untilOnset <= previewSeconds && _upcomingPitches.Add(pitch))
                 {
-                    _upcoming.Add(pitch);
+                    _upcoming.Add(new UpcomingNote(pitch, Mathf.Max(0f, untilOnset)));
                 }
 
                 // Lifted clear of the real keys. Notes arrive at the "play now"
@@ -441,6 +478,7 @@ namespace AuralPrimer.Calibration
         void HideAll()
         {
             _upcoming.Clear();
+            _upcomingPitches.Clear();
             foreach (var t in _pool)
             {
                 if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);
