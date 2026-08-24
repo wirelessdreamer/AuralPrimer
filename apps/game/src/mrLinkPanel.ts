@@ -27,6 +27,13 @@ const SELECTION_POLL_MS = 500;
 
 export type MrLinkStatus = { running: boolean; host?: string };
 
+/** What the headset says its keyboard can physically play (protocol §7). */
+export type MrKeyboardLayout = {
+  lowestPitch: number;
+  highestPitch: number;
+  dropOutOfRange: boolean;
+};
+
 export type MrLinkPanelHandle = {
   /** Feed the link the current transport + held notes. Cheap, rate-limited,
    * and a no-op when the link is off. */
@@ -88,6 +95,7 @@ export function buildChart(
  */
 export function initMrLinkPanel(
   onSongRequested?: (containerPath: string) => void,
+  onKeyboardLayout?: (layout: MrKeyboardLayout | null) => void,
 ): MrLinkPanelHandle {
   const toggle = document.getElementById("mrLinkEnabled") as HTMLInputElement | null;
   const statusEl = document.getElementById("mrLinkStatus");
@@ -125,6 +133,13 @@ export function initMrLinkPanel(
           // The link may be stopping; the next tick either works or the
           // timer is cleared. Not worth a log line twice a second.
         });
+
+      // Standing state rather than a one-shot, so this reads it every tick
+      // and lets the handler ignore an unchanged value. A recalibration in
+      // the headset has to reach us without anything being re-selected.
+      void invoke<MrKeyboardLayout | null>("mr_link_keyboard_layout")
+        .then((layout) => onKeyboardLayout?.(layout ?? null))
+        .catch(() => {});
     }, SELECTION_POLL_MS);
   }
 

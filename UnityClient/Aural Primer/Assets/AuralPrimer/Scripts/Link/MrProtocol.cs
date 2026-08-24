@@ -36,6 +36,7 @@ namespace AuralPrimer.Link
         public const byte FrameSelectSong = 0x14;
         public const byte FrameVoiceQuery = 0x15;
         public const byte FrameVoiceResult = 0x16;
+        public const byte FrameKeyboardLayout = 0x17;
 
         /// <summary>Names used in the WELCOME `features` array.</summary>
         public const string FeatureLibrary = "library";

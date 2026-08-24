@@ -198,6 +198,29 @@ namespace AuralPrimer.Link
             }
         }
 
+        /// <summary>Tell the host what this keyboard can physically play.</summary>
+        /// <remarks>
+        /// Standing state, not a request: the host keeps the last one and reads
+        /// it whenever it rebuilds what it is waiting for. Sent on connect and
+        /// again on every recalibration, because the answer changes when the
+        /// player re-marks the ends of the instrument.
+        /// </remarks>
+        public void SendKeyboardLayout(int lowestPitch, int highestPitch, bool dropOutOfRange)
+        {
+            if (!IsConnected) return;
+            try
+            {
+                var json = "{\"lowestPitch\":" + lowestPitch
+                         + ",\"highestPitch\":" + highestPitch
+                         + ",\"dropOutOfRange\":" + (dropOutOfRange ? "true" : "false") + "}";
+                Send(MrProtocol.FrameKeyboardLayout, Encoding.UTF8.GetBytes(json));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[mr-link] keyboard layout send failed: {e.Message}");
+            }
+        }
+
         /// <summary>Send recorded speech for the host to transcribe.</summary>
         public void SendVoiceQuery(byte[] wav)
         {

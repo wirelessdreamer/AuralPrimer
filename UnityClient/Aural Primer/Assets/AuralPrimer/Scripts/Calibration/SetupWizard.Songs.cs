@@ -51,6 +51,44 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         const float ListenSeconds = VoiceWav.MaxSeconds;
 
+        bool _wasLinked;
+
+        /// <summary>
+        /// Tell the host which notes this instrument can actually play.
+        /// </summary>
+        /// <remarks>
+        /// Without this the two ends disagree about what is playable and the
+        /// song stops dead: the headset draws only what fits and drops the rest,
+        /// while the host's wait mode holds the song open for every note in the
+        /// chart -- including ones it was never shown and the keyboard cannot
+        /// produce. Invisible and unplayable at once, with no way forward.
+        ///
+        /// Sent on connect and on every recalibration, because re-marking the
+        /// ends of the keyboard changes the answer.
+        /// </remarks>
+        void PublishKeyboardLayout()
+        {
+            if (link == null || !link.IsConnected) return;
+            if (_profile is not { IsCalibrated: true }) return;
+
+            link.SendKeyboardLayout(
+                _profile.lowestPitch,
+                _profile.highestPitch,
+                _profile.ignoreOutOfRangeNotes);
+        }
+
+        /// <summary>Resend the layout when a link comes up.</summary>
+        /// <remarks>
+        /// A rising edge rather than every frame: this is standing state the
+        /// host keeps, and a reconnect is the only thing that loses it.
+        /// </remarks>
+        void PumpKeyboardLayout()
+        {
+            var linked = link != null && link.IsConnected;
+            if (linked && !_wasLinked) PublishKeyboardLayout();
+            _wasLinked = linked;
+        }
+
         void HookLibrary()
         {
             if (link == null) return;
