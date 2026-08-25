@@ -53,6 +53,7 @@ namespace AuralPrimer.Calibration
         Material _restingWhite;
         Material _restingBlack;
         Material _next;
+        Material _held;
 
         /// <summary>Colour of a key at the far edge of the preview window.</summary>
         /// <remarks>
@@ -257,12 +258,22 @@ namespace AuralPrimer.Calibration
             foreach (var note in notes)
             {
                 if (!_keyMarkers.TryGetValue(note.pitch, out var marker) || marker == null) continue;
-                SetMaterial(marker, _lit);
+                // Held is drawn BELOW full strength, and does not clear the
+                // bar.
+                //
+                // Both used to be wrong together: a held key went to the full
+                // lit colour and hid its own preview, on the theory that being
+                // played beats being due. That leaves a repeated note with
+                // nothing to say. The key is already as bright as it can get
+                // and the cue that would have said "again" was suppressed by
+                // the very finger that is about to have to lift and strike.
+                //
+                // So held means "your finger is on this one" -- enough to catch
+                // a mis-calibrated overlay, which is what it is for -- and the
+                // bar keeps its own meaning of "strike this now", growing over
+                // the held key when the note comes round again.
+                SetMaterial(marker, _held);
                 _litLastFrame.Add(note.pitch);
-                // Being played beats being due. The bar has done its job by the
-                // time the finger is down, and leaving it under a lit key reads
-                // as a second, contradictory state.
-                HidePreview(note.pitch);
             }
         }
 
@@ -417,6 +428,10 @@ namespace AuralPrimer.Calibration
             _restingWhite = Dimmed(_idleWhite, restingOpacity);
             _restingBlack = Dimmed(_idleBlack, restingOpacity);
             _next = Dimmed(_lit, 0.45f);
+
+            // A held key is confirmation, not instruction, so it sits below
+            // the lit colour rather than at it. See the held pass for why.
+            _held = Dimmed(_lit, 0.45f);
 
             // The resolved numbers, not the intended ones. A serialised field
             // that did not take, or an asset edited since, both look identical

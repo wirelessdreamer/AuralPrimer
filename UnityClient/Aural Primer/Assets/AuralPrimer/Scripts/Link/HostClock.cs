@@ -13,6 +13,7 @@
 // No UnityEngine dependency, so the maths can be tested in a plain runner.
 
 using System;
+using Debug = UnityEngine.Debug;
 
 namespace AuralPrimer.Link
 {
@@ -91,9 +92,27 @@ namespace AuralPrimer.Link
         /// <summary>Record a POSITION datagram from the host.</summary>
         public void AddPositionSample(double songTimeSec, ulong hostClockUs, bool playing)
         {
-            // Datagrams can arrive out of order; an older sample must not undo a
-            // newer one.
-            if (_havePosition && hostClockUs < _lastPositionHostClockUs) return;
+            // Two different things look like "the host clock went backwards",
+            // and they need opposite handling.
+            //
+            // A small step back is a reordered datagram: drop it, or an older
+            // sample undoes a newer one.
+            //
+            // A large one is a different host PROCESS. host_clock_us() is
+            // monotonic from process start, so a relaunch resets it to near
+            // zero -- and every offset we measured against the old process is
+            // now wrong by however long that process had been up. Keeping them
+            // renders the song that far AHEAD of the audio, which reads as the
+            // sound lagging the notes by seconds.
+            if (_havePosition && hostClockUs < _lastPositionHostClockUs)
+            {
+                var stepBackUs = _lastPositionHostClockUs - hostClockUs;
+                if (stepBackUs < RestartStepBackUs) return;
+
+                Debug.Log($"[clock] host clock stepped back {stepBackUs / 1e6:F1}s "
+                        + "- treating as a restarted host and re-measuring");
+                ForgetOffset();
+            }
 
             _lastSongTimeSec = songTimeSec;
             _lastPositionHostClockUs = hostClockUs;
@@ -119,7 +138,40 @@ namespace AuralPrimer.Link
             return _lastSongTimeSec + elapsedUs / 1_000_000.0 + AudioOffsetSec;
         }
 
-        /// <summary>Forget the link state, keeping the measured clock offset.</summary>
+        /// <summary>
+        /// A backwards step at least this large means a different host process,
+        /// not a reordered packet. Well above any plausible reordering and well
+        /// below any plausible process uptime.
+        /// </summary>
+        const double RestartStepBackUs = 1_000_000.0;
+
+        /// <summary>
+        /// Forget everything measured about the host, including the offset.
+        /// </summary>
+        /// <remarks>
+        /// Called when the link drops. The offset used to be kept across a
+        /// reconnect, on the grounds that re-measuring costs a round trip -- but
+        /// a dropped link is exactly when the host may have been relaunched, and
+        /// an offset measured against a process that no longer exists is wrong
+        /// by that process's uptime. Being seconds out is far worse than
+        /// spending one PING to find out again.
+        /// </remarks>
+        public void Reset()
+        {
+            ClearPosition();
+            ForgetOffset();
+        }
+
+        void ForgetOffset()
+        {
+            _sampleCount = 0;
+            _nextSample = 0;
+            _haveOffset = false;
+            _offsetUs = 0.0;
+            BestRttUs = double.PositiveInfinity;
+        }
+
+        /// <summary>Forget where the song is, keeping the measured clock offset.</summary>
         public void ClearPosition()
         {
             _havePosition = false;
