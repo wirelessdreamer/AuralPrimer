@@ -147,7 +147,10 @@ namespace AuralPrimer.Link
             _stream = null;
             _tcp = null;
             _udp = null;
-            Clock.ClearPosition();
+            // Everything, not just the position: a dropped link is when a
+            // relaunched host is most likely, and a stale offset is worse
+            // than no offset.
+            Clock.Reset();
             lock (_notesLock) _heldNotes.Clear();
         }
 
