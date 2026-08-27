@@ -38,6 +38,11 @@ namespace AuralPrimer.Calibration
                + "sustain and stop it meaning \"play this now\".")]
         [SerializeField] float strikeGraceSeconds = 0.12f;
 
+        [Tooltip("Shortest note that gets a hold tag. Below this a tag would "
+               + "appear and vanish inside a fraction of a second, which is noise "
+               + "rather than information -- a staccato passage should leave the "
+               + "strip empty.")]
+        [SerializeField] float minimumHoldSeconds = 0.25f;
         [Tooltip("Largest gap between one note ending and the same key starting "
                + "again that still counts as a re-strike. Below this there is no "
                + "natural pause and the player has to be told to lift; above it "
@@ -82,6 +87,8 @@ namespace AuralPrimer.Calibration
         readonly List<Transform> _heads = new();
         readonly List<UpcomingNote> _upcoming = new();
         readonly HashSet<int> _upcomingPitches = new();
+        readonly List<SustainingNote> _sustaining = new();
+        readonly HashSet<int> _sustainingPitches = new();
 
         CalibrationProfile _profile;
         KeyboardLayout _layout;
@@ -238,6 +245,37 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         public IReadOnlyList<UpcomingNote> Upcoming => _upcoming;
 
+        /// <summary>A key the chart says should still be down, and how far through.</summary>
+        public readonly struct SustainingNote
+        {
+            public readonly int Pitch;
+
+            /// <summary>0 at the strike, 1 at the release.</summary>
+            public readonly float Progress;
+
+            public SustainingNote(int pitch, float progress)
+            {
+                Pitch = pitch;
+                Progress = progress;
+            }
+        }
+
+        /// <summary>
+        /// Keys whose note has been struck and is not finished.
+        /// </summary>
+        /// <remarks>
+        /// The strike cue deliberately clears a fraction of a second after the
+        /// onset, so that it means "play this now" rather than decaying into
+        /// "this was played". That left nothing saying a long note is still
+        /// running -- which the player needs, and which is a different question
+        /// from whether their finger is currently down. This answers the first;
+        /// the live note-on set answers the second.
+        ///
+        /// Progress rather than seconds remaining: the reader draws a bar that
+        /// empties as the note ends, and wants the fraction, not the clock.
+        /// </remarks>
+        public IReadOnlyList<SustainingNote> Sustaining => _sustaining;
+
         /// <summary>Point the lane at a calibration. Without one there is no
         /// keyboard to line notes up with, so nothing is drawn.</summary>
         public void Apply(CalibrationProfile profile)
@@ -287,6 +325,8 @@ namespace AuralPrimer.Calibration
 
             _upcoming.Clear();
             _upcomingPitches.Clear();
+            _sustaining.Clear();
+            _sustainingPitches.Clear();
 
             var (laneUp, _, laneRotation) = LaneBasis();
             var playLineOffset = PlayLineOffset();
@@ -341,6 +381,25 @@ namespace AuralPrimer.Calibration
                     && _upcomingPitches.Add(pitch))
                 {
                     _upcoming.Add(new UpcomingNote(pitch, Mathf.Max(0f, untilOnset), note.IsRestrike));
+                }
+
+                // Struck, and not finished. Picked up here rather than in a
+                // second pass because this walk already visits every note that
+                // could qualify, in onset order, with the out-of-range folding
+                // applied -- and a separate cursor over the same chart would be
+                // free to disagree with what is on screen.
+                //
+                // The strike grace is subtracted so a tag begins where the
+                // strike cue ends, instead of the two overlapping on the same
+                // key and saying two things at once.
+                var held = -untilOnset;
+                var sustainSeconds = note.Off - note.On;
+                if (held > strikeGraceSeconds
+                    && held < sustainSeconds
+                    && sustainSeconds >= minimumHoldSeconds
+                    && _sustainingPitches.Add(pitch))
+                {
+                    _sustaining.Add(new SustainingNote(pitch, Mathf.Clamp01(held / Mathf.Max(sustainSeconds, 1e-4f))));
                 }
 
                 // Lifted clear of the real keys. Notes arrive at the "play now"
@@ -548,6 +607,8 @@ namespace AuralPrimer.Calibration
         {
             _upcoming.Clear();
             _upcomingPitches.Clear();
+            _sustaining.Clear();
+            _sustainingPitches.Clear();
             foreach (var t in _pool)
             {
                 if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);

@@ -50,6 +50,21 @@ namespace AuralPrimer.Calibration
         readonly Dictionary<int, Transform> _keyMarkers = new();
         readonly List<int> _litLastFrame = new();
         readonly Dictionary<int, Renderer> _previewFills = new();
+        readonly Dictionary<int, Transform> _holdTags = new();
+
+        [Tooltip("How far past the near edge of the white keys the hold tags sit, "
+               + "in metres. Far enough clear of the keys that a hand resting on "
+               + "them does not cover the strip.")]
+        [SerializeField] float holdTagGapMetres = 0.022f;
+
+        [Tooltip("Depth of one hold tag, in metres — how thick the bar looks.")]
+        [SerializeField] float holdTagDepthMetres = 0.014f;
+
+        [Tooltip("Gap between the black-key tag line and the white-key one. Black "
+               + "keys are a set-back second row on the instrument, so their tags "
+               + "are a set-back second row here: at key width on one line, a "
+               + "black key's tag has nowhere to sit between two held white ones.")]
+        [SerializeField] float holdTagRowGapMetres = 0.017f;
         readonly Dictionary<int, Transform> _breakEdges = new();
         readonly Dictionary<int, Transform> _breakCores = new();
         readonly HashSet<int> _heldNow = new();
@@ -190,6 +205,77 @@ namespace AuralPrimer.Calibration
         /// until a replay lit different keys than the take it came from.
         /// </remarks>
         public IReadOnlyList<(byte pitch, byte velocity)> PlaybackNotes { get; set; }
+
+        /// <summary>
+        /// Draw the strip of "keep holding this" tags in front of the keys.
+        /// </summary>
+        /// <remarks>
+        /// In front of the key bed on the player's side, which is the one region
+        /// that stays clear: the lane rakes back OVER the keys, and hands rest ON
+        /// them. A tag there is never hidden by the thing it describes.
+        ///
+        /// Two lines, mirroring the keyboard. Tags are key-width so a held chord
+        /// reads as a block rather than as marks to be counted -- but white keys
+        /// at key width tile edge to edge, so a black key sitting between two
+        /// held whites would have to overlap them. Black keys are already a
+        /// set-back second row on the instrument, so their tags become a set-back
+        /// second row here. The strip ends up a miniature of the keyboard above
+        /// it, which is why position alone says which key a tag belongs to.
+        /// </remarks>
+        void DrawHoldTags(IReadOnlyList<NoteHighway.SustainingNote> sustaining)
+        {
+            foreach (var tag in _holdTags.Values)
+            {
+                if (tag != null && tag.gameObject.activeSelf) tag.gameObject.SetActive(false);
+            }
+
+            if (sustaining == null || _profile == null || _layout == null) return;
+
+            var right = _profile.RightAxis;
+            var up = _profile.CantedUp;
+            var forward = KeyForward();
+
+            foreach (var note in sustaining)
+            {
+                if (!_holdTags.TryGetValue(note.Pitch, out var tag) || tag == null) continue;
+
+                var black = KeyboardLayout.IsBlack(note.Pitch);
+                var width = (float)_layout.NormalisedWidth(note.Pitch) * _profile.WidthMetres;
+
+                // The bar empties as the note does: full at the strike, gone at
+                // the release. That says how much longer, not merely "still".
+                var remaining = Mathf.Clamp01(1f - note.Progress);
+                if (remaining <= 0.02f) continue;
+
+                var outFromKeys = holdTagGapMetres + (black ? holdTagRowGapMetres : 0f);
+                var centre = _profile.KeyPosition(_layout, note.Pitch)
+                           + up * hoverMetres
+                           + forward * (whiteKeyDepth + outFromKeys + holdTagDepthMetres * 0.5f);
+
+                tag.localPosition = centre;
+                tag.localRotation = Quaternion.LookRotation(forward, up);
+                tag.localScale = new Vector3(width * remaining, 0.005f, holdTagDepthMetres);
+                tag.gameObject.SetActive(true);
+            }
+        }
+
+        /// <summary>Which way the keys face, decided from where the player is.</summary>
+        /// <remarks>
+        /// The same reasoning the markers use: the cross product's sign depends
+        /// on which physical edge was pinched first, so half of all calibrations
+        /// would put the tag strip behind the keyboard instead of in front of it.
+        /// </remarks>
+        Vector3 KeyForward()
+        {
+            var forward = Vector3.Cross(_profile.RightAxis, _profile.CantedUp).normalized;
+            var head = Camera.main;
+            if (head == null) return forward;
+
+            var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f);
+            var toPlayer = transform.InverseTransformDirection(
+                head.transform.position - transform.TransformPoint(centre));
+            return Vector3.Dot(forward, toPlayer) < 0f ? -forward : forward;
+        }
 
         /// <summary>Draw one key's "coming up" bar.</summary>
         void ShowPreview(NoteHighway.UpcomingNote note, float window)
@@ -366,6 +452,10 @@ namespace AuralPrimer.Calibration
                 }
             }
 
+            // What must stay down. Drawn after the strike cues and from the same
+            // frame's walk, so a key never shows both at once.
+            DrawHoldTags(Highway != null ? Highway.Sustaining : null);
+
             foreach (var note in notes)
             {
                 if (!_keyMarkers.TryGetValue(note.pitch, out var marker) || marker == null) continue;
@@ -431,6 +521,17 @@ namespace AuralPrimer.Calibration
                     }
                     fill.SetActive(false);
 
+                    // The hold tag lives out in front of the keys, so unlike the
+                    // preview bar it is NOT a child of the marker: parented to a
+                    // key it would inherit that key's non-uniform scale and come
+                    // out stretched to the key's depth.
+                    var tagObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    tagObj.name = $"Hold {pitch}";
+                    Destroy(tagObj.GetComponent<Collider>());
+                    tagObj.transform.SetParent(transform, false);
+                    SetMaterial(tagObj.transform, _next);
+                    tagObj.SetActive(false);
+                    _holdTags[pitch] = tagObj.transform;
                     // The break: an outer note-coloured slab and an inner slab
                     // of the ground, so the pair reads as a gap with lit edges.
                     // Both are children of the marker for the same reason the
@@ -543,6 +644,7 @@ namespace AuralPrimer.Calibration
             // The bars are children of the markers, so destroying those took
             // them with it; this just drops the now-dangling references.
             _previewFills.Clear();
+            _holdTags.Clear();
             _breakEdges.Clear();
             _breakCores.Clear();
             // No keys drawn means no keys to keep the ray off.
