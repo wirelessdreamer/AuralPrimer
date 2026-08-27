@@ -216,3 +216,9 @@ UnityClient/**/Assets/Samples.meta
 # Offscreen UI renders written by RenderCheck.cs — verification output,
 # regenerated on demand.
 UnityClient/RenderChecks/
+
+# Unity makes Assets/XR/Temp/ for XR Simulation, and the broad Temp/ rule above
+# already ignores it. Its .meta is not covered by that rule, so without this it
+# is untracked in every worktree -- and if committed, a fresh clone gets a meta
+# with no folder beside it and Unity deletes it again.
+UnityClient/Aural Primer/Assets/XR/Temp.meta
