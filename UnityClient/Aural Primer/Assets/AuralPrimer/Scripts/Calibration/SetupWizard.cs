@@ -358,7 +358,8 @@ namespace AuralPrimer.Calibration
                         ("Watch", () => EnterStep(Step.Recordings)),
                         ("Flip side", FlipMenuSide),
                         (_profile.ignoreOutOfRangeNotes ? "Fold notes in" : "Drop off-range",
-                         ToggleOutOfRange));
+                         ToggleOutOfRange),
+                        (HandVisualLabel(_profile.handVisual), CycleHandVisual));
                     break;
 
                 case Step.FineTune:
@@ -921,6 +922,49 @@ namespace AuralPrimer.Calibration
                     + $"on the {(_profile.menuOnHighEnd ? "high" : "low")} end");
         }
 
+        HandVisuals _handVisuals;
+
+        /// <summary>Put the saved hand treatment into effect.</summary>
+        void ApplyHandVisuals()
+        {
+            if (_profile == null) return;
+            _handVisuals ??= gameObject.AddComponent<HandVisuals>();
+            _handVisuals.Apply(_profile);
+        }
+
+        /// <summary>Human-readable name for the current hand treatment.</summary>
+        static string HandVisualLabel(CalibrationProfile.HandVisual mode) => mode switch
+        {
+            CalibrationProfile.HandVisual.Rendered => "Hands: drawn",
+            CalibrationProfile.HandVisual.Occluded => "Hands: real",
+            _ => "Hands: hidden",
+        };
+
+        /// <summary>
+        /// Step through the hand treatments.
+        /// </summary>
+        /// <remarks>
+        /// A cycle rather than three buttons: the row is already full, and the
+        /// choice is one the player makes once and forgets. Saved immediately,
+        /// because the next thing they do is put the headset back on and play.
+        /// </remarks>
+        void CycleHandVisual()
+        {
+            if (_profile == null) return;
+
+            _profile.handVisual = _profile.handVisual switch
+            {
+                CalibrationProfile.HandVisual.Overlay => CalibrationProfile.HandVisual.Rendered,
+                CalibrationProfile.HandVisual.Rendered => CalibrationProfile.HandVisual.Occluded,
+                _ => CalibrationProfile.HandVisual.Overlay,
+            };
+
+            _profile.Save();
+            ApplyHandVisuals();
+            RenderStep();
+            Debug.Log($"[wizard] hand visual -> {_profile.handVisual}");
+        }
+
         void ToggleOutOfRange()
         {
             if (_profile == null) return;
@@ -995,6 +1039,10 @@ namespace AuralPrimer.Calibration
             // The lane hangs off the same calibration: without it there is no
             // keyboard for the notes to line up above.
             if (highway != null) highway.Apply(_profile);
+
+            // Whatever the player chose about their hands, applied here so it
+            // survives a restart without them having to go and set it again.
+            ApplyHandVisuals();
 
             // The host needs to know what this instrument can reach, or it
             // waits for notes that are not on it. Sent here because this is

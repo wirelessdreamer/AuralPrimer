@@ -203,6 +203,16 @@ UnityClient/**/Assets/MRTemplateAssets.meta
 UnityClient/**/Assets/Samples/
 UnityClient/**/Assets/Samples.meta
 
+# ...except the XR Hands visualiser, which is 2 MB and is not decoration: the
+# rigged hand mesh is what the "show my hands" mode renders. Left ignored, a
+# fresh clone builds a scene whose hand prefabs resolve to nothing, and the
+# mode silently does nothing -- the same failure the TMP shaders had, where
+# ignored-but-required assets produced magenta text on a clean checkout.
+!UnityClient/**/Assets/Samples/
+!UnityClient/**/Assets/Samples.meta
+!UnityClient/**/Assets/Samples/XR Hands/
+!UnityClient/**/Assets/Samples/XR Hands/**
+
 # Offscreen UI renders written by RenderCheck.cs — verification output,
 # regenerated on demand.
 UnityClient/RenderChecks/
