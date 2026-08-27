@@ -1634,6 +1634,9 @@ window.addEventListener("keydown", (ev) => {
 const liveInputHudEl = document.getElementById("liveInputHud");
 const liveInputNotesEl = document.getElementById("liveInputNotes");
 const liveInputChordEl = document.getElementById("liveInputChord");
+const playheadHudEl = document.getElementById("playheadHud");
+const playheadClockEl = document.getElementById("playheadClock");
+const playheadDetailEl = document.getElementById("playheadDetail");
 const LIVE_INPUT_HUD_INTERVAL_MS = 60;
 
 function renderLiveInputHud(): void {
@@ -1679,6 +1682,50 @@ function renderLiveInputHud(): void {
 
 renderLiveInputHud();
 window.setInterval(renderLiveInputHud, LIVE_INPUT_HUD_INTERVAL_MS);
+
+/** m:ss.t — precise enough to report a drift, short enough to read at a glance. */
+function formatPlayhead(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return "0:00.0";
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
+}
+
+/**
+ * Where we are in the song, plus the two numbers that decide it.
+ *
+ * The position exists because "the audio is a few seconds off" is not a
+ * reportable bug without a timestamp. The detail beside it exists because the
+ * playhead is not one number but three: the engine renders at `pos`, the app
+ * subtracts an output-latency estimate and the A/V calibration to get the time
+ * it believes is audible, and drift between those is exactly what a
+ * sync complaint is about. Showing only the answer hides the disagreement.
+ */
+function renderPlayheadHud(): void {
+  if (!playheadHudEl || !playheadClockEl) return;
+
+  const st = transportController.getState();
+  const hasSong = Number.isFinite(st.t) && (st.isPlaying || st.t > 0);
+  playheadHudEl.hidden = !hasSong;
+  if (!hasSong) return;
+
+  const text = formatPlayhead(st.t);
+  if (playheadClockEl.textContent !== text) playheadClockEl.textContent = text;
+
+  if (playheadDetailEl) {
+    const enginePos = nativeTimebase.getCurrentTimeSec?.();
+    const latencyMs = (nativeTimebase.getOutputLatencySec?.() ?? 0) * 1000;
+    const avMs = getEffectiveOffsetMs();
+    const lag = typeof enginePos === "number" && Number.isFinite(enginePos)
+      ? `  ·  engine ${formatPlayhead(enginePos)} (${(enginePos - st.t).toFixed(3)}s ahead)`
+      : "";
+    const detail = `lat ${latencyMs.toFixed(0)}ms  ·  a/v ${avMs.toFixed(0)}ms${lag}`;
+    if (playheadDetailEl.textContent !== detail) playheadDetailEl.textContent = detail;
+  }
+}
+
+renderPlayheadHud();
+window.setInterval(renderPlayheadHud, LIVE_INPUT_HUD_INTERVAL_MS);
 
 // --- Play-mode transport hotkeys ---------------------------------------
 // Space start/pause/resume + Left/Right jog. Logic lives in

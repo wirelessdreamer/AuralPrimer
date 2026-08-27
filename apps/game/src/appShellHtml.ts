@@ -192,6 +192,11 @@ export function appShellHtml(): string {
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
 
                 <div class="stageBar">
+                  <div id="playheadHud" class="liveInputHud" hidden aria-live="off">
+                    <span class="liveInputLabel">TIME</span>
+                    <span id="playheadClock" class="liveInputNotes"></span>
+                    <span id="playheadDetail" class="liveInputChord"></span>
+                  </div>
                   <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
                     <span class="liveInputLabel">MIDI IN</span>
                     <span id="liveInputNotes" class="liveInputNotes"></span>
