@@ -97,12 +97,18 @@ namespace AuralPrimer.Calibration
             public readonly float On;
             public readonly float Off;
             public readonly int Pitch;
+            /// <summary>
+            /// The same key was still sounding right up to this note, so the
+            /// player has to lift and strike rather than simply arrive.
+            /// </summary>
+            public readonly bool IsRestrike;
 
-            public ChartNote(float on, float off, int pitch)
+            public ChartNote(float on, float off, int pitch, bool isRestrike = false)
             {
                 On = on;
                 Off = off;
                 Pitch = pitch;
+                IsRestrike = isRestrike;
             }
         }
 
@@ -167,11 +173,14 @@ namespace AuralPrimer.Calibration
             public readonly int Pitch;
             /// <summary>Seconds until this key should be struck.</summary>
             public readonly float Seconds;
+            /// <summary>The key is sounding now and must be released first.</summary>
+            public readonly bool IsRestrike;
 
-            public UpcomingNote(int pitch, float seconds)
+            public UpcomingNote(int pitch, float seconds, bool isRestrike)
             {
                 Pitch = pitch;
                 Seconds = seconds;
+                IsRestrike = isRestrike;
             }
         }
 
@@ -621,6 +630,35 @@ namespace AuralPrimer.Calibration
             ParseNotes(json, scratch);
             into.Clear();
             foreach (var n in scratch) into.Add(new ChartNote(n.On, n.Off, n.Pitch));
+            MarkRestrikes(into);
+        }
+
+        /// <summary>
+        /// Flag every note the player has to lift off before playing.
+        /// </summary>
+        /// <remarks>
+        /// Done once, on load, rather than per frame: it is a property of the
+        /// chart and nothing about it changes while the song plays. Answering it
+        /// in the draw loop would mean walking backwards through the notes on
+        /// every key, every frame, to re-derive a constant.
+        ///
+        /// "Still sounding" is deliberately generous by restrikeGapSeconds. A
+        /// chart's note-offs are rarely exact -- transcription and quantisation
+        /// both leave a millisecond or two of daylight -- and a cue that only
+        /// fired on a literal overlap would miss the repeated notes that most
+        /// need it.
+        /// </remarks>
+        void MarkRestrikes(List<ChartNote> notes)
+        {
+            var lastOffByPitch = new Dictionary<int, float>();
+            for (var i = 0; i < notes.Count; i++)
+            {
+                var n = notes[i];
+                var restrike = lastOffByPitch.TryGetValue(n.Pitch, out var lastOff)
+                            && lastOff >= n.On - restrikeGapSeconds;
+                if (restrike) notes[i] = new ChartNote(n.On, n.Off, n.Pitch, true);
+                lastOffByPitch[n.Pitch] = Mathf.Max(n.Off, lastOff);
+            }
         }
     }
 }
