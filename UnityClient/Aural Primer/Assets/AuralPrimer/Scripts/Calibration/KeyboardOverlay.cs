@@ -31,6 +31,20 @@ namespace AuralPrimer.Calibration
                + "are darker and narrower, and fade out first.")]
         [SerializeField, Range(0f, 1f)] float restingOpacity = 0.35f;
 
+        [Tooltip("How far behind the key bed the indicator tabs sit while "
+               + "playing, in metres. Drawn on the keys they end up under the "
+               + "hands, which is the one place the player cannot look.")]
+        [SerializeField] float indicatorSetbackMetres = 0.06f;
+
+        [Tooltip("Extra height for the tabs while playing, in metres. Zero "
+               + "keeps them flat on the keyboard's plane.")]
+        [SerializeField] float indicatorLiftMetres = 0f;
+
+        [Tooltip("Depth of a tab while playing, in metres. Shallower than a "
+               + "key: behind the bed it is a readout, not an overlay, and it "
+               + "only has to be seen rather than lined up with anything.")]
+        [SerializeField] float indicatorDepthMetres = 0.045f;
+
         CalibrationProfile _profile;
         KeyboardLayout _layout;
         readonly Dictionary<int, Transform> _keyMarkers = new();
@@ -51,6 +65,9 @@ namespace AuralPrimer.Calibration
                + "are a set-back second row here: at key width on one line, a "
                + "black key's tag has nowhere to sit between two held white ones.")]
         [SerializeField] float holdTagRowGapMetres = 0.017f;
+        readonly Dictionary<int, Transform> _breakEdges = new();
+        readonly Dictionary<int, Transform> _breakCores = new();
+        readonly HashSet<int> _heldNow = new();
         MaterialPropertyBlock _previewBlock;
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
@@ -69,6 +86,8 @@ namespace AuralPrimer.Calibration
         Material _restingBlack;
         Material _next;
         Material _held;
+        Material _breakEdge;
+        Material _breakCore;
 
         /// <summary>Colour of a key at the far edge of the preview window.</summary>
         /// <remarks>
@@ -103,6 +122,18 @@ namespace AuralPrimer.Calibration
         /// <summary>Shortest bar drawn, so the furthest note is still visible.</summary>
         const float MinimumPreviewFill = 0.14f;
 
+        /// <summary>Where the break sits, as a fraction of the key from its far edge.</summary>
+        /// <remarks>
+        /// A third of the way in, not the middle. Pressing a key from above
+        /// your hand covers roughly its front half, so a break drawn at the
+        /// centre would be a break drawn under your own knuckles. This keeps
+        /// it in the strip nearest the lane, which stays visible.
+        /// </remarks>
+        const float BreakPosition = 0.34f;
+
+        /// <summary>Depth of the break, as a fraction of the key.</summary>
+        const float BreakWidth = 0.13f;
+
         void Awake() => BuildMaterials();
 
         /// <summary>
@@ -132,6 +163,10 @@ namespace AuralPrimer.Calibration
             {
                 if (_placing == value) return;
                 _placing = value;
+                // Where the tabs live depends on this, so moving them is part of
+                // changing it. Without this they keep the previous mode's
+                // position until something else happens to call Place().
+                if (_profile is { IsCalibrated: true } && _keyMarkers.Count > 0) Place();
                 Debug.Log($"[overlay] placing={_placing} "
                         + $"({(_placing ? "full" : "resting")} alpha on unlit keys)");
                 RepaintIdle();
@@ -268,6 +303,63 @@ namespace AuralPrimer.Calibration
             fill.SetPropertyBlock(_previewBlock);
         }
 
+        /// <summary>
+        /// Split the key where a note ends and the next one begins.
+        /// </summary>
+        /// <remarks>
+        /// The lane has always done this -- NoteHighway leaves
+        /// articulationGapMetres at every note's tail so a repeat reads as two
+        /// events rather than one long one. The keys never got the same
+        /// treatment, so a key you were already holding had no way to say
+        /// "lift, then play me again": it was already lit, and the cue that
+        /// would have said "again" looked exactly like the cue still saying
+        /// "hold".
+        ///
+        /// Two quads rather than one: the outer is note-coloured and the inner
+        /// is the ground, so what reads is a dark gap with bright edges -- a
+        /// boundary between two notes, in the colour notes already are, rather
+        /// than a warning in a colour that would mean something went wrong.
+        /// </remarks>
+        void ShowBreak(int pitch)
+        {
+            if (!_breakEdges.TryGetValue(pitch, out var edge) || edge == null) return;
+            if (!_breakCores.TryGetValue(pitch, out var core) || core == null) return;
+
+            // Marker space is a unit cube with +Z toward the player, so the
+            // far edge is -0.5 and everything here is a fraction of the key.
+            var z = -0.5f + BreakPosition;
+            edge.localScale = new Vector3(1.02f, 1.5f, BreakWidth);
+            edge.localPosition = new Vector3(0f, 0.3f, z);
+            core.localScale = new Vector3(1.04f, 1.6f, BreakWidth * 0.45f);
+            core.localPosition = new Vector3(0f, 0.32f, z);
+            edge.gameObject.SetActive(true);
+            core.gameObject.SetActive(true);
+        }
+
+        void HideBreak(int pitch)
+        {
+            if (_breakEdges.TryGetValue(pitch, out var e) && e != null) e.gameObject.SetActive(false);
+            if (_breakCores.TryGetValue(pitch, out var c) && c != null) c.gameObject.SetActive(false);
+        }
+
+        void HideAllBreaks()
+        {
+            foreach (var t in _breakEdges.Values) if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);
+            foreach (var t in _breakCores.Values) if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);
+        }
+
+        static Transform NewBreakQuad(Transform parent, string name, Material material)
+        {
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            quad.name = name;
+            Destroy(quad.GetComponent<Collider>());
+            quad.transform.SetParent(parent, false);
+            quad.transform.localRotation = Quaternion.identity;
+            SetMaterial(quad.transform, material);
+            quad.SetActive(false);
+            return quad.transform;
+        }
+
         void HidePreview(int pitch)
         {
             if (_previewFills.TryGetValue(pitch, out var fill) && fill != null)
@@ -340,12 +432,24 @@ namespace AuralPrimer.Calibration
             // you play next has the longest bar and the hottest colour, and the
             // ranking is readable at a glance without counting anything.
             HideAllPreviews();
+            HideAllBreaks();
+
+            // Gathered before the cue is drawn: a break says "lift off this",
+            // which is only meaningful about a key a finger is currently on. On
+            // a key already released it would be instructing the player to undo
+            // something they are not doing.
+            _heldNow.Clear();
+            foreach (var note in notes) _heldNow.Add(note.pitch);
 
             var upcoming = Highway != null ? Highway.Upcoming : null;
             if (upcoming != null)
             {
                 var window = Mathf.Max(0.01f, Highway.PreviewSeconds);
-                foreach (var note in upcoming) ShowPreview(note, window);
+                foreach (var note in upcoming)
+                {
+                    ShowPreview(note, window);
+                    if (note.IsRestrike && _heldNow.Contains(note.Pitch)) ShowBreak(note.Pitch);
+                }
             }
 
             // What must stay down. Drawn after the strike cues and from the same
@@ -428,6 +532,13 @@ namespace AuralPrimer.Calibration
                     SetMaterial(tagObj.transform, _next);
                     tagObj.SetActive(false);
                     _holdTags[pitch] = tagObj.transform;
+                    // The break: an outer note-coloured slab and an inner slab
+                    // of the ground, so the pair reads as a gap with lit edges.
+                    // Both are children of the marker for the same reason the
+                    // fill is -- they inherit the key's size and angle, so their
+                    // geometry is written purely as fractions of a key.
+                    _breakEdges[pitch] = NewBreakQuad(marker.transform, $"Break Edge {pitch}", _breakEdge);
+                    _breakCores[pitch] = NewBreakQuad(marker.transform, $"Break Core {pitch}", _breakCore);
                 }
             }
 
@@ -489,16 +600,36 @@ namespace AuralPrimer.Calibration
                 // Local, not world: this object is parented to the spatial
                 // anchor, so the anchor's transform carries the whole keyboard
                 // when the runtime re-localises it.
-                marker.localPosition = _profile.KeyPosition(_layout, pitch)
-                                     + up * (hoverMetres + (isBlack ? 0.012f : 0f))
-                                     + forward * (depth * 0.5f);
+                // Two places, one for each job.
+                //
+                // While the keys are being PLACED the marker has to sit on the
+                // real key: the whole job is lining the drawn key up with the
+                // one beneath it, and a marker anywhere else cannot be lined up
+                // with anything.
+                //
+                // While PLAYING it moves behind the bed. On the key it lands
+                // under the player's own hand -- the one place they cannot look
+                // -- so a held key, a cue, and a break were all being drawn
+                // where the knuckles are. Behind the keys each tab still sits in
+                // its key's column, so which key it means is unchanged; only
+                // whether it can be seen is.
+                marker.localPosition = Placing
+                    ? _profile.KeyPosition(_layout, pitch)
+                      + up * (hoverMetres + (isBlack ? 0.012f : 0f))
+                      + forward * (depth * 0.5f)
+                    : _profile.KeyPosition(_layout, pitch)
+                      + up * (hoverMetres + indicatorLiftMetres + (isBlack ? 0.012f : 0f))
+                      - forward * (indicatorSetbackMetres + indicatorDepthMetres * 0.5f);
                 marker.localRotation = Quaternion.LookRotation(forward, up);
                 // Deliberately flat: a thin plate reads as an overlay ON the real
                 // key rather than a block sitting on top of it.
                 // 2 mm at 22% alpha was invisible against a real keyboard in
                 // passthrough. Thick enough to read as an object, still flat
                 // enough to read as an overlay on the key rather than a block.
-                marker.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
+                marker.localScale = new Vector3(
+                    keyWidth * 0.85f,
+                    0.006f,
+                    Placing ? depth : indicatorDepthMetres);
             }
         }
 
@@ -514,6 +645,8 @@ namespace AuralPrimer.Calibration
             // them with it; this just drops the now-dangling references.
             _previewFills.Clear();
             _holdTags.Clear();
+            _breakEdges.Clear();
+            _breakCores.Clear();
             // No keys drawn means no keys to keep the ray off.
             AuralPrimer.UI.KeyboardProximity.Clear();
         }
@@ -542,6 +675,13 @@ namespace AuralPrimer.Calibration
             // A held key is confirmation, not instruction, so it sits below
             // the lit colour rather than at it. See the held pass for why.
             _held = Dimmed(_lit, 0.45f);
+
+            // Note-coloured, matching the falling notes rather than
+            // introducing a warning colour: this is a boundary between two
+            // notes, not a mistake. The core is near-opaque ground, which is
+            // what makes the pair read as a gap cut through the key.
+            _breakEdge = NewTransparent(new Color(1f, 0.18f, 0.533f, 0.95f));
+            _breakCore = NewTransparent(new Color(0.02f, 0.01f, 0.04f, 0.92f));
 
             // The resolved numbers, not the intended ones. A serialised field
             // that did not take, or an asset edited since, both look identical

@@ -1333,7 +1333,25 @@ const GRACE_STORAGE_KEY = "auralprimer.graceMode";
 // full window is twice this — early and late are forgiven equally, because a
 // player rushing and a player dragging are the same mistake in opposite
 // directions and neither deserves a stutter.
+//
+// This is what "correct" means, and it is deliberately tight. Widening it does
+// not make the player better, it makes the app agree with them more often.
 const GRACE_WINDOW_SEC = 0.05;
+
+// How long the transport waits past a note's onset before deciding it was
+// missed and stopping the song.
+//
+// Separate from the scoring window, and four times longer, because the two
+// answer different questions. Scoring asks "was that on time?" — a judgement
+// worth keeping strict. This asks "should the song stop?" — and stopping the
+// music is a far heavier penalty than not scoring a note, so it earns much more
+// patience. Held at 50 ms the gate fired almost on the onset, and a hand a
+// fraction behind the beat stuttered the song rather than being carried by it.
+//
+// It governs the gate ONLY. Retirement deliberately still follows the scoring
+// window: stretching that too would leave a note current long after it could
+// be scored, and starve the one behind it on fast passages.
+const GRACE_HOLDOFF_SEC = 0.2;
 // Playhead jump that means "seeked", not "played on". Comfortably above a
 // frame's worth of playback (even a slow frame at 2x rate) and below the
 // smallest jog step, so a Shift+arrow nudge still counts as a seek.
@@ -1513,6 +1531,12 @@ function learnGateTick(): void {
   if (graceMode && !learnMode) {
     // Grace on its own scores without ever taking the transport: once a note's
     // window closes it is retired, missed or not, and the song carries on.
+    // Retired when its SCORING window closes, not when the gate would have
+    // fired. Past that it cannot be scored either way, so holding it current
+    // any longer only delays the next note becoming current -- and on anything
+    // quicker than the hold-off (sixteenths at 150 bpm clear it easily) the
+    // next note would arrive already too late to score. The longer patience
+    // belongs to stopping the music, not to bookkeeping.
     while (
       learnIdx < learnGroups.length &&
       st.t - learnGroups[learnIdx].t > GRACE_WINDOW_SEC
@@ -1523,10 +1547,9 @@ function learnGateTick(): void {
     return;
   }
 
-  // With Grace on, hold off until the late half of the window has passed —
-  // otherwise the gate stops the song at the onset and the forgiveness never
-  // gets a chance to apply.
-  const gateAt = graceMode ? g.t + GRACE_WINDOW_SEC : g.t - 0.02;
+  // With Grace on, hold off well past the onset — otherwise the gate stops the
+  // song at the onset and the forgiveness never gets a chance to apply.
+  const gateAt = graceMode ? g.t + GRACE_HOLDOFF_SEC : g.t - 0.02;
   if (!learnWaiting && st.isPlaying && st.t >= gateAt) {
     if (g.pitches.every((p) => learnHit.has(p))) {
       learnIdx += 1;
