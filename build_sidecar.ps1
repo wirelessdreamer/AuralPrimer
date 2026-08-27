@@ -192,7 +192,13 @@ function Invoke-CapturedCommand(
     $output = (@($stdout, $stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
     return [pscustomobject]@{
       exit_code = $process.ExitCode
+      # Merged, for error messages: when a command fails the useful line is
+      # usually on stderr, and reporting only stdout hides it.
       output = $output.Trim()
+      # Separate, for parsing. Anything reading structured output must use
+      # stdout alone -- see the runtime-check call.
+      stdout = $stdout.Trim()
+      stderr = $stderr.Trim()
       ok = ($process.ExitCode -eq 0)
     }
   } finally {
@@ -413,11 +419,15 @@ if ($SkipBuild -and [string]::IsNullOrWhiteSpace($SourceExePath) -and $null -ne 
 $runtimeCheck = Invoke-CapturedCommand $sourceAbs @("runtime-check") "runtime-check" $repoRootAbs $RuntimeCheckTimeoutSec
 
 $runtimePayload = $null
-if (-not [string]::IsNullOrWhiteSpace($runtimeCheck.output)) {
+# stdout only. The payload shares a console with whatever the sidecar imports,
+# and TensorFlow greets every process on stderr ("oneDNN custom operations are
+# on"), so parsing the merged streams made a valid payload unparseable and
+# failed the build for a message that was never part of the output.
+if (-not [string]::IsNullOrWhiteSpace($runtimeCheck.stdout)) {
   try {
-    $runtimePayload = $runtimeCheck.output | ConvertFrom-Json
+    $runtimePayload = $runtimeCheck.stdout | ConvertFrom-Json
   } catch {
-    throw "runtime-check did not emit valid JSON: $($runtimeCheck.output)"
+    throw "runtime-check did not emit valid JSON on stdout: $($runtimeCheck.stdout)"
   }
 }
 
