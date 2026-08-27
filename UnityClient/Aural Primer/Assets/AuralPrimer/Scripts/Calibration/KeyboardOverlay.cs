@@ -31,11 +31,28 @@ namespace AuralPrimer.Calibration
                + "are darker and narrower, and fade out first.")]
         [SerializeField, Range(0f, 1f)] float restingOpacity = 0.35f;
 
+        [Tooltip("How far behind the key bed the indicator tabs sit while "
+               + "playing, in metres. Drawn on the keys they end up under the "
+               + "hands, which is the one place the player cannot look.")]
+        [SerializeField] float indicatorSetbackMetres = 0.06f;
+
+        [Tooltip("Extra height for the tabs while playing, in metres. Zero "
+               + "keeps them flat on the keyboard's plane.")]
+        [SerializeField] float indicatorLiftMetres = 0f;
+
+        [Tooltip("Depth of a tab while playing, in metres. Shallower than a "
+               + "key: behind the bed it is a readout, not an overlay, and it "
+               + "only has to be seen rather than lined up with anything.")]
+        [SerializeField] float indicatorDepthMetres = 0.045f;
+
         CalibrationProfile _profile;
         KeyboardLayout _layout;
         readonly Dictionary<int, Transform> _keyMarkers = new();
         readonly List<int> _litLastFrame = new();
         readonly Dictionary<int, Renderer> _previewFills = new();
+        readonly Dictionary<int, Transform> _breakEdges = new();
+        readonly Dictionary<int, Transform> _breakCores = new();
+        readonly HashSet<int> _heldNow = new();
         MaterialPropertyBlock _previewBlock;
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
@@ -131,6 +148,10 @@ namespace AuralPrimer.Calibration
             {
                 if (_placing == value) return;
                 _placing = value;
+                // Where the tabs live depends on this, so moving them is part of
+                // changing it. Without this they keep the previous mode's
+                // position until something else happens to call Place().
+                if (_profile is { IsCalibrated: true } && _keyMarkers.Count > 0) Place();
                 Debug.Log($"[overlay] placing={_placing} "
                         + $"({(_placing ? "full" : "resting")} alpha on unlit keys)");
                 RepaintIdle();
@@ -478,16 +499,36 @@ namespace AuralPrimer.Calibration
                 // Local, not world: this object is parented to the spatial
                 // anchor, so the anchor's transform carries the whole keyboard
                 // when the runtime re-localises it.
-                marker.localPosition = _profile.KeyPosition(_layout, pitch)
-                                     + up * (hoverMetres + (isBlack ? 0.012f : 0f))
-                                     + forward * (depth * 0.5f);
+                // Two places, one for each job.
+                //
+                // While the keys are being PLACED the marker has to sit on the
+                // real key: the whole job is lining the drawn key up with the
+                // one beneath it, and a marker anywhere else cannot be lined up
+                // with anything.
+                //
+                // While PLAYING it moves behind the bed. On the key it lands
+                // under the player's own hand -- the one place they cannot look
+                // -- so a held key, a cue, and a break were all being drawn
+                // where the knuckles are. Behind the keys each tab still sits in
+                // its key's column, so which key it means is unchanged; only
+                // whether it can be seen is.
+                marker.localPosition = Placing
+                    ? _profile.KeyPosition(_layout, pitch)
+                      + up * (hoverMetres + (isBlack ? 0.012f : 0f))
+                      + forward * (depth * 0.5f)
+                    : _profile.KeyPosition(_layout, pitch)
+                      + up * (hoverMetres + indicatorLiftMetres + (isBlack ? 0.012f : 0f))
+                      - forward * (indicatorSetbackMetres + indicatorDepthMetres * 0.5f);
                 marker.localRotation = Quaternion.LookRotation(forward, up);
                 // Deliberately flat: a thin plate reads as an overlay ON the real
                 // key rather than a block sitting on top of it.
                 // 2 mm at 22% alpha was invisible against a real keyboard in
                 // passthrough. Thick enough to read as an object, still flat
                 // enough to read as an overlay on the key rather than a block.
-                marker.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
+                marker.localScale = new Vector3(
+                    keyWidth * 0.85f,
+                    0.006f,
+                    Placing ? depth : indicatorDepthMetres);
             }
         }
 

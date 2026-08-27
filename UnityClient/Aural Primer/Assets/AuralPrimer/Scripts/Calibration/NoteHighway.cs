@@ -38,6 +38,17 @@ namespace AuralPrimer.Calibration
                + "sustain and stop it meaning \"play this now\".")]
         [SerializeField] float strikeGraceSeconds = 0.12f;
 
+        [Tooltip("Largest gap between one note ending and the same key starting "
+               + "again that still counts as a re-strike. Below this there is no "
+               + "natural pause and the player has to be told to lift; above it "
+               + "they would have lifted anyway and the cue is just noise.")]
+        [SerializeField] float restrikeGapSeconds = 0.15f;
+
+        [Tooltip("How far behind the key bed the play line sits, in metres. "
+               + "Away from the player, flat on the same plane. At zero it lands "
+               + "on the back edge of the keys, which is where the hands are.")]
+        [SerializeField] float playLineSetbackMetres = 0.06f;
+
         /// <summary>The window `Upcoming` reports over, so a reader can turn a
         /// note's remaining seconds into a fraction of the way there.</summary>
         public float PreviewSeconds => previewSeconds;
@@ -124,6 +135,32 @@ namespace AuralPrimer.Calibration
         /// raked the lane away from the player rather than toward them. Which
         /// way is "toward the player" is not a guess, so take it from the head.
         /// </remarks>
+        /// <summary>
+        /// Flat along the key bed, pointing at the player.
+        /// </summary>
+        /// <remarks>
+        /// Not the lane's normal, which is raked toward the player by
+        /// laneTiltDegrees: moving the play line along that would lift it off
+        /// the keyboard as well as move it back. This is the bed's own axis,
+        /// so a setback slides along the instrument and stays on its plane.
+        /// </remarks>
+        Vector3 BedForward()
+        {
+            var face = Vector3.Cross(_profile.RightAxis, _profile.CantedUp).normalized;
+            var head = Camera.main;
+            if (head != null)
+            {
+                var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f);
+                var toPlayer = transform.InverseTransformDirection(
+                    head.transform.position - transform.TransformPoint(centre));
+                if (Vector3.Dot(face, toPlayer) < 0f) face = -face;
+            }
+            return face;
+        }
+
+        /// <summary>The play line, moved back out from under the hands.</summary>
+        Vector3 PlayLineOffset() => -BedForward() * playLineSetbackMetres;
+
         (Vector3 Up, Vector3 Normal, Quaternion Rotation) LaneBasis()
         {
             var right = _profile.RightAxis;
@@ -252,6 +289,7 @@ namespace AuralPrimer.Calibration
             _upcomingPitches.Clear();
 
             var (laneUp, _, laneRotation) = LaneBasis();
+            var playLineOffset = PlayLineOffset();
 
             var metresPerSecond = _profile.laneHeightMetres
                                 * Mathf.Max(0.01f, _profile.spacingMultiplier)
@@ -302,14 +340,15 @@ namespace AuralPrimer.Calibration
                     && untilOnset > -strikeGraceSeconds
                     && _upcomingPitches.Add(pitch))
                 {
-                    _upcoming.Add(new UpcomingNote(pitch, Mathf.Max(0f, untilOnset)));
+                    _upcoming.Add(new UpcomingNote(pitch, Mathf.Max(0f, untilOnset), note.IsRestrike));
                 }
 
                 // Lifted clear of the real keys. Notes arrive at the "play now"
                 // line, so the lift must move the notes and the line together or
                 // they stop meaning the same instant.
                 var key = _profile.KeyPosition(_layout, pitch)
-                        + _profile.CantedUp * _profile.laneLiftMetres;
+                        + _profile.CantedUp * _profile.laneLiftMetres
+                        + playLineOffset;
                 var isBlack = KeyboardLayout.IsBlack(pitch);
 
                 // Distance above the keys is time-until-played. A note being held
@@ -412,8 +451,12 @@ namespace AuralPrimer.Calibration
             var width = _profile.WidthMetres;
             var height = _profile.laneHeightMetres * Mathf.Max(0.01f, _profile.spacingMultiplier);
             // Same lift the notes get, so the hit line stays the place they land.
+            // The lane, the line and the notes all take the same setback: they
+            // are three views of one place, and moving them separately is how
+            // "the note landed but the line says otherwise" happens.
             var centre = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f)
-                       + _profile.CantedUp * _profile.laneLiftMetres;
+                       + _profile.CantedUp * _profile.laneLiftMetres
+                       + PlayLineOffset();
 
             // Sit a few millimetres behind the notes so they read as being on it.
             const float behind = 0.004f;
