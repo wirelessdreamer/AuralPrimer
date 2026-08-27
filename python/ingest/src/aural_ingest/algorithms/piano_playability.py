@@ -113,8 +113,11 @@ class PlayabilityConfig:
     # sparser than what shipped.
     density_protects_primary: bool = True
 
-    # Sustain / pedal model
-    max_sustained: int = 8
+    # Sustain / pedal model. Five is the knee, measured: on the What A God
+    # union, capping held notes at 8 leaves 17.5% of sounding time at six or
+    # more voices, 6 leaves 14.6%, and 5 leaves 3.2%. Below 5 buys nothing
+    # and only shortens more notes. Nothing is deleted at any setting.
+    max_sustained: int = 5
     min_note_sec: float = 0.06
     trim_guard_sec: float = 0.01
 
