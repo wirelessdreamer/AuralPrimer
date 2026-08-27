@@ -31,20 +31,6 @@ namespace AuralPrimer.Calibration
                + "are darker and narrower, and fade out first.")]
         [SerializeField, Range(0f, 1f)] float restingOpacity = 0.35f;
 
-        [Tooltip("How far behind the key bed the indicator tabs sit while "
-               + "playing, in metres. Drawn on the keys they end up under the "
-               + "hands, which is the one place the player cannot look.")]
-        [SerializeField] float indicatorSetbackMetres = 0.06f;
-
-        [Tooltip("Extra height for the tabs while playing, in metres. Zero "
-               + "keeps them flat on the keyboard's plane.")]
-        [SerializeField] float indicatorLiftMetres = 0f;
-
-        [Tooltip("Depth of a tab while playing, in metres. Shallower than a "
-               + "key: behind the bed it is a readout, not an overlay, and it "
-               + "only has to be seen rather than lined up with anything.")]
-        [SerializeField] float indicatorDepthMetres = 0.045f;
-
         CalibrationProfile _profile;
         KeyboardLayout _layout;
         readonly Dictionary<int, Transform> _keyMarkers = new();
@@ -600,36 +586,25 @@ namespace AuralPrimer.Calibration
                 // Local, not world: this object is parented to the spatial
                 // anchor, so the anchor's transform carries the whole keyboard
                 // when the runtime re-localises it.
-                // Two places, one for each job.
+                // On the real key, placing and playing alike. Which key a
+                // highlight means is the whole of what it says, and it says it
+                // by covering that key -- moved off the bed it becomes a
+                // readout to be decoded by column, which is slower to read than
+                // the thing it replaced however visible it is.
                 //
-                // While the keys are being PLACED the marker has to sit on the
-                // real key: the whole job is lining the drawn key up with the
-                // one beneath it, and a marker anywhere else cannot be lined up
-                // with anything.
-                //
-                // While PLAYING it moves behind the bed. On the key it lands
-                // under the player's own hand -- the one place they cannot look
-                // -- so a held key, a cue, and a break were all being drawn
-                // where the knuckles are. Behind the keys each tab still sits in
-                // its key's column, so which key it means is unchanged; only
-                // whether it can be seen is.
-                marker.localPosition = Placing
-                    ? _profile.KeyPosition(_layout, pitch)
-                      + up * (hoverMetres + (isBlack ? 0.012f : 0f))
-                      + forward * (depth * 0.5f)
-                    : _profile.KeyPosition(_layout, pitch)
-                      + up * (hoverMetres + indicatorLiftMetres + (isBlack ? 0.012f : 0f))
-                      - forward * (indicatorSetbackMetres + indicatorDepthMetres * 0.5f);
+                // Being under the hands is a real cost, but it is the hold tag's
+                // to pay: that one lives out in front precisely because it has
+                // to survive a hand resting on the key it describes.
+                marker.localPosition = _profile.KeyPosition(_layout, pitch)
+                    + up * (hoverMetres + (isBlack ? 0.012f : 0f))
+                    + forward * (depth * 0.5f);
                 marker.localRotation = Quaternion.LookRotation(forward, up);
                 // Deliberately flat: a thin plate reads as an overlay ON the real
                 // key rather than a block sitting on top of it.
                 // 2 mm at 22% alpha was invisible against a real keyboard in
                 // passthrough. Thick enough to read as an object, still flat
                 // enough to read as an overlay on the key rather than a block.
-                marker.localScale = new Vector3(
-                    keyWidth * 0.85f,
-                    0.006f,
-                    Placing ? depth : indicatorDepthMetres);
+                marker.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
             }
         }
 
