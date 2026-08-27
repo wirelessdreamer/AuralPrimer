@@ -105,6 +105,35 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         public bool ignoreOutOfRangeNotes = true;
 
+        /// <summary>How the player's real hands are treated over the keys.</summary>
+        /// <remarks>
+        /// The drawn keys are opaque plates a few millimetres above the real
+        /// ones, so a hand passing over them disappears behind the overlay --
+        /// you lose your own fingers exactly where you are trying to place
+        /// them. Neither answer is right for everyone, so this is a choice.
+        /// </remarks>
+        public enum HandVisual
+        {
+            /// <summary>Draw the keys over everything, hands included.</summary>
+            Overlay = 0,
+
+            /// <summary>Draw tracked hand meshes on top of the keys.</summary>
+            Rendered = 1,
+
+            /// <summary>Let the real hands occlude the keys via scene depth.</summary>
+            Occluded = 2,
+        }
+
+        /// <summary>
+        /// Which hand treatment to use. Defaults to what the app always did.
+        /// </summary>
+        /// <remarks>
+        /// Serialised as its underlying int by JsonUtility, so an older profile
+        /// with no value at all loads as Overlay -- the previous behaviour --
+        /// rather than as something the player never chose.
+        /// </remarks>
+        public HandVisual handVisual = HandVisual.Overlay;
+
         /// <summary>Which end of the keyboard the menu hangs off.</summary>
         public bool menuOnHighEnd = true;
 

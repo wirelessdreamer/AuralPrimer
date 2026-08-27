@@ -74,9 +74,16 @@ namespace AuralPrimer.Calibration
         ///
         /// Only the highlight goes solid. An unlit key stays see-through,
         /// because at rest the point is to look at the real keyboard.
+        ///
+        /// The near end is GREEN, and green is not used anywhere else on the
+        /// instrument. It used to be the lit cyan, on the reasoning that "about
+        /// to be played" and "being played" should meet as one hue -- but that
+        /// made the two states differ only in how much of the key was filled,
+        /// which is a weak signal to read at a glance while playing. Held keys
+        /// stay cyan; green means, and only means, play this one next.
         /// </remarks>
         static readonly Color PreviewFar = new(0.482f, 0.247f, 0.949f, 0.45f);
-        static readonly Color PreviewNear = new(0.208f, 0.941f, 1f, 1f);
+        static readonly Color PreviewNear = new(0.337f, 0.910f, 0.522f, 1f);
 
         /// <summary>Shortest bar drawn, so the furthest note is still visible.</summary>
         const float MinimumPreviewFill = 0.14f;
