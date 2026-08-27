@@ -449,6 +449,26 @@ function buildKeyboardLayout(x0: number, width: number): KeyboardLayout {
   return { byMidi, white, black };
 }
 
+/**
+ * The key you play next.
+ *
+ * Its own colour rather than a sample of the falling-note gradient. The keys
+ * used to borrow `noteBodyColor` at a fixed approach, which put a muted orange
+ * over an off-white key (`#f3efe7`) and a dim violet over a near-black one --
+ * both close enough to the key underneath that the board read as undifferen-
+ * tiated. Green belongs to nothing else on the keyboard, so it cannot be
+ * confused with the key itself, with a note falling toward it, or with the cyan
+ * that means a key is being held right now.
+ */
+const KEY_READY_RGB = [86, 232, 133] as const;
+
+function keyReadyFill(intensity: number, blackKey: boolean): string {
+  // Black keys need more of it: the same wash over near-black reads as grey,
+  // where over an off-white key it already reads as green.
+  const alpha = blackKey ? 0.5 + intensity * 0.42 : 0.42 + intensity * 0.44;
+  return rgbToCss(KEY_READY_RGB, alpha);
+}
+
 function noteBodyColor(blackKey: boolean, approach: number): string {
   const cool = blackKey ? ([155, 126, 255] as const) : ([126, 238, 195] as const);
   const hot = blackKey ? ([255, 157, 214] as const) : ([255, 184, 91] as const);
@@ -575,7 +595,7 @@ export class TabRenderer {
     const color = ROLE_COLORS[this.role];
     const glow = ROLE_GLOW_COLORS[this.role];
 
-    ctx.font = "700 13px ui-monospace, SFMono-Regular, Consolas, monospace";
+    ctx.font = "800 15px ui-monospace, SFMono-Regular, Consolas, monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -584,10 +604,23 @@ export class TabRenderer {
       const fretInfo = noteToFretPosition(note, tuning);
       if (!fretInfo) continue;
 
-      const x = hitX + ((note.t_on - t) / windowSec) * (w - hitX);
-      const y = yPad + fretInfo.string * stringSpacing;
+      // Whole pixels, deliberately.
+      //
+      // The scroll position is continuous, so an un-rounded x lands on a
+      // different sub-pixel offset every frame. Canvas anti-aliases the glyph
+      // across two columns to fake that offset, and the pattern changes each
+      // frame — which is not a number moving smoothly, it is a number
+      // shimmering. At speed it reads as a blur. Snapping to the pixel grid
+      // costs a sub-pixel of positional accuracy, which nobody can see, and
+      // buys a glyph that is drawn identically every frame, which everybody
+      // can.
+      const x = Math.round(hitX + ((note.t_on - t) / windowSec) * (w - hitX));
+      const y = Math.round(yPad + fretInfo.string * stringSpacing);
       const dist = Math.abs(note.t_on - t);
-      const alpha = dist < 0.1 ? 1.0 : Math.max(0.3, 1.0 - dist / windowSec);
+      // Distant notes used to drop to 0.3, which is legible standing still and
+      // not while moving. The number is the whole point of this view, so the
+      // floor is high enough to stay readable the entire way down.
+      const alpha = dist < 0.1 ? 1.0 : Math.max(0.62, 1.0 - dist / windowSec);
 
       ctx.save();
       ctx.globalAlpha = alpha * 0.58;
@@ -597,8 +630,11 @@ export class TabRenderer {
       ctx.fill();
       ctx.restore();
 
-      const pillW = 22;
-      const pillH = 18;
+      // Bigger, and on the pixel grid for the same reason as the glyph: a pill
+      // edge landing mid-pixel softens into the background and takes the
+      // number's contrast with it.
+      const pillW = 26;
+      const pillH = 21;
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
@@ -1033,11 +1069,12 @@ export class TabRenderer {
       ctx.fillRect(key.x, keyboardTop, key.w, keyboardHeight);
 
       if (intensity > 0) {
-        const fill = noteBodyColor(false, 0.72);
-        ctx.fillStyle = fill.replace(", 0.95)", `, ${0.28 + intensity * 0.42})`);
+        ctx.fillStyle = keyReadyFill(intensity, false);
         ctx.fillRect(key.x + 1, keyboardTop + 1, Math.max(1, key.w - 2), keyboardHeight - 2);
 
-        ctx.fillStyle = noteGlowColor(false, 0.9, intensity);
+        // A brighter lip along the top edge, where the eye already is because
+        // that is where the notes land.
+        ctx.fillStyle = rgbToCss(KEY_READY_RGB, 0.5 + intensity * 0.4);
         ctx.fillRect(key.x - 2, keyboardTop - 6, key.w + 4, 10);
       }
 
@@ -1083,8 +1120,7 @@ export class TabRenderer {
       ctx.fill();
 
       if (intensity > 0) {
-        const glow = noteBodyColor(true, 0.85).replace(", 0.95)", `, ${0.34 + intensity * 0.34})`);
-        ctx.fillStyle = glow;
+        ctx.fillStyle = keyReadyFill(intensity, true);
         roundRectPath(ctx, key.x + 1, keyboardTop + 1, Math.max(1, key.w - 2), blackKeyHeight - 2, 4);
         ctx.fill();
       }

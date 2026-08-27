@@ -185,6 +185,22 @@ def events_to_role_buckets(
                 )
             )
 
+    # Starts that never received an end.
+    #
+    # MuScriptor emits NoteStart/NoteEnd as a stream and processes the mix in
+    # chunks, so a note running across a chunk boundary can lose its end. Those
+    # starts were dropped in silence -- the model found a note and we discarded
+    # it -- which matches the reported symptom: bars where the transcription
+    # goes empty while the piano is plainly still playing. Measured on Center,
+    # 19 gaps over 2s totalling 67s, with the keys stem at -30 dB through them
+    # against a -37.5 dB song average.
+    #
+    # Counted, not silently recovered. Whether these are real notes or noise
+    # decides whether recovering them would help, and that is a question for the
+    # next run's numbers rather than for a guess here.
+    if open_starts:
+        group_counts["_unpaired_starts"] = len(open_starts)
+
     for notes in melodic.values():
         notes.sort(key=lambda n: (n.t_on, n.pitch))
     drums.sort(key=lambda d: (d.time, d.note))
