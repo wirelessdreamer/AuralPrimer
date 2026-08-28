@@ -151,6 +151,11 @@ export function appShellHtml(): string {
                   <button id="playbackRateApply">Set rate</button>
                 </div>
                 <div class="row">
+                  <label class="meta">Song volume</label>
+                  <input id="songVolume" type="range" min="0" max="150" step="1" value="100" />
+                  <span id="songVolumeValue" class="meta">100%</span>
+                </div>
+                <div class="row">
                   <label class="meta">Metronome</label>
                   <label><input id="metronomeEnabled" type="checkbox" /> enabled</label>
                   <label class="meta">vol</label>

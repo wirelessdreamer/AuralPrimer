@@ -644,6 +644,47 @@ _playersPanelRef = playersPanel;
 // after each song's audio loads; hidden for single-stem/legacy packs.
 const stemMixer = initStemMixerPanel(document.getElementById("stemMixer") as HTMLElement);
 
+// Song volume. The native engine has no master gain, so this folds into the
+// per-track gains the mixer already pushes -- which keeps whatever balance the
+// player set between stems while moving the whole song together.
+//
+// Persisted, unlike the per-stem faders. Those are a balance for one song and
+// the engine resets them on load; this is how loud the room is, and having to
+// set it again every launch is the kind of small friction that makes a player
+// stop touching a control at all.
+const SONG_VOLUME_KEY = "auralprimer.songVolume";
+const songVolumeEl = document.getElementById("songVolume") as HTMLInputElement | null;
+const songVolumeValueEl = document.getElementById("songVolumeValue") as HTMLElement | null;
+
+function applySongVolume(percent: number, persist: boolean): void {
+  const clamped = Math.max(0, Math.min(150, Math.round(percent)));
+  stemMixer.setMaster(clamped / 100);
+  if (songVolumeValueEl) songVolumeValueEl.textContent = `${clamped}%`;
+  if (!persist) return;
+  try {
+    window.localStorage.setItem(SONG_VOLUME_KEY, String(clamped));
+  } catch {
+    // Private browsing or a locked profile: the fader still works this session.
+  }
+}
+
+if (songVolumeEl) {
+  const stored = (() => {
+    try {
+      const raw = window.localStorage.getItem(SONG_VOLUME_KEY);
+      const n = raw === null ? NaN : Number(raw);
+      return Number.isFinite(n) ? n : 100;
+    } catch {
+      return 100;
+    }
+  })();
+  songVolumeEl.value = String(Math.max(0, Math.min(150, Math.round(stored))));
+  applySongVolume(Number(songVolumeEl.value), false);
+  songVolumeEl.addEventListener("input", () => {
+    applySongVolume(Number(songVolumeEl.value), true);
+  });
+}
+
 // Caps panel — depends on playersPanel (for instrument writeback) and a
 // live getter for selectedMelodicTracks (mutated by readDrumChartSelection).
 const capsPanel: CapsPanelHandle = initCapsPanel({

@@ -19,6 +19,13 @@ const ROLE_LABELS: Record<string, string> = {
 export type StemMixerHandle = {
   /** Rebuild for a new song's stem roles (empty array hides the panel). */
   setRoles: (roles: string[]) => void;
+  /**
+   * Scale every track at once, 0..1.5. The engine has no master gain, so the
+   * song fader folds in here alongside mute, solo and the per-stem faders and
+   * is pushed as one number per track -- which also keeps the per-stem balance
+   * intact while the whole song gets quieter.
+   */
+  setMaster: (gain: number) => void;
 };
 
 export function initStemMixerPanel(container: HTMLElement): StemMixerHandle {
@@ -26,12 +33,15 @@ export function initStemMixerPanel(container: HTMLElement): StemMixerHandle {
   let gains: number[] = [];
   let muted: boolean[] = [];
   let soloed: boolean[] = [];
+  let master = 1;
 
   // Solo overrides: if any track is soloed, only soloed tracks are audible (at
   // their fader gain); otherwise a track is audible unless muted.
   function effectiveGain(i: number): number {
-    if (soloed.some((s) => s)) return soloed[i] ? (gains[i] ?? 1) : 0;
-    return muted[i] ? 0 : (gains[i] ?? 1);
+    const own = soloed.some((s) => s)
+      ? (soloed[i] ? (gains[i] ?? 1) : 0)
+      : (muted[i] ? 0 : (gains[i] ?? 1));
+    return own * master;
   }
 
   function pushAll(): void {
@@ -92,5 +102,15 @@ export function initStemMixerPanel(container: HTMLElement): StemMixerHandle {
     // Engine already resets to unity on load_stems, so no push needed here.
   }
 
-  return { setRoles };
+  return {
+    setRoles,
+    setMaster(gain: number) {
+      const next = Math.max(0, Math.min(1.5, gain));
+      if (next === master) return;
+      master = next;
+      // Pushed even with no roles loaded: setRoles pushes again on the next
+      // song, so a fader moved before a song is chosen still applies to it.
+      pushAll();
+    },
+  };
 }
