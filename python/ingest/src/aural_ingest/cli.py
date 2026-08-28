@@ -6395,7 +6395,15 @@ def cmd_import(args: argparse.Namespace) -> int:
                     message="whole-mix transcription (MuScriptor)",
                 )
             )
-            wholemix_result = _muscriptor.transcribe_mix(dst_wav)
+            # Condition on what the separator found rather than letting the
+            # model guess. Free: the stems already exist by this point, and a
+            # stem with sound in it is an instrument that is present.
+            conditioning = _muscriptor.instruments_from_stems(stems_dir)
+            if conditioning:
+                log(f"conditioning MuScriptor on: {', '.join(conditioning)}")
+            wholemix_result = _muscriptor.transcribe_mix(
+                dst_wav, instruments=conditioning
+            )
         if wholemix_result is None:
             log(
                 "whole-mix transcriber 'muscriptor' unavailable or produced nothing; "

@@ -209,8 +209,96 @@ def events_to_role_buckets(
     )
 
 
-def transcribe_mix(mix_wav_path: Path) -> MuScriptorResult | None:
+#: Stem name -> the MuScriptor instrument groups that stem can produce. Used to
+#: turn "which stems have sound in them" into a conditioning list.
+#: Deliberately narrow. Conditioning works by ruling things OUT, so naming
+#: every group a stem could conceivably contain -- organ, contrabass, three
+#: flavours of electric guitar -- says almost nothing and the model goes back
+#: to guessing. One or two plausible groups per stem is what was measured to
+#: move the attribution.
+_STEM_INSTRUMENTS: dict[str, tuple[str, ...]] = {
+    "keys": ("acoustic_piano", "electric_piano", "synth_pad"),
+    "guitar": ("acoustic_guitar", "clean_electric_guitar"),
+    "rhythm_guitar": ("acoustic_guitar",),
+    "lead_guitar": ("clean_electric_guitar",),
+    "bass": ("electric_bass",),
+    "drums": ("drums",),
+    "vocals": ("voice",),
+}
+
+#: A stem this quiet at its loudest is separation residue, not a part. Measured
+#: on the packs: a stem carrying a real part sits at -28 to -38 dBFS, one the
+#: separator emptied sits at -72 to -78, and nothing lives in between.
+_STEM_PRESENT_DBFS = -50.0
+
+
+def instruments_from_stems(stems_dir: Path) -> list[str] | None:
+    """Which instrument groups to ask MuScriptor for, from the separated stems.
+
+    Left to itself the model decides what it is hearing, and on a dense mix it
+    decides badly: on one worship track it labelled 5271 of ~6500 notes
+    acoustic_piano and found no guitar at all in a minute of music that plainly
+    has a guitar in it. Told the true instrument set over the same minute it
+    found 466 guitar notes and dropped keys from 398 to 253.
+
+    We already separate stems, so we already know what is in the song -- a stem
+    with sound in it is an instrument that is present. That makes the answer
+    free rather than something to ask the user for, and it is measured from
+    this recording rather than assumed from a genre.
+
+    Returns ``None`` when nothing can be measured, which is the same as not
+    conditioning at all: the model keeps its current behaviour rather than
+    being handed an empty list and told the song is silent.
+    """
+    try:
+        import numpy as np
+        import soundfile as sf
+    except Exception:
+        return None
+
+    wanted: list[str] = []
+    for stem, groups in _STEM_INSTRUMENTS.items():
+        path = stems_dir / f"{stem}.wav"
+        if not path.is_file():
+            continue
+        try:
+            data, rate = sf.read(str(path), dtype="float32", always_2d=True)
+        except Exception:
+            continue
+        if data.size == 0 or rate <= 0:
+            continue
+        mono = data.mean(axis=1)
+        # Loudest second, not the average: an instrument that plays for one
+        # section of the song is still in the song, and averaging over a
+        # ten-minute track buries it under the silence around it.
+        frame = int(rate)
+        usable = (len(mono) // frame) * frame
+        if usable < frame:
+            continue
+        blocks = mono[:usable].reshape(-1, frame)
+        rms = np.sqrt(np.mean(np.square(blocks), axis=1))
+        peak_db = 20.0 * np.log10(max(float(np.percentile(rms, 95)), 1e-9))
+        if peak_db > _STEM_PRESENT_DBFS:
+            wanted.extend(groups)
+
+    if not wanted:
+        return None
+    # Deduplicated, order preserved: guitar stems overlap, and the split
+    # rhythm/lead stems name groups the combined one already named.
+    seen: set[str] = set()
+    return [g for g in wanted if not (g in seen or seen.add(g))]
+
+
+def transcribe_mix(
+    mix_wav_path: Path, instruments: list[str] | None = None
+) -> MuScriptorResult | None:
     """Transcribe a whole mix with MuScriptor, bucketed into AuralStudio roles.
+
+    ``instruments`` conditions the model on the groups actually present. The
+    upstream paper offers conditioning as its one mitigation for unstable
+    instrument assignment, and it is what stops a strummed guitar arriving in
+    the keys part. An explicit argument wins over the environment variable, so
+    a caller that has measured the song beats a global default.
 
     Returns ``None`` (never raises) when MuScriptor is unavailable, its gated
     weights can't be downloaded, or inference fails -- so the caller cleanly
@@ -228,10 +316,20 @@ def transcribe_mix(mix_wav_path: Path) -> MuScriptorResult | None:
         weights = os.environ.get(_WEIGHTS_ENV, "").strip() or size
         device = select_device(_DEVICE_ENV)
         model = TranscriptionModel.load_model(weights, device=device)
-        instruments = _parse_instruments(os.environ.get(_INSTRUMENTS_ENV, ""))
-        events = model.transcribe(str(mix_wav_path), instruments=instruments)
+        conditioning = instruments or _parse_instruments(
+            os.environ.get(_INSTRUMENTS_ENV, "")
+        )
+        events = model.transcribe(str(mix_wav_path), instruments=conditioning)
         result = events_to_role_buckets(events, _load_role_map())
-        result.meta.update({"engine": ENGINE_ID, "size": size, "device": str(device)})
+        result.meta.update({
+            "engine": ENGINE_ID,
+            "size": size,
+            "device": str(device),
+            # Recorded because it changes the result: a pack transcribed with
+            # conditioning and one without are not comparable, and from the
+            # outside they look identical.
+            "instruments_conditioned": list(conditioning) if conditioning else None,
+        })
         return result
     except Exception:
         # Gated-weight download failure / OOM / inference error -> fall back.
