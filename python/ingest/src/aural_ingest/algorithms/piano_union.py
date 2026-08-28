@@ -43,12 +43,23 @@ class UnionConfig:
 
     ``dedup_window_sec`` is the tolerance for calling two same-pitch reports
     one note. Engines disagree about onset by a few tens of milliseconds on
-    identical material, and the project's own chord-grouping window is 50 ms,
-    so anything much tighter double-counts and anything much looser starts
-    swallowing genuine repeated notes.
+    identical material, so anything much tighter double-counts and anything
+    much looser starts swallowing genuine repeated notes.
+
+    It was 60 ms, which was worse than either. Sources read from different
+    stem mixes disagree by more than that, so the window collapsed everything
+    inside it -- leaving a single pair on What A God -- while 341 pairs landed
+    just outside and survived as a second strike on the same key 60-150 ms
+    before the real one. On a keyboard that is a flam no hand can play.
+
+    The interval histogram says where the line goes. Real repeats pile onto
+    note values: at 78.9 bpm, 436 pairs at 180-199 ms (a sixteenth) and 467 at
+    380-399 ms (an eighth). The artifacts spread as a flat plateau from 60 to
+    179 ms with no peak anywhere, because nothing musical lives there. 170 ms
+    clears the plateau and still leaves 20 ms under the sixteenth.
     """
 
-    dedup_window_sec: float = 0.06
+    dedup_window_sec: float = 0.17
     primary: str = "primary"
     # When the primary found the note, its timing wins: it is the reading the
     # user says sounds like the song.
