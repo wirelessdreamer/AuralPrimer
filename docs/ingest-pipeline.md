@@ -24,7 +24,17 @@ aural_ingest import <input-audio-path>
 aural_ingest validate <auralsong-dir>
 aural_ingest info <auralsong-dir>
 aural_ingest stages
+aural_ingest piano-reduce <auralsong-dir> [--force] [--max-octave-doublings N]
 ```
+
+`piano-reduce` is **opt-in arrangement analysis**, not part of an import. It
+reads the pack's melodic `notes.mid` (every role, drums excluded), collapses
+what the parts double, cuts to the two-hand model in
+`algorithms/piano_playability.py`, and writes
+`<features>/piano_reduction.mid` (tracks `Piano RH` / `Piano LH`) plus a
+`piano_reduction.json` report. It never rewrites `notes.mid` and never changes
+what the game charts. Rationale and the rejected neural alternative:
+[research-piano-arrangement-2026-08-28.md](research-piano-arrangement-2026-08-28.md).
 
 ### Progress reporting
 - stdout: **structured JSON lines** events for progress

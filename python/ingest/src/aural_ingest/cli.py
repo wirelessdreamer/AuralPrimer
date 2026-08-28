@@ -7075,6 +7075,41 @@ def cmd_prep_arrangements(args: argparse.Namespace) -> int:
     return 0 if status.get("ok") else 1
 
 
+def cmd_piano_reduce(args: argparse.Namespace) -> int:
+    """Reduce a pack's melodic score to a two-hand piano arrangement.
+
+    Reads ``<features>/notes.mid`` (every melodic role, drums excluded), merges
+    what the parts double, thins octave doublings, cuts to the hand model and
+    deals the survivors into two hands. Writes
+    ``<features>/piano_reduction.mid`` + ``piano_reduction.json`` and stamps the
+    ``piano_reduction`` manifest key.
+
+    Opt-in analysis: it never rewrites ``notes.mid`` and never changes what the
+    game charts. Existing output is skipped unless ``--force``.
+    """
+    from aural_ingest.algorithms.piano_reduction import (
+        DEFAULT_REDUCTION_CONFIG,
+        ReductionConfig,
+        reduce_pack,
+    )
+
+    pack = Path(args.auralsong_dir)
+    config = DEFAULT_REDUCTION_CONFIG
+    doublings = getattr(args, "max_octave_doublings", None)
+    if doublings is not None:
+        config = ReductionConfig(max_octave_doublings=max(0, int(doublings)))
+
+    try:
+        status = reduce_pack(
+            pack, config=config, force=bool(getattr(args, "force", False))
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"piano-reduce failed: {exc}"}, sort_keys=True))
+        return 1
+    print(json.dumps(status, sort_keys=True))
+    return 0 if status.get("ok") else 1
+
+
 def _load_case_ids(path) -> set[str]:
     """Load a set of case ids from a JSON or plain-text allow-list.
 
@@ -7779,6 +7814,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing aural/notes.mid + song_timeline.json (default: skip existing to protect cleanup anchors).",
     )
     s_prep_arr.set_defaults(func=cmd_prep_arrangements)
+
+    s_piano_reduce = sub.add_parser(
+        "piano-reduce",
+        help=(
+            "Reduce a pack's melodic score (all roles) to a two-hand piano "
+            "arrangement -> <features>/piano_reduction.mid + .json. Additive "
+            "analysis; notes.mid is never rewritten."
+        ),
+    )
+    s_piano_reduce.add_argument(
+        "auralsong_dir",
+        help="Path to an existing pack root (the directory containing manifest.yaml + the melodic notes.mid).",
+    )
+    s_piano_reduce.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing piano_reduction.mid (default: skip).",
+    )
+    s_piano_reduce.add_argument(
+        "--max-octave-doublings",
+        type=int,
+        default=None,
+        help=(
+            "How many times one pitch class may be doubled at a single attack "
+            "(default 1: keep the bass anchor and the melody, drop the middle)."
+        ),
+    )
+    s_piano_reduce.set_defaults(func=cmd_piano_reduce)
 
     s_align_drums = sub.add_parser(
         "align-drum-onsets",
