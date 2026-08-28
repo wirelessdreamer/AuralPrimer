@@ -564,30 +564,67 @@ export class TabRenderer {
 
     const w = canvas.width;
     const h = canvas.height;
-    // Shrink the visible window as spacing increases (higher multiplier
-    // => fewer seconds across the same width => notes further apart).
     const scrollMul = clampScrollSpeedMultiplier(opts.scrollSpeedMultiplier);
     const windowSec = this.windowSec / scrollMul;
     const numStrings = tuning.strings.length;
-    const yPad = 20;
-    const stringSpacing = (h - yPad * 2) / Math.max(1, numStrings - 1);
 
-    ctx.strokeStyle = STRING_COLOR;
-    ctx.lineWidth = 1;
+    // A receding highway rather than a sideways belt.
+    //
+    // Scrolling moved every note the same number of pixels per frame however
+    // far off it was, so the whole field smeared at once and the fret numbers
+    // -- which are the entire point of this view -- went with it. Under
+    // perspective a note an octave of time away crawls, and only the notes
+    // about to be played move quickly. The eye reads the far ones because they
+    // are nearly still, and the near ones because they are large.
+    //
+    // Depth is 1/(1 + k*u): u is time-to-hit normalised over the window, so
+    // u=0 is the hit line and u=1 the horizon. Everything -- lane spread, note
+    // size, glyph size -- is that one number, which is what makes it read as
+    // distance rather than as things being drawn smaller.
+    const DEPTH = 5.2;
+    const farScale = 1 / (1 + DEPTH);
+    const horizonY = h * 0.06;
+    const hitY = h * (1 - this.hitLineFrac);
+    const cx = w * 0.5;
+    // Near-plane half-width. The lanes reach most of the canvas at the hit
+    // line, which is where the player is actually looking.
+    const halfSpread = w * 0.44;
+
+    const depthScale = (u: number): number => 1 / (1 + DEPTH * clamp(u, 0, 1));
+    // Normalised so u=1 lands exactly on the horizon whatever DEPTH is.
+    const depthY = (u: number): number =>
+      hitY - ((1 - depthScale(u)) / (1 - farScale)) * (hitY - horizonY);
+    const laneOffset = (s: number): number =>
+      numStrings <= 1 ? 0 : ((s / (numStrings - 1)) * 2 - 1) * halfSpread;
+    const laneX = (s: number, u: number): number => cx + laneOffset(s) * depthScale(u);
+
+    // Lanes, drawn as the rails they are: wide and bright at the hit line,
+    // converging and faint at the horizon, so depth is legible with no notes
+    // on screen at all.
     for (let s = 0; s < numStrings; s += 1) {
-      const y = yPad + s * stringSpacing;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
+      const steps = 24;
+      for (let i = 0; i < steps; i += 1) {
+        const u0 = i / steps;
+        const u1 = (i + 1) / steps;
+        const near = 1 - u0;
+        ctx.strokeStyle = STRING_COLOR;
+        ctx.globalAlpha = 0.25 + near * 0.75;
+        ctx.lineWidth = 0.5 + depthScale(u0) * 1.6;
+        ctx.beginPath();
+        ctx.moveTo(laneX(s, u0), depthY(u0));
+        ctx.lineTo(laneX(s, u1), depthY(u1));
+        ctx.stroke();
+      }
     }
+    ctx.globalAlpha = 1;
 
-    const hitX = w * this.hitLineFrac;
+    // The hit line spans the near plane, across the lanes rather than through
+    // them, because it is a moment in time and they are pitches.
     ctx.strokeStyle = HIT_LINE_COLOR;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(hitX, 0);
-    ctx.lineTo(hitX, h);
+    ctx.moveTo(cx - halfSpread, hitY);
+    ctx.lineTo(cx + halfSpread, hitY);
     ctx.stroke();
 
     const tStart = t - 0.5;
@@ -595,53 +632,62 @@ export class TabRenderer {
     const color = ROLE_COLORS[this.role];
     const glow = ROLE_GLOW_COLORS[this.role];
 
-    ctx.font = "800 15px ui-monospace, SFMono-Regular, Consolas, monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
+    // Far to near, so a nearer note occludes the one behind it the way the
+    // distance already implies.
+    const visible: { note: MelodicNote; fret: FretPosition; u: number }[] = [];
     for (const note of track.notes) {
       if (note.t_on > tEnd || note.t_off < tStart) continue;
       const fretInfo = noteToFretPosition(note, tuning);
       if (!fretInfo) continue;
+      visible.push({ note, fret: fretInfo, u: (note.t_on - t) / windowSec });
+    }
+    visible.sort((a, b) => b.u - a.u);
 
-      // Whole pixels, deliberately.
-      //
-      // The scroll position is continuous, so an un-rounded x lands on a
-      // different sub-pixel offset every frame. Canvas anti-aliases the glyph
-      // across two columns to fake that offset, and the pattern changes each
-      // frame — which is not a number moving smoothly, it is a number
-      // shimmering. At speed it reads as a blur. Snapping to the pixel grid
-      // costs a sub-pixel of positional accuracy, which nobody can see, and
-      // buys a glyph that is drawn identically every frame, which everybody
-      // can.
-      const x = Math.round(hitX + ((note.t_on - t) / windowSec) * (w - hitX));
-      const y = Math.round(yPad + fretInfo.string * stringSpacing);
-      const dist = Math.abs(note.t_on - t);
-      // Distant notes used to drop to 0.3, which is legible standing still and
-      // not while moving. The number is the whole point of this view, so the
-      // floor is high enough to stay readable the entire way down.
-      const alpha = dist < 0.1 ? 1.0 : Math.max(0.62, 1.0 - dist / windowSec);
+    for (const { fret: fretInfo, u } of visible) {
+      const uc = clamp(u, 0, 1);
+      const scale = depthScale(uc);
+      // Whole pixels, still: a glyph landing on a different sub-pixel offset
+      // each frame is anti-aliased differently each frame, which reads as
+      // shimmer. Perspective slows the far ones down but does not put them on
+      // the grid.
+      const x = Math.round(laneX(fretInfo.string, uc));
+      const y = Math.round(depthY(uc));
+
+      // Held past the line rather than clipped: u goes negative for a note
+      // being played, and the pill staying put is the confirmation.
+      // Floor lands at 0.62 on the horizon, which is where the old fixed
+      // window had to be pinned to stay readable -- perspective earns it back
+      // instead of asserting it.
+      const alpha = u < 0 ? 1 : 0.55 + 0.45 * scale;
 
       ctx.save();
-      ctx.globalAlpha = alpha * 0.58;
+      ctx.globalAlpha = alpha * 0.5;
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(x, y, 16, 0, Math.PI * 2);
+      ctx.arc(x, y, Math.max(4, 17 * scale), 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
 
-      // Bigger, and on the pixel grid for the same reason as the glyph: a pill
-      // edge landing mid-pixel softens into the background and takes the
-      // number's contrast with it.
-      const pillW = 26;
-      const pillH = 21;
+      const pillW = Math.round(Math.max(9, 28 * scale));
+      const pillH = Math.round(Math.max(8, 23 * scale));
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
-      roundRectPath(ctx, x - pillW * 0.5, y - pillH * 0.5, pillW, pillH, 5);
+      roundRectPath(ctx, x - pillW * 0.5, y - pillH * 0.5, pillW, pillH, Math.max(2, 5 * scale));
       ctx.fill();
-      ctx.fillStyle = "#051018";
-      ctx.fillText(String(fretInfo.fret), x, y);
+
+      // Below about 9px the digits stop being digits, so the pill carries the
+      // note on its own out there. It still says WHEN and WHICH STRING, which
+      // is what a note that far away is for; the fret arrives with the size.
+      const fontPx = Math.round(16 * scale);
+      if (fontPx >= 9) {
+        ctx.fillStyle = "#051018";
+        ctx.font = `800 ${fontPx}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+        ctx.fillText(String(fretInfo.fret), x, y);
+      }
       ctx.restore();
     }
 
