@@ -1352,6 +1352,23 @@ const GRACE_WINDOW_SEC = 0.05;
 // window: stretching that too would leave a note current long after it could
 // be scored, and starve the one behind it on fast passages.
 const GRACE_HOLDOFF_SEC = 0.2;
+// How early a hit still counts as this note's.
+//
+// Scoring and accepting are different questions, and they were sharing one
+// number. A note played before its onset failed the scoring window, so it was
+// discarded outright -- then the gate arrived, found nothing registered, and
+// stopped the song to ask for the note the player had just played, seeking
+// BACKWARD to do it. From the keyboard that reads as the song rejecting a
+// correct note and rewinding.
+//
+// Nothing else the early hit could belong to: it is the current group, and the
+// group behind it has already retired. So accepting it costs nothing and
+// refusing it costs a false miss. It still scores by GRACE_WINDOW_SEC -- early
+// is still early, it is simply no longer treated as never having happened.
+//
+// Matched to the hold-off so the accepted span is symmetric about the onset:
+// the gate forgives 200 ms of drag, and this forgives 200 ms of rush.
+const GRACE_ACCEPT_EARLY_SEC = GRACE_HOLDOFF_SEC;
 // Playhead jump that means "seeked", not "played on". Comfortably above a
 // frame's worth of playback (even a slow frame at 2x rate) and below the
 // smallest jog step, so a Shift+arrow nudge still counts as a seek.
@@ -1480,8 +1497,13 @@ function learnRegisterPlayed(pitch: number): void {
   // stops when a note is genuinely missed, Grace just stops it stopping for
   // a note you played a few milliseconds off.
   const t = transportController.getState().t;
-  const window = graceMode ? GRACE_WINDOW_SEC : 0.02;
-  const inWindow = Math.abs(t - g.t) <= window;
+  // Asymmetric on purpose. Late is bounded by the gate, because past it the
+  // song has already stopped and learnWaiting carries the hit instead. Early
+  // is bounded by how far ahead of the beat a hand can credibly be.
+  const early = graceMode ? GRACE_ACCEPT_EARLY_SEC : 0.02;
+  const late = graceMode ? GRACE_HOLDOFF_SEC : 0.02;
+  const offset = t - g.t;
+  const inWindow = offset >= -early && offset <= late;
   if (!learnWaiting && !inWindow) return;
 
   if (g.pitches.includes(pitch)) learnHit.add(pitch);
@@ -1736,8 +1758,8 @@ function renderPlayheadHud(): void {
   if (playheadClockEl.textContent !== text) playheadClockEl.textContent = text;
 
   if (playheadDetailEl) {
-    const enginePos = nativeTimebase.getCurrentTimeSec?.();
-    const latencyMs = (nativeTimebase.getOutputLatencySec?.() ?? 0) * 1000;
+    const enginePos = nativeTimebase?.getCurrentTimeSec?.();
+    const latencyMs = (nativeTimebase?.getOutputLatencySec?.() ?? 0) * 1000;
     const avMs = getEffectiveOffsetMs();
     const lag = typeof enginePos === "number" && Number.isFinite(enginePos)
       ? `  ·  engine ${formatPlayhead(enginePos)} (${(enginePos - st.t).toFixed(3)}s ahead)`
