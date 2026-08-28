@@ -251,3 +251,85 @@ def test_transcribe_mix_none_when_load_raises(monkeypatch, tmp_path) -> None:
 def test_transcribe_mix_none_when_inference_raises(monkeypatch, tmp_path) -> None:
     _install_fake_muscriptor(monkeypatch, raise_on_transcribe=True)
     assert muscriptor.transcribe_mix(tmp_path / "mix.wav") is None
+
+
+# ---------------------------------------------------------------------------
+# instruments_from_stems: turning "what did the separator find" into a
+# conditioning list. Left unconditioned the model decides for itself what it is
+# hearing, and on a dense mix it decides badly -- so what this returns is the
+# difference between a guitar landing in the guitar part and landing in the
+# piano part.
+# ---------------------------------------------------------------------------
+
+
+def _write_stem(path, *, dbfs, seconds=3, rate=8000):
+    """A stem at a given level, so presence is decided by loudness alone."""
+    import numpy as np
+    import soundfile as sf
+
+    amplitude = 10.0 ** (dbfs / 20.0)
+    t = np.arange(seconds * rate, dtype=np.float32) / rate
+    # A tone rather than noise: RMS is then exactly the amplitude/sqrt(2), so
+    # the level under test is the level written.
+    sf.write(str(path), (amplitude * np.sqrt(2) * np.sin(2 * np.pi * 220 * t)).astype("float32"), rate)
+
+
+def test_instruments_from_stems_names_only_what_is_audible(tmp_path):
+    _write_stem(tmp_path / "keys.wav", dbfs=-25)
+    _write_stem(tmp_path / "guitar.wav", dbfs=-30)
+    # Separation residue, not a part: every Demucs run emits something for every
+    # stem, so silence has to be judged by level rather than by existence.
+    _write_stem(tmp_path / "bass.wav", dbfs=-75)
+
+    groups = muscriptor.instruments_from_stems(tmp_path)
+
+    assert groups is not None
+    assert "acoustic_piano" in groups
+    assert "acoustic_guitar" in groups
+    assert not any(g.endswith("bass") for g in groups)
+
+
+def test_instruments_from_stems_is_none_when_nothing_is_audible(tmp_path):
+    """None, not [] -- an empty list would tell the model the song is silent.
+
+    Returning None means "do not condition", which leaves the engine exactly as
+    it behaves today. A wrong conditioning list is worse than none.
+    """
+    _write_stem(tmp_path / "keys.wav", dbfs=-80)
+
+    assert muscriptor.instruments_from_stems(tmp_path) is None
+    assert muscriptor.instruments_from_stems(tmp_path / "nope") is None
+
+
+def test_instruments_from_stems_does_not_repeat_shared_groups(tmp_path):
+    """The guitar stems overlap, and a repeated group is noise in the prompt."""
+    _write_stem(tmp_path / "guitar.wav", dbfs=-25)
+    _write_stem(tmp_path / "rhythm_guitar.wav", dbfs=-25)
+    _write_stem(tmp_path / "lead_guitar.wav", dbfs=-25)
+
+    groups = muscriptor.instruments_from_stems(tmp_path)
+
+    assert groups is not None
+    assert len(groups) == len(set(groups))
+
+
+def test_explicit_instruments_beat_the_environment(monkeypatch):
+    """A caller that measured the song wins over a global default."""
+    seen = {}
+
+    class _Model:
+        @staticmethod
+        def load_model(weights, device=None):
+            return _Model()
+
+        def transcribe(self, path, instruments=None):
+            seen["instruments"] = instruments
+            return []
+
+    monkeypatch.setitem(sys.modules, "muscriptor", types.SimpleNamespace(TranscriptionModel=_Model))
+    monkeypatch.setattr(muscriptor, "available", lambda: True)
+    monkeypatch.setenv("AURAL_MUSCRIPTOR_INSTRUMENTS", "organ")
+
+    muscriptor.transcribe_mix(__import__("pathlib").Path("mix.wav"), instruments=["acoustic_piano"])
+
+    assert seen["instruments"] == ["acoustic_piano"]
