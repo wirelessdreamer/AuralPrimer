@@ -38,18 +38,19 @@ namespace AuralPrimer.Calibration
         readonly Dictionary<int, Renderer> _previewFills = new();
         readonly Dictionary<int, Transform> _holdTags = new();
 
-        [Tooltip("How far past the near edge of the white keys the hold tags sit, "
-               + "in metres. Far enough clear of the keys that a hand resting on "
-               + "them does not cover the strip.")]
+        [Tooltip("How far behind the back edge of the white keys the hold tags "
+               + "sit, in metres. Behind the bed rather than in front: the hands "
+               + "come at the keys from the player's side, so the near edge is "
+               + "the one place a tag is covered exactly when it is needed.")]
         [SerializeField] float holdTagGapMetres = 0.022f;
 
         [Tooltip("Depth of one hold tag, in metres — how thick the bar looks.")]
         [SerializeField] float holdTagDepthMetres = 0.014f;
 
-        [Tooltip("Gap between the black-key tag line and the white-key one. Black "
-               + "keys are a set-back second row on the instrument, so their tags "
-               + "are a set-back second row here: at key width on one line, a "
-               + "black key's tag has nowhere to sit between two held white ones.")]
+        [Tooltip("Gap between the black-key tag line and the white-key one. At key "
+               + "width on one line a black key's tag has nowhere to sit between "
+               + "two held white ones, so it takes a second line further back -- "
+               + "which is where the black keys themselves sit on the instrument.")]
         [SerializeField] float holdTagRowGapMetres = 0.017f;
         readonly Dictionary<int, Transform> _breakEdges = new();
         readonly Dictionary<int, Transform> _breakCores = new();
@@ -233,10 +234,14 @@ namespace AuralPrimer.Calibration
                 var remaining = Mathf.Clamp01(1f - note.Progress);
                 if (remaining <= 0.02f) continue;
 
-                var outFromKeys = holdTagGapMetres + (black ? holdTagRowGapMetres : 0f);
+                // Behind the bed, measured back from KeyPosition -- which is the
+                // keys' far edge, the end away from the player. In front it was
+                // covered by the very hand whose key it describes, which is the
+                // one moment the tag exists for.
+                var backFromKeys = holdTagGapMetres + (black ? holdTagRowGapMetres : 0f);
                 var centre = _profile.KeyPosition(_layout, note.Pitch)
                            + up * hoverMetres
-                           + forward * (whiteKeyDepth + outFromKeys + holdTagDepthMetres * 0.5f);
+                           - forward * (backFromKeys + holdTagDepthMetres * 0.5f);
 
                 tag.localPosition = centre;
                 tag.localRotation = Quaternion.LookRotation(forward, up);
