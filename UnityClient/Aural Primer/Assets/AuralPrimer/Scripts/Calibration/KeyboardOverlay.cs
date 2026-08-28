@@ -44,8 +44,11 @@ namespace AuralPrimer.Calibration
                + "the one place a tag is covered exactly when it is needed.")]
         [SerializeField] float holdTagGapMetres = 0.022f;
 
-        [Tooltip("Depth of one hold tag, in metres — how thick the bar looks.")]
-        [SerializeField] float holdTagDepthMetres = 0.014f;
+        [Tooltip("How far a full hold tag reaches from the keys toward the play "
+               + "line, in metres. This is the dimension that empties as the "
+               + "note runs out, so it wants most of the gap between the two: "
+               + "the play line sits 0.06 m behind the bed.")]
+        [SerializeField] float holdTagSpanMetres = 0.038f;
 
         [Tooltip("Gap between the black-key tag line and the white-key one. At key "
                + "width on one line a black key's tag has nowhere to sit between "
@@ -238,14 +241,23 @@ namespace AuralPrimer.Calibration
                 // keys' far edge, the end away from the player. In front it was
                 // covered by the very hand whose key it describes, which is the
                 // one moment the tag exists for.
+                // The remaining time reads across the gap between the keys and
+                // the play line, not across the key's width. Width is what says
+                // WHICH key, so spending it on duration made a note running out
+                // look like a narrower key -- two meanings on one dimension, and
+                // the reading that matters most lost. The gap carries duration
+                // instead: full span at the strike, closed at the release, and
+                // it empties toward the keys so the surviving end stays anchored
+                // to the key it belongs to.
                 var backFromKeys = holdTagGapMetres + (black ? holdTagRowGapMetres : 0f);
+                var span = Mathf.Max(holdTagSpanMetres * remaining, 0.001f);
                 var centre = _profile.KeyPosition(_layout, note.Pitch)
                            + up * hoverMetres
-                           - forward * (backFromKeys + holdTagDepthMetres * 0.5f);
+                           - forward * (backFromKeys + span * 0.5f);
 
                 tag.localPosition = centre;
                 tag.localRotation = Quaternion.LookRotation(forward, up);
-                tag.localScale = new Vector3(width * remaining, 0.005f, holdTagDepthMetres);
+                tag.localScale = new Vector3(width, 0.005f, span);
                 tag.gameObject.SetActive(true);
             }
         }
