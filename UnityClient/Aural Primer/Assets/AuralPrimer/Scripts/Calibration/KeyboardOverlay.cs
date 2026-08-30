@@ -36,6 +36,7 @@ namespace AuralPrimer.Calibration
         readonly Dictionary<int, Transform> _keyMarkers = new();
         readonly List<int> _litLastFrame = new();
         readonly Dictionary<int, Renderer> _previewFills = new();
+        readonly Dictionary<int, Renderer> _sustainFills = new();
         readonly Dictionary<int, Transform> _breakEdges = new();
         readonly Dictionary<int, Transform> _breakCores = new();
         readonly HashSet<int> _heldNow = new();
@@ -57,7 +58,6 @@ namespace AuralPrimer.Calibration
         Material _restingBlack;
         Material _next;
         Material _held;
-        Material _holding;
         Material _breakEdge;
         Material _breakCore;
 
@@ -90,6 +90,15 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         static readonly Color PreviewFar = new(0.482f, 0.247f, 0.949f, 0.45f);
         static readonly Color PreviewNear = new(0.337f, 0.910f, 0.522f, 1f);
+
+        /// <summary>What a sustain has cooled to by the time it runs out.</summary>
+        /// <remarks>
+        /// The lit cyan, reused rather than invented. Cooling toward a colour
+        /// the overlay already means something by keeps the vocabulary closed,
+        /// and the green-to-cyan run is a direction the eye reads as decay
+        /// without having to be told which end is which.
+        /// </remarks>
+        static readonly Color SustainSpent = new(0.130f, 0.830f, 0.930f, 1f);
 
         /// <summary>Shortest bar drawn, so the furthest note is still visible.</summary>
         const float MinimumPreviewFill = 0.14f;
@@ -199,9 +208,39 @@ namespace AuralPrimer.Calibration
 
             foreach (var note in sustaining)
             {
-                if (!_keyMarkers.TryGetValue(note.Pitch, out var marker) || marker == null) continue;
-                SetMaterial(marker, _holding);
+                if (!_sustainFills.TryGetValue(note.Pitch, out var fill) || fill == null) continue;
+
+                // Full at the strike, empty at the release.
+                var remaining = Mathf.Clamp01(1f - note.Progress);
+                if (remaining <= 0.02f) continue;
+
+                // Drains toward the player, so the part that survives stays
+                // against the near edge -- the end nearest the hand that is
+                // holding it. Anchored at +0.5 in the marker's own space and
+                // shrinking back from the far edge, which is the mirror of the
+                // preview bar growing forward from -0.5.
+                var t = fill.transform;
+                t.localScale = new Vector3(0.86f, 1.32f, remaining);
+                t.localPosition = new Vector3(0f, 0.26f, 0.5f - remaining * 0.5f);
+                fill.gameObject.SetActive(true);
+
+                // Two channels, not one. Length alone survives a busy
+                // background; colour alone does not, and this surface has
+                // already lost that bet twice.
+                _previewBlock ??= new MaterialPropertyBlock();
+                _previewBlock.Clear();
+                _previewBlock.SetColor(BaseColorId, Color.Lerp(SustainSpent, PreviewNear, remaining));
+                fill.SetPropertyBlock(_previewBlock);
+
                 _litLastFrame.Add(note.Pitch);
+            }
+        }
+
+        void HideAllSustains()
+        {
+            foreach (var fill in _sustainFills.Values)
+            {
+                if (fill != null && fill.gameObject.activeSelf) fill.gameObject.SetActive(false);
             }
         }
 
@@ -378,6 +417,7 @@ namespace AuralPrimer.Calibration
             // you play next has the longest bar and the hottest colour, and the
             // ranking is readable at a glance without counting anything.
             HideAllPreviews();
+            HideAllSustains();
             HideAllBreaks();
 
             // Gathered before the cue is drawn: a break says "lift off this",
@@ -465,6 +505,21 @@ namespace AuralPrimer.Calibration
                     {
                         fillRenderer.sharedMaterial = _next;
                         _previewFills[pitch] = fillRenderer;
+                    }
+
+                    // The sustain drain is its own quad rather than the preview
+                    // one reused: a key can be sounding AND due again inside the
+                    // same frame -- that is exactly what a re-strike is -- and
+                    // one quad cannot be at both ends of the key at once.
+                    var drain = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    drain.name = $"Sustain {pitch}";
+                    Destroy(drain.GetComponent<Collider>());
+                    drain.transform.SetParent(marker.transform, false);
+                    drain.transform.localRotation = Quaternion.identity;
+                    if (drain.TryGetComponent<Renderer>(out var drainRenderer))
+                    {
+                        drainRenderer.sharedMaterial = _next;
+                        _sustainFills[pitch] = drainRenderer;
                     }
                     fill.SetActive(false);
 
@@ -569,6 +624,7 @@ namespace AuralPrimer.Calibration
             // The bars are children of the markers, so destroying those took
             // them with it; this just drops the now-dangling references.
             _previewFills.Clear();
+            _sustainFills.Clear();
             _breakEdges.Clear();
             _breakCores.Clear();
             // No keys drawn means no keys to keep the ray off.
@@ -599,11 +655,6 @@ namespace AuralPrimer.Calibration
             // A held key is confirmation, not instruction, so it sits below
             // the lit colour rather than at it. See the held pass for why.
             _held = Dimmed(_lit, 0.45f);
-
-            // Sustain reuses the preview's near colour rather than inventing a
-            // fourth. Green already means "this key, now"; a note still
-            // sounding is that statement continuing in time, not a new one.
-            _holding = NewTransparent(PreviewNear);
 
             // Note-coloured, matching the falling notes rather than
             // introducing a warning colour: this is a boundary between two
