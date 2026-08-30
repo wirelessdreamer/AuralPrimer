@@ -6013,6 +6013,38 @@ def cmd_import_musicxml(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_midi(args: argparse.Namespace) -> int:
+    """Build a ``.feedpak`` from a MIDI score, keeping its note times exactly.
+
+    For audio that was RENDERED from the MIDI, the MIDI is not an estimate of
+    the recording -- it is what the recording was made from. Going through
+    MusicXML instead snaps every note to a notated subdivision, which on an
+    unquantised performance accumulates into seconds of drift; this path reads
+    the notes and the tempo map straight off the file.
+    """
+    from aural_ingest.midi_feedpak import build_feedpak_from_midi
+
+    src = Path(args.input_midi_path)
+    if not src.exists():
+        print(json.dumps({"ok": False, "error": f"no such file: {src}"}))
+        return 2
+    try:
+        result = build_feedpak_from_midi(
+            src,
+            Path(args.out),
+            audio_path=args.audio or None,
+            title=args.title or None,
+            artist=args.artist or None,
+            genre=args.genre or None,
+            beats_per_bar=int(getattr(args, "beats_per_bar", 4) or 4),
+        )
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    print(json.dumps(result))
+    return 0
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     src = Path(args.input_audio_path)
     out = Path(args.out)
@@ -7717,6 +7749,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Whisper model id; defaults to the smallest English one.",
     )
     s_voice.set_defaults(func=cmd_transcribe_query_lazy)
+
+    s_import_midi = sub.add_parser(
+        "import-midi",
+        help="Build a feedpak from a MIDI whose audio was rendered from it (exact timing).",
+    )
+    s_import_midi.add_argument("input_midi_path")
+    s_import_midi.add_argument("--out", required=True, help="output directory for <stem>.feedpak")
+    s_import_midi.add_argument("--audio", default="", help="audio to attach (defaults to a render beside the MIDI)")
+    s_import_midi.add_argument("--title", default="")
+    s_import_midi.add_argument("--artist", default="")
+    s_import_midi.add_argument("--genre", default="", help="Free-text genre, for library filtering.")
+    s_import_midi.add_argument("--beats-per-bar", type=int, default=4, dest="beats_per_bar")
+    s_import_midi.set_defaults(func=cmd_import_midi)
 
     s_import_xml = sub.add_parser("import-musicxml")
     s_import_xml.add_argument("input_musicxml_path")
