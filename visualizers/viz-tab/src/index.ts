@@ -47,6 +47,15 @@ export const TUNING_GUITAR_STANDARD: Tuning = {
 
 export type PianoRenderOptions = {
   bpm?: number;
+  /**
+   * Colour falling notes by pitch class instead of by the approach spectrum.
+   *
+   * Safe to spend hue here because on the lane time is already position: a
+   * note's distance from the line says when it arrives, continuously, and the
+   * violet-to-green ramp said the same thing a second time in a weaker
+   * channel. The keys are the opposite case and keep their state colours.
+   */
+  noteColors?: boolean;
   timeSignature?: [number, number];
   liveInputNotes?: PianoLiveInputNote[];
   /**
@@ -469,6 +478,54 @@ function keyReadyFill(intensity: number, blackKey: boolean): string {
   return rgbToCss(KEY_READY_RGB, alpha);
 }
 
+/**
+ * Chromatic note colours, indexed by pitch class from C.
+ *
+ * The Boomwhacker convention: hue names the pitch and the octave repeats it,
+ * so every C is red wherever it sits. Its value is that it is not ours -- the
+ * same coding is on classroom tubes, keyboard stickers and beginner method
+ * books, so what is on screen matches what is already on the instrument.
+ *
+ * The twelve run the hue circle once per octave, which makes a semitone step a
+ * small hue step: the colour wheel and the keyboard move in the same
+ * direction. It also means C and C-sharp are both red. That is the palette's
+ * one genuinely hard discrimination, and it is covered by a channel we already
+ * spend elsewhere -- a natural is a wide note and its sharp is a narrow one,
+ * because note width follows key width. Hue names it, width tells it from its
+ * own sharp.
+ */
+const NOTE_COLORS: readonly (readonly [number, number, number])[] = [
+  [232, 36, 30],   // C
+  [240, 86, 60],   // C#
+  [245, 130, 32],  // D
+  [253, 181, 21],  // D#
+  [245, 224, 29],  // E
+  [141, 198, 63],  // F
+  [57, 181, 74],   // F#
+  [0, 167, 157],   // G
+  [46, 127, 193],  // G#
+  [92, 78, 158],   // A
+  [146, 39, 143],  // A#
+  [236, 28, 142],  // B
+];
+
+/** The note colour for a MIDI pitch, brightened as it approaches the line. */
+function pitchClassColor(pitch: number, approach: number): string {
+  const base = NOTE_COLORS[mod(pitch, 12)];
+  // Hue is spent on identity, so approach rides brightness instead: a distant
+  // note is its own colour, dimmed. Mixing toward white rather than raising
+  // alpha keeps the hue recognisable at every distance, which is the whole
+  // reason for colouring them.
+  return rgbToCss(mixRgb(base, [255, 255, 255] as const, approach * 0.34),
+                  0.55 + approach * 0.4);
+}
+
+function pitchClassGlow(pitch: number, approach: number, velocity: number): string {
+  const base = NOTE_COLORS[mod(pitch, 12)];
+  return rgbToCss(mixRgb(base, [255, 255, 255] as const, 0.35),
+                  0.12 + approach * 0.14 + velocity * 0.2);
+}
+
 function noteBodyColor(blackKey: boolean, approach: number): string {
   const cool = blackKey ? ([155, 126, 255] as const) : ([126, 238, 195] as const);
   const hot = blackKey ? ([255, 157, 214] as const) : ([255, 184, 91] as const);
@@ -870,8 +927,13 @@ export class TabRenderer {
       const height = Math.max(6, visibleBottom - visibleTop);
       const noteX = key.x + (key.isBlack ? 1.5 : 1.2);
       const noteW = Math.max(4, key.w - (key.isBlack ? 3 : 2.4));
-      const glowColor = noteGlowColor(key.isBlack, approach, velocity);
-      const bodyColor = noteBodyColor(key.isBlack, approach);
+      const useNoteColors = opts.noteColors === true;
+      const glowColor = useNoteColors
+        ? pitchClassGlow(note.pitch, approach, velocity)
+        : noteGlowColor(key.isBlack, approach, velocity);
+      const bodyColor = useNoteColors
+        ? pitchClassColor(note.pitch, approach)
+        : noteBodyColor(key.isBlack, approach);
 
       // Notes fall downward. The BOTTOM of the pill is the onset moment
       // (the note's t_on, which arrives at hitY first). The body of the
