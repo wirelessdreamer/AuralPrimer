@@ -228,6 +228,14 @@ export function appShellHtml(): string {
 
                   <label
                     class="practiceToggle"
+                    for="noteColorMode"
+                    title="Colours each falling note by which note it is - every C red, every D orange - matching the standard on classroom tubes and keyboard stickers. Width still shows black keys from white."
+                  >
+                    <input id="noteColorMode" type="checkbox" />
+                    <span>Note colours</span>
+                  </label>
+                  <label
+                    class="practiceToggle"
                     for="nashvilleMode"
                     title="Stamps the scale degree (1-7) on each falling note, so the song reads as numbers in its key instead of note names."
                   >

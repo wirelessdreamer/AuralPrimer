@@ -134,6 +134,31 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         public HandVisual handVisual = HandVisual.Overlay;
 
+        /// <summary>
+        /// Colour falling notes by which note they are, rather than by how
+        /// close they are.
+        /// </summary>
+        /// <remarks>
+        /// On by default, unlike the other display choices. The approach
+        /// spectrum this replaces was saying something the lane already says
+        /// better -- a note's height above the keys IS its timing, read as
+        /// geometry without being taught -- so hue was the weaker duplicate of
+        /// an encoding already present. Spending it on identity costs nothing.
+        ///
+        /// JsonUtility gives an absent bool false, so an older profile would
+        /// load as OFF and quietly disagree with a new one. Stored inverted for
+        /// that reason: the field records the departure from the default, and
+        /// the property reads the way the rest of the code wants it.
+        /// </remarks>
+        public bool noteColorsDisabled;
+
+        /// <summary>Colour notes by pitch class on the lane.</summary>
+        public bool NoteColors
+        {
+            get => !noteColorsDisabled;
+            set => noteColorsDisabled = !value;
+        }
+
         /// <summary>Which end of the keyboard the menu hangs off.</summary>
         public bool menuOnHighEnd = true;
 

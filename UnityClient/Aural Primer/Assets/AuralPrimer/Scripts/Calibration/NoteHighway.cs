@@ -106,6 +106,46 @@ namespace AuralPrimer.Calibration
 
         Material _backdropMaterial;
         Material _hitLineMaterial;
+
+        /// <summary>
+        /// Chromatic note colours, indexed by pitch class from C.
+        /// </summary>
+        /// <remarks>
+        /// The Boomwhacker convention: hue names the pitch and the octave
+        /// repeats it, so every C is red wherever it sits. Its value is that it
+        /// is not ours -- the same coding is on classroom tubes, keyboard
+        /// stickers and beginner method books, so the lane matches what is
+        /// already on the instrument.
+        ///
+        /// The twelve run the hue circle once per octave, which makes a
+        /// semitone a small hue step -- the wheel and the keyboard turn the
+        /// same way. It also makes C and C-sharp both red, which is the one
+        /// hard discrimination in the set and the one already covered: note
+        /// width follows key width, so a natural arrives wide and its sharp
+        /// arrives narrow. Hue names it, width separates it from its own sharp.
+        ///
+        /// Saturated on purpose. Passthrough is a desaturated camera feed, so
+        /// chroma survives it better than luminance -- the opposite of what
+        /// works on a monitor.
+        /// </remarks>
+        static readonly Color[] NoteColors =
+        {
+            new(0.910f, 0.141f, 0.118f), // C
+            new(0.941f, 0.337f, 0.235f), // C#
+            new(0.961f, 0.510f, 0.125f), // D
+            new(0.992f, 0.710f, 0.082f), // D#
+            new(0.961f, 0.878f, 0.114f), // E
+            new(0.553f, 0.776f, 0.247f), // F
+            new(0.224f, 0.710f, 0.290f), // F#
+            new(0.000f, 0.655f, 0.616f), // G
+            new(0.180f, 0.498f, 0.757f), // G#
+            new(0.361f, 0.306f, 0.620f), // A
+            new(0.573f, 0.153f, 0.561f), // A#
+            new(0.925f, 0.110f, 0.557f), // B
+        };
+
+        MaterialPropertyBlock _noteBlock;
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         Material _whiteMaterial;
         Material _blackMaterial;
         int _cursor;
@@ -423,6 +463,7 @@ namespace AuralPrimer.Calibration
                 var length = Mathf.Max(minimumNoteLengthMetres, span - articulationGapMetres);
 
                 var slab = Rent(used, isBlack);
+                TintNote(used, pitch);
                 // Local: this lane is parented to the spatial anchor along with
                 // the keys it belongs above.
                 slab.localPosition = key + laneUp * (startHeight + length * 0.5f);
@@ -601,6 +642,33 @@ namespace AuralPrimer.Calibration
             if (renderer != null && renderer.sharedMaterial != wanted) renderer.sharedMaterial = wanted;
 
             return t;
+        }
+
+        /// <summary>Colour one pooled slab by its pitch class.</summary>
+        /// <remarks>
+        /// A property block rather than a material each: sixty-one colours off
+        /// two shared materials, with no per-note allocation on a surface that
+        /// redraws every frame.
+        ///
+        /// The tail is tinted and the strike head deliberately is not -- the
+        /// head stays the bright neutral cap that says WHICH KEY and WHEN. If
+        /// both wore the pitch colour a long note would go back to being one
+        /// solid bar with its onset lost inside it, which is the thing the head
+        /// exists to prevent.
+        /// </remarks>
+        void TintNote(int index, int pitch)
+        {
+            if (_profile == null || !_profile.NoteColors) return;
+            if (index < 0 || index >= _poolRenderers.Count) return;
+            var renderer = _poolRenderers[index];
+            if (renderer == null) return;
+
+            _noteBlock ??= new MaterialPropertyBlock();
+            _noteBlock.Clear();
+            var colour = NoteColors[((pitch % 12) + 12) % 12];
+            colour.a = 0.9f;
+            _noteBlock.SetColor(BaseColorId, colour);
+            renderer.SetPropertyBlock(_noteBlock);
         }
 
         void HideAll()

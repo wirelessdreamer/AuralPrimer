@@ -1256,6 +1256,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
         liveInputNotes: midiPanel.inputActiveNotes().activeNotes,
         scrollSpeedMultiplier: transport.scrollSpeedMultiplier,
         nashville: nashvilleMode,
+        noteColors: noteColorMode,
         chordLabels: songChordLabels,
       });
     }
@@ -1339,6 +1340,25 @@ function readNashvilleMode(): boolean {
   }
 }
 let nashvilleMode = readNashvilleMode();
+
+// Note colours -- pitch class as hue on the falling notes.
+//
+// Defaults ON, unlike the other practice toggles. The approach spectrum it
+// replaces was saying something the lane already says better: a note's
+// distance from the hit line IS its timing, continuously and without being
+// taught. Hue was the weaker duplicate, so spending it on identity costs
+// nothing and the default should reflect that.
+const NOTE_COLOR_STORAGE_KEY = "auralprimer.noteColorMode";
+function readNoteColorMode(): boolean {
+  try {
+    // Absent means never set, which is a new install -- and the default is on.
+    const raw = window.localStorage.getItem(NOTE_COLOR_STORAGE_KEY);
+    return raw === null ? true : raw === "1";
+  } catch {
+    return true;
+  }
+}
+let noteColorMode = readNoteColorMode();
 // MR headset link: serves the chart, playhead and live notes to the Quest app.
 // The headset's Songs menu loads through exactly the same path as a click
 // in the desktop library, so the two cannot drift apart in what "select a
@@ -1351,6 +1371,19 @@ const mrLink = initMrLinkPanel(
   // decided this keyboard cannot play.
   setMrKeyboardLayout,
 );
+
+const noteColorCheckbox = document.getElementById("noteColorMode") as HTMLInputElement | null;
+if (noteColorCheckbox) {
+  noteColorCheckbox.checked = noteColorMode;
+  noteColorCheckbox.addEventListener("change", () => {
+    noteColorMode = noteColorCheckbox.checked;
+    try {
+      window.localStorage.setItem(NOTE_COLOR_STORAGE_KEY, noteColorMode ? "1" : "0");
+    } catch {
+      // Best-effort -- session-only persistence is acceptable.
+    }
+  });
+}
 
 const nashvilleCheckbox = document.getElementById("nashvilleMode") as HTMLInputElement | null;
 if (nashvilleCheckbox) {

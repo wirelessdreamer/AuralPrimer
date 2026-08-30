@@ -43,6 +43,8 @@ export type TabRenderFrame = {
   scrollSpeedMultiplier?: number;
   /** Label falling notes by scale-degree number (Nashville Number System). */
   nashville?: boolean;
+  /** Colour falling notes by pitch class rather than by approach. */
+  noteColors?: boolean;
   /** Chord names for the chart, one per change; drawn beside the notes. */
   chordLabels?: { tSec: number; label: string }[];
 };
