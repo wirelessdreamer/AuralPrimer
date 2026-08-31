@@ -19,6 +19,12 @@ from typing import Any
 
 from aural_ingest.arrangement_prep import MIN_NOTE_SEC, ROLE_ORDER, ROLE_TRACK_NAME
 from aural_ingest.feedpak_writer import write_feedpak
+from aural_ingest.midi_feedpak import (
+    MAX_UNALIGNED_LEAD_SEC,
+    UNMEASURABLE_LEAD_LIMIT_SEC,
+    check_render_covers_notes,
+)
+from aural_ingest.render_align import measure_lead_in, trim_lead_in
 from aural_ingest.musicxml_import import (
     MelodicNote,
     parse_musicxml,
@@ -90,6 +96,7 @@ def build_feedpak_from_musicxml(
     title: str | None = None,
     artist: str | None = None,
     genre: str | None = None,
+    align: bool = True,
 ) -> dict[str, Any]:
     """Parse a MusicXML score and write a ``.feedpak`` under ``out_dir``.
 
@@ -140,7 +147,31 @@ def build_feedpak_from_musicxml(
     }
     duration = timeline.duration_sec
     ext = resolved_audio.suffix or ".wav"
-    shutil.copy2(resolved_audio, song / "audio" / f"mix{ext}")
+    dest_audio = song / "audio" / f"mix{ext}"
+
+    # Same treatment as the MIDI path: a score paired with a separately
+    # rendered audio file has no guarantee the two start together, and when
+    # they do not, nothing about the audio looks wrong -- the gap is silence.
+    # This is the path that built the classical packs ~5.17s out of sync.
+    onsets = sorted(n.t_on for notes in roles.values() for n in notes)
+    covered, problem, _audio_sec = check_render_covers_notes(
+        resolved_audio, onsets[-1] if onsets else 0.0)
+    if not covered:
+        raise ValueError(f"{Path(xml_path).name}: {problem}")
+
+    applied_lead_in = 0.0
+    if align and onsets:
+        alignment = measure_lead_in(resolved_audio, onsets)
+        if not alignment.ok and alignment.lag_sec > UNMEASURABLE_LEAD_LIMIT_SEC:
+            raise ValueError(
+                f"{Path(xml_path).name}: the render looks {alignment.lag_sec:.2f}s "
+                f"behind the score but {alignment.reason}. Refusing to guess -- "
+                "pass --no-align to import it as-is."
+            )
+        if alignment.ok and alignment.lag_sec > MAX_UNALIGNED_LEAD_SEC:
+            applied_lead_in = trim_lead_in(resolved_audio, dest_audio, alignment.lag_sec)
+    if applied_lead_in == 0.0:
+        shutil.copy2(resolved_audio, dest_audio)
     assets["audio"]["mix_path"] = f"audio/mix{ext}"
 
     manifest = {
@@ -167,5 +198,6 @@ def build_feedpak_from_musicxml(
         "tempo_bpm": timeline.tempo_bpm,
         "time_signature": f"{num}/{den}",
         "audio_attached": bool(resolved_audio and resolved_audio.exists()),
+        "lead_in_trimmed_sec": round(applied_lead_in, 4),
         "movement_title_ignored": timeline.movement_title,
     }
