@@ -1939,7 +1939,11 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
   }
 
   if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
-    void invoke("piano_note_on", { pitch, velocity: msg.data2 ?? 80 }).catch(() => {});
+    void invoke("piano_note_on", { pitch, velocity: msg.data2 ?? 80 }).catch((e) => {
+      // Surfaced, not swallowed: a piano that cannot sound looked exactly like
+      // one that was working, which is how a silent bug survived a build.
+      setPianoStatus(`piano: ${String(e)}`);
+    });
   } else if (msg.message_type === "note_off" || msg.message_type === "note_on") {
     void invoke("piano_note_off", { pitch }).catch(() => {});
   }
@@ -1970,8 +1974,9 @@ pianoEnabledEl?.addEventListener("change", () => {
       // nothing further: applyPianoSchedule already sent the notes
     } else {
       // The pack stays loaded: the checkbox governs whether the CHART plays
-      // itself, not whether the player's own keys make a sound.
-      setPianoStatus("keys sound on press");
+      // itself, not whether the player's own keys make a sound. Report what is
+      // actually loaded rather than asserting what will happen.
+      setPianoStatus(pianoLiveReady ? "chart part off · your keys still sound" : "no piano loaded");
     }
   })();
 });

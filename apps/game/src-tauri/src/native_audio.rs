@@ -1403,7 +1403,7 @@ fn process_audio_callback_f32(
     // not. The scheduled part gates itself on `enabled` inside.
     runtime
         .piano
-        .mix(out, engine_channels, block_start_frame, sample_rate_hz);
+        .mix(out, engine_channels, block_start_frame, sample_rate_hz, playing);
 
     sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);

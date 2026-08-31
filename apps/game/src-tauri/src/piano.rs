@@ -335,7 +335,10 @@ impl PianoEngine {
         // Binary search rather than a walk: a seek to the end of a long chart
         // would otherwise step through every note to get there.
         self.cursor = self.notes.partition_point(|n| n.on_frame < frame);
-        self.voices.clear();
+        // Only the chart's voices. A live note belongs to a finger that is
+        // still on the key -- the playhead moving says nothing about it, and
+        // cutting it would silence the player for seeking.
+        self.voices.retain(|v| v.off_frame == u64::MAX);
     }
 
     /// Mix scheduled notes for `frames` of output starting at `start_frame`.
@@ -348,6 +351,7 @@ impl PianoEngine {
         channels: usize,
         start_frame: u64,
         engine_rate_hz: u32,
+        playing: bool,
     ) {
         if channels == 0 || self.pack.is_none() {
             return;
@@ -362,11 +366,23 @@ impl PianoEngine {
         // A jump either way means the playhead moved under us -- a seek, a loop
         // wrap, or the first block after a load. Walking forward from a stale
         // cursor would fire every note in between at once.
-        let expected = self.last_frame;
-        if start_frame < expected || start_frame.saturating_sub(expected) > frames as u64 * 4 {
-            self.resync(start_frame);
+        //
+        // Only while PLAYING. Stopped, the transport reports the same frame on
+        // every block while last_frame runs ahead of it, so this read every
+        // block as a backward seek -- which cleared the voices roughly a
+        // millisecond after a key was pressed. Pressing a key with the song
+        // stopped, which is most of practising, made no sound at all.
+        if playing {
+            let expected = self.last_frame;
+            if start_frame < expected || start_frame.saturating_sub(expected) > frames as u64 * 4 {
+                self.resync(start_frame);
+            }
+            self.last_frame = start_frame + frames as u64;
+        } else {
+            // Still advance a clock for the grace window, or two presses of the
+            // same key while stopped would look simultaneous forever.
+            self.last_frame = self.last_frame.wrapping_add(frames as u64);
         }
-        self.last_frame = start_frame + frames as u64;
 
         let end_frame = start_frame + frames as u64;
 
