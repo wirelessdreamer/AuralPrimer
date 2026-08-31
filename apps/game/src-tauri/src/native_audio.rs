@@ -75,6 +75,7 @@ enum EngineCommand {
     SetPianoGain(f32),
     PianoNoteOn { pitch: u8, velocity: u8 },
     PianoNoteOff { pitch: u8 },
+    SetPianoGraceSec(f32),
     LoadPcm16 {
         wav: WavPcm16,
     },
@@ -709,6 +710,10 @@ impl NativeAudioHandle {
         self.enqueue(EngineCommand::PianoNoteOff { pitch })
     }
 
+    pub fn set_piano_grace_sec(&self, sec: f32) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoGraceSec(sec))
+    }
+
     pub fn play(&self) -> Result<(), String> {
         self.enqueue(EngineCommand::Play)
     }
@@ -1003,6 +1008,9 @@ fn apply_engine_command(
         }
         EngineCommand::PianoNoteOff { pitch } => {
             runtime.piano.note_off(pitch);
+        }
+        EngineCommand::SetPianoGraceSec(sec) => {
+            runtime.piano.set_grace_sec(sec);
         }
         EngineCommand::Play => {
             runtime.is_playing = true;

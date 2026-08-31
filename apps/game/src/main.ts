@@ -1670,6 +1670,10 @@ if (learnCheckbox) {
     } catch {
       // best-effort
     }
+    // In Wait mode the song only moves when the player plays, so the chart
+    // playing itself would be answering its own question. Their keys still
+    // sound; the chart just stops covering for them.
+    void applyPianoSchedule();
     if (learnMode) {
       buildLearnGroups();
     } else if (learnWaiting) {
@@ -1874,6 +1878,8 @@ async function ensurePianoPack(): Promise<boolean> {
     );
     pianoPackLoaded = true;
     pianoLiveReady = true;
+    // One pitch may only sound once inside this window, whoever played it.
+    void invoke("piano_set_grace_ms", { ms: 80 }).catch(() => {});
     setPianoStatus(`${info.name} · ${info.samples} samples · ${info.license}`);
     return true;
   } catch (e) {
@@ -1939,6 +1945,19 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
   }
 });
 
+/**
+ * Whether the chart should play its own part right now.
+ *
+ * Two conditions, not one: the checkbox asks for it, and Wait mode forbids it.
+ * Wait mode advances only when the player plays, so a chart playing itself
+ * would be prompting and answering at the same time.
+ */
+async function applyPianoSchedule(): Promise<void> {
+  const on = !!pianoEnabledEl?.checked && !learnMode;
+  await invoke("piano_set_enabled", { enabled: on }).catch(() => {});
+  if (on) await sendPianoNotes();
+}
+
 pianoEnabledEl?.addEventListener("change", () => {
   const on = !!pianoEnabledEl.checked;
   void (async () => {
@@ -1946,9 +1965,9 @@ pianoEnabledEl?.addEventListener("change", () => {
       pianoEnabledEl.checked = false;
       return;
     }
-    await invoke("piano_set_enabled", { enabled: on }).catch(() => {});
+    await applyPianoSchedule();
     if (on) {
-      await sendPianoNotes();
+      // nothing further: applyPianoSchedule already sent the notes
     } else {
       // The pack stays loaded: the checkbox governs whether the CHART plays
       // itself, not whether the player's own keys make a sound.

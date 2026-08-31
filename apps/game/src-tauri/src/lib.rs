@@ -1340,6 +1340,12 @@ fn piano_note_off(state: tauri::State<NativeAudioState>, pitch: u8) -> Result<()
     with_native_engine(&state, |e| e.piano_note_off(pitch))
 }
 
+/// How close two strikes of one pitch may be before the second is dropped.
+#[tauri::command]
+fn piano_set_grace_ms(state: tauri::State<NativeAudioState>, ms: f32) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_piano_grace_sec(ms / 1000.0))
+}
+
 #[tauri::command]
 fn piano_set_enabled(state: tauri::State<NativeAudioState>, enabled: bool) -> Result<(), String> {
     with_native_engine(&state, |e| e.set_piano_enabled(enabled))
@@ -2537,6 +2543,7 @@ pub fn run() {
             piano_set_gain,
             piano_note_on,
             piano_note_off,
+            piano_set_grace_ms,
             // stem+midi
             stem_midi_create_auralsong,
             ingest_import,

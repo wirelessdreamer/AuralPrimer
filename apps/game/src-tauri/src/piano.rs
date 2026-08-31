@@ -29,6 +29,15 @@ const MAX_VOICES: usize = 64;
 /// release. Short enough to still feel like the note stopped.
 const RELEASE_SEC: f32 = 0.18;
 
+/// Default window in which one pitch may only sound once.
+///
+/// The chart is meant to cover for the player, not play alongside them. Two
+/// strikes of the same note this close together are one note played by two
+/// parties, and hearing both is a flam nobody asked for. Wide enough to catch
+/// a hand slightly off the beat, short enough that a genuine repeated note --
+/// a trill, a repeated quaver -- still speaks twice.
+const DEFAULT_GRACE_SEC: f32 = 0.08;
+
 /// One sample from the pack: a recorded note at one pitch and velocity band.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -198,6 +207,10 @@ pub struct PianoEngine {
     enabled: bool,
     /// Output rate, remembered so a live note can be started between blocks.
     engine_rate_hz: u32,
+    /// Frame each pitch last sounded on, whoever played it. `u64::MAX` means
+    /// never, so pitch 0 at frame 0 is not mistaken for a recent note.
+    last_sound: [u64; 128],
+    grace_sec: f32,
 }
 
 impl Default for PianoEngine {
@@ -211,6 +224,8 @@ impl Default for PianoEngine {
             gain: 0.8,
             enabled: false,
             engine_rate_hz: 48_000,
+            last_sound: [u64::MAX; 128],
+            grace_sec: DEFAULT_GRACE_SEC,
         }
     }
 }
@@ -240,6 +255,28 @@ impl PianoEngine {
         self.gain = gain.clamp(0.0, 2.0);
     }
 
+    pub fn set_grace_sec(&mut self, sec: f32) {
+        self.grace_sec = sec.clamp(0.0, 1.0);
+    }
+
+    /// Whether this pitch has already sounded too recently to sound again.
+    ///
+    /// Asked of BOTH sources, which is what makes it symmetric: the player
+    /// ahead of the beat suppresses the chart's note, and the player behind it
+    /// is suppressed by the chart's. Either way one note is heard, and it is
+    /// whichever arrived first.
+    fn already_sounding(&self, pitch: u8, now: u64) -> bool {
+        let last = self.last_sound[pitch as usize % 128];
+        if last == u64::MAX || now < last {
+            return false;
+        }
+        (now - last) < (self.grace_sec * self.engine_rate_hz.max(1) as f32) as u64
+    }
+
+    fn mark_sounded(&mut self, pitch: u8, frame: u64) {
+        self.last_sound[pitch as usize % 128] = frame;
+    }
+
     /// Sound a note immediately, for a key the player just pressed.
     ///
     /// Separate from the schedule because it has no end time: a live note lasts
@@ -247,6 +284,13 @@ impl PianoEngine {
     /// with a guessed length would either cut the note off under the player or
     /// leave it ringing after they lifted.
     pub fn note_on(&mut self, pitch: u8, velocity: u8) {
+        let now = self.last_frame;
+        if self.already_sounding(pitch, now) {
+            // The chart has just played this note. Sounding it again is the
+            // doubling; the player still SEES their key light up, so nothing
+            // about their own playing is hidden.
+            return;
+        }
         let note = ScheduledNote {
             on_frame: 0,
             off_frame: u64::MAX,
@@ -254,6 +298,7 @@ impl PianoEngine {
             velocity: velocity.max(1),
         };
         self.start_voice(note, 0, self.engine_rate_hz.max(1));
+        self.mark_sounded(pitch, now);
     }
 
     /// Let a live note go.
@@ -286,6 +331,7 @@ impl PianoEngine {
 
     /// Re-place the cursor after a seek.
     fn resync(&mut self, frame: u64) {
+        self.last_sound = [u64::MAX; 128];
         // Binary search rather than a walk: a seek to the end of a long chart
         // would otherwise step through every note to get there.
         self.cursor = self.notes.partition_point(|n| n.on_frame < frame);
@@ -333,7 +379,11 @@ impl PianoEngine {
                 break;
             }
             let offset = note.on_frame.saturating_sub(start_frame) as usize;
-            self.start_voice(note, offset.min(frames), engine_rate_hz);
+            // The player got here first: this is their note, not ours.
+            if !self.already_sounding(note.pitch, note.on_frame) {
+                self.start_voice(note, offset.min(frames), engine_rate_hz);
+                self.mark_sounded(note.pitch, note.on_frame);
+            }
             self.cursor += 1;
         }
 
