@@ -24,6 +24,7 @@ pub mod demo_auralsong;
 pub mod ingest_sidecar;
 mod midi_clock;
 mod midi_clock_input;
+mod piano;
 mod mr_link;
 mod midi_clock_service;
 mod models;
@@ -1225,6 +1226,89 @@ fn native_audio_get_state(
     with_native_engine(&state, |e| Ok(e.state()))
 }
 
+/// A note for the piano to play, as the frontend sends it.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PianoNoteReq {
+    t_on: f64,
+    t_off: f64,
+    pitch: u8,
+    #[serde(default)]
+    velocity: Option<u8>,
+}
+
+/// Where a piano pack lives: `<data>/soundpacks/<name>/piano.json`.
+///
+/// Beside the model packs rather than inside the app, for the same reason they
+/// are: it is tens of megabytes of licensed third-party audio, it changes on a
+/// different schedule from the code, and burying it in the binary would mean
+/// rebuilding the app to change a sound.
+fn piano_pack_dir(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    let paths = get_paths(app)?;
+    Ok(PathBuf::from(paths.data_dir)
+        .join("soundpacks")
+        .join(name))
+}
+
+/// Load a piano pack and hand it to the audio engine.
+///
+/// Decoding happens here, on the caller's thread, and only the finished pack
+/// crosses to the audio thread. Reading sixty megabytes of wav inside the
+/// render callback would drop every buffer until it finished.
+#[tauri::command]
+fn piano_load_pack(
+    app: AppHandle,
+    state: tauri::State<NativeAudioState>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    let dir = piano_pack_dir(&app, &name)?;
+    let pack = piano::PianoPack::load(&dir)?;
+    let summary = serde_json::json!({
+        "name": pack.name,
+        "author": pack.author,
+        "license": pack.license,
+        "samples": pack.sample_count(),
+    });
+    with_native_engine(&state, |e| e.set_piano_pack(pack))?;
+    Ok(summary)
+}
+
+/// Give the piano the notes to play, in seconds; converted to frames here.
+#[tauri::command]
+fn piano_set_notes(
+    state: tauri::State<NativeAudioState>,
+    notes: Vec<PianoNoteReq>,
+) -> Result<usize, String> {
+    with_native_engine(&state, |e| {
+        let rate = e.state().sample_rate_hz.max(1) as f64;
+        let scheduled: Vec<piano::ScheduledNote> = notes
+            .iter()
+            .filter(|n| n.t_off > n.t_on && n.pitch > 0)
+            .map(|n| piano::ScheduledNote {
+                on_frame: (n.t_on.max(0.0) * rate) as u64,
+                off_frame: (n.t_off.max(0.0) * rate) as u64,
+                pitch: n.pitch,
+                // Charts carry a normalised velocity when they carry one at
+                // all; a missing value is a mezzo-forte rather than silence.
+                velocity: n.velocity.unwrap_or(80).clamp(1, 127),
+            })
+            .collect();
+        let count = scheduled.len();
+        e.set_piano_notes(scheduled)?;
+        Ok(count)
+    })
+}
+
+#[tauri::command]
+fn piano_set_enabled(state: tauri::State<NativeAudioState>, enabled: bool) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_piano_enabled(enabled))
+}
+
+#[tauri::command]
+fn piano_set_gain(state: tauri::State<NativeAudioState>, gain: f32) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_piano_gain(gain))
+}
+
 #[tauri::command]
 fn native_audio_shutdown(state: tauri::State<NativeAudioState>) -> Result<(), String> {
     // Take ownership so we can join the audio thread.
@@ -2406,6 +2490,10 @@ pub fn run() {
             native_audio_set_playback_rate,
             native_audio_get_state,
             native_audio_shutdown,
+            piano_load_pack,
+            piano_set_notes,
+            piano_set_enabled,
+            piano_set_gain,
             // stem+midi
             stem_midi_create_auralsong,
             ingest_import,

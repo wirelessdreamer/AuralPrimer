@@ -960,6 +960,7 @@ async function selectAuralSong(containerPath: string) {
       selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
     songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack?.notes ?? null, keyModeArtifacts);
     if (learnMode) buildLearnGroups();
+    void sendPianoNotes();
 
     // Chord names for the roll, from the same track the piano surface renders.
     const chordTrack =
@@ -1754,6 +1755,9 @@ const liveInputHudEl = document.getElementById("liveInputHud");
 const liveInputNotesEl = document.getElementById("liveInputNotes");
 const liveInputChordEl = document.getElementById("liveInputChord");
 const playheadHudEl = document.getElementById("playheadHud");
+const pianoEnabledEl = document.getElementById("pianoEnabled") as HTMLInputElement | null;
+const pianoGainEl = document.getElementById("pianoGain") as HTMLInputElement | null;
+const pianoStatusEl = document.getElementById("pianoStatus");
 const playheadClockEl = document.getElementById("playheadClock");
 const playheadDetailEl = document.getElementById("playheadDetail");
 const LIVE_INPUT_HUD_INTERVAL_MS = 60;
@@ -1832,6 +1836,8 @@ function renderPlayheadHud(): void {
   if (playheadClockEl.textContent !== text) playheadClockEl.textContent = text;
 
   if (playheadDetailEl) {
+    // Null whenever the web timebase is in use: the readout is a diagnostic,
+    // so it degrades to blanks rather than throwing inside a render tick.
     const enginePos = nativeTimebase?.getCurrentTimeSec?.();
     const latencyMs = (nativeTimebase?.getOutputLatencySec?.() ?? 0) * 1000;
     const avMs = getEffectiveOffsetMs();
@@ -1842,6 +1848,77 @@ function renderPlayheadHud(): void {
     if (playheadDetailEl.textContent !== detail) playheadDetailEl.textContent = detail;
   }
 }
+
+// --- Sampled piano -------------------------------------------------------
+//
+// The chart already knows every note; this plays it, so a part can be heard
+// even when the song has no rendered stem for it -- which is every chart that
+// came from MIDI rather than from a recording.
+
+/** Loaded once. The pack is tens of megabytes and does not change per song. */
+let pianoPackLoaded = false;
+
+function setPianoStatus(text: string): void {
+  if (pianoStatusEl && pianoStatusEl.textContent !== text) pianoStatusEl.textContent = text;
+}
+
+async function ensurePianoPack(): Promise<boolean> {
+  if (pianoPackLoaded) return true;
+  try {
+    const info = await invoke<{ name: string; license: string; samples: number }>(
+      "piano_load_pack",
+      { name: "salamander" },
+    );
+    pianoPackLoaded = true;
+    setPianoStatus(`${info.name} · ${info.samples} samples · ${info.license}`);
+    return true;
+  } catch (e) {
+    // Absent pack is a normal state, not a failure: the sound pack ships
+    // separately, so say what is missing rather than throwing.
+    setPianoStatus(`no piano pack installed (${String(e)})`);
+    return false;
+  }
+}
+
+/** Give the engine the current song's keys part. */
+async function sendPianoNotes(): Promise<void> {
+  const track =
+    selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+  if (!track) {
+    void invoke("piano_set_notes", { notes: [] }).catch(() => {});
+    return;
+  }
+  const notes = track.notes.map((n) => ({
+    tOn: n.t_on,
+    tOff: n.t_off,
+    pitch: Math.round(n.pitch),
+    velocity: Math.max(1, Math.min(127, Math.round((n.velocity ?? 0.63) * 127))),
+  }));
+  try {
+    const count = await invoke<number>("piano_set_notes", { notes });
+    if (pianoEnabledEl?.checked) setPianoStatus(`${count} notes ready`);
+  } catch (e) {
+    setPianoStatus(`could not send notes: ${String(e)}`);
+  }
+}
+
+pianoEnabledEl?.addEventListener("change", () => {
+  const on = !!pianoEnabledEl.checked;
+  void (async () => {
+    if (on && !(await ensurePianoPack())) {
+      pianoEnabledEl.checked = false;
+      return;
+    }
+    await invoke("piano_set_enabled", { enabled: on }).catch(() => {});
+    if (on) await sendPianoNotes();
+    else setPianoStatus("");
+  })();
+});
+
+pianoGainEl?.addEventListener("input", () => {
+  const gain = Number(pianoGainEl.value) / 100;
+  void invoke("piano_set_gain", { gain }).catch(() => {});
+});
 
 renderPlayheadHud();
 window.setInterval(renderPlayheadHud, LIVE_INPUT_HUD_INTERVAL_MS);
