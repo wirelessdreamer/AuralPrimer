@@ -43,6 +43,15 @@ _DEFAULT_ROLE = "keys"
 #: fade, so a fraction of a second is normal; seconds are a truncated render.
 _RENDER_TAIL_TOLERANCE_SEC = 0.75
 
+#: Lead-in worth correcting. Below this the render is already aligned and
+#: trimming would be churn; above it the chart and the audio disagree audibly.
+MAX_UNALIGNED_LEAD_SEC = 0.05
+
+#: An apparent lead-in this large that could NOT be measured confidently is a
+#: refusal rather than a shrug: real renders correlate at 14x to 70x, so a weak
+#: peak this far out means the audio and the score do not match.
+UNMEASURABLE_LEAD_LIMIT_SEC = 1.0
+
 #: Track-name substrings that identify a role, most specific first so that
 #: "lead guitar" is not swallowed by "guitar".
 _ROLE_HINTS: tuple[tuple[str, str], ...] = (
@@ -235,6 +244,33 @@ def check_render_covers_notes(
     return True, None, duration
 
 
+def attribution_for(midi_path: Path) -> dict[str, Any] | None:
+    """The attribution entry for ``midi_path``, from a sibling manifest.
+
+    These sources are CC BY-SA: the attribution has to travel with the work,
+    which means into the pack, not just into a folder on the machine that built
+    it. The sibling file may be a list covering a whole collection (one entry
+    per MIDI) or a single dict for one piece.
+    """
+    manifest = midi_path.parent / "attribution.json"
+    if not manifest.exists():
+        return None
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list):
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            named = entry.get("file") or ""
+            if Path(str(named)).name.lower() == midi_path.name.lower():
+                return entry
+    return None
+
+
 def _find_sibling_audio(midi_path: Path) -> Path | None:
     """A render beside the MIDI with the same stem, else a lone audio file."""
     for ext in _AUDIO_EXTS:
@@ -255,6 +291,7 @@ def build_feedpak_from_midi(
     artist: str | None = None,
     genre: str | None = None,
     beats_per_bar: int = 4,
+    align: bool = True,
 ) -> dict[str, Any]:
     """Write a ``.feedpak`` from ``midi_path``, keeping its note times exactly."""
     midi_path = Path(midi_path)
@@ -302,8 +339,38 @@ def build_feedpak_from_midi(
     (song / "features" / "tempo_map.json").write_text(
         json.dumps({"segments": segments}), encoding="utf-8")
 
+    # Align the render to the score before it becomes the pack's audio.
+    #
+    # A studio bounce is captured through the DAW transport, and the capture
+    # starts before the music does -- across the classical set the gap ran
+    # 5.04s to 5.50s. It is silent, so nothing about the audio looks wrong;
+    # what goes wrong is that the chart says play at 0.9s and the recording
+    # plays at 6.0s. The variance is why this is measured per render rather
+    # than assumed: it is transport-race latency, not a count-in.
     ext = resolved_audio.suffix or ".wav"
-    shutil.copy2(resolved_audio, song / "audio" / f"mix{ext}")
+    dest_audio = song / "audio" / f"mix{ext}"
+    alignment = None
+    applied_lead_in = 0.0
+    if align:
+        from aural_ingest.render_align import measure_lead_in, trim_lead_in
+
+        onsets = sorted(n.t_on for notes in roles.values() for n in notes)
+        alignment = measure_lead_in(resolved_audio, onsets)
+        # A weak correlation peak means the lag could not be measured, which is
+        # not the same as the render being wrong -- audio with no clear onsets
+        # produces one. It only becomes a refusal when the apparent lag is too
+        # large to be measurement noise, because then something really is off
+        # and trimming by a number we do not trust would make it worse.
+        if not alignment.ok and alignment.lag_sec > UNMEASURABLE_LEAD_LIMIT_SEC:
+            raise ValueError(
+                f"{midi_path.name}: the render looks {alignment.lag_sec:.2f}s "
+                f"behind the score but {alignment.reason}. Refusing to guess -- "
+                "pass --no-align to import it as-is."
+            )
+        if alignment.ok and alignment.lag_sec > MAX_UNALIGNED_LEAD_SEC:
+            applied_lead_in = trim_lead_in(resolved_audio, dest_audio, alignment.lag_sec)
+    if applied_lead_in == 0.0:
+        shutil.copy2(resolved_audio, dest_audio)
 
     manifest = {
         "title": pack_title,
@@ -323,6 +390,12 @@ def build_feedpak_from_midi(
     (song / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     result = write_feedpak(song, out_dir)
+
+    credit = attribution_for(midi_path)
+    if credit:
+        (Path(result["feedpak_dir"]) / "attribution.json").write_text(
+            json.dumps(credit, indent=2), encoding="utf-8")
+
     shutil.rmtree(work_parent, ignore_errors=True)
 
     return {
@@ -336,4 +409,7 @@ def build_feedpak_from_midi(
         "audio_attached": True,
         "audio_sec": (round(audio_sec, 3) if audio_sec is not None else None),
         "last_note_onset_sec": round(last_onset, 3),
+        "lead_in_trimmed_sec": round(applied_lead_in, 4),
+        "attributed": bool(credit),
+        "alignment_confidence": (round(alignment.confidence, 1) if alignment else None),
     }

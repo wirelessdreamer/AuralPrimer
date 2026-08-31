@@ -33,7 +33,8 @@ That flattened file is **render prep and nothing else**:
 piano-midi.de/x.mid  ──prep-render──>  render_ready/x.mid  ──Ableton──>  renders/x.wav
         │                                                                     │
         └────────────────────── import-midi ──────────────────────────────────┘
-                        (chart from the ORIGINAL, audio from the render)
+                 chart from the ORIGINAL, audio from the render,
+                 lead-in measured and trimmed where they disagree
 ```
 
 **The chart is always imported from the original.** Both files carry the same
@@ -64,37 +65,53 @@ tick quantisation at 480 PPQ and 120 BPM — the floor, not a tolerance.
 
 ## Step 2 — render it in Live (Ableton MCP)
 
-The MCP writes into the user's open Live set, so this leg is interactive by
-design: it needs a set with an instrument on the target track, and it takes
-wall-clock time.
+The MCP writes into the user's open Live set, so this leg is interactive and
+takes wall-clock time. What follows is what the tools actually do on Live
+11.3, not what their descriptions promise — three of the obvious calls do not
+work, and finding that out by reading was not possible.
 
-1. **Check the set.** `live_ping`, then `track_list` and
-   `arrangement_clips_list` — confirm the target track has the instrument you
-   want and that the arrangement region you are about to use is empty.
-   `arrangement_insert_midi_clip` fails on overlap rather than overwriting,
-   but knowing what is there beats finding out.
-2. **Set the tempo to match the flatten.** `live_set_tempo(120)`. This has to
-   equal `FIXED_BPM` in `midi_render_prep.py`, or every note lands at the
-   wrong beat and the render is uniformly stretched — a failure that sounds
-   plausible, which is the dangerous kind.
-3. **Place the notes at beat 0.** `arrangement_insert_midi_clip(track, 0,
-   length_beats)` then `clip_add_notes`. Starting anywhere but beat 0 puts an
-   offset into the render that has to be trimmed back out by exactly the same
-   amount later.
-4. **Bounce the arrangement.** `bounce_region(output_dir, start_beats=0,
-   end_beats=…, background=True)`, then poll `bounce_job_status(job_id)`.
-   End the region **past the last note** — a piano release plus reverb runs
-   ten to fifteen seconds beyond the final onset in this set, and cutting it
-   at the last note chops the ending off.
+**What does not work**
 
-   Bouncing is **real time**: a five-minute piece costs five minutes.
-   `background=True` is what makes a bulk run tolerable — start the bounce,
-   poll every ten seconds or so, and on `done` move to the next piece.
-   `bounce_tracks(mode="freeze")` is the fast alternative in principle, but
-   `Track.freeze` is not exposed in this Live version and the call fails.
+- `arrangement_insert_midi_clip` → `Track.create_midi_clip not available in
+  this Live version`. There is no way to put a MIDI clip on the arrangement
+  timeline through the MCP, so arrangement-based bouncing is out.
+- `render_clip` and `render_master` → `{"status": "not_implemented",
+  "phase": 2}`. Both are stubs.
+- `bounce_tracks(mode="freeze")` → `Track.freeze not available in this Live
+  version`. The fast path does not exist; every render is real time.
 
-Live's Complex Pro engine is why this leg is worth its wall clock; nothing
-offline matches it.
+**What does work**
+
+1. **Check the set.** `live_ping`, `track_list`, `device_list` — confirm the
+   target track has an instrument. `clip_list` and `arrangement_clips_list`
+   confirm you are not about to overwrite the user's work.
+2. **Match the tempo to the flatten.** `live_set_tempo(120)`, equal to
+   `FIXED_BPM` in `midi_render_prep.py`. If they disagree, every note lands on
+   the wrong beat and the render is uniformly stretched — a failure that
+   sounds plausible, which is the dangerous kind.
+3. **Load the MIDI into a Session clip.** `midi_file_load_into_clip(track,
+   clip, path)` takes the file directly and reports the notes it added.
+4. **Extend the loop past the last note** with `clip_set_loop`, or the clip
+   restarts on top of its own decay. A piano release plus reverb runs ten to
+   fifteen seconds past the final onset in this set.
+5. **Bounce.** `bounce_song(duration_sec, output_path, background=True)`,
+   polling `bounce_job_status(job_id)`. It builds a temporary resampling
+   track, records, and removes it again without touching existing tracks.
+
+**The catch, and why step 3 has to correct for it**
+
+`bounce_song` records the transport while a *Session* clip supplies the audio,
+and those two are started by separate round-trips. Whatever time passes
+between them is captured as silence at the head of the render.
+
+That is not a hypothesis. Every render in the classical set carries a lead-in
+of between 5.04 s and 5.50 s, and the half-second of spread is what proves it
+is latency rather than a count-in — a count-in would be constant. The audio
+looks fine, because the gap is silent. What breaks is downstream: the chart
+says play at 0.9 s and the recording plays at 6.0 s.
+
+So do not try to eliminate it at render time. Measure it at import time, where
+both sides are available.
 
 ## Step 3 — import the pack from the original
 
@@ -119,6 +136,23 @@ plays. Reading the wav header costs nothing and turns that into an import-time
 error. The tolerance is 0.75 s, so a final note decaying past the bounce edge
 passes and a truncated render does not.
 
+It then measures how far the render sits *behind* the score and trims that
+much off the head. The measurement correlates an onset envelope against the
+score's own note times, so it needs no knowledge of how the render was made —
+it works on a bounce somebody produced by hand months ago just as well as on
+one made through this path. On the classical set the correlation peak runs 14×
+to 70× the median, and the result lands within 18 ms.
+
+Two limits worth knowing. The estimator is biased late by a fixed 23.6 ms,
+because a spectral flux registers only once energy has risen; that is measured
+on synthetic renders with known lead-ins and corrected as a constant. And
+perfectly periodic material cannot be aligned at all — if every note is evenly
+spaced, a shift of exactly one note explains the audio just as well as no
+shift, and the information simply is not there. Real scores are irregular
+enough; a metronomic sequence would need its offset recorded at render time.
+
+`--no-align` attaches the render untouched.
+
 ## Bulk runs
 
 The shape for a larger set, given that step 2 is the only slow part:
@@ -135,18 +169,22 @@ of the set.
 
 ## Verified state
 
-All ten classical renders pass the coverage check, with 9.9–15.3 s of tail
-past the last onset:
+All ten renders were re-imported through this path. The lead-in each one
+carried, and the sync error remaining afterwards, measured against where the
+first audible sample sits relative to the first scored note:
 
-| piece | notes | last onset | render | slack |
+| piece | notes | tempo segments | lead-in removed | residual |
 |---|---:|---:|---:|---:|
-| bach__bach_846 | 1284 | 221.03 s | 234.98 s | +13.95 s |
-| beethoven__elise | 1041 | 164.98 s | 175.07 s | +10.09 s |
-| chopin__chpn-p15 | 1518 | 265.96 s | 279.66 s | +13.70 s |
-| debussy__deb_clai | 1491 | 244.04 s | 257.18 s | +13.14 s |
-| grieg__grieg_wedding | 3842 | 328.88 s | 338.81 s | +9.93 s |
-| liszt__liz_liebestraum | 1888 | 240.98 s | 254.82 s | +13.84 s |
-| mozart__mz_331_3 | 2819 | 189.08 s | 199.07 s | +9.99 s |
-| schubert__schuim-3 | 2601 | 336.78 s | 352.04 s | +15.25 s |
-| schumann__scn15_7 | 456 | 123.19 s | 137.78 s | +14.59 s |
-| tchaikovsky__ty_juni | 1502 | 228.54 s | 241.11 s | +12.57 s |
+| bach__bach_846 | 1284 | 358 | 5.015 s | −2.3 ms |
+| beethoven__elise | 1041 | 923 | 5.117 s | −15.0 ms |
+| chopin__chpn-p15 | 1518 | 997 | 5.168 s | 0.0 ms |
+| debussy__deb_clai | 1491 | 733 | 5.144 s | −13.8 ms |
+| grieg__grieg_wedding | 3842 | 918 | 5.141 s | 0.0 ms |
+| liszt__liz_liebestraum | 1888 | 970 | 5.480 s | −14.2 ms |
+| mozart__mz_331_3 | 2819 | 947 | 5.156 s | −18.3 ms |
+| schubert__schuim-3 | 2601 | 2708 | 5.167 s | 0.0 ms |
+| schumann__scn15_7 | 456 | 144 | 5.108 s | −12.1 ms |
+| tchaikovsky__ty_juni | 1502 | 671 | 5.148 s | 0.0 ms |
+
+Worst residual 18.3 ms, against roughly 5170 ms before. Much of what remains
+is the verification method's own threshold lag rather than real error.

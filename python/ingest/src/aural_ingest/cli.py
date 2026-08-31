@@ -6067,6 +6067,7 @@ def cmd_import_midi(args: argparse.Namespace) -> int:
             artist=args.artist or None,
             genre=args.genre or None,
             beats_per_bar=int(getattr(args, "beats_per_bar", 4) or 4),
+            align=not getattr(args, "no_align", False),
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
@@ -7801,6 +7802,9 @@ def build_parser() -> argparse.ArgumentParser:
     s_import_midi.add_argument("--artist", default="")
     s_import_midi.add_argument("--genre", default="", help="Free-text genre, for library filtering.")
     s_import_midi.add_argument("--beats-per-bar", type=int, default=4, dest="beats_per_bar")
+    s_import_midi.add_argument("--no-align", action="store_true", dest="no_align",
+                               help="attach the render as-is instead of measuring and "
+                                    "trimming the lead-in the DAW transport left on it")
     s_import_midi.set_defaults(func=cmd_import_midi)
 
     s_import_xml = sub.add_parser("import-musicxml")
