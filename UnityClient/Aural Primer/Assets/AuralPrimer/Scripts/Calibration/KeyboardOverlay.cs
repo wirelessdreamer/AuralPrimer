@@ -91,14 +91,34 @@ namespace AuralPrimer.Calibration
         static readonly Color PreviewFar = new(0.482f, 0.247f, 0.949f, 0.45f);
         static readonly Color PreviewNear = new(0.337f, 0.910f, 0.522f, 1f);
 
-        /// <summary>What a sustain has cooled to by the time it runs out.</summary>
+        /// <summary>A key that is being held, at the moment it is struck.</summary>
         /// <remarks>
-        /// The lit cyan, reused rather than invented. Cooling toward a colour
-        /// the overlay already means something by keeps the vocabulary closed,
-        /// and the green-to-cyan run is a direction the eye reads as decay
-        /// without having to be told which end is which.
+        /// Amber, and 104 degrees of hue from the green that means "play this".
+        ///
+        /// It cooled from green toward the lit cyan first, and that failed on a
+        /// real keyboard: green and cyan are 46 degrees apart, adjacent enough
+        /// to be one colour once passthrough has compressed the chroma out of
+        /// them. Both states also STARTED green, so a note struck a moment ago
+        /// and a note due now were identical at the instant the difference
+        /// mattered, and only separated later as the fill drained. Separation
+        /// that arrives late is no separation at the strike.
+        ///
+        /// So held is a different colour from its first frame rather than a
+        /// shade the green decays into, and the colour is warm because chroma
+        /// is what a camera feed preserves. Green is left meaning exactly one
+        /// thing: put a finger here. Nothing else on the bed is green.
+        ///
+        /// It reads without being taught, too -- green go, amber hold.
         /// </remarks>
-        static readonly Color SustainSpent = new(0.130f, 0.830f, 0.930f, 1f);
+        static readonly Color SustainHeld = new(0.961f, 0.647f, 0.141f, 1f);
+
+        /// <summary>What a sustain has faded to by the time it runs out.</summary>
+        /// <remarks>
+        /// The same amber, dimmed. Duration rides the drain's length and this
+        /// only keeps the tail from going bright as it disappears -- a second
+        /// hue here would put the state back to being read from a gradient.
+        /// </remarks>
+        static readonly Color SustainSpent = new(0.451f, 0.294f, 0.055f, 1f);
 
         /// <summary>Shortest bar drawn, so the furthest note is still visible.</summary>
         const float MinimumPreviewFill = 0.14f;
@@ -224,12 +244,13 @@ namespace AuralPrimer.Calibration
                 t.localPosition = new Vector3(0f, 0.26f, 0.5f - remaining * 0.5f);
                 fill.gameObject.SetActive(true);
 
-                // Two channels, not one. Length alone survives a busy
-                // background; colour alone does not, and this surface has
-                // already lost that bet twice.
+                // Two channels, and now genuinely two: length says how much
+                // longer, hue says which state. Both endpoints are amber, so
+                // the state is legible in the first frame and the drain is
+                // free to carry duration on its own.
                 _previewBlock ??= new MaterialPropertyBlock();
                 _previewBlock.Clear();
-                _previewBlock.SetColor(BaseColorId, Color.Lerp(SustainSpent, PreviewNear, remaining));
+                _previewBlock.SetColor(BaseColorId, Color.Lerp(SustainSpent, SustainHeld, remaining));
                 fill.SetPropertyBlock(_previewBlock);
 
                 _litLastFrame.Add(note.Pitch);
