@@ -97,6 +97,23 @@ work, and finding that out by reading was not possible.
 5. **Bounce.** `bounce_song(duration_sec, output_path, background=True)`,
    polling `bounce_job_status(job_id)`. It builds a temporary resampling
    track, records, and removes it again without touching existing tracks.
+6. **Fire the clip only once that temp track exists.** `background=True`
+   returns a `job_id` immediately, several seconds before the bounce is ready
+   to record, and firing into that window kills it:
+
+   ```
+   BounceError: create_audio_track timed out after 2.0s
+   (num_tracks stayed at 4). Live may be busy or unresponsive.
+   ```
+
+   A clip launching is enough to make Live miss the 2-second window. Worse,
+   the failure happens *after* the track is created, so cleanup never runs and
+   an empty audio track is left in the set for someone to delete by hand.
+
+   Poll `bounce_job_status` until the job is actually recording, then fire.
+   The wait shows up as extra lead-in, which is measured out at import, so it
+   costs nothing to be generous with it -- and set `duration_sec` to the clip
+   length plus that wait plus the tail, or the ending gets cut.
 
 **The catch, and why step 3 has to correct for it**
 
