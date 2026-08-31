@@ -104,7 +104,9 @@ def test_note_times_survive_the_round_trip_exactly(tmp_path):
     roles, duration, _ = read_midi_roles(src)
     times = sorted(n.t_on for n in roles["keys"])
 
-    build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
+    # align=False: this fixture's audio is a bare sine placeholder, not a
+    # render of these notes, so there is no lead-in to measure.
+    build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A", align=False)
     pack = tmp_path / "out" / "src.feedpak"
     pm_notes = mido.MidiFile(pack / "aural" / "notes.mid")
 
@@ -149,7 +151,9 @@ def test_beats_follow_the_tempo_map(tmp_path):
     src = tmp_path / "bend.mid"
     _write_midi(src, [(0, 240, 60), (1920, 240, 62)],
                 tempos=((0, 500000), (960, 1000000)))
-    _write_wav(tmp_path / "bend.wav")
+    # The tempo halves at beat 2, so the last note lands at 3s: the render has
+    # to cover that or the coverage gate rejects it, quite correctly.
+    _write_wav(tmp_path / "bend.wav", seconds=3.5)
     build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
 
     beats = json.loads((tmp_path / "out" / "bend.feedpak" / "song_timeline.json")
@@ -204,3 +208,148 @@ def test_unmatched_note_off_is_dropped_not_guessed(tmp_path):
 
     roles, _, _ = read_midi_roles(src)
     assert [n.pitch for n in roles["keys"]] == [64]
+
+
+# ---------------------------------------------------------------------------
+# studio renders -- audio bounced by hand, which is where it goes wrong
+# ---------------------------------------------------------------------------
+
+
+def test_refuses_a_render_that_stops_before_the_last_note(tmp_path):
+    """A short bounce is a stall in Wait mode, so it fails at import instead."""
+    src = tmp_path / "truncated.mid"
+    # Last note starts at beat 20 == 10s at 120bpm; the render is 2s.
+    _write_midi(src, [(0, 240, 60), (9600, 240, 72)])
+    _write_wav(tmp_path / "truncated.wav", seconds=2.0)
+
+    with pytest.raises(ValueError, match="stops short"):
+        build_feedpak_from_midi(src, tmp_path / "out")
+
+
+def test_accepts_a_render_that_ends_just_after_the_last_onset(tmp_path):
+    """The final note is released into a fade; that is not a truncated render."""
+    src = tmp_path / "tight.mid"
+    _write_midi(src, [(0, 240, 60), (960, 480, 64)])   # last onset at 1.0s
+    _write_wav(tmp_path / "tight.wav", seconds=1.4)
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A",
+                                     align=False)
+    assert result["ok"] is True
+    assert result["last_note_onset_sec"] == pytest.approx(1.0, abs=0.01)
+
+
+def test_unreadable_audio_header_is_not_treated_as_evidence(tmp_path, monkeypatch):
+    """Not being able to measure the render is not the same as it being wrong."""
+    from aural_ingest import midi_feedpak
+
+    src = tmp_path / "opaque.mid"
+    _write_midi(src, [(0, 240, 60), (9600, 240, 72)])
+    _write_wav(tmp_path / "opaque.wav", seconds=2.0)
+    monkeypatch.setattr(midi_feedpak, "audio_duration_sec", lambda _p: None)
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
+    assert result["ok"] is True
+    assert result["audio_sec"] is None
+
+
+# ---------------------------------------------------------------------------
+# alignment -- the render starts when the transport did, not when the music did
+# ---------------------------------------------------------------------------
+
+
+def _write_click_wav(path: Path, onsets, *, seconds, lead_in=0.0, rate=22050):
+    """Impulses at the given times, so a render's onsets are unambiguous."""
+    import numpy as np
+    import soundfile as sf
+
+    y = np.zeros(int(seconds * rate), dtype="float32")
+    decay = np.exp(-np.arange(int(0.08 * rate)) / (0.02 * rate)).astype("float32")
+    tone = decay * np.sin(2 * np.pi * 440 * np.arange(len(decay)) / rate).astype("float32")
+    for t in onsets:
+        i = int((t + lead_in) * rate)
+        if 0 <= i < len(y) - len(tone):
+            y[i:i + len(tone)] += tone
+    sf.write(str(path), y, rate)
+
+
+#: An irregular phrase. A perfectly periodic rhythm cannot identify its own
+#: lead-in -- a shift of exactly one beat correlates just as well as no shift
+#: at all -- so a uniform click train would be testing an ambiguity rather than
+#: the measurement. Real scores are not uniform, and neither is this.
+_PHRASE_TICKS = (0, 240, 360, 840, 960, 1080, 1560, 1800, 1920, 2400,
+                 2640, 2760, 3120, 3360, 3480, 3960, 4200, 4680)
+
+
+def _phrase_notes():
+    return [(t, 180, 60 + (i * 5) % 13) for i, t in enumerate(_PHRASE_TICKS)]
+
+
+def test_a_transport_lead_in_is_measured_and_removed(tmp_path):
+    """The bug this guards: chart at 0.9s, audio at 6.0s, silence in between."""
+    src = tmp_path / "late.mid"
+    _write_midi(src, _phrase_notes())
+
+    roles, _, _ = read_midi_roles(src)
+    onsets = sorted(n.t_on for v in roles.values() for n in v)
+    _write_click_wav(tmp_path / "late.wav", onsets, seconds=20.0, lead_in=5.17)
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
+    assert result["lead_in_trimmed_sec"] == pytest.approx(5.17, abs=0.05)
+
+
+def test_an_aligned_render_is_left_alone(tmp_path):
+    """Trimming an already-correct render would be churn, and would misalign it."""
+    src = tmp_path / "ontime.mid"
+    _write_midi(src, _phrase_notes())
+    roles, _, _ = read_midi_roles(src)
+    onsets = sorted(n.t_on for v in roles.values() for n in v)
+    _write_click_wav(tmp_path / "ontime.wav", onsets, seconds=20.0, lead_in=0.0)
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
+    assert result["lead_in_trimmed_sec"] == 0.0
+
+
+def test_no_align_attaches_the_render_untouched(tmp_path):
+    src = tmp_path / "raw.mid"
+    _write_midi(src, _phrase_notes())
+    roles, _, _ = read_midi_roles(src)
+    onsets = sorted(n.t_on for v in roles.values() for n in v)
+    _write_click_wav(tmp_path / "raw.wav", onsets, seconds=20.0, lead_in=5.17)
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A",
+                                     align=False)
+    assert result["lead_in_trimmed_sec"] == 0.0
+    assert result["alignment_confidence"] is None
+
+
+# ---------------------------------------------------------------------------
+# attribution -- CC BY-SA means the credit travels with the pack
+# ---------------------------------------------------------------------------
+
+
+def test_attribution_travels_into_the_pack(tmp_path):
+    src = tmp_path / "credited.mid"
+    _write_midi(src, _phrase_notes())
+    _write_wav(tmp_path / "credited.wav", seconds=12.0)
+    (tmp_path / "attribution.json").write_text(json.dumps([
+        {"file": str(tmp_path / "other.mid"), "attribution": "Someone else"},
+        {"file": str(src), "attribution": "Bernd Krueger, piano-midi.de",
+         "license": "CC BY-SA 3.0 DE"},
+    ]), encoding="utf-8")
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A",
+                                     align=False)
+    assert result["attributed"] is True
+    written = json.loads((Path(result["feedpak"]) / "attribution.json")
+                         .read_text(encoding="utf-8"))
+    assert written["license"] == "CC BY-SA 3.0 DE"
+
+
+def test_a_pack_without_a_sibling_manifest_is_not_credited_falsely(tmp_path):
+    src = tmp_path / "uncredited.mid"
+    _write_midi(src, _phrase_notes())
+    _write_wav(tmp_path / "uncredited.wav", seconds=12.0)
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A",
+                                     align=False)
+    assert result["attributed"] is False
+    assert not (Path(result["feedpak"]) / "attribution.json").exists()

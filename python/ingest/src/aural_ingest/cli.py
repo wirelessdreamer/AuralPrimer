@@ -6013,6 +6013,36 @@ def cmd_import_musicxml(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prep_render(args: argparse.Namespace) -> int:
+    """Bake a MIDI's tempo map into note positions so Ableton can render it.
+
+    Ableton does not import MIDI tempo maps, so a rubato performance loaded as
+    a clip plays on a rigid grid. This moves the timing into the notes.
+
+    The output is for RENDERING ONLY. Import the pack from the original with
+    ``import-midi``, attaching the render as ``--audio`` -- the original keeps
+    the tempo map, and with it bar lines that match the score.
+    """
+    from aural_ingest.midi_render_prep import prepare_render
+
+    src = Path(args.input_midi_path)
+    if not src.exists():
+        print(json.dumps({"ok": False, "error": f"no such file: {src}"}))
+        return 2
+    try:
+        payload = prepare_render(
+            src, Path(args.out),
+            lead_in_sec=float(getattr(args, "lead_in_sec", 0.0) or 0.0),
+        )
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    print(json.dumps(payload))
+    # A flatten that moved the notes is not usable as a render source, and
+    # saying so with an exit code stops a batch carrying on regardless.
+    return 0 if payload.get("ok") else 1
+
+
 def cmd_import_midi(args: argparse.Namespace) -> int:
     """Build a ``.feedpak`` from a MIDI score, keeping its note times exactly.
 
@@ -6037,6 +6067,7 @@ def cmd_import_midi(args: argparse.Namespace) -> int:
             artist=args.artist or None,
             genre=args.genre or None,
             beats_per_bar=int(getattr(args, "beats_per_bar", 4) or 4),
+            align=not getattr(args, "no_align", False),
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
@@ -7750,6 +7781,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s_voice.set_defaults(func=cmd_transcribe_query_lazy)
 
+    s_prep_render = sub.add_parser(
+        "prep-render",
+        help="Bake a MIDI's tempo map into note positions for rendering in Ableton.",
+    )
+    s_prep_render.add_argument("input_midi_path")
+    s_prep_render.add_argument("--out", required=True, help="directory for the render-ready MIDI")
+    s_prep_render.add_argument("--lead-in-sec", type=float, default=0.0, dest="lead_in_sec",
+                               help="silence before the first note; must be trimmed back out of the render")
+    s_prep_render.set_defaults(func=cmd_prep_render)
+
     s_import_midi = sub.add_parser(
         "import-midi",
         help="Build a feedpak from a MIDI whose audio was rendered from it (exact timing).",
@@ -7761,6 +7802,9 @@ def build_parser() -> argparse.ArgumentParser:
     s_import_midi.add_argument("--artist", default="")
     s_import_midi.add_argument("--genre", default="", help="Free-text genre, for library filtering.")
     s_import_midi.add_argument("--beats-per-bar", type=int, default=4, dest="beats_per_bar")
+    s_import_midi.add_argument("--no-align", action="store_true", dest="no_align",
+                               help="attach the render as-is instead of measuring and "
+                                    "trimming the lead-in the DAW transport left on it")
     s_import_midi.set_defaults(func=cmd_import_midi)
 
     s_import_xml = sub.add_parser("import-musicxml")
