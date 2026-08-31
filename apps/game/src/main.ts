@@ -1858,6 +1858,9 @@ function renderPlayheadHud(): void {
 /** Loaded once. The pack is tens of megabytes and does not change per song. */
 let pianoPackLoaded = false;
 
+/** True once the pack is in the engine, so key presses can sound. */
+let pianoLiveReady = false;
+
 function setPianoStatus(text: string): void {
   if (pianoStatusEl && pianoStatusEl.textContent !== text) pianoStatusEl.textContent = text;
 }
@@ -1870,6 +1873,7 @@ async function ensurePianoPack(): Promise<boolean> {
       { name: "salamander" },
     );
     pianoPackLoaded = true;
+    pianoLiveReady = true;
     setPianoStatus(`${info.name} · ${info.samples} samples · ${info.license}`);
     return true;
   } catch (e) {
@@ -1902,6 +1906,39 @@ async function sendPianoNotes(): Promise<void> {
   }
 }
 
+// Sound the keys the player actually presses.
+//
+// Driven by the midi-input event rather than by polling the active-note set:
+// the poll runs on a timer, so every note would land up to a tick late and all
+// the notes in a chord would land on whichever tick caught them. For something
+// you play, that is the difference between an instrument and a delay.
+//
+// A note-on with zero velocity is a note-off -- the running-status form most
+// controllers actually send, and treating it as a strike leaves the key stuck
+// on forever.
+window.addEventListener("auralprimer:midi-input", (ev) => {
+  const msg = (ev as CustomEvent<{ message_type: string; data1?: number | null; data2?: number | null }>).detail;
+  const pitch = msg?.data1;
+  if (typeof pitch !== "number") return;
+  if (msg.message_type !== "note_on" && msg.message_type !== "note_off") return;
+
+  // Load on first touch rather than at startup or on a checkbox. Sixty
+  // megabytes is too much to read before anyone has asked for a sound, and
+  // requiring a tick first means the obvious thing -- press a key, hear a
+  // piano -- silently does nothing. The first note is lost while it loads;
+  // every one after it plays.
+  if (!pianoLiveReady) {
+    void ensurePianoPack();
+    return;
+  }
+
+  if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
+    void invoke("piano_note_on", { pitch, velocity: msg.data2 ?? 80 }).catch(() => {});
+  } else if (msg.message_type === "note_off" || msg.message_type === "note_on") {
+    void invoke("piano_note_off", { pitch }).catch(() => {});
+  }
+});
+
 pianoEnabledEl?.addEventListener("change", () => {
   const on = !!pianoEnabledEl.checked;
   void (async () => {
@@ -1910,8 +1947,13 @@ pianoEnabledEl?.addEventListener("change", () => {
       return;
     }
     await invoke("piano_set_enabled", { enabled: on }).catch(() => {});
-    if (on) await sendPianoNotes();
-    else setPianoStatus("");
+    if (on) {
+      await sendPianoNotes();
+    } else {
+      // The pack stays loaded: the checkbox governs whether the CHART plays
+      // itself, not whether the player's own keys make a sound.
+      setPianoStatus("keys sound on press");
+    }
   })();
 });
 

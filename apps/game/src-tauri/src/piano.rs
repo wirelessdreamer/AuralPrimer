@@ -187,7 +187,7 @@ struct Voice {
 }
 
 pub struct PianoEngine {
-    pack: Option<PianoPack>,
+    pack: Option<std::sync::Arc<PianoPack>>,
     voices: Vec<Voice>,
     notes: Vec<ScheduledNote>,
     /// Index of the first note not yet started, for the current position.
@@ -196,6 +196,8 @@ pub struct PianoEngine {
     last_frame: u64,
     gain: f32,
     enabled: bool,
+    /// Output rate, remembered so a live note can be started between blocks.
+    engine_rate_hz: u32,
 }
 
 impl Default for PianoEngine {
@@ -208,12 +210,13 @@ impl Default for PianoEngine {
             last_frame: 0,
             gain: 0.8,
             enabled: false,
+            engine_rate_hz: 48_000,
         }
     }
 }
 
 impl PianoEngine {
-    pub fn set_pack(&mut self, pack: Option<PianoPack>) {
+    pub fn set_pack(&mut self, pack: Option<std::sync::Arc<PianoPack>>) {
         self.pack = pack;
         self.voices.clear();
     }
@@ -235,6 +238,37 @@ impl PianoEngine {
 
     pub fn set_gain(&mut self, gain: f32) {
         self.gain = gain.clamp(0.0, 2.0);
+    }
+
+    /// Sound a note immediately, for a key the player just pressed.
+    ///
+    /// Separate from the schedule because it has no end time: a live note lasts
+    /// until the finger leaves, which nobody can know in advance. Scheduling it
+    /// with a guessed length would either cut the note off under the player or
+    /// leave it ringing after they lifted.
+    pub fn note_on(&mut self, pitch: u8, velocity: u8) {
+        let note = ScheduledNote {
+            on_frame: 0,
+            off_frame: u64::MAX,
+            pitch,
+            velocity: velocity.max(1),
+        };
+        self.start_voice(note, 0, self.engine_rate_hz.max(1));
+    }
+
+    /// Let a live note go.
+    ///
+    /// Only voices with no end frame: a scheduled note that happens to share
+    /// this pitch is the chart's, and the player releasing their own key should
+    /// not silence it.
+    pub fn note_off(&mut self, pitch: u8) {
+        let release = ((RELEASE_SEC * self.engine_rate_hz.max(1) as f32) as u32).max(1);
+        for voice in &mut self.voices {
+            if voice.pitch == pitch && voice.off_frame == u64::MAX && voice.release_left.is_none() {
+                voice.release_left = Some(release);
+                voice.release_total = release;
+            }
+        }
     }
 
     /// Replace the schedule. Notes must be sorted by `on_frame`.
@@ -269,9 +303,11 @@ impl PianoEngine {
         start_frame: u64,
         engine_rate_hz: u32,
     ) {
-        if !self.enabled || channels == 0 || self.pack.is_none() {
+        if channels == 0 || self.pack.is_none() {
             return;
         }
+        self.engine_rate_hz = engine_rate_hz;
+
         let frames = out.len() / channels;
         if frames == 0 {
             return;
@@ -289,8 +325,9 @@ impl PianoEngine {
         let end_frame = start_frame + frames as u64;
 
         // Start everything whose onset lands inside this block, at the exact
-        // frame it asked for.
-        while self.cursor < self.notes.len() {
+        // frame it asked for. Only the SCHEDULE is gated on `enabled` -- a live
+        // note is the player pressing a key and always sounds.
+        while self.enabled && self.cursor < self.notes.len() {
             let note = self.notes[self.cursor];
             if note.on_frame >= end_frame {
                 break;
@@ -305,7 +342,10 @@ impl PianoEngine {
         // note list here would make a long piece quadratic.
         let release_frames = ((RELEASE_SEC * engine_rate_hz as f32) as u32).max(1);
         for voice in &mut self.voices {
-            if voice.release_left.is_none() && voice.off_frame <= end_frame {
+            if voice.release_left.is_none()
+                && voice.off_frame != u64::MAX
+                && voice.off_frame <= end_frame
+            {
                 voice.release_left = Some(release_frames);
                 voice.release_total = release_frames;
             }

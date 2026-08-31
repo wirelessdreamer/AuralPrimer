@@ -69,10 +69,12 @@ enum EngineCommand {
     /// A loaded piano pack. Decoded on the calling thread and moved here:
     /// the pack is tens of megabytes and reading it on the audio thread
     /// would drop every buffer for the duration.
-    SetPianoPack(Box<crate::piano::PianoPack>),
+    SetPianoPack(std::sync::Arc<crate::piano::PianoPack>),
     SetPianoNotes(Vec<crate::piano::ScheduledNote>),
     SetPianoEnabled(bool),
     SetPianoGain(f32),
+    PianoNoteOn { pitch: u8, velocity: u8 },
+    PianoNoteOff { pitch: u8 },
     LoadPcm16 {
         wav: WavPcm16,
     },
@@ -682,8 +684,8 @@ impl NativeAudioHandle {
     }
 
     /// Hand the engine a decoded piano pack.
-    pub fn set_piano_pack(&self, pack: crate::piano::PianoPack) -> Result<(), String> {
-        self.enqueue(EngineCommand::SetPianoPack(Box::new(pack)))
+    pub fn set_piano_pack(&self, pack: std::sync::Arc<crate::piano::PianoPack>) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoPack(pack))
     }
 
     /// Replace the notes the piano plays, in transport frames.
@@ -697,6 +699,14 @@ impl NativeAudioHandle {
 
     pub fn set_piano_gain(&self, gain: f32) -> Result<(), String> {
         self.enqueue(EngineCommand::SetPianoGain(gain))
+    }
+
+    pub fn piano_note_on(&self, pitch: u8, velocity: u8) -> Result<(), String> {
+        self.enqueue(EngineCommand::PianoNoteOn { pitch, velocity })
+    }
+
+    pub fn piano_note_off(&self, pitch: u8) -> Result<(), String> {
+        self.enqueue(EngineCommand::PianoNoteOff { pitch })
     }
 
     pub fn play(&self) -> Result<(), String> {
@@ -977,7 +987,7 @@ fn apply_engine_command(
             }
         }
         EngineCommand::SetPianoPack(pack) => {
-            runtime.piano.set_pack(Some(*pack));
+            runtime.piano.set_pack(Some(pack));
         }
         EngineCommand::SetPianoNotes(notes) => {
             runtime.piano.set_notes(notes);
@@ -987,6 +997,12 @@ fn apply_engine_command(
         }
         EngineCommand::SetPianoGain(gain) => {
             runtime.piano.set_gain(gain);
+        }
+        EngineCommand::PianoNoteOn { pitch, velocity } => {
+            runtime.piano.note_on(pitch, velocity);
+        }
+        EngineCommand::PianoNoteOff { pitch } => {
+            runtime.piano.note_off(pitch);
         }
         EngineCommand::Play => {
             runtime.is_playing = true;
@@ -1374,11 +1390,12 @@ fn process_audio_callback_f32(
 
     // Over the song, not instead of it: the piano is a cue laid on top. Only
     // while the transport runs, or a paused song would keep playing its part.
-    if playing {
-        runtime
-            .piano
-            .mix(out, engine_channels, block_start_frame, sample_rate_hz);
-    }
+    // Always, not only while the transport runs: a live note is the player
+    // pressing a key, and they do that with the song stopped more often than
+    // not. The scheduled part gates itself on `enabled` inside.
+    runtime
+        .piano
+        .mix(out, engine_channels, block_start_frame, sample_rate_hz);
 
     sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);

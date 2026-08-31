@@ -222,6 +222,13 @@ struct MidiInputSavedSettings {
 #[derive(Default)]
 struct NativeAudioState {
     inner: native_audio::NativeAudioEngineState,
+    /// The loaded piano, kept here rather than only in the engine.
+    ///
+    /// Loading a song REPLACES the engine, which would silently take the
+    /// pack with it -- the piano would work until you picked a track and
+    /// then go quiet with nothing to say why. Held outside it and pushed
+    /// back in after every replacement, so it survives.
+    piano_pack: Mutex<Option<std::sync::Arc<piano::PianoPack>>>,
     selected_output_host: Mutex<Option<native_audio::NativeAudioHostSelection>>,
     selected_output_device: Mutex<Option<native_audio::NativeAudioDeviceSelection>>,
 }
@@ -871,6 +878,16 @@ fn replace_native_audio_engine(
     if let Some(old) = old {
         old.shutdown();
     }
+
+    // Give the fresh engine the piano back. It lives outside the engine for
+    // exactly this moment: without it, loading a song would leave the sampler
+    // holding nothing and the keys part would fall silent.
+    let pack = state.piano_pack.lock().unwrap().clone();
+    if let Some(pack) = pack {
+        if let Some(engine) = state.inner.engine.lock().unwrap().as_ref() {
+            let _ = engine.set_piano_pack(pack);
+        }
+    }
     Ok(())
 }
 
@@ -1262,13 +1279,22 @@ fn piano_load_pack(
     name: String,
 ) -> Result<serde_json::Value, String> {
     let dir = piano_pack_dir(&app, &name)?;
-    let pack = piano::PianoPack::load(&dir)?;
+    let pack = std::sync::Arc::new(piano::PianoPack::load(&dir)?);
     let summary = serde_json::json!({
         "name": pack.name,
         "author": pack.author,
         "license": pack.license,
         "samples": pack.sample_count(),
     });
+
+    // The engine only exists once a song's audio has been loaded, and the
+    // player may well press a key before choosing a track. Bring it up rather
+    // than reporting that it is missing.
+    if state.inner.engine.lock().unwrap().is_none() {
+        replace_native_audio_engine(&state, 48_000, 2)?;
+    }
+
+    *state.piano_pack.lock().unwrap() = Some(pack.clone());
     with_native_engine(&state, |e| e.set_piano_pack(pack))?;
     Ok(summary)
 }
@@ -1297,6 +1323,21 @@ fn piano_set_notes(
         e.set_piano_notes(scheduled)?;
         Ok(count)
     })
+}
+
+/// Sound a key the moment it is pressed.
+#[tauri::command]
+fn piano_note_on(
+    state: tauri::State<NativeAudioState>,
+    pitch: u8,
+    velocity: u8,
+) -> Result<(), String> {
+    with_native_engine(&state, |e| e.piano_note_on(pitch, velocity))
+}
+
+#[tauri::command]
+fn piano_note_off(state: tauri::State<NativeAudioState>, pitch: u8) -> Result<(), String> {
+    with_native_engine(&state, |e| e.piano_note_off(pitch))
 }
 
 #[tauri::command]
@@ -2494,6 +2535,8 @@ pub fn run() {
             piano_set_notes,
             piano_set_enabled,
             piano_set_gain,
+            piano_note_on,
+            piano_note_off,
             // stem+midi
             stem_midi_create_auralsong,
             ingest_import,
