@@ -149,7 +149,9 @@ def test_beats_follow_the_tempo_map(tmp_path):
     src = tmp_path / "bend.mid"
     _write_midi(src, [(0, 240, 60), (1920, 240, 62)],
                 tempos=((0, 500000), (960, 1000000)))
-    _write_wav(tmp_path / "bend.wav")
+    # The tempo halves at beat 2, so the last note lands at 3s: the render has
+    # to cover that or the coverage gate rejects it, quite correctly.
+    _write_wav(tmp_path / "bend.wav", seconds=3.5)
     build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
 
     beats = json.loads((tmp_path / "out" / "bend.feedpak" / "song_timeline.json")
@@ -204,3 +206,44 @@ def test_unmatched_note_off_is_dropped_not_guessed(tmp_path):
 
     roles, _, _ = read_midi_roles(src)
     assert [n.pitch for n in roles["keys"]] == [64]
+
+
+# ---------------------------------------------------------------------------
+# studio renders -- audio bounced by hand, which is where it goes wrong
+# ---------------------------------------------------------------------------
+
+
+def test_refuses_a_render_that_stops_before_the_last_note(tmp_path):
+    """A short bounce is a stall in Wait mode, so it fails at import instead."""
+    src = tmp_path / "truncated.mid"
+    # Last note starts at beat 20 == 10s at 120bpm; the render is 2s.
+    _write_midi(src, [(0, 240, 60), (9600, 240, 72)])
+    _write_wav(tmp_path / "truncated.wav", seconds=2.0)
+
+    with pytest.raises(ValueError, match="stops short"):
+        build_feedpak_from_midi(src, tmp_path / "out")
+
+
+def test_accepts_a_render_that_ends_just_after_the_last_onset(tmp_path):
+    """The final note is released into a fade; that is not a truncated render."""
+    src = tmp_path / "tight.mid"
+    _write_midi(src, [(0, 240, 60), (960, 480, 64)])   # last onset at 1.0s
+    _write_wav(tmp_path / "tight.wav", seconds=1.4)
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
+    assert result["ok"] is True
+    assert result["last_note_onset_sec"] == pytest.approx(1.0, abs=0.01)
+
+
+def test_unreadable_audio_header_is_not_treated_as_evidence(tmp_path, monkeypatch):
+    """Not being able to measure the render is not the same as it being wrong."""
+    from aural_ingest import midi_feedpak
+
+    src = tmp_path / "opaque.mid"
+    _write_midi(src, [(0, 240, 60), (9600, 240, 72)])
+    _write_wav(tmp_path / "opaque.wav", seconds=2.0)
+    monkeypatch.setattr(midi_feedpak, "audio_duration_sec", lambda _p: None)
+
+    result = build_feedpak_from_midi(src, tmp_path / "out", title="T", artist="A")
+    assert result["ok"] is True
+    assert result["audio_sec"] is None

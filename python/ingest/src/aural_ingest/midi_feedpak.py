@@ -38,6 +38,11 @@ _AUDIO_EXTS = (".wav", ".flac", ".mp3", ".ogg", ".m4a")
 #: piano scores; anything else is expected to name its tracks.
 _DEFAULT_ROLE = "keys"
 
+#: How far a render may stop short of the last note before it is rejected. A
+#: bounce ends on a buffer boundary and a final note may be released into a
+#: fade, so a fraction of a second is normal; seconds are a truncated render.
+_RENDER_TAIL_TOLERANCE_SEC = 0.75
+
 #: Track-name substrings that identify a role, most specific first so that
 #: "lead guitar" is not swallowed by "guitar".
 _ROLE_HINTS: tuple[tuple[str, str], ...] = (
@@ -193,6 +198,43 @@ def _build_beats(
     out_path.write_text(json.dumps({"beats": beats}), encoding="utf-8")
 
 
+def audio_duration_sec(path: Path) -> float | None:
+    """Length of an audio file, read from its header rather than decoded."""
+    try:
+        import soundfile as sf
+
+        info = sf.info(str(path))
+        return float(info.frames) / float(info.samplerate) if info.samplerate else None
+    except Exception:
+        return None
+
+
+def check_render_covers_notes(
+    audio: Path, last_onset_sec: float
+) -> tuple[bool, str | None, float | None]:
+    """Refuse a render that stops before the chart does.
+
+    A studio render is bounced by hand, and the ways that goes wrong are
+    mundane: the loop brace was left on an eight-bar region, the bounce ended
+    at the last clip edge and clipped the final decay, the wrong track was
+    soloed. The result is audio shorter than the notes it is supposed to carry,
+    and the pack it makes stalls in Wait mode on a note the audio never plays.
+
+    Checking the header costs nothing and turns that into an import-time error
+    instead of a practice session that hangs.
+    """
+    duration = audio_duration_sec(audio)
+    if duration is None:
+        return True, None, None            # unreadable header is not evidence
+    if duration + _RENDER_TAIL_TOLERANCE_SEC < last_onset_sec:
+        return False, (
+            f"{audio.name} is {duration:.1f}s but the chart's last note starts at "
+            f"{last_onset_sec:.1f}s -- the render stops short of the score. "
+            "Re-bounce over the whole arrangement, or pass the right file."
+        ), duration
+    return True, None, duration
+
+
 def _find_sibling_audio(midi_path: Path) -> Path | None:
     """A render beside the MIDI with the same stem, else a lone audio file."""
     for ext in _AUDIO_EXTS:
@@ -228,6 +270,11 @@ def build_feedpak_from_midi(
             f"{midi_path.name}: no audio found. A feedpak needs an audio stem -- "
             "put a render beside the MIDI or pass audio_path."
         )
+
+    last_onset = max((n.t_on for notes in roles.values() for n in notes), default=0.0)
+    covered, problem, audio_sec = check_render_covers_notes(resolved_audio, last_onset)
+    if not covered:
+        raise ValueError(f"{midi_path.name}: {problem}")
 
     pack_title = title or midi_path.stem
     pack_artist = artist or "Unknown"
@@ -287,4 +334,6 @@ def build_feedpak_from_midi(
         "duration_sec": duration,
         "tempo_segments": len(segments),
         "audio_attached": True,
+        "audio_sec": (round(audio_sec, 3) if audio_sec is not None else None),
+        "last_note_onset_sec": round(last_onset, 3),
     }
