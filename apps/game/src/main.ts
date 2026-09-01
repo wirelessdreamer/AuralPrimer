@@ -1471,6 +1471,16 @@ const GATE_LEAD_SEC = 0.12;
 // rather than an audible cut.
 const PARK_LEAD_SEC = 0.02;
 
+// How far past a note's onset the recording resumes, once the player has
+// played that note themselves.
+//
+// A piano attack is the first few tens of milliseconds; past that the note is
+// ringing rather than striking, and resuming there is heard as the player's
+// own note continuing instead of a second one starting. Short enough that
+// almost nothing musical is skipped, and floored against the next note so a
+// fast run never loses one.
+const ATTACK_SKIP_SEC = 0.045;
+
 // How long after a note's onset a hit still counts as that note's, when Grace
 // is on and the transport is free-running.
 //
@@ -1649,20 +1659,32 @@ function learnRegisterPlayed(pitch: number): void {
   // would fight a transport that is already running.
   if (learnWaiting) {
     learnWaiting = false;
+    // Resume PAST the recording's attack of the note just played.
+    //
+    // The player has played it. Letting the recording strike it again is the
+    // doubling -- their note under their finger, then the same pitch again a
+    // moment later, which is the flam that reads as a stutter. Their key is
+    // the attack; the recording carries on from where that note is already
+    // ringing.
+    const played = learnGroups[learnIdx - 1];
+    if (played) transportController.seek(resumeAfterAttack(played));
     void transportController.play();
   }
 }
 
 /**
- * Is `pitch` one the gate is currently holding the transport for?
+ * Where to resume so the recording does not re-strike a note already played.
  *
- * Only the group under the cursor: a note further along the chart is not one
- * the recording is about to play, so the player pressing it early should still
- * hear something.
+ * Far enough past the onset to clear the attack transient, and never past the
+ * next note the player is going to be asked for -- on a fast run the gap
+ * between groups can be shorter than an attack, and skipping into the next
+ * note would drop it from the recording while still demanding it from the
+ * player.
  */
-function learnExpectsPitch(pitch: number): boolean {
-  if (learnIdx >= learnGroups.length) return false;
-  return learnGroups[learnIdx].pitches.includes(pitch);
+function resumeAfterAttack(played: LearnGroup): number {
+  const next = learnGroups[learnIdx];
+  const ceiling = next ? next.t - GATE_LEAD_SEC : Number.POSITIVE_INFINITY;
+  return Math.min(played.t + ATTACK_SKIP_SEC, Math.max(played.t, ceiling));
 }
 
 function learnGateTick(): void {
@@ -2043,19 +2065,6 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
   }
 
   if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
-    // Not this one: the recording is about to play it.
-    //
-    // Wait mode holds the transport just short of a note and the player's key
-    // releases it, so the recording sounds that note a moment later. Sounding
-    // it here as well puts two attacks of the same pitch a few tens of
-    // milliseconds apart, which is a flam -- and a flam is exactly what a
-    // stutter sounds like. The chart's own part is already silenced in Wait
-    // mode for the same reason; this is the live half of it.
-    //
-    // A note that is NOT what the gate is waiting for still sounds, because
-    // nothing else is going to play it and a wrong note the player cannot hear
-    // is a wrong note they cannot correct.
-    if (learnMode && learnWaiting && learnExpectsPitch(pitch)) return;
     void invoke("piano_note_on", { pitch, velocity: msg.data2 ?? 80 }).catch((e) => {
       // Surfaced, not swallowed: a piano that cannot sound looked exactly like
       // one that was working, which is how a silent bug survived a build.
