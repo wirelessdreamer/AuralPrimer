@@ -1461,16 +1461,15 @@ const GRACE_WINDOW_SEC = 0.05;
 // time. This has to clear the whole chain with room to spare.
 const GATE_LEAD_SEC = 0.12;
 
-// The transport no longer parks anywhere -- it stops where it stops.
+// Where the transport parks once it has stopped.
 //
-// It used to seek to a fixed point just before the note, which bought a
-// shorter key-press-to-note gap at the cost of eliding whatever lay between
-// there and where the sound actually stopped. Silence would have made that
-// free; a ringing chord does not, and these pieces are mostly ringing chords.
-//
-// The cost of dropping it is that the gap now equals the pause overrun,
-// roughly 65ms rather than 20ms. That is the honest price of not cutting the
-// audio, and it is well inside what felt wrong before.
+// Close to the note, because this distance is how long the player waits to
+// hear the note they just played, and that gap is the whole feel of the mode.
+// The elision it causes -- from wherever the pause overrun left the playhead
+// up to here -- is covered by the engine's fade: the join happens in silence
+// with a ramp either side, so what is skipped is the smooth middle of a decay
+// rather than an audible cut.
+const PARK_LEAD_SEC = 0.02;
 
 // How long after a note's onset a hit still counts as that note's, when Grace
 // is on and the transport is free-running.
@@ -1654,6 +1653,18 @@ function learnRegisterPlayed(pitch: number): void {
   }
 }
 
+/**
+ * Is `pitch` one the gate is currently holding the transport for?
+ *
+ * Only the group under the cursor: a note further along the chart is not one
+ * the recording is about to play, so the player pressing it early should still
+ * hear something.
+ */
+function learnExpectsPitch(pitch: number): boolean {
+  if (learnIdx >= learnGroups.length) return false;
+  return learnGroups[learnIdx].pitches.includes(pitch);
+}
+
 function learnGateTick(): void {
   if (!learnGroups.length) return;
 
@@ -1727,11 +1738,14 @@ function learnGateTick(): void {
       learnHit.clear();
     } else {
       transportController.pause();
-      // No seek. Pausing already leaves the playhead short of the note, and
-      // moving it afterwards splices two pieces of audio that were never
-      // adjacent -- roughly 45ms of the previous note's ring, elided. Under a
-      // sustain that reads as a stutter, which is the whole complaint. Resume
-      // continues from exactly where the sound stopped.
+      // Park close to the note so the recording answers the key press quickly.
+      //
+      // This elides the few tens of milliseconds between where the sound
+      // actually stopped and here. That used to matter; it does not now,
+      // because the join happens while the transport is faded out and stopped,
+      // and the engine ramps back in rather than switching. What is skipped is
+      // the smooth middle of a decay, and 5ms of ramp covers the seam.
+      transportController.seek(g.t - PARK_LEAD_SEC);
       learnWaiting = true;
       setAudioStatus(`Wait mode — play: ${g.pitches.map(learnNoteName).join(" + ")}`);
     }
@@ -2029,6 +2043,19 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
   }
 
   if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
+    // Not this one: the recording is about to play it.
+    //
+    // Wait mode holds the transport just short of a note and the player's key
+    // releases it, so the recording sounds that note a moment later. Sounding
+    // it here as well puts two attacks of the same pitch a few tens of
+    // milliseconds apart, which is a flam -- and a flam is exactly what a
+    // stutter sounds like. The chart's own part is already silenced in Wait
+    // mode for the same reason; this is the live half of it.
+    //
+    // A note that is NOT what the gate is waiting for still sounds, because
+    // nothing else is going to play it and a wrong note the player cannot hear
+    // is a wrong note they cannot correct.
+    if (learnMode && learnWaiting && learnExpectsPitch(pitch)) return;
     void invoke("piano_note_on", { pitch, velocity: msg.data2 ?? 80 }).catch((e) => {
       // Surfaced, not swallowed: a piano that cannot sound looked exactly like
       // one that was working, which is how a silent bug survived a build.
