@@ -4954,9 +4954,9 @@ def _runtime_note_payload_rejection(item: Any, index: int) -> str | None:
     instrument = item.get("instrument")
     if not isinstance(instrument, str) or not instrument.strip():
         return f"{label}.instrument must be a non-empty string"
-    for field, upper in (("string", 8), ("fret", 36)):
-        if field in item and _json_int(item.get(field), lo=0, hi=upper) is None:
-            return f"{label}.{field} must be an integer in [0, {upper}] when present"
+    for key, upper in (("string", 8), ("fret", 36)):
+        if key in item and _json_int(item.get(key), lo=0, hi=upper) is None:
+            return f"{label}.{key} must be an integer in [0, {upper}] when present"
     return None
 
 

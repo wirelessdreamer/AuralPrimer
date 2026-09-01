@@ -67,9 +67,9 @@ composes them and returns a report alongside the notes.
 from __future__ import annotations
 
 from bisect import bisect_left
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from aural_ingest.transcription import MelodicNote
 

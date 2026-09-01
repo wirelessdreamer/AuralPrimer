@@ -15,7 +15,6 @@ and emits a stderr notice when it had to rewrite the extension.
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest

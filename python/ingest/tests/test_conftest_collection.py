@@ -15,7 +15,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import pytest
 
 _CONFTEST = Path(__file__).with_name("conftest.py")
 
