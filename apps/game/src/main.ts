@@ -1412,19 +1412,26 @@ const GRACE_STORAGE_KEY = "auralprimer.graceMode";
 // not make the player better, it makes the app agree with them more often.
 const GRACE_WINDOW_SEC = 0.05;
 
-// How long the transport waits past a note's onset before deciding it was
-// missed and stopping the song.
+// How far before a note's onset Wait mode parks the transport.
+//
+// Far enough that the note's attack has not begun to sound, close enough that
+// the gap between pressing the key and hearing it stays under the threshold
+// where a player would read it as latency rather than as their own playing.
+const GATE_LEAD_SEC = 0.02;
+
+// How long after a note's onset a hit still counts as that note's, when Grace
+// is on and the transport is free-running.
 //
 // Separate from the scoring window, and four times longer, because the two
 // answer different questions. Scoring asks "was that on time?" — a judgement
-// worth keeping strict. This asks "should the song stop?" — and stopping the
-// music is a far heavier penalty than not scoring a note, so it earns much more
-// patience. Held at 50 ms the gate fired almost on the onset, and a hand a
-// fraction behind the beat stuttered the song rather than being carried by it.
+// worth keeping strict. This asks "was that this note at all?" — and refusing
+// to recognise a note the player clearly meant is a far heavier penalty than
+// not awarding it full marks, so it earns much more patience.
 //
-// It governs the gate ONLY. Retirement deliberately still follows the scoring
-// window: stretching that too would leave a note current long after it could
-// be scored, and starve the one behind it on fast passages.
+// It no longer governs the Wait-mode gate. It used to, and that was the bug:
+// holding the gate 200 ms past the onset meant the transport had to PLAY the
+// note to find out whether the player was late, which is precisely what Wait
+// mode exists to prevent.
 const GRACE_HOLDOFF_SEC = 0.2;
 // How early a hit still counts as this note's.
 //
@@ -1643,16 +1650,29 @@ function learnGateTick(): void {
     return;
   }
 
-  // With Grace on, hold off well past the onset — otherwise the gate stops the
-  // song at the onset and the forgiveness never gets a chance to apply.
-  const gateAt = graceMode ? g.t + GRACE_HOLDOFF_SEC : g.t - 0.02;
+  // Stop BEFORE the note sounds, always — Grace does not move this.
+  //
+  // In Wait mode the key press is what plays the note, so the transport must
+  // never get there on its own. Gating past the onset (which is what Grace
+  // used to do, by 200 ms) breaks that twice over: the recording plays the
+  // note the player has not played yet, and then, having established they were
+  // late, the transport rewinds to the onset and plays that same 200 ms again
+  // when they finally hit it. Every waited-on note came with its own attack
+  // heard twice.
+  //
+  // Grace still applies to whether a hit COUNTS -- see the accept window in
+  // learnRegisterPlayed. It just no longer decides where the music stops.
+  const gateAt = g.t - GATE_LEAD_SEC;
   if (!learnWaiting && st.isPlaying && st.t >= gateAt) {
     if (g.pitches.every((p) => learnHit.has(p))) {
       learnIdx += 1;
       learnHit.clear();
     } else {
       transportController.pause();
-      transportController.seek(g.t);
+      // Park exactly on the gate rather than on the onset. Resuming here gives
+      // the note's attack room to sound intact, and keeps the parked position
+      // deterministic instead of wherever the frame boundary happened to land.
+      transportController.seek(gateAt);
       learnWaiting = true;
       setAudioStatus(`Wait mode — play: ${g.pitches.map(learnNoteName).join(" + ")}`);
     }
