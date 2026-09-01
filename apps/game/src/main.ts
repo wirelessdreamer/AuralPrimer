@@ -163,6 +163,27 @@ function errorConsole(category: ConsoleLogCategory, message: string, details?: u
   consoleBridge.error(category, message, details);
 }
 
+// Uncaught errors reach the log, instead of only the devtools console nobody
+// has open.
+//
+// The bridge only ever mirrored calls someone remembered to make, so an
+// exception thrown while wiring the page left the log looking perfectly clean
+// while every control registered after the throw silently did nothing. A
+// backend log that says nothing is worse than no log, because it reads as
+// evidence that nothing is wrong.
+window.addEventListener("error", (ev) => {
+  const where = ev.filename ? ` (${ev.filename}:${ev.lineno}:${ev.colno})` : "";
+  errorConsole("debugging", `uncaught: ${ev.message}${where}`, ev.error?.stack);
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  const reason = ev.reason;
+  errorConsole(
+    "debugging",
+    `unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
+    reason instanceof Error ? reason.stack : undefined,
+  );
+});
+
 // setRoute / openPlaySongFlow / exitApplication + the 6 nav button listeners
 // live in routeController.ts (Phase 2.P). The route controller is constructed
 // further down (needs pauseMenu / songLibraryPanel handles which are built
@@ -1885,7 +1906,12 @@ async function ensurePianoPack(): Promise<boolean> {
   } catch (e) {
     // Absent pack is a normal state, not a failure: the sound pack ships
     // separately, so say what is missing rather than throwing.
-    setPianoStatus(`no piano pack installed (${String(e)})`);
+    const msg = String(e);
+    setPianoStatus(
+      msg.includes("not initialized")
+        ? "starting audio subsystem…"
+        : `no piano pack installed (${msg})`,
+    );
     return false;
   }
 }
@@ -1908,7 +1934,14 @@ async function sendPianoNotes(): Promise<void> {
     const count = await invoke<number>("piano_set_notes", { notes });
     if (pianoEnabledEl?.checked) setPianoStatus(`${count} notes ready`);
   } catch (e) {
-    setPianoStatus(`could not send notes: ${String(e)}`);
+    // Before a song's audio loads there is no engine yet, which is a stage of
+    // starting up rather than something going wrong. Saying "error" about the
+    // normal path teaches the player to ignore the line that will one day
+    // carry a real fault.
+    const msg = String(e);
+    setPianoStatus(
+      msg.includes("not initialized") ? "starting audio subsystem…" : `could not send notes: ${msg}`,
+    );
   }
 }
 
