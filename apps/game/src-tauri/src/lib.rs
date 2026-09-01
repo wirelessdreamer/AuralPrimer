@@ -24,6 +24,7 @@ pub mod demo_auralsong;
 pub mod ingest_sidecar;
 mod midi_clock;
 mod midi_clock_input;
+mod piano;
 mod mr_link;
 mod midi_clock_service;
 mod models;
@@ -221,6 +222,13 @@ struct MidiInputSavedSettings {
 #[derive(Default)]
 struct NativeAudioState {
     inner: native_audio::NativeAudioEngineState,
+    /// The loaded piano, kept here rather than only in the engine.
+    ///
+    /// Loading a song REPLACES the engine, which would silently take the
+    /// pack with it -- the piano would work until you picked a track and
+    /// then go quiet with nothing to say why. Held outside it and pushed
+    /// back in after every replacement, so it survives.
+    piano_pack: Mutex<Option<std::sync::Arc<piano::PianoPack>>>,
     selected_output_host: Mutex<Option<native_audio::NativeAudioHostSelection>>,
     selected_output_device: Mutex<Option<native_audio::NativeAudioDeviceSelection>>,
 }
@@ -870,6 +878,16 @@ fn replace_native_audio_engine(
     if let Some(old) = old {
         old.shutdown();
     }
+
+    // Give the fresh engine the piano back. It lives outside the engine for
+    // exactly this moment: without it, loading a song would leave the sampler
+    // holding nothing and the keys part would fall silent.
+    let pack = state.piano_pack.lock().unwrap().clone();
+    if let Some(pack) = pack {
+        if let Some(engine) = state.inner.engine.lock().unwrap().as_ref() {
+            let _ = engine.set_piano_pack(pack);
+        }
+    }
     Ok(())
 }
 
@@ -1223,6 +1241,119 @@ fn native_audio_get_state(
     state: tauri::State<NativeAudioState>,
 ) -> Result<native_audio::NativeAudioState, String> {
     with_native_engine(&state, |e| Ok(e.state()))
+}
+
+/// A note for the piano to play, as the frontend sends it.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PianoNoteReq {
+    t_on: f64,
+    t_off: f64,
+    pitch: u8,
+    #[serde(default)]
+    velocity: Option<u8>,
+}
+
+/// Where a piano pack lives: `<data>/soundpacks/<name>/piano.json`.
+///
+/// Beside the model packs rather than inside the app, for the same reason they
+/// are: it is tens of megabytes of licensed third-party audio, it changes on a
+/// different schedule from the code, and burying it in the binary would mean
+/// rebuilding the app to change a sound.
+fn piano_pack_dir(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    let paths = get_paths(app)?;
+    Ok(PathBuf::from(paths.data_dir)
+        .join("soundpacks")
+        .join(name))
+}
+
+/// Load a piano pack and hand it to the audio engine.
+///
+/// Decoding happens here, on the caller's thread, and only the finished pack
+/// crosses to the audio thread. Reading sixty megabytes of wav inside the
+/// render callback would drop every buffer until it finished.
+#[tauri::command]
+fn piano_load_pack(
+    app: AppHandle,
+    state: tauri::State<NativeAudioState>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    let dir = piano_pack_dir(&app, &name)?;
+    let pack = std::sync::Arc::new(piano::PianoPack::load(&dir)?);
+    let summary = serde_json::json!({
+        "name": pack.name,
+        "author": pack.author,
+        "license": pack.license,
+        "samples": pack.sample_count(),
+    });
+
+    // The engine only exists once a song's audio has been loaded, and the
+    // player may well press a key before choosing a track. Bring it up rather
+    // than reporting that it is missing.
+    if state.inner.engine.lock().unwrap().is_none() {
+        replace_native_audio_engine(&state, 48_000, 2)?;
+    }
+
+    *state.piano_pack.lock().unwrap() = Some(pack.clone());
+    with_native_engine(&state, |e| e.set_piano_pack(pack))?;
+    Ok(summary)
+}
+
+/// Give the piano the notes to play, in seconds; converted to frames here.
+#[tauri::command]
+fn piano_set_notes(
+    state: tauri::State<NativeAudioState>,
+    notes: Vec<PianoNoteReq>,
+) -> Result<usize, String> {
+    with_native_engine(&state, |e| {
+        let rate = e.state().sample_rate_hz.max(1) as f64;
+        let scheduled: Vec<piano::ScheduledNote> = notes
+            .iter()
+            .filter(|n| n.t_off > n.t_on && n.pitch > 0)
+            .map(|n| piano::ScheduledNote {
+                on_frame: (n.t_on.max(0.0) * rate) as u64,
+                off_frame: (n.t_off.max(0.0) * rate) as u64,
+                pitch: n.pitch,
+                // Charts carry a normalised velocity when they carry one at
+                // all; a missing value is a mezzo-forte rather than silence.
+                velocity: n.velocity.unwrap_or(80).clamp(1, 127),
+            })
+            .collect();
+        let count = scheduled.len();
+        e.set_piano_notes(scheduled)?;
+        Ok(count)
+    })
+}
+
+/// Sound a key the moment it is pressed.
+#[tauri::command]
+fn piano_note_on(
+    state: tauri::State<NativeAudioState>,
+    pitch: u8,
+    velocity: u8,
+) -> Result<(), String> {
+    with_native_engine(&state, |e| e.piano_note_on(pitch, velocity))
+}
+
+#[tauri::command]
+fn piano_note_off(state: tauri::State<NativeAudioState>, pitch: u8) -> Result<(), String> {
+    with_native_engine(&state, |e| e.piano_note_off(pitch))
+}
+
+/// How close two strikes of one pitch may be before the second is dropped.
+#[tauri::command]
+fn piano_set_grace_ms(state: tauri::State<NativeAudioState>, ms: f32) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_piano_grace_sec(ms / 1000.0))
+}
+
+#[tauri::command]
+fn piano_set_enabled(state: tauri::State<NativeAudioState>, enabled: bool) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_piano_enabled(enabled))
+}
+
+#[tauri::command]
+fn piano_set_gain(state: tauri::State<NativeAudioState>, gain: f32) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_piano_gain(gain))
 }
 
 #[tauri::command]
@@ -2406,6 +2537,13 @@ pub fn run() {
             native_audio_set_playback_rate,
             native_audio_get_state,
             native_audio_shutdown,
+            piano_load_pack,
+            piano_set_notes,
+            piano_set_enabled,
+            piano_set_gain,
+            piano_note_on,
+            piano_note_off,
+            piano_set_grace_ms,
             // stem+midi
             stem_midi_create_auralsong,
             ingest_import,

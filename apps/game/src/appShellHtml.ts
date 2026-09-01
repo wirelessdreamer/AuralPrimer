@@ -197,6 +197,12 @@ export function appShellHtml(): string {
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
 
                 <div class="stageBar">
+                  <div id="pianoHud" class="liveInputHud" aria-live="off">
+                    <span class="liveInputLabel">PIANO</span>
+                    <label class="meta"><input id="pianoEnabled" type="checkbox" /> Play the keys part</label>
+                    <input id="pianoGain" type="range" min="0" max="150" value="80" aria-label="Piano volume" />
+                    <span id="pianoStatus" class="liveInputChord"></span>
+                  </div>
                   <div id="playheadHud" class="liveInputHud" hidden aria-live="off">
                     <span class="liveInputLabel">TIME</span>
                     <span id="playheadClock" class="liveInputNotes"></span>

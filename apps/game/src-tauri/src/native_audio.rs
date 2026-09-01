@@ -66,6 +66,16 @@ pub struct NativeAudioDeviceInfo {
 
 #[derive(Debug)]
 enum EngineCommand {
+    /// A loaded piano pack. Decoded on the calling thread and moved here:
+    /// the pack is tens of megabytes and reading it on the audio thread
+    /// would drop every buffer for the duration.
+    SetPianoPack(std::sync::Arc<crate::piano::PianoPack>),
+    SetPianoNotes(Vec<crate::piano::ScheduledNote>),
+    SetPianoEnabled(bool),
+    SetPianoGain(f32),
+    PianoNoteOn { pitch: u8, velocity: u8 },
+    PianoNoteOff { pitch: u8 },
+    SetPianoGraceSec(f32),
     LoadPcm16 {
         wav: WavPcm16,
     },
@@ -101,6 +111,9 @@ struct EngineRuntimeState {
     // Pitch-preserving time-stretcher, engaged only when playback_rate != 1.
     // Lazily created on first non-unity rate; 1x playback never touches it.
     time_stretcher: Option<TimeStretcher>,
+
+    /// Sampled piano, mixed over the song from the chart's own notes.
+    piano: crate::piano::PianoEngine,
 }
 
 #[derive(Default)]
@@ -480,6 +493,7 @@ impl NativeAudioHandle {
         let transport = Transport::new(sample_rate_hz)?;
         let runtime = EngineRuntimeState {
             wav: None,
+            piano: crate::piano::PianoEngine::default(),
             source_frame_cursor: 0.0,
             transport,
             is_playing: false,
@@ -668,6 +682,36 @@ impl NativeAudioHandle {
                 data,
             },
         })
+    }
+
+    /// Hand the engine a decoded piano pack.
+    pub fn set_piano_pack(&self, pack: std::sync::Arc<crate::piano::PianoPack>) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoPack(pack))
+    }
+
+    /// Replace the notes the piano plays, in transport frames.
+    pub fn set_piano_notes(&self, notes: Vec<crate::piano::ScheduledNote>) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoNotes(notes))
+    }
+
+    pub fn set_piano_enabled(&self, on: bool) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoEnabled(on))
+    }
+
+    pub fn set_piano_gain(&self, gain: f32) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoGain(gain))
+    }
+
+    pub fn piano_note_on(&self, pitch: u8, velocity: u8) -> Result<(), String> {
+        self.enqueue(EngineCommand::PianoNoteOn { pitch, velocity })
+    }
+
+    pub fn piano_note_off(&self, pitch: u8) -> Result<(), String> {
+        self.enqueue(EngineCommand::PianoNoteOff { pitch })
+    }
+
+    pub fn set_piano_grace_sec(&self, sec: f32) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoGraceSec(sec))
     }
 
     pub fn play(&self) -> Result<(), String> {
@@ -946,6 +990,27 @@ fn apply_engine_command(
                 // length, only the per-track gain mix changed.
                 runtime.wav = Some(wav);
             }
+        }
+        EngineCommand::SetPianoPack(pack) => {
+            runtime.piano.set_pack(Some(pack));
+        }
+        EngineCommand::SetPianoNotes(notes) => {
+            runtime.piano.set_notes(notes);
+        }
+        EngineCommand::SetPianoEnabled(on) => {
+            runtime.piano.set_enabled(on);
+        }
+        EngineCommand::SetPianoGain(gain) => {
+            runtime.piano.set_gain(gain);
+        }
+        EngineCommand::PianoNoteOn { pitch, velocity } => {
+            runtime.piano.note_on(pitch, velocity);
+        }
+        EngineCommand::PianoNoteOff { pitch } => {
+            runtime.piano.note_off(pitch);
+        }
+        EngineCommand::SetPianoGraceSec(sec) => {
+            runtime.piano.set_grace_sec(sec);
         }
         EngineCommand::Play => {
             runtime.is_playing = true;
@@ -1321,7 +1386,25 @@ fn process_audio_callback_f32(
     let callback_t0 = Instant::now();
 
     drain_engine_commands(runtime, commands, engine_channels);
+
+    // Where the song is BEFORE this block is rendered. The piano schedules
+    // against it, so it has to be read before render_output_block moves it --
+    // afterwards it is the position of the block's end, and every note would
+    // start one buffer early.
+    let block_start_frame = runtime.transport.position_frames();
+    let playing = runtime.is_playing;
+
     render_output_block(runtime, out, engine_channels);
+
+    // Over the song, not instead of it: the piano is a cue laid on top. Only
+    // while the transport runs, or a paused song would keep playing its part.
+    // Always, not only while the transport runs: a live note is the player
+    // pressing a key, and they do that with the song stopped more often than
+    // not. The scheduled part gates itself on `enabled` inside.
+    runtime
+        .piano
+        .mix(out, engine_channels, block_start_frame, sample_rate_hz, playing);
+
     sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);
 
