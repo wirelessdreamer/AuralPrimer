@@ -54,6 +54,15 @@ def _module_imports(path: Path) -> bool:
         return True
     except (ImportError, ModuleNotFoundError):
         return False
+    except pytest.skip.Exception:
+        # A module-scope pytest.importorskip("...") for a dependency that is
+        # not installed. It means exactly what an ImportError here means, but
+        # it derives from BaseException rather than Exception, so it used to
+        # sail past both of these handlers and out of conftest entirely --
+        # taking the whole collection with it. CI has been skipping every
+        # ingest test since, while reporting a single red job that looked like
+        # one broken benchmark.
+        return False
     except Exception:  # noqa: BLE001 -- a non-import collection error should surface
         return True
 

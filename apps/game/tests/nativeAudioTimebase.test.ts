@@ -1365,4 +1365,39 @@ describe("NativeAudioTimebase", () => {
     (tb as unknown as { _lastOutputBufferFrames: number | null })._lastOutputBufferFrames = 256;
     expect(tb.getOutputLatencySec()).toBeUndefined();
   });
+  // The per-track mixer reads these to build its channel strips, so an engine
+  // that reports no roles has to come back as an empty list rather than
+  // something the UI will try to iterate.
+  it("exposes the stem roles the engine loaded", async () => {
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_load_auralsong_audio") {
+        return { mime: "audio/ogg", duration_sec: 12, roles: ["keys", "bass", "drums"] };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    expect(tb.getLoadedStemRoles()).toEqual([]);
+
+    await tb.loadFromAuralSong("C:/songs/demo.auralsong");
+    expect(tb.getLoadedStemRoles()).toEqual(["keys", "bass", "drums"]);
+  });
+
+  it("reports no stem roles for a single-stem load that omits them", async () => {
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_load_auralsong_audio") {
+        // A legacy/single-stem pack: the field is simply absent.
+        return { mime: "audio/ogg", duration_sec: 12 };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    await tb.loadFromAuralSong("C:/songs/legacy.auralsong");
+    expect(tb.getLoadedStemRoles()).toEqual([]);
+  });
 });
