@@ -163,6 +163,33 @@ function errorConsole(category: ConsoleLogCategory, message: string, details?: u
   consoleBridge.error(category, message, details);
 }
 
+// Uncaught errors reach the log, instead of only the devtools console nobody
+// has open.
+//
+// The bridge only ever mirrored calls someone remembered to make, so an
+// exception thrown while wiring the page left the log looking perfectly clean
+// while every control registered after the throw silently did nothing. A
+// backend log that says nothing is worse than no log, because it reads as
+// evidence that nothing is wrong.
+window.addEventListener("error", (ev) => {
+  // ResizeObserver's "loop completed with undelivered notifications" is a
+  // browser notice, not a fault: it means the observer rescheduled, which is
+  // exactly what it is meant to do when a layout settles over more than one
+  // frame. Reporting it buries the real entries under noise, which is how a
+  // clean-looking log stops being read at all.
+  if (ev.message?.includes("ResizeObserver loop")) return;
+  const where = ev.filename ? ` (${ev.filename}:${ev.lineno}:${ev.colno})` : "";
+  errorConsole("debugging", `uncaught: ${ev.message}${where}`, ev.error?.stack);
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  const reason = ev.reason;
+  errorConsole(
+    "debugging",
+    `unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
+    reason instanceof Error ? reason.stack : undefined,
+  );
+});
+
 // setRoute / openPlaySongFlow / exitApplication + the 6 nav button listeners
 // live in routeController.ts (Phase 2.P). The route controller is constructed
 // further down (needs pauseMenu / songLibraryPanel handles which are built
@@ -1043,6 +1070,11 @@ async function selectAuralSong(containerPath: string) {
           }
           if (selectedAuralSongPath === containerPath) {
             playStartBtn.disabled = false;
+            // Only now does the audio engine exist. Asking before this point
+            // always failed with "not initialized", and since nothing asked
+            // again the status sat on "starting audio subsystem" for the rest
+            // of the session -- describing a moment that had long passed.
+            void sendPianoNotes();
           }
         });
       selectedSongPreloadPromise = preload;
@@ -1050,6 +1082,9 @@ async function selectAuralSong(containerPath: string) {
       void preload;
     } else {
       setAudioStatus(`selected auralsong: ${containerPath}\naudio ready`);
+      // Same song, audio already in the engine: the notes still have to follow
+      // the selection, and the engine is ready to take them now.
+      void sendPianoNotes();
     }
   } catch (e) {
     songLibraryPanel.setDetailsHTML(`<pre class="error">${escapeHtml(String(e))}</pre>`);
@@ -1412,19 +1447,43 @@ const GRACE_STORAGE_KEY = "auralprimer.graceMode";
 // not make the player better, it makes the app agree with them more often.
 const GRACE_WINDOW_SEC = 0.05;
 
-// How long the transport waits past a note's onset before deciding it was
-// missed and stopping the song.
+// How far before a note's onset Wait mode DECIDES to stop.
+//
+// Deciding is not stopping. Between the two sits a whole latency chain: the
+// gate runs once a frame (up to ~17 ms of quantisation), pause() is an async
+// IPC call into the Rust engine, the command waits for the next audio callback
+// (~11 ms at 512 frames / 48 kHz), and the output buffer already handed to the
+// device plays out regardless (the playhead compensates two buffers, ~21 ms).
+// Forty to fifty milliseconds of music sounds after the decision is made.
+//
+// A 20 ms lead was inside that, which is why notes still sounded before the
+// player played them: the gate fired in time and the audio did not stop in
+// time. This has to clear the whole chain with room to spare.
+const GATE_LEAD_SEC = 0.12;
+
+// Where the transport parks once it has stopped.
+//
+// Deliberately much closer to the note than the gate, and reached by seeking
+// FORWARD from wherever the overrun actually left the playhead. Parking back
+// at the gate point would replay whatever was heard during the overrun --
+// the doubled attack this mode started out with. Parking here costs a small
+// skip of pre-note audio instead, and keeps the gap between key press and
+// note short enough to feel like playing rather than like latency.
+const PARK_LEAD_SEC = 0.02;
+
+// How long after a note's onset a hit still counts as that note's, when Grace
+// is on and the transport is free-running.
 //
 // Separate from the scoring window, and four times longer, because the two
 // answer different questions. Scoring asks "was that on time?" — a judgement
-// worth keeping strict. This asks "should the song stop?" — and stopping the
-// music is a far heavier penalty than not scoring a note, so it earns much more
-// patience. Held at 50 ms the gate fired almost on the onset, and a hand a
-// fraction behind the beat stuttered the song rather than being carried by it.
+// worth keeping strict. This asks "was that this note at all?" — and refusing
+// to recognise a note the player clearly meant is a far heavier penalty than
+// not awarding it full marks, so it earns much more patience.
 //
-// It governs the gate ONLY. Retirement deliberately still follows the scoring
-// window: stretching that too would leave a note current long after it could
-// be scored, and starve the one behind it on fast passages.
+// It no longer governs the Wait-mode gate. It used to, and that was the bug:
+// holding the gate 200 ms past the onset meant the transport had to PLAY the
+// note to find out whether the player was late, which is precisely what Wait
+// mode exists to prevent.
 const GRACE_HOLDOFF_SEC = 0.2;
 // How early a hit still counts as this note's.
 //
@@ -1643,16 +1702,31 @@ function learnGateTick(): void {
     return;
   }
 
-  // With Grace on, hold off well past the onset — otherwise the gate stops the
-  // song at the onset and the forgiveness never gets a chance to apply.
-  const gateAt = graceMode ? g.t + GRACE_HOLDOFF_SEC : g.t - 0.02;
-  if (!learnWaiting && st.isPlaying && st.t >= gateAt) {
+  // Stop BEFORE the note sounds, always — Grace does not move this.
+  //
+  // In Wait mode the key press is what plays the note, so the transport must
+  // never get there on its own. Gating past the onset (which is what Grace
+  // used to do, by 200 ms) breaks that twice over: the recording plays the
+  // note the player has not played yet, and then, having established they were
+  // late, the transport rewinds to the onset and plays that same 200 ms again
+  // when they finally hit it. Every waited-on note came with its own attack
+  // heard twice.
+  //
+  // Grace still applies to whether a hit COUNTS -- see the accept window in
+  // learnRegisterPlayed. It just no longer decides where the music stops.
+  const gateAt = g.t - GATE_LEAD_SEC;
+  // Groups closer together than the lead would gate before the previous one
+  // was released, so a fast run would stop on a note it had already passed.
+  // Never gate earlier than the note behind it.
+  const prev = learnIdx > 0 ? learnGroups[learnIdx - 1] : null;
+  const gateFloor = prev ? prev.t : Number.NEGATIVE_INFINITY;
+  if (!learnWaiting && st.isPlaying && st.t >= Math.max(gateAt, gateFloor)) {
     if (g.pitches.every((p) => learnHit.has(p))) {
       learnIdx += 1;
       learnHit.clear();
     } else {
       transportController.pause();
-      transportController.seek(g.t);
+      transportController.seek(g.t - PARK_LEAD_SEC);
       learnWaiting = true;
       setAudioStatus(`Wait mode — play: ${g.pitches.map(learnNoteName).join(" + ")}`);
     }
@@ -1669,6 +1743,10 @@ if (learnCheckbox) {
     } catch {
       // best-effort
     }
+    // In Wait mode the song only moves when the player plays, so the chart
+    // playing itself would be answering its own question. Their keys still
+    // sound; the chart just stops covering for them.
+    void applyPianoSchedule();
     if (learnMode) {
       buildLearnGroups();
     } else if (learnWaiting) {
@@ -1754,6 +1832,9 @@ const liveInputHudEl = document.getElementById("liveInputHud");
 const liveInputNotesEl = document.getElementById("liveInputNotes");
 const liveInputChordEl = document.getElementById("liveInputChord");
 const playheadHudEl = document.getElementById("playheadHud");
+const pianoEnabledEl = document.getElementById("pianoEnabled") as HTMLInputElement | null;
+const pianoGainEl = document.getElementById("pianoGain") as HTMLInputElement | null;
+const pianoStatusEl = document.getElementById("pianoStatus");
 const playheadClockEl = document.getElementById("playheadClock");
 const playheadDetailEl = document.getElementById("playheadDetail");
 const LIVE_INPUT_HUD_INTERVAL_MS = 60;
@@ -1832,6 +1913,8 @@ function renderPlayheadHud(): void {
   if (playheadClockEl.textContent !== text) playheadClockEl.textContent = text;
 
   if (playheadDetailEl) {
+    // Null whenever the web timebase is in use: the readout is a diagnostic,
+    // so it degrades to blanks rather than throwing inside a render tick.
     const enginePos = nativeTimebase?.getCurrentTimeSec?.();
     const latencyMs = (nativeTimebase?.getOutputLatencySec?.() ?? 0) * 1000;
     const avMs = getEffectiveOffsetMs();
@@ -1842,6 +1925,151 @@ function renderPlayheadHud(): void {
     if (playheadDetailEl.textContent !== detail) playheadDetailEl.textContent = detail;
   }
 }
+
+// --- Sampled piano -------------------------------------------------------
+//
+// The chart already knows every note; this plays it, so a part can be heard
+// even when the song has no rendered stem for it -- which is every chart that
+// came from MIDI rather than from a recording.
+
+/** Loaded once. The pack is tens of megabytes and does not change per song. */
+let pianoPackLoaded = false;
+
+/** True once the pack is in the engine, so key presses can sound. */
+let pianoLiveReady = false;
+
+function setPianoStatus(text: string): void {
+  if (pianoStatusEl && pianoStatusEl.textContent !== text) pianoStatusEl.textContent = text;
+}
+
+async function ensurePianoPack(): Promise<boolean> {
+  if (pianoPackLoaded) return true;
+  try {
+    const info = await invoke<{ name: string; license: string; samples: number }>(
+      "piano_load_pack",
+      { name: "salamander" },
+    );
+    pianoPackLoaded = true;
+    pianoLiveReady = true;
+    // One pitch may only sound once inside this window, whoever played it.
+    void invoke("piano_set_grace_ms", { ms: 80 }).catch(() => {});
+    setPianoStatus(`${info.name} · ${info.samples} samples · ${info.license}`);
+    return true;
+  } catch (e) {
+    // Absent pack is a normal state, not a failure: the sound pack ships
+    // separately, so say what is missing rather than throwing.
+    const msg = String(e);
+    setPianoStatus(
+      msg.includes("not initialized")
+        ? "starting audio subsystem…"
+        : `no piano pack installed (${msg})`,
+    );
+    return false;
+  }
+}
+
+/** Give the engine the current song's keys part. */
+async function sendPianoNotes(): Promise<void> {
+  const track =
+    selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+  if (!track) {
+    void invoke("piano_set_notes", { notes: [] }).catch(() => {});
+    return;
+  }
+  const notes = track.notes.map((n) => ({
+    tOn: n.t_on,
+    tOff: n.t_off,
+    pitch: Math.round(n.pitch),
+    velocity: Math.max(1, Math.min(127, Math.round((n.velocity ?? 0.63) * 127))),
+  }));
+  try {
+    const count = await invoke<number>("piano_set_notes", { notes });
+    if (pianoEnabledEl?.checked) setPianoStatus(`${count} notes ready`);
+  } catch (e) {
+    // Before a song's audio loads there is no engine yet, which is a stage of
+    // starting up rather than something going wrong. Saying "error" about the
+    // normal path teaches the player to ignore the line that will one day
+    // carry a real fault.
+    const msg = String(e);
+    setPianoStatus(
+      msg.includes("not initialized") ? "starting audio subsystem…" : `could not send notes: ${msg}`,
+    );
+  }
+}
+
+// Sound the keys the player actually presses.
+//
+// Driven by the midi-input event rather than by polling the active-note set:
+// the poll runs on a timer, so every note would land up to a tick late and all
+// the notes in a chord would land on whichever tick caught them. For something
+// you play, that is the difference between an instrument and a delay.
+//
+// A note-on with zero velocity is a note-off -- the running-status form most
+// controllers actually send, and treating it as a strike leaves the key stuck
+// on forever.
+window.addEventListener("auralprimer:midi-input", (ev) => {
+  const msg = (ev as CustomEvent<{ message_type: string; data1?: number | null; data2?: number | null }>).detail;
+  const pitch = msg?.data1;
+  if (typeof pitch !== "number") return;
+  if (msg.message_type !== "note_on" && msg.message_type !== "note_off") return;
+
+  // Load on first touch rather than at startup or on a checkbox. Sixty
+  // megabytes is too much to read before anyone has asked for a sound, and
+  // requiring a tick first means the obvious thing -- press a key, hear a
+  // piano -- silently does nothing. The first note is lost while it loads;
+  // every one after it plays.
+  if (!pianoLiveReady) {
+    void ensurePianoPack();
+    return;
+  }
+
+  if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
+    void invoke("piano_note_on", { pitch, velocity: msg.data2 ?? 80 }).catch((e) => {
+      // Surfaced, not swallowed: a piano that cannot sound looked exactly like
+      // one that was working, which is how a silent bug survived a build.
+      setPianoStatus(`piano: ${String(e)}`);
+    });
+  } else if (msg.message_type === "note_off" || msg.message_type === "note_on") {
+    void invoke("piano_note_off", { pitch }).catch(() => {});
+  }
+});
+
+/**
+ * Whether the chart should play its own part right now.
+ *
+ * Two conditions, not one: the checkbox asks for it, and Wait mode forbids it.
+ * Wait mode advances only when the player plays, so a chart playing itself
+ * would be prompting and answering at the same time.
+ */
+async function applyPianoSchedule(): Promise<void> {
+  const on = !!pianoEnabledEl?.checked && !learnMode;
+  await invoke("piano_set_enabled", { enabled: on }).catch(() => {});
+  if (on) await sendPianoNotes();
+}
+
+pianoEnabledEl?.addEventListener("change", () => {
+  const on = !!pianoEnabledEl.checked;
+  void (async () => {
+    if (on && !(await ensurePianoPack())) {
+      pianoEnabledEl.checked = false;
+      return;
+    }
+    await applyPianoSchedule();
+    if (on) {
+      // nothing further: applyPianoSchedule already sent the notes
+    } else {
+      // The pack stays loaded: the checkbox governs whether the CHART plays
+      // itself, not whether the player's own keys make a sound. Report what is
+      // actually loaded rather than asserting what will happen.
+      setPianoStatus(pianoLiveReady ? "chart part off · your keys still sound" : "no piano loaded");
+    }
+  })();
+});
+
+pianoGainEl?.addEventListener("input", () => {
+  const gain = Number(pianoGainEl.value) / 100;
+  void invoke("piano_set_gain", { gain }).catch(() => {});
+});
 
 renderPlayheadHud();
 window.setInterval(renderPlayheadHud, LIVE_INPUT_HUD_INTERVAL_MS);

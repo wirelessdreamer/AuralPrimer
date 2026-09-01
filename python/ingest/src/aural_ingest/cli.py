@@ -7811,6 +7811,9 @@ def build_parser() -> argparse.ArgumentParser:
     s_import_xml.add_argument("input_musicxml_path")
     s_import_xml.add_argument("--out", required=True, help="output directory for <stem>.feedpak")
     s_import_xml.add_argument("--audio", default="", help="audio to attach (defaults to a render beside the score)")
+    s_import_xml.add_argument("--no-align", action="store_true", dest="no_align",
+                              help="attach the render as-is instead of measuring and "
+                                   "trimming the lead-in the DAW transport left on it")
     s_import_xml.add_argument("--title", default="")
     s_import_xml.add_argument("--artist", default="")
     s_import_xml.add_argument("--genre", default="", help="Free-text genre, for library filtering.")
