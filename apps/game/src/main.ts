@@ -1412,12 +1412,29 @@ const GRACE_STORAGE_KEY = "auralprimer.graceMode";
 // not make the player better, it makes the app agree with them more often.
 const GRACE_WINDOW_SEC = 0.05;
 
-// How far before a note's onset Wait mode parks the transport.
+// How far before a note's onset Wait mode DECIDES to stop.
 //
-// Far enough that the note's attack has not begun to sound, close enough that
-// the gap between pressing the key and hearing it stays under the threshold
-// where a player would read it as latency rather than as their own playing.
-const GATE_LEAD_SEC = 0.02;
+// Deciding is not stopping. Between the two sits a whole latency chain: the
+// gate runs once a frame (up to ~17 ms of quantisation), pause() is an async
+// IPC call into the Rust engine, the command waits for the next audio callback
+// (~11 ms at 512 frames / 48 kHz), and the output buffer already handed to the
+// device plays out regardless (the playhead compensates two buffers, ~21 ms).
+// Forty to fifty milliseconds of music sounds after the decision is made.
+//
+// A 20 ms lead was inside that, which is why notes still sounded before the
+// player played them: the gate fired in time and the audio did not stop in
+// time. This has to clear the whole chain with room to spare.
+const GATE_LEAD_SEC = 0.12;
+
+// Where the transport parks once it has stopped.
+//
+// Deliberately much closer to the note than the gate, and reached by seeking
+// FORWARD from wherever the overrun actually left the playhead. Parking back
+// at the gate point would replay whatever was heard during the overrun --
+// the doubled attack this mode started out with. Parking here costs a small
+// skip of pre-note audio instead, and keeps the gap between key press and
+// note short enough to feel like playing rather than like latency.
+const PARK_LEAD_SEC = 0.02;
 
 // How long after a note's onset a hit still counts as that note's, when Grace
 // is on and the transport is free-running.
@@ -1663,16 +1680,18 @@ function learnGateTick(): void {
   // Grace still applies to whether a hit COUNTS -- see the accept window in
   // learnRegisterPlayed. It just no longer decides where the music stops.
   const gateAt = g.t - GATE_LEAD_SEC;
-  if (!learnWaiting && st.isPlaying && st.t >= gateAt) {
+  // Groups closer together than the lead would gate before the previous one
+  // was released, so a fast run would stop on a note it had already passed.
+  // Never gate earlier than the note behind it.
+  const prev = learnIdx > 0 ? learnGroups[learnIdx - 1] : null;
+  const gateFloor = prev ? prev.t : Number.NEGATIVE_INFINITY;
+  if (!learnWaiting && st.isPlaying && st.t >= Math.max(gateAt, gateFloor)) {
     if (g.pitches.every((p) => learnHit.has(p))) {
       learnIdx += 1;
       learnHit.clear();
     } else {
       transportController.pause();
-      // Park exactly on the gate rather than on the onset. Resuming here gives
-      // the note's attack room to sound intact, and keeps the parked position
-      // deterministic instead of wherever the frame boundary happened to land.
-      transportController.seek(gateAt);
+      transportController.seek(g.t - PARK_LEAD_SEC);
       learnWaiting = true;
       setAudioStatus(`Wait mode — play: ${g.pitches.map(learnNoteName).join(" + ")}`);
     }
