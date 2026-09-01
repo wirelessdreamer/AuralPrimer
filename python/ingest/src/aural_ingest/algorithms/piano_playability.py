@@ -67,7 +67,7 @@ composes them and returns a report alongside the notes.
 from __future__ import annotations
 
 from bisect import bisect_left
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
@@ -974,7 +974,14 @@ class SalienceContext:
     beats: BeatGrid = BeatGrid()
     melody: frozenset[tuple[float, int]] = frozenset()
     motif: frozenset[tuple[float, int]] = frozenset()
-    provenance: Mapping[tuple[float, int], Sequence[str]] = MappingProxyType({})
+    # default_factory, not a bare MappingProxyType({}). Python 3.12 accepts a
+    # mappingproxy as a dataclass default and 3.11 rejects it outright, so the
+    # bare form imports fine on a 3.13 dev machine and raises at collection on
+    # the 3.11 runner. Nobody saw it because CI was not collecting these tests
+    # at all.
+    provenance: Mapping[tuple[float, int], Sequence[str]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
     primary_source: str = "primary"
 
 
