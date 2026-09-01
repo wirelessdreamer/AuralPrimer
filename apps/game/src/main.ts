@@ -172,6 +172,12 @@ function errorConsole(category: ConsoleLogCategory, message: string, details?: u
 // backend log that says nothing is worse than no log, because it reads as
 // evidence that nothing is wrong.
 window.addEventListener("error", (ev) => {
+  // ResizeObserver's "loop completed with undelivered notifications" is a
+  // browser notice, not a fault: it means the observer rescheduled, which is
+  // exactly what it is meant to do when a layout settles over more than one
+  // frame. Reporting it buries the real entries under noise, which is how a
+  // clean-looking log stops being read at all.
+  if (ev.message?.includes("ResizeObserver loop")) return;
   const where = ev.filename ? ` (${ev.filename}:${ev.lineno}:${ev.colno})` : "";
   errorConsole("debugging", `uncaught: ${ev.message}${where}`, ev.error?.stack);
 });
@@ -981,7 +987,6 @@ async function selectAuralSong(containerPath: string) {
       selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
     songDetailsView.setHudKeyMode(details.manifest_raw, keyTrack?.notes ?? null, keyModeArtifacts);
     if (learnMode) buildLearnGroups();
-    void sendPianoNotes();
 
     // Chord names for the roll, from the same track the piano surface renders.
     const chordTrack =
@@ -1065,6 +1070,11 @@ async function selectAuralSong(containerPath: string) {
           }
           if (selectedAuralSongPath === containerPath) {
             playStartBtn.disabled = false;
+            // Only now does the audio engine exist. Asking before this point
+            // always failed with "not initialized", and since nothing asked
+            // again the status sat on "starting audio subsystem" for the rest
+            // of the session -- describing a moment that had long passed.
+            void sendPianoNotes();
           }
         });
       selectedSongPreloadPromise = preload;
@@ -1072,6 +1082,9 @@ async function selectAuralSong(containerPath: string) {
       void preload;
     } else {
       setAudioStatus(`selected auralsong: ${containerPath}\naudio ready`);
+      // Same song, audio already in the engine: the notes still have to follow
+      // the selection, and the engine is ready to take them now.
+      void sendPianoNotes();
     }
   } catch (e) {
     songLibraryPanel.setDetailsHTML(`<pre class="error">${escapeHtml(String(e))}</pre>`);
