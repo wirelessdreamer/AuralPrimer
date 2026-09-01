@@ -114,6 +114,16 @@ struct EngineRuntimeState {
 
     /// Sampled piano, mixed over the song from the chart's own notes.
     piano: crate::piano::PianoEngine,
+
+    /// Song gain, ramped rather than switched, so starting and stopping the
+    /// transport does not cut the waveform mid-cycle.
+    ///
+    /// Pause used to set `is_playing = false` and the very next block was
+    /// silence. From full amplitude to zero between one sample and the next is
+    /// a step, and a step is a click -- one on stop and another on start. In
+    /// Wait mode that happens at every single note, which is what the
+    /// remaining "stutter" turned out to be once the timing was right.
+    transport_gain: f32,
 }
 
 #[derive(Default)]
@@ -500,6 +510,7 @@ impl NativeAudioHandle {
             playback_rate: 1.0,
             loop_region: None,
             time_stretcher: None,
+            transport_gain: 0.0,
         };
 
         let snapshot = Arc::new(EngineSnapshot::default());
@@ -1041,6 +1052,61 @@ fn apply_engine_command(
     }
 }
 
+/// Milliseconds of ramp on transport start and stop.
+///
+/// Long enough to remove the step that makes the click, short enough that the
+/// music still starts when the player's key does -- at five milliseconds the
+/// ramp is under the ear's resolution for onset timing while being far longer
+/// than the single-sample edge that caused the problem.
+const TRANSPORT_FADE_MS: f32 = 5.0;
+
+/// Move `transport_gain` toward its target across this block, in place.
+fn apply_transport_fade(
+    runtime: &mut EngineRuntimeState,
+    out: &mut [f32],
+    channels: usize,
+    sample_rate_hz: u32,
+) {
+    let target: f32 = if runtime.is_playing { 1.0 } else { 0.0 };
+    let frames = out.len() / channels.max(1);
+    if frames == 0 {
+        return;
+    }
+
+    // Already settled: no per-sample work, and no rounding drift from ramping
+    // toward a value we are already at.
+    if (runtime.transport_gain - target).abs() <= f32::EPSILON {
+        if target < 1.0 {
+            out.fill(0.0);
+        }
+        return;
+    }
+
+    let fade_frames = ((TRANSPORT_FADE_MS / 1000.0) * sample_rate_hz as f32).max(1.0);
+    let step = 1.0 / fade_frames;
+
+    let mut gain = runtime.transport_gain;
+    for frame in 0..frames {
+        gain = if gain < target {
+            (gain + step).min(target)
+        } else {
+            (gain - step).max(target)
+        };
+        // Settle rather than creep. 240 additions of 1/240 do not land exactly
+        // on the target in f32 -- the residue here measured 7.9e-7, which is
+        // inaudible but would keep this function doing per-sample work forever
+        // on a transport that has finished moving.
+        if (gain - target).abs() < 1e-5 {
+            gain = target;
+        }
+        let base = frame * channels;
+        for ch in 0..channels {
+            out[base + ch] *= gain;
+        }
+    }
+    runtime.transport_gain = gain;
+}
+
 fn drain_engine_commands(
     runtime: &mut EngineRuntimeState,
     commands: &mut Consumer<EngineCommand>,
@@ -1254,7 +1320,10 @@ fn render_output_block(runtime: &mut EngineRuntimeState, out: &mut [f32], channe
         return 0;
     }
 
-    if !runtime.is_playing {
+    // Silence only once the fade has actually reached zero. Cutting here the
+    // moment `is_playing` clears is what made the click: the last block still
+    // held full-amplitude samples.
+    if !runtime.is_playing && runtime.transport_gain <= 0.0 {
         out.fill(0.0);
         return 0;
     }
@@ -1395,6 +1464,12 @@ fn process_audio_callback_f32(
     let playing = runtime.is_playing;
 
     render_output_block(runtime, out, engine_channels);
+
+    // Ramp the song in and out rather than switching it. Applied here, between
+    // the song and the piano, so it moves only the recording: a live note is
+    // the player's finger on a key and has nothing to do with whether the
+    // transport is running.
+    apply_transport_fade(runtime, out, engine_channels, sample_rate_hz);
 
     // Over the song, not instead of it: the piano is a cue laid on top. Only
     // while the transport runs, or a paused song would keep playing its part.
@@ -1842,7 +1917,92 @@ mod tests {
             playback_rate: 1.0,
             loop_region: None,
             time_stretcher: None,
+            piano: crate::piano::PianoEngine::default(),
+            // Resting at zero, like a freshly built engine. The fade is applied
+            // by the block mixer above render_output_block, so this value never
+            // scales what these tests measure -- it only decides whether a
+            // paused render is already silent or still has a tail to emit.
+            transport_gain: 0.0,
         }
+    }
+
+    // ---- transport fade -------------------------------------------------
+    //
+    // The click these guard against is a step from full amplitude to zero
+    // between one sample and the next, on every pause and every resume. In
+    // Wait mode that is two per note.
+
+    #[test]
+    fn pausing_ramps_the_song_down_instead_of_cutting_it() {
+        let mut rt = mk_runtime(48_000);
+        rt.transport_gain = 1.0;
+        rt.is_playing = false;
+        let mut out = vec![1.0f32; 64 * 2];
+
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+
+        // Descending, and crucially the FIRST sample is not already zero --
+        // that is the step that clicked.
+        assert!(out[0] > 0.0, "first sample cut to silence: {}", out[0]);
+        assert!(out[0] < 1.0, "no attenuation applied at all");
+        assert!(out[out.len() - 2] < out[0], "gain did not descend");
+        assert!(rt.transport_gain < 1.0);
+    }
+
+    #[test]
+    fn resuming_ramps_the_song_up_from_silence() {
+        let mut rt = mk_runtime(48_000);
+        rt.transport_gain = 0.0;
+        rt.is_playing = true;
+        let mut out = vec![1.0f32; 64 * 2];
+
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+
+        assert!(out[0] < out[out.len() - 2], "gain did not ascend");
+        assert!(rt.transport_gain > 0.0);
+    }
+
+    #[test]
+    fn a_settled_transport_leaves_the_block_alone() {
+        // Steady-state playback must not be touched sample by sample, and must
+        // not drift below unity through repeated ramping toward a value it is
+        // already at.
+        let mut rt = mk_runtime(48_000);
+        rt.transport_gain = 1.0;
+        rt.is_playing = true;
+        let mut out = vec![0.5f32; 32 * 2];
+
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+
+        assert!(out.iter().all(|v| (*v - 0.5).abs() < f32::EPSILON));
+        assert_eq!(rt.transport_gain, 1.0);
+    }
+
+    #[test]
+    fn a_settled_pause_stays_silent() {
+        let mut rt = mk_runtime(48_000);
+        rt.transport_gain = 0.0;
+        rt.is_playing = false;
+        let mut out = vec![0.7f32; 32 * 2];
+
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+
+        assert!(out.iter().all(|v| *v == 0.0), "paused output leaked audio");
+    }
+
+    #[test]
+    fn the_fade_completes_within_its_stated_duration() {
+        // 5ms at 48kHz is 240 frames; one block of that length must finish the
+        // ramp, or a pause would trail audibly instead of stopping.
+        let mut rt = mk_runtime(48_000);
+        rt.transport_gain = 1.0;
+        rt.is_playing = false;
+        let frames = ((TRANSPORT_FADE_MS / 1000.0) * 48_000.0) as usize;
+        let mut out = vec![1.0f32; frames * 2];
+
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+
+        assert_eq!(rt.transport_gain, 0.0, "fade did not reach silence");
     }
 
     #[test]

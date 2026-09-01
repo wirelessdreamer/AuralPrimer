@@ -1461,15 +1461,16 @@ const GRACE_WINDOW_SEC = 0.05;
 // time. This has to clear the whole chain with room to spare.
 const GATE_LEAD_SEC = 0.12;
 
-// Where the transport parks once it has stopped.
+// The transport no longer parks anywhere -- it stops where it stops.
 //
-// Deliberately much closer to the note than the gate, and reached by seeking
-// FORWARD from wherever the overrun actually left the playhead. Parking back
-// at the gate point would replay whatever was heard during the overrun --
-// the doubled attack this mode started out with. Parking here costs a small
-// skip of pre-note audio instead, and keeps the gap between key press and
-// note short enough to feel like playing rather than like latency.
-const PARK_LEAD_SEC = 0.02;
+// It used to seek to a fixed point just before the note, which bought a
+// shorter key-press-to-note gap at the cost of eliding whatever lay between
+// there and where the sound actually stopped. Silence would have made that
+// free; a ringing chord does not, and these pieces are mostly ringing chords.
+//
+// The cost of dropping it is that the gap now equals the pause overrun,
+// roughly 65ms rather than 20ms. That is the honest price of not cutting the
+// audio, and it is well inside what felt wrong before.
 
 // How long after a note's onset a hit still counts as that note's, when Grace
 // is on and the transport is free-running.
@@ -1726,7 +1727,11 @@ function learnGateTick(): void {
       learnHit.clear();
     } else {
       transportController.pause();
-      transportController.seek(g.t - PARK_LEAD_SEC);
+      // No seek. Pausing already leaves the playhead short of the note, and
+      // moving it afterwards splices two pieces of audio that were never
+      // adjacent -- roughly 45ms of the previous note's ring, elided. Under a
+      // sustain that reads as a stutter, which is the whole complaint. Resume
+      // continues from exactly where the sound stopped.
       learnWaiting = true;
       setAudioStatus(`Wait mode — play: ${g.pitches.map(learnNoteName).join(" + ")}`);
     }
