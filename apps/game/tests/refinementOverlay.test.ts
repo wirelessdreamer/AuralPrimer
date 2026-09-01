@@ -144,9 +144,24 @@ describe("main.ts wiring (source-level pin)", () => {
 
   it("songChartLoader calls loadRefinementsForRoles + applies overlay into melodicTracks", () => {
     // Compose-and-return shape (Phase 2.T) — caller assigns the result.
-    expect(chartSrc).toMatch(
-      /(?:const|let)\s+melodicTracks\s*=\s*applyRefinementsToMelodicTracks\s*\(\s*baseMelodicTracks\s*,\s*refinements\s*\)/
-    );
+    //
+    // The binding is matched by suffix rather than by exact name. It was
+    // pinned to `melodicTracks` and a fingering stage was later inserted
+    // between the overlay and the final tracks, so the overlay's result became
+    // `refinedMelodicTracks` -- a rename that broke the pin while the
+    // behaviour it guards was not just intact but extended.
+    const overlayBinding =
+      /(?:const|let)\s+(\w*[Mm]elodicTracks)\s*=\s*applyRefinementsToMelodicTracks\s*\(\s*baseMelodicTracks\s*,\s*refinements\s*\)/;
+    expect(chartSrc).toMatch(overlayBinding);
+
+    // And the result has to actually go somewhere. The old pin checked only
+    // that the call happened and would have passed just as happily if its
+    // value were thrown away, which is the failure it existed to catch.
+    const bound = chartSrc.match(overlayBinding)?.[1] ?? "";
+    expect(bound).toBeTruthy();
+    const finalAssignment = chartSrc.indexOf("const melodicTracks =");
+    expect(finalAssignment).toBeGreaterThan(-1);
+    expect(chartSrc.slice(finalAssignment, finalAssignment + 400)).toContain(bound);
     // The loader call must pass a warn callback so invalid files don't get
     // silently swallowed (they shouldn't be fatal, but they must surface).
     expect(chartSrc).toMatch(
