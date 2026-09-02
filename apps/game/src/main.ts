@@ -1942,6 +1942,86 @@ function formatPlayhead(sec: number): string {
  * it believes is audible, and drift between those is exactly what a
  * sync complaint is about. Showing only the answer hides the disagreement.
  */
+// --- Song scrub bar ---------------------------------------------------------
+//
+// Driven from the same tick as the playhead readout, so the thumb and the
+// clock can never disagree. Two rules make a scrubber feel right and both are
+// about who owns the value: while the user is dragging, the tick must not
+// write over their thumb; and the seek must land on release rather than on
+// every intermediate frame, or a drag across a long song issues hundreds of
+// seeks and the engine spends the whole gesture catching up.
+const songScrubEl = document.getElementById("songScrub") as HTMLElement | null;
+const songScrubRangeEl = document.getElementById("songScrubRange") as HTMLInputElement | null;
+const songScrubNowEl = document.getElementById("songScrubNow");
+const songScrubTotalEl = document.getElementById("songScrubTotal");
+const SCRUB_STEPS = 1000;
+
+let scrubbing = false;
+
+function scrubDurationSec(): number {
+  // From the timebase, not the transport state: the state carries the playhead
+  // and the web timebase has no duration at all, so the bar hides itself
+  // rather than scaling against a zero it would have to special-case anyway.
+  const d = nativeTimebase?.getDurationSec?.() ?? 0;
+  return Number.isFinite(d) && d > 0 ? d : 0;
+}
+
+function formatClock(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function seekFromScrub(): void {
+  if (!songScrubRangeEl) return;
+  const dur = scrubDurationSec();
+  if (dur <= 0) return;
+  const t = (Number(songScrubRangeEl.value) / SCRUB_STEPS) * dur;
+  transportController.seek(t);
+  transportHostDeps.onTransportChanged?.();
+  transportHostDeps.onSeeked?.(transportController.getState().t);
+}
+
+if (songScrubRangeEl) {
+  // pointerdown rather than input: the drag has to be claimed before the first
+  // value change arrives, or that first frame is still overwritten by the tick.
+  songScrubRangeEl.addEventListener("pointerdown", () => { scrubbing = true; });
+  songScrubRangeEl.addEventListener("keydown", () => { scrubbing = true; });
+  songScrubRangeEl.addEventListener("input", () => {
+    // Live feedback while dragging, without seeking yet.
+    if (songScrubNowEl) {
+      const dur = scrubDurationSec();
+      songScrubNowEl.textContent = formatClock((Number(songScrubRangeEl.value) / SCRUB_STEPS) * dur);
+    }
+  });
+  const commit = () => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    seekFromScrub();
+  };
+  songScrubRangeEl.addEventListener("change", commit);
+  songScrubRangeEl.addEventListener("pointerup", commit);
+  songScrubRangeEl.addEventListener("pointercancel", commit);
+  songScrubRangeEl.addEventListener("blur", commit);
+}
+
+function renderSongScrub(): void {
+  if (!songScrubEl || !songScrubRangeEl) return;
+  const dur = scrubDurationSec();
+  songScrubEl.hidden = dur <= 0;
+  if (dur <= 0) return;
+
+  if (songScrubTotalEl) songScrubTotalEl.textContent = formatClock(dur);
+  // The user owns the thumb mid-drag; writing to it here would fight them.
+  if (scrubbing) return;
+
+  const t = transportController.getState().t;
+  const v = String(Math.round(Math.min(1, Math.max(0, t / dur)) * SCRUB_STEPS));
+  if (songScrubRangeEl.value !== v) songScrubRangeEl.value = v;
+  if (songScrubNowEl) songScrubNowEl.textContent = formatClock(t);
+}
+
 function renderPlayheadHud(): void {
   if (!playheadHudEl || !playheadClockEl) return;
 
@@ -2113,7 +2193,11 @@ pianoGainEl?.addEventListener("input", () => {
 });
 
 renderPlayheadHud();
-window.setInterval(renderPlayheadHud, LIVE_INPUT_HUD_INTERVAL_MS);
+renderSongScrub();
+window.setInterval(() => {
+  renderPlayheadHud();
+  renderSongScrub();
+}, LIVE_INPUT_HUD_INTERVAL_MS);
 
 // --- Play-mode transport hotkeys ---------------------------------------
 // Space start/pause/resume + Left/Right jog. Logic lives in

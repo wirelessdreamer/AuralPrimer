@@ -1602,3 +1602,22 @@ li {
   color: var(--accent3);
   min-width: 4em;
 }
+
+/* Song scrub bar — position in the song, and a handle to change it. */
+.songScrub {
+  margin: 0.5rem 0 0.35rem;
+}
+.songScrubRange {
+  width: 100%;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #38bdf8;
+}
+.songScrubTimes {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.1rem;
+}
