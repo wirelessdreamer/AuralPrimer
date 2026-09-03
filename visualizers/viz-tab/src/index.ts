@@ -125,6 +125,13 @@ const FLAT_NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "
 const BLACK_PITCH_CLASSES = new Set([1, 3, 6, 8, 10]);
 const BG_COLOR = "#111721";
 const PANEL_COLOR = "#141d2b";
+//: Pixels of travel per second of song, before the user's speed multiplier.
+//:
+//: Matched to the Nashville chord lane deliberately. Two lanes scrolling the
+//: same material at different rates is the thing that made this view hard to
+//: read next to it -- the eye calibrates on one and is wrong about the other.
+const TAB_BASE_PX_PER_SEC = 140;
+
 const STRING_COLOR = "rgba(255,255,255,0.18)";
 const HIT_LINE_COLOR = "rgba(255,255,255,0.76)";
 const TEXT_COLOR = "#ecf2ff";
@@ -548,8 +555,6 @@ export class TabRenderer {
   private role: InstrumentRole = "melodic";
   private keySignature: KeySignatureAnalysis | null = null;
 
-  /** Seconds of lookahead visible to the right of the hit line. */
-  private windowSec = 4.0;
   /** Fraction of canvas width where the hit line sits (from left). */
   private hitLineFrac = 0.15;
   private pianoLookAheadSec = 7.0;
@@ -622,69 +627,58 @@ export class TabRenderer {
     const w = canvas.width;
     const h = canvas.height;
     const scrollMul = clampScrollSpeedMultiplier(opts.scrollSpeedMultiplier);
-    const windowSec = this.windowSec / scrollMul;
     const numStrings = tuning.strings.length;
 
-    // A receding highway rather than a sideways belt.
+    // Right to left, at a fixed pixel rate — the Nashville model.
     //
-    // Scrolling moved every note the same number of pixels per frame however
-    // far off it was, so the whole field smeared at once and the fret numbers
-    // -- which are the entire point of this view -- went with it. Under
-    // perspective a note an octave of time away crawls, and only the notes
-    // about to be played move quickly. The eye reads the far ones because they
-    // are nearly still, and the near ones because they are large.
-    //
-    // Depth is 1/(1 + k*u): u is time-to-hit normalised over the window, so
-    // u=0 is the hit line and u=1 the horizon. Everything -- lane spread, note
-    // size, glyph size -- is that one number, which is what makes it read as
-    // distance rather than as things being drawn smaller.
-    const DEPTH = 5.2;
-    const farScale = 1 / (1 + DEPTH);
-    const horizonY = h * 0.06;
-    const hitY = h * (1 - this.hitLineFrac);
-    const cx = w * 0.5;
-    // Near-plane half-width. The lanes reach most of the canvas at the hit
-    // line, which is where the player is actually looking.
-    const halfSpread = w * 0.44;
+    // The perspective highway was an answer to the wrong question. What made
+    // the sideways version unreadable was never the direction, it was that the
+    // window was a fixed number of SECONDS: four seconds spread across
+    // whatever width the canvas happened to be, so a wide window made the
+    // notes fly and a narrow one crawled. The chord lane above it has always
+    // felt right because it fixes the opposite quantity — 140 px per second,
+    // with the visible span falling out of the width — so the speed is the
+    // same on any monitor and reading one lane teaches you the other.
+    const pxPerSec = TAB_BASE_PX_PER_SEC * scrollMul;
+    const hitX = Math.round(w * this.hitLineFrac);
+    const windowSec = Math.max(0.5, (w - hitX) / pxPerSec);
 
-    const depthScale = (u: number): number => 1 / (1 + DEPTH * clamp(u, 0, 1));
-    // Normalised so u=1 lands exactly on the horizon whatever DEPTH is.
-    const depthY = (u: number): number =>
-      hitY - ((1 - depthScale(u)) / (1 - farScale)) * (hitY - horizonY);
-    const laneOffset = (s: number): number =>
-      numStrings <= 1 ? 0 : ((s / (numStrings - 1)) * 2 - 1) * halfSpread;
-    const laneX = (s: number, u: number): number => cx + laneOffset(s) * depthScale(u);
+    const topPad = 18;
+    const botPad = 14;
+    const laneGap = numStrings > 1 ? (h - topPad - botPad) / (numStrings - 1) : 0;
+    // String 0 is the highest-pitched: it belongs at the top, the way tab is
+    // written and the way the fretboard looks to the player holding it.
+    const laneY = (s: number): number => Math.round(topPad + s * laneGap);
 
-    // Lanes, drawn as the rails they are: wide and bright at the hit line,
-    // converging and faint at the horizon, so depth is legible with no notes
-    // on screen at all.
+    // Lanes: the strings, full width, dimmer behind the hit line where the
+    // notes have already been played.
     for (let s = 0; s < numStrings; s += 1) {
-      const steps = 24;
-      for (let i = 0; i < steps; i += 1) {
-        const u0 = i / steps;
-        const u1 = (i + 1) / steps;
-        const near = 1 - u0;
-        ctx.strokeStyle = STRING_COLOR;
-        ctx.globalAlpha = 0.25 + near * 0.75;
-        ctx.lineWidth = 0.5 + depthScale(u0) * 1.6;
-        ctx.beginPath();
-        ctx.moveTo(laneX(s, u0), depthY(u0));
-        ctx.lineTo(laneX(s, u1), depthY(u1));
-        ctx.stroke();
-      }
+      const y = laneY(s) + 0.5;
+      ctx.strokeStyle = STRING_COLOR;
+      ctx.globalAlpha = 0.28;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(hitX, y);
+      ctx.stroke();
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(hitX, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
     }
     ctx.globalAlpha = 1;
 
-    // The hit line spans the near plane, across the lanes rather than through
-    // them, because it is a moment in time and they are pitches.
+    // The hit line runs across the strings, because it is a moment in time and
+    // they are pitches.
     ctx.strokeStyle = HIT_LINE_COLOR;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(cx - halfSpread, hitY);
-    ctx.lineTo(cx + halfSpread, hitY);
+    ctx.moveTo(hitX + 0.5, topPad - 10);
+    ctx.lineTo(hitX + 0.5, h - botPad + 10);
     ctx.stroke();
 
-    const tStart = t - 0.5;
+    const tStart = t - hitX / pxPerSec;
     const tEnd = t + windowSec;
     const color = ROLE_COLORS[this.role];
     const glow = ROLE_GLOW_COLORS[this.role];
@@ -692,60 +686,43 @@ export class TabRenderer {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    // Far to near, so a nearer note occludes the one behind it the way the
-    // distance already implies.
-    const visible: { note: MelodicNote; fret: FretPosition; u: number }[] = [];
+    const pillH = Math.round(Math.min(22, Math.max(11, laneGap * 0.72)));
+    const fontPx = Math.max(9, Math.min(15, Math.round(pillH * 0.68)));
+
     for (const note of track.notes) {
       if (note.t_on > tEnd || note.t_off < tStart) continue;
       const fretInfo = noteToFretPosition(note, tuning);
       if (!fretInfo) continue;
-      visible.push({ note, fret: fretInfo, u: (note.t_on - t) / windowSec });
-    }
-    visible.sort((a, b) => b.u - a.u);
 
-    for (const { fret: fretInfo, u } of visible) {
-      const uc = clamp(u, 0, 1);
-      const scale = depthScale(uc);
-      // Whole pixels, still: a glyph landing on a different sub-pixel offset
-      // each frame is anti-aliased differently each frame, which reads as
-      // shimmer. Perspective slows the far ones down but does not put them on
-      // the grid.
-      const x = Math.round(laneX(fretInfo.string, uc));
-      const y = Math.round(depthY(uc));
+      // Whole pixels: a glyph landing on a different sub-pixel offset each
+      // frame is anti-aliased differently each frame, which reads as shimmer.
+      const x = Math.round(hitX + (note.t_on - t) * pxPerSec);
+      const y = laneY(fretInfo.string);
+      // Sustain drawn as the note's real length, so a held note is visibly
+      // held rather than being a dot that lingers.
+      const held = Math.round(Math.max(0, (note.t_off - note.t_on)) * pxPerSec);
+      const pillW = Math.max(pillH, Math.min(held, w));
 
-      // Held past the line rather than clipped: u goes negative for a note
-      // being played, and the pill staying put is the confirmation.
-      // Floor lands at 0.62 on the horizon, which is where the old fixed
-      // window had to be pinned to stay readable -- perspective earns it back
-      // instead of asserting it.
-      const alpha = u < 0 ? 1 : 0.55 + 0.45 * scale;
+      const playing = note.t_on <= t && note.t_off >= t;
+      ctx.globalAlpha = playing ? 1 : x < hitX ? 0.45 : 0.92;
 
       ctx.save();
-      ctx.globalAlpha = alpha * 0.5;
+      ctx.globalAlpha *= 0.5;
       ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(x, y, Math.max(4, 17 * scale), 0, Math.PI * 2);
+      roundRectPath(ctx, x - pillH * 0.5 - 2, y - pillH * 0.5 - 2, pillW + 4, pillH + 4, 6);
       ctx.fill();
       ctx.restore();
 
-      const pillW = Math.round(Math.max(9, 28 * scale));
-      const pillH = Math.round(Math.max(8, 23 * scale));
-      ctx.save();
-      ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
-      roundRectPath(ctx, x - pillW * 0.5, y - pillH * 0.5, pillW, pillH, Math.max(2, 5 * scale));
+      roundRectPath(ctx, x - pillH * 0.5, y - pillH * 0.5, pillW, pillH, 5);
       ctx.fill();
 
-      // Below about 9px the digits stop being digits, so the pill carries the
-      // note on its own out there. It still says WHEN and WHICH STRING, which
-      // is what a note that far away is for; the fret arrives with the size.
-      const fontPx = Math.round(16 * scale);
       if (fontPx >= 9) {
         ctx.fillStyle = "#051018";
         ctx.font = `800 ${fontPx}px ui-monospace, SFMono-Regular, Consolas, monospace`;
-        ctx.fillText(String(fretInfo.fret), x, y);
+        ctx.fillText(String(fretInfo.fret), x, y + 1);
       }
-      ctx.restore();
+      ctx.globalAlpha = 1;
     }
 
     ctx.save();

@@ -64,8 +64,12 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     const src = read("visualizers/viz-tab/src/index.ts");
     // Reads the clamped multiplier in BOTH render paths.
     expect(src).toMatch(/clampScrollSpeedMultiplier\(opts\.scrollSpeedMultiplier\)/);
-    // Tab path shrinks the visible window so higher multiplier = more spacing.
-    expect(src).toMatch(/const\s+windowSec\s*=\s*this\.windowSec\s*\/\s*scrollMul/);
+    // Tab path scales its PIXEL RATE, the way viz-nashville and viz-beats do:
+    // the visible span then falls out of the canvas width instead of being a
+    // fixed number of seconds. That is what keeps the apparent speed the same
+    // on any window, and what makes this lane and the chord lane above it
+    // scroll together rather than at two different rates.
+    expect(src).toMatch(/pxPerSec\s*=\s*[^;]*\*\s*scrollMul/);
     // Piano-roll path shrinks look-ahead/behind the same way.
     expect(src).toMatch(/const\s+lookAheadSec\s*=\s*this\.pianoLookAheadSec\s*\/\s*scrollMul/);
     expect(src).toMatch(/const\s+lookBehindSec\s*=\s*this\.pianoLookBehindSec\s*\/\s*scrollMul/);
