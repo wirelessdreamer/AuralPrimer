@@ -1463,13 +1463,23 @@ const GATE_LEAD_SEC = 0.12;
 
 // Where the transport parks once it has stopped.
 //
-// Deliberately much closer to the note than the gate, and reached by seeking
-// FORWARD from wherever the overrun actually left the playhead. Parking back
-// at the gate point would replay whatever was heard during the overrun --
-// the doubled attack this mode started out with. Parking here costs a small
-// skip of pre-note audio instead, and keeps the gap between key press and
-// note short enough to feel like playing rather than like latency.
+// Close to the note, because this distance is how long the player waits to
+// hear the note they just played, and that gap is the whole feel of the mode.
+// The elision it causes -- from wherever the pause overrun left the playhead
+// up to here -- is covered by the engine's fade: the join happens in silence
+// with a ramp either side, so what is skipped is the smooth middle of a decay
+// rather than an audible cut.
 const PARK_LEAD_SEC = 0.02;
+
+// How far past a note's onset the recording resumes, once the player has
+// played that note themselves.
+//
+// A piano attack is the first few tens of milliseconds; past that the note is
+// ringing rather than striking, and resuming there is heard as the player's
+// own note continuing instead of a second one starting. Short enough that
+// almost nothing musical is skipped, and floored against the next note so a
+// fast run never loses one.
+const ATTACK_SKIP_SEC = 0.045;
 
 // How long after a note's onset a hit still counts as that note's, when Grace
 // is on and the transport is free-running.
@@ -1649,8 +1659,32 @@ function learnRegisterPlayed(pitch: number): void {
   // would fight a transport that is already running.
   if (learnWaiting) {
     learnWaiting = false;
+    // Resume PAST the recording's attack of the note just played.
+    //
+    // The player has played it. Letting the recording strike it again is the
+    // doubling -- their note under their finger, then the same pitch again a
+    // moment later, which is the flam that reads as a stutter. Their key is
+    // the attack; the recording carries on from where that note is already
+    // ringing.
+    const played = learnGroups[learnIdx - 1];
+    if (played) transportController.seek(resumeAfterAttack(played));
     void transportController.play();
   }
+}
+
+/**
+ * Where to resume so the recording does not re-strike a note already played.
+ *
+ * Far enough past the onset to clear the attack transient, and never past the
+ * next note the player is going to be asked for -- on a fast run the gap
+ * between groups can be shorter than an attack, and skipping into the next
+ * note would drop it from the recording while still demanding it from the
+ * player.
+ */
+function resumeAfterAttack(played: LearnGroup): number {
+  const next = learnGroups[learnIdx];
+  const ceiling = next ? next.t - GATE_LEAD_SEC : Number.POSITIVE_INFINITY;
+  return Math.min(played.t + ATTACK_SKIP_SEC, Math.max(played.t, ceiling));
 }
 
 function learnGateTick(): void {
@@ -1726,6 +1760,13 @@ function learnGateTick(): void {
       learnHit.clear();
     } else {
       transportController.pause();
+      // Park close to the note so the recording answers the key press quickly.
+      //
+      // This elides the few tens of milliseconds between where the sound
+      // actually stopped and here. That used to matter; it does not now,
+      // because the join happens while the transport is faded out and stopped,
+      // and the engine ramps back in rather than switching. What is skipped is
+      // the smooth middle of a decay, and 5ms of ramp covers the seam.
       transportController.seek(g.t - PARK_LEAD_SEC);
       learnWaiting = true;
       setAudioStatus(`Wait mode — play: ${g.pitches.map(learnNoteName).join(" + ")}`);
@@ -1901,6 +1942,86 @@ function formatPlayhead(sec: number): string {
  * it believes is audible, and drift between those is exactly what a
  * sync complaint is about. Showing only the answer hides the disagreement.
  */
+// --- Song scrub bar ---------------------------------------------------------
+//
+// Driven from the same tick as the playhead readout, so the thumb and the
+// clock can never disagree. Two rules make a scrubber feel right and both are
+// about who owns the value: while the user is dragging, the tick must not
+// write over their thumb; and the seek must land on release rather than on
+// every intermediate frame, or a drag across a long song issues hundreds of
+// seeks and the engine spends the whole gesture catching up.
+const songScrubEl = document.getElementById("songScrub") as HTMLElement | null;
+const songScrubRangeEl = document.getElementById("songScrubRange") as HTMLInputElement | null;
+const songScrubNowEl = document.getElementById("songScrubNow");
+const songScrubTotalEl = document.getElementById("songScrubTotal");
+const SCRUB_STEPS = 1000;
+
+let scrubbing = false;
+
+function scrubDurationSec(): number {
+  // From the timebase, not the transport state: the state carries the playhead
+  // and the web timebase has no duration at all, so the bar hides itself
+  // rather than scaling against a zero it would have to special-case anyway.
+  const d = nativeTimebase?.getDurationSec?.() ?? 0;
+  return Number.isFinite(d) && d > 0 ? d : 0;
+}
+
+function formatClock(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function seekFromScrub(): void {
+  if (!songScrubRangeEl) return;
+  const dur = scrubDurationSec();
+  if (dur <= 0) return;
+  const t = (Number(songScrubRangeEl.value) / SCRUB_STEPS) * dur;
+  transportController.seek(t);
+  transportHostDeps.onTransportChanged?.();
+  transportHostDeps.onSeeked?.(transportController.getState().t);
+}
+
+if (songScrubRangeEl) {
+  // pointerdown rather than input: the drag has to be claimed before the first
+  // value change arrives, or that first frame is still overwritten by the tick.
+  songScrubRangeEl.addEventListener("pointerdown", () => { scrubbing = true; });
+  songScrubRangeEl.addEventListener("keydown", () => { scrubbing = true; });
+  songScrubRangeEl.addEventListener("input", () => {
+    // Live feedback while dragging, without seeking yet.
+    if (songScrubNowEl) {
+      const dur = scrubDurationSec();
+      songScrubNowEl.textContent = formatClock((Number(songScrubRangeEl.value) / SCRUB_STEPS) * dur);
+    }
+  });
+  const commit = () => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    seekFromScrub();
+  };
+  songScrubRangeEl.addEventListener("change", commit);
+  songScrubRangeEl.addEventListener("pointerup", commit);
+  songScrubRangeEl.addEventListener("pointercancel", commit);
+  songScrubRangeEl.addEventListener("blur", commit);
+}
+
+function renderSongScrub(): void {
+  if (!songScrubEl || !songScrubRangeEl) return;
+  const dur = scrubDurationSec();
+  songScrubEl.hidden = dur <= 0;
+  if (dur <= 0) return;
+
+  if (songScrubTotalEl) songScrubTotalEl.textContent = formatClock(dur);
+  // The user owns the thumb mid-drag; writing to it here would fight them.
+  if (scrubbing) return;
+
+  const t = transportController.getState().t;
+  const v = String(Math.round(Math.min(1, Math.max(0, t / dur)) * SCRUB_STEPS));
+  if (songScrubRangeEl.value !== v) songScrubRangeEl.value = v;
+  if (songScrubNowEl) songScrubNowEl.textContent = formatClock(t);
+}
+
 function renderPlayheadHud(): void {
   if (!playheadHudEl || !playheadClockEl) return;
 
@@ -2072,7 +2193,11 @@ pianoGainEl?.addEventListener("input", () => {
 });
 
 renderPlayheadHud();
-window.setInterval(renderPlayheadHud, LIVE_INPUT_HUD_INTERVAL_MS);
+renderSongScrub();
+window.setInterval(() => {
+  renderPlayheadHud();
+  renderSongScrub();
+}, LIVE_INPUT_HUD_INTERVAL_MS);
 
 // --- Play-mode transport hotkeys ---------------------------------------
 // Space start/pause/resume + Left/Right jog. Logic lives in

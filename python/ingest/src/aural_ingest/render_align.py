@@ -107,8 +107,8 @@ def measure_lead_in(
         return Alignment(0.0, 0.0, False, "not enough onsets to correlate")
 
     max_lag = min(int(MAX_LEAD_SEC * _SR / _HOP), len(env) - 1)
-    corr = np.array([float(np.dot(env[l:], train[: len(train) - l]))
-                     for l in range(max_lag)])
+    corr = np.array([float(np.dot(env[lag:], train[: len(train) - lag]))
+                     for lag in range(max_lag)])
     # Strongest peak wins, with no preference for earlier candidates.
     #
     # Preferring the earliest near-tied peak looks like the right way to break

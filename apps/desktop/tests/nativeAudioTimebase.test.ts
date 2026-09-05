@@ -1366,4 +1366,155 @@ describe("NativeAudioTimebase", () => {
     (tb as unknown as { _lastOutputBufferFrames: number | null })._lastOutputBufferFrames = 256;
     expect(tb.getOutputLatencySec()).toBeUndefined();
   });
+  // warmUp exists so the FIRST playback isn't a cold start -- without it the
+  // engine only really engaged on a second load, which is where the "select an
+  // instrument first" workaround came from.
+  it("warmUp starts the output stream ahead of the first real load", async () => {
+    const invoke = vi.fn(async () => null);
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    await tb.warmUp();
+
+    expect(invoke).toHaveBeenCalledWith("native_audio_warm_up");
+  });
+
+  it("warmUp failing is not an error -- the first load still inits the engine", async () => {
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_warm_up") throw new Error("no output device yet");
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    await expect(tb.warmUp()).resolves.toBeUndefined();
+  });
+
+  it("loadPackAudio reports duration and roles, and applies runtime settings", async () => {
+    const invoke = vi.fn(async (cmd: string, payload?: Record<string, unknown>) => {
+      if (cmd === "native_audio_load_pack_audio") {
+        expect(payload?.containerPath).toBe("C:/songs/demo.feedpak");
+        expect(payload?.role).toBe("keys");
+        return { mime: "audio/ogg", duration_sec: 31.5, roles: ["keys", "bass"] };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    tb.setPlaybackRate(0.75);
+
+    const out = await tb.loadPackAudio("C:/songs/demo.feedpak", "keys");
+    expect(out).toEqual({ durationSec: 31.5, roles: ["keys", "bass"] });
+    expect(invoke).toHaveBeenCalledWith("native_audio_set_playback_rate", { rate: 0.75 });
+  });
+
+  it("loadPackAudio falls back to the sentinel when duration is unusable", async () => {
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_load_pack_audio") {
+        return { mime: "audio/ogg", duration_sec: 0, roles: [] };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    const out = await tb.loadPackAudio("C:/songs/odd.feedpak", null);
+    expect(out.durationSec).toBeGreaterThan(0);
+    expect(out.roles).toEqual([]);
+  });
+
+  it("loadPackAudio treats missing roles as none rather than undefined", async () => {
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_load_pack_audio") {
+        return { mime: "audio/ogg", duration_sec: 5 };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    const out = await tb.loadPackAudio("C:/songs/legacy.feedpak", null);
+    expect(out.roles).toEqual([]);
+  });
+
+  // Switching device has to re-load whatever was last loaded, and a pack is
+  // one of the three things that can be.
+  it("setOutputDevice reloads the last pack when that is what was playing", async () => {
+    const calls: string[] = [];
+    const invoke = vi.fn(async (cmd: string) => {
+      calls.push(cmd);
+      if (cmd === "native_audio_load_pack_audio") {
+        return { mime: "audio/ogg", duration_sec: 8, roles: ["keys"] };
+      }
+      if (cmd === "native_audio_get_state") return null;
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    await tb.loadPackAudio("C:/songs/demo.feedpak", "keys");
+
+    calls.length = 0;
+    await tb.setOutputDevice({ name: "Headphones", channels: 2, sample_rate_hz: 48_000 });
+    expect(calls).toContain("native_audio_load_pack_audio");
+  });
+
+  it("setOutputDevice before any load just persists the choice", async () => {
+    const calls: string[] = [];
+    const invoke = vi.fn(async (cmd: string) => {
+      calls.push(cmd);
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    await tb.setOutputDevice({ name: "Headphones", channels: 2, sample_rate_hz: 48_000 });
+
+    expect(calls).not.toContain("native_audio_load_pack_audio");
+    expect(calls).not.toContain("native_audio_load_auralsong_audio");
+  });
+  it("loadPackAudio uses the sentinel when the decoder omits duration entirely", async () => {
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_load_pack_audio") {
+        // No duration_sec field at all, as opposed to a zero or a NaN.
+        return { mime: "audio/ogg", roles: ["keys"] };
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    const out = await tb.loadPackAudio("C:/songs/nodur.feedpak", "keys");
+    expect(out.durationSec).toBe(24 * 60 * 60);
+  });
+
+  it("loadPackAudio falls back to the sentinel when the duration cache is cleared during apply", async () => {
+    let tbRef: { loadedDurationSec: number | null } | null = null;
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "native_audio_load_pack_audio") {
+        return { mime: "audio/ogg", duration_sec: 19, roles: ["keys"] };
+      }
+      if (cmd === "native_audio_set_playback_rate" && tbRef) {
+        tbRef.loadedDurationSec = null;
+      }
+      return null;
+    });
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+
+    const { NativeAudioTimebase } = await import("../src/nativeAudioTimebase");
+    const tb = new NativeAudioTimebase();
+    tbRef = tb as unknown as { loadedDurationSec: number | null };
+
+    const out = await tb.loadPackAudio("C:/songs/cleared.feedpak", "keys");
+    expect(out.durationSec).toBe(24 * 60 * 60);
+  });
 });

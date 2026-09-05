@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { loadAuralSongAudioIntoTransport, type AuralSongAudioLoadTransport } from "../src/auralsongAudioLoader";
+import { loadAuralSongAudioIntoTransport, type AuralSongAudioLoadTransport } from "../src/auralSongAudioLoader";
 import type { TransportTimebase } from "../src/audioBackend";
 
 function makeTimebase(withDirectLoad: boolean): TransportTimebase {
@@ -44,7 +44,7 @@ function makeTransport(): AuralSongAudioLoadTransport & {
   };
 }
 
-describe("auralsongAudioLoader", () => {
+describe("auralSongAudioLoader", () => {
   it("uses direct load when timebase supports loadFromAuralSong", async () => {
     const transport = makeTransport();
     const readAuralSongAudio = vi.fn(async () => ({ mime: "audio/wav", bytes: [1, 2, 3] }));

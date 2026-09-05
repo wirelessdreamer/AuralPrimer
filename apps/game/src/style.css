@@ -223,13 +223,15 @@ main {
   max-width: min(96vw, 1720px);
 }
 
-/* Widen appMain on widescreen when the play route is showing — gives the
-   bandSetupBody (rail + stage) room to breathe. Falls back to the standard
-   1180px cap on narrower viewports. */
-@media (min-width: 1500px) {
-  .appMain:has(.route[data-route="play"].isActive) {
-    max-width: min(96vw, 1720px);
-  }
+/* The play route is a stage, not prose, so it takes the window it is given.
+   The 1180px cap is a reading width -- right for menus and copy, wrong for a
+   rail plus a scrolling instrument lane, which just get a smaller stage and a
+   pair of dead margins. It used to widen only past 1500px and only to 1720px,
+   so a wide monitor still showed letterboxing at both ends.
+   Set by routeController rather than :has(), so it does not depend on the
+   selector engine and can be reasoned about from the DOM. */
+.appMain.isPlayRoute {
+  max-width: none;
 }
 
 .route {
@@ -1602,3 +1604,27 @@ li {
   color: var(--accent3);
   min-width: 4em;
 }
+
+/* Song scrub bar — position in the song, and a handle to change it.
+   Lives on the stage bar beside the time readout rather than in the setup
+   rail: during play the rail is not where anyone is looking. */
+.songScrub {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 260px;
+  flex: 1 1 260px;
+}
+.songScrubRange {
+  flex: 1 1 auto;
+  min-width: 120px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #38bdf8;
+}
+.songScrubTime {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+.songScrubSep { opacity: 0.4; font-size: 0.78rem; }

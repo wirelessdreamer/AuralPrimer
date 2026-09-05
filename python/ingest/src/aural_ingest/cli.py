@@ -1342,6 +1342,42 @@ def _config_with_cli_demucs_modelpack_options(args: argparse.Namespace, config: 
     return out
 
 
+def _git_main_worktree_root(start: Path) -> Path | None:
+    """The main checkout, when ``start`` is inside a linked git worktree.
+
+    A worktree's assets are not its own. Model packs, build output and the
+    portable all live in the main checkout, and every search root derived from
+    __file__, cwd or sys.executable stays inside the worktree -- so a modelpack
+    that plainly exists is reported "not found in default search locations" and
+    stem separation silently degrades to none. That failure is quiet and its
+    consequences are not: without separation the guitar-split fallback writes
+    mix-derived stems named after guitar, and instrument conditioning then reads
+    those names as evidence and masks the transcriber to guitar.
+
+    In a linked worktree ``.git`` is a FILE reading ``gitdir: <main>/.git/
+    worktrees/<name>``; the main checkout is the parent of that ``.git``. In a
+    normal clone ``.git`` is a directory and there is nothing to add.
+    """
+    try:
+        for parent in [start, *start.parents]:
+            dot_git = parent / ".git"
+            if dot_git.is_dir():
+                return None                      # ordinary clone: already rooted
+            if dot_git.is_file():
+                text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+                if not text.startswith("gitdir:"):
+                    return None
+                git_dir = Path(text.split(":", 1)[1].strip())
+                # <main>/.git/worktrees/<name> -> <main>
+                for anc in git_dir.parents:
+                    if anc.name == ".git":
+                        return anc.parent
+                return None
+    except Exception:
+        return None
+    return None
+
+
 def _default_demucs_modelpack_candidates(modelpack_ids: Iterable[str] | None = None) -> list[Path]:
     selected_ids = tuple(modelpack_ids) if modelpack_ids is not None else SUPPORTED_DEMUCS_MODELPACK_IDS
     roots: list[Path] = []
@@ -1380,6 +1416,9 @@ def _default_demucs_modelpack_candidates(modelpack_ids: Iterable[str] | None = N
         add_root(this_file.parent)
         add_root(this_file.parents[2])
         add_root(this_file.parents[4])
+        # Running from a linked git worktree: the packs live in the main
+        # checkout, which none of the roots above can reach.
+        add_root(_git_main_worktree_root(this_file.parent))
     except Exception:
         pass
 
@@ -4954,9 +4993,9 @@ def _runtime_note_payload_rejection(item: Any, index: int) -> str | None:
     instrument = item.get("instrument")
     if not isinstance(instrument, str) or not instrument.strip():
         return f"{label}.instrument must be a non-empty string"
-    for field, upper in (("string", 8), ("fret", 36)):
-        if field in item and _json_int(item.get(field), lo=0, hi=upper) is None:
-            return f"{label}.{field} must be an integer in [0, {upper}] when present"
+    for key, upper in (("string", 8), ("fret", 36)):
+        if key in item and _json_int(item.get(key), lo=0, hi=upper) is None:
+            return f"{label}.{key} must be an integer in [0, {upper}] when present"
     return None
 
 

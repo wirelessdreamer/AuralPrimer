@@ -208,6 +208,15 @@ export function appShellHtml(): string {
                     <span id="playheadClock" class="liveInputNotes"></span>
                     <span id="playheadDetail" class="liveInputChord"></span>
                   </div>
+                  <div id="songScrub" class="songScrub" hidden>
+                    <span class="liveInputLabel">SEEK</span>
+                    <input id="songScrubRange" class="songScrubRange" type="range"
+                           min="0" max="1000" value="0" step="1"
+                           aria-label="Seek through the song" />
+                    <span id="songScrubNow" class="songScrubTime">0:00</span>
+                    <span class="songScrubSep">/</span>
+                    <span id="songScrubTotal" class="songScrubTime">0:00</span>
+                  </div>
                   <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
                     <span class="liveInputLabel">MIDI IN</span>
                     <span id="liveInputNotes" class="liveInputNotes"></span>

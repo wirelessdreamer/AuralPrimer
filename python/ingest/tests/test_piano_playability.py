@@ -1,5 +1,4 @@
 from aural_ingest.algorithms.piano_playability import (
-    DEFAULT_PLAYABILITY_CONFIG,
     BeatGrid,
     HarmonyContext,
     MotifConfig,

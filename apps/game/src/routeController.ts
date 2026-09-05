@@ -76,6 +76,13 @@ export function initRouteController(deps: RouteControllerDeps): RouteControllerH
       el.classList.toggle("isActive", r === route);
     }
 
+    // The play route uses the whole window; every other route keeps the
+    // reading-width cap. Toggled here because this is the one place that
+    // already knows which route is showing.
+    document
+      .querySelector(".appMain")
+      ?.classList.toggle("isPlayRoute", route === "play");
+
     const navMap: Record<Route, string> = {
       home: "navHome",
       play: "navPlay",
