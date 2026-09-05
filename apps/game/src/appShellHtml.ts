@@ -173,15 +173,6 @@ export function appShellHtml(): string {
                   <button id="loopSet" disabled>Set</button>
                   <button id="loopClear" disabled>Clear</button>
                 </div>
-                <div id="songScrub" class="songScrub" hidden>
-                  <input id="songScrubRange" class="songScrubRange" type="range"
-                         min="0" max="1000" value="0" step="1"
-                         aria-label="Seek through the song" />
-                  <div class="songScrubTimes">
-                    <span id="songScrubNow">0:00</span>
-                    <span id="songScrubTotal">0:00</span>
-                  </div>
-                </div>
                 <pre id="audioStatus">(no audio)</pre>
                 <div id="stemMixer" class="stemMixer" style="display:none"></div>
               </aside>
@@ -216,6 +207,15 @@ export function appShellHtml(): string {
                     <span class="liveInputLabel">TIME</span>
                     <span id="playheadClock" class="liveInputNotes"></span>
                     <span id="playheadDetail" class="liveInputChord"></span>
+                  </div>
+                  <div id="songScrub" class="songScrub" hidden>
+                    <span class="liveInputLabel">SEEK</span>
+                    <input id="songScrubRange" class="songScrubRange" type="range"
+                           min="0" max="1000" value="0" step="1"
+                           aria-label="Seek through the song" />
+                    <span id="songScrubNow" class="songScrubTime">0:00</span>
+                    <span class="songScrubSep">/</span>
+                    <span id="songScrubTotal" class="songScrubTime">0:00</span>
                   </div>
                   <div id="liveInputHud" class="liveInputHud" hidden aria-live="polite" aria-atomic="true">
                     <span class="liveInputLabel">MIDI IN</span>
