@@ -2000,9 +2000,22 @@ if (songScrubRangeEl) {
     scrubbing = false;
     seekFromScrub();
   };
+  // Hand focus back after a click.
+  //
+  // transportHotkeys treats every <input> as typing and stands down, and a
+  // range natively eats arrow keys to move its own thumb. So a slider that
+  // keeps focus after a click silently disables Space and Left/Right for the
+  // rest of the session -- and this is the seek bar, which is exactly what
+  // someone reaches for when they want to move around a song. Releasing focus
+  // on pointer release restores the hotkeys; deliberately tabbing here still
+  // holds focus, so arrow-key adjustment stays available to keyboard users.
+  const releaseAfterPointer = () => {
+    commit();
+    songScrubRangeEl.blur();
+  };
   songScrubRangeEl.addEventListener("change", commit);
-  songScrubRangeEl.addEventListener("pointerup", commit);
-  songScrubRangeEl.addEventListener("pointercancel", commit);
+  songScrubRangeEl.addEventListener("pointerup", releaseAfterPointer);
+  songScrubRangeEl.addEventListener("pointercancel", releaseAfterPointer);
   songScrubRangeEl.addEventListener("blur", commit);
 }
 
