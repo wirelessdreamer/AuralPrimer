@@ -181,6 +181,35 @@ describe("transportHotkeys", () => {
       expect(h.tc.seek).not.toHaveBeenCalled();
     });
 
+    // A slider counts as "typing" here, which is how the seek bar disabled the
+    // very hotkeys it sits next to: clicking it left focus on a range input,
+    // and from then on Space and the arrows were swallowed for the rest of the
+    // session. The guard is not wrong -- a focused slider should own its own
+    // arrow keys -- so the fix belongs at the other end: whoever adds a slider
+    // to the play surface has to hand focus back after a pointer interaction.
+    // This pins the trap so the next person meets it here rather than in the
+    // app.
+    it("stands down for a focused range slider, which is why sliders must release focus", () => {
+      const h = setup({}, { t: 30, isPlaying: true });
+      const slider = document.createElement("input");
+      slider.type = "range";
+      document.body.appendChild(slider);
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+      );
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }),
+      );
+      expect(h.tc.seek).not.toHaveBeenCalled();
+      expect(h.tc.pause).not.toHaveBeenCalled();
+
+      // …and once focus is elsewhere the hotkeys are live again.
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+      );
+      expect(h.tc.seek).toHaveBeenCalledTimes(1);
+    });
+
     it("ignores keys in a contenteditable element", () => {
       const h = setup({}, { t: 0, isPlaying: false });
       const el = document.createElement("div");
