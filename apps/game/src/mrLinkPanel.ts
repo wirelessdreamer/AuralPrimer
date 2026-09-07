@@ -66,6 +66,8 @@ export function buildChart(
   track: MelodicTrackSelection | null,
   bpm: number,
   beatsPerBar: number,
+  keySignature?: { pitchClass: number; mode: string } | null,
+  nashville?: boolean,
 ): unknown | null {
   if (!track || track.notes.length === 0) return null;
 
@@ -82,6 +84,18 @@ export function buildChart(
     songId,
     title,
     durationSec: notes.length ? notes[notes.length - 1].off : 0,
+    // The protocol has always specified this field and the host has never
+    // filled it in, so the headset had no way to know what key it was in --
+    // which is why it could not number its keys the way the desktop does.
+    // Omitted rather than faked when the key is unknown: a wrong tonic numbers
+    // every key on the board wrongly, which is worse than numbering none.
+    keySignature: keySignature
+      ? { tonic: ((keySignature.pitchClass % 12) + 12) % 12, mode: keySignature.mode }
+      : null,
+    // Sent with the chart, so the headset follows the desktop's toggle. It is
+    // a per-song snapshot: toggling mid-song does not reach the headset until
+    // the next chart, which is a real limit rather than an oversight.
+    nashville: Boolean(nashville),
     tempoMap: [{ tSec: 0, bpm, beatsPerBar }],
     role: track.role,
     notes,

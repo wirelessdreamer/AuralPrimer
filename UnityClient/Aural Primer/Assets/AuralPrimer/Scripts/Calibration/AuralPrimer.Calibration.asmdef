@@ -4,6 +4,7 @@
     "references": [
         "AuralPrimer.Link",
         "AuralPrimer.UI",
+        "Unity.TextMeshPro",
         "AuralPrimer.Recording",
         "Unity.XR.Interaction.Toolkit",
         "Unity.XR.Hands",

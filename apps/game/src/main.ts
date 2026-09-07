@@ -1012,6 +1012,8 @@ async function selectAuralSong(containerPath: string) {
         mrTrack,
         transport.bpm,
         transport.timeSignature?.[0] ?? 4,
+        chordKey,
+        nashvilleMode,
       ),
     );
 

@@ -5,8 +5,11 @@
 // arrived, so if the lit key is not the one under the player's finger, the
 // error is visible immediately rather than subtly wrong all session.
 
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using AuralPrimer.Link;
+using TMPro;
 using UnityEngine;
 
 namespace AuralPrimer.Calibration
@@ -31,8 +34,30 @@ namespace AuralPrimer.Calibration
                + "are darker and narrower, and fade out first.")]
         [SerializeField, Range(0f, 1f)] float restingOpacity = 0.35f;
 
+        [Tooltip("Font for the scale-degree numbers stamped on each key. Falls back "
+               + "to the TMP default when unset.")]
+        [SerializeField] TMP_FontAsset degreeFont;
+
+        [Tooltip("Height of a degree number as a fraction of a white key's depth.")]
+        [SerializeField, Range(0.1f, 1f)] float degreeSizeFraction = 0.38f;
+
         CalibrationProfile _profile;
         KeyboardLayout _layout;
+
+        // Scale degrees, from the chart the host sends. -1 means "no key
+        // signature", which is a different state from "key of C": with no key
+        // there is nothing correct to stamp, and a wrong tonic mislabels every
+        // key on the board rather than just one.
+        readonly Dictionary<int, TextMeshPro> _degreeLabels = new();
+        int _tonicPitchClass = -1;
+        bool _minorKey;
+        bool _nashville;
+        Material _outsideWhite;
+        Material _outsideBlack;
+
+        //: Semitones above the tonic for each degree, natural minor for minor.
+        static readonly int[] MajorSteps = { 0, 2, 4, 5, 7, 9, 11 };
+        static readonly int[] MinorSteps = { 0, 2, 3, 5, 7, 8, 10 };
         readonly Dictionary<int, Transform> _keyMarkers = new();
         readonly List<int> _litLastFrame = new();
         readonly Dictionary<int, Renderer> _previewFills = new();
@@ -136,6 +161,85 @@ namespace AuralPrimer.Calibration
         const float BreakWidth = 0.13f;
 
         void Awake() => BuildMaterials();
+
+        void OnEnable()
+        {
+            if (link != null) link.ChartReceived += OnChartForKey;
+        }
+
+        void OnDisable()
+        {
+            if (link != null) link.ChartReceived -= OnChartForKey;
+        }
+
+        /// <summary>Take the song's key off the chart, so the keys can be numbered.</summary>
+        /// <remarks>
+        /// Parsed here rather than shared with the highway's reader because the
+        /// two want different halves of the same document and neither should
+        /// have to wait on the other. Scanned rather than deserialised for the
+        /// same reason the note list is: the chart is a few hundred KB and
+        /// JsonUtility would allocate the whole shape to reach two numbers.
+        /// </remarks>
+        void OnChartForKey(string json)
+        {
+            _tonicPitchClass = -1;
+            _minorKey = false;
+            _nashville = false;
+
+            if (!string.IsNullOrEmpty(json))
+            {
+                var at = json.IndexOf("\"keySignature\"", StringComparison.Ordinal);
+                if (at >= 0)
+                {
+                    var open = json.IndexOf('{', at);
+                    var close = open >= 0 ? json.IndexOf('}', open) : -1;
+                    if (open >= 0 && close > open)
+                    {
+                        var span = json.Substring(open, close - open + 1);
+                        if (TryInt(span, "tonic", out var tonic))
+                        {
+                            _tonicPitchClass = ((tonic % 12) + 12) % 12;
+                            _minorKey = span.IndexOf("minor", StringComparison.OrdinalIgnoreCase) >= 0;
+                        }
+                    }
+                }
+                var flag = json.IndexOf("\"nashville\"", StringComparison.Ordinal);
+                if (flag >= 0)
+                {
+                    var tail = json.Substring(flag, Mathf.Min(24, json.Length - flag));
+                    _nashville = tail.IndexOf("true", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+            }
+
+            Debug.Log($"[overlay] key: tonic={_tonicPitchClass} minor={_minorKey} nashville={_nashville}");
+            RefreshDegrees();
+        }
+
+        static bool TryInt(string span, string key, out int value)
+        {
+            value = 0;
+            var at = span.IndexOf("\"" + key + "\"", StringComparison.Ordinal);
+            if (at < 0) return false;
+            var colon = span.IndexOf(':', at);
+            if (colon < 0) return false;
+            var end = colon + 1;
+            while (end < span.Length && (span[end] == ' ' || span[end] == '-' || char.IsDigit(span[end]))) end++;
+            return int.TryParse(span.Substring(colon + 1, end - colon - 1).Trim(),
+                                NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        /// <summary>The degree 1-7 for a pitch, or null when it is outside the key.</summary>
+        string DegreeFor(int pitch)
+        {
+            if (_tonicPitchClass < 0) return null;
+            var steps = _minorKey ? MinorSteps : MajorSteps;
+            var interval = (((pitch - _tonicPitchClass) % 12) + 12) % 12;
+            for (var i = 0; i < steps.Length; i++)
+            {
+                if (steps[i] == interval) return (i + 1).ToString(CultureInfo.InvariantCulture);
+            }
+            return null;
+        }
 
         /// <summary>
         /// The lane, for the "play this one next" cue.
@@ -386,7 +490,14 @@ namespace AuralPrimer.Calibration
         Material IdleMaterial(int pitch)
         {
             var black = KeyboardLayout.IsBlack(pitch);
+            // Bright for everything while placing: calibration is about where
+            // the keys ARE, and dimming five of every twelve during it would
+            // make the bed harder to line up against the real one.
             if (_placing) return black ? _idleBlack : _idleWhite;
+            if (_nashville && _tonicPitchClass >= 0 && DegreeFor(pitch) == null)
+            {
+                return black ? _outsideBlack : _outsideWhite;
+            }
             return black ? _restingBlack : _restingWhite;
         }
 
@@ -551,6 +662,25 @@ namespace AuralPrimer.Calibration
                     // geometry is written purely as fractions of a key.
                     _breakEdges[pitch] = NewBreakQuad(marker.transform, $"Break Edge {pitch}", _breakEdge);
                     _breakCores[pitch] = NewBreakQuad(marker.transform, $"Break Core {pitch}", _breakCore);
+
+                    // Parented to the overlay, not to the key.
+                    //
+                    // A key marker is a cube scaled non-uniformly to the key's
+                    // width, thickness and depth -- 0.85 x 0.006 x 0.14 -- and
+                    // text inherited into that is squashed flat and stretched
+                    // sideways. Placing the label alongside the marker instead
+                    // keeps its own scale, and Place() moves the two together.
+                    var labelGo = new GameObject($"Degree {pitch}");
+                    labelGo.transform.SetParent(transform, false);
+                    var label = labelGo.AddComponent<TextMeshPro>();
+                    if (degreeFont != null) label.font = degreeFont;
+                    label.alignment = TextAlignmentOptions.Center;
+                    label.enableWordWrapping = false;
+                    label.color = KeyboardLayout.IsBlack(pitch)
+                        ? new Color(0.93f, 0.96f, 1f, 0.95f)
+                        : new Color(0.06f, 0.09f, 0.13f, 0.95f);
+                    label.raycastTarget = false;
+                    _degreeLabels[pitch] = label;
                 }
             }
 
@@ -631,7 +761,41 @@ namespace AuralPrimer.Calibration
                 // passthrough. Thick enough to read as an object, still flat
                 // enough to read as an overlay on the key rather than a block.
                 marker.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
+
+                if (_degreeLabels.TryGetValue(pitch, out var label) && label != null)
+                {
+                    // Toward the player's edge of the key, where the eye already
+                    // is, and just clear of the plate so it does not z-fight the
+                    // overlay it sits on.
+                    label.transform.localPosition = marker.localPosition
+                        + up * 0.004f
+                        + forward * (depth * 0.30f);
+                    // Lying on the key and readable from the playing position:
+                    // the text's own up axis points away from the player along
+                    // the bed, its normal points at the ceiling.
+                    label.transform.localRotation = Quaternion.LookRotation(-up, forward);
+                    label.fontSize = Mathf.Max(0.35f, whiteKeyDepth * degreeSizeFraction * 10f);
+                    label.rectTransform.sizeDelta = new Vector2(keyWidth * 1.6f, depth);
+                }
             }
+
+            RefreshDegrees();
+        }
+
+        /// <summary>Show the degree on every key, or nothing when there is no key.</summary>
+        void RefreshDegrees()
+        {
+            foreach (var pair in _degreeLabels)
+            {
+                var label = pair.Value;
+                if (label == null) continue;
+                var degree = _nashville ? DegreeFor(pair.Key) : null;
+                label.text = degree ?? string.Empty;
+                label.fontStyle = degree == "1" ? FontStyles.Bold : FontStyles.Normal;
+            }
+            // The dimming is carried by the idle material, so the keys that are
+            // not lit have to be repainted for it to appear at all.
+            RepaintIdle();
         }
 
         void Clear()
@@ -648,6 +812,13 @@ namespace AuralPrimer.Calibration
             _sustainFills.Clear();
             _breakEdges.Clear();
             _breakCores.Clear();
+            // The labels are siblings of the markers, not children, so nothing
+            // destroyed them along with the keys.
+            foreach (var label in _degreeLabels.Values)
+            {
+                if (label != null) Destroy(label.gameObject);
+            }
+            _degreeLabels.Clear();
             // No keys drawn means no keys to keep the ray off.
             AuralPrimer.UI.KeyboardProximity.Clear();
         }
@@ -671,6 +842,13 @@ namespace AuralPrimer.Calibration
             // first time the ones they shadow were changed.
             _restingWhite = Dimmed(_idleWhite, restingOpacity);
             _restingBlack = Dimmed(_idleBlack, restingOpacity);
+
+            // Keys the song never asks for. Pushed well back rather than hidden:
+            // they are still real keys under the player's hands and the overlay
+            // still has to say where they are -- but numbering seven of twelve
+            // says nothing if all twelve look equally live.
+            _outsideWhite = Dimmed(_restingWhite, 0.35f);
+            _outsideBlack = Dimmed(_restingBlack, 0.35f);
             _next = Dimmed(_lit, 0.45f);
 
             // A held key is confirmation, not instruction, so it sits below
