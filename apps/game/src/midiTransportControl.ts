@@ -88,6 +88,17 @@ export type MidiTransportDeps = {
   onSeeked?: (tSec: number) => void;
   /** Flip wait mode (advance-on-note-play) on or off. */
   toggleWaitMode?: () => void;
+
+  /**
+   * Told what happened to every message that matched a binding, and to any CC
+   * that did not.
+   *
+   * A transport button that does nothing gives the player no way to tell WHERE
+   * it stopped: the device may not be sending, the message may not match the
+   * binding, or the binding may match and the gate be shut. Those need three
+   * different fixes and look identical from the outside.
+   */
+  onDiagnostic?: (line: string) => void;
 };
 
 export type MidiTransportControl = {
@@ -203,7 +214,16 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
         break;
       }
     }
-    if (!hit) return;
+    if (!hit) {
+      // Unmatched CC is worth reporting: it is the difference between "the
+      // pedal sends nothing" and "it sends something no binding claims".
+      if (msg.message_type === "control_change") {
+        deps.onDiagnostic?.(
+          `cc ${msg.data1} = ${msg.data2} (ch${(msg.channel ?? 0) + 1}) — no binding matches`,
+        );
+      }
+      return;
+    }
 
     const isJog = hit.action === "rewind" || hit.action === "fastForward";
 
@@ -213,8 +233,17 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
       cancelJog();
       return;
     }
-    if (!isActive()) return;
+    if (!isActive()) {
+      const why = deps.isSuppressed?.()
+        ? "the bindings panel is capturing (finish or cancel Learn)"
+        : deps.getCurrentRoute() !== "play"
+          ? `route is "${deps.getCurrentRoute()}", not "play"`
+          : "the pause menu is open";
+      deps.onDiagnostic?.(`${hit.action} ${hit.edge} — ignored: ${why}`);
+      return;
+    }
     if (hit.edge !== "press") return;
+    deps.onDiagnostic?.(`${hit.action} — firing`);
 
     switch (hit.action) {
       case "restart":

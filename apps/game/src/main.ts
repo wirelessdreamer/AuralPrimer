@@ -2268,6 +2268,12 @@ initMidiTransportControl({
   },
   // Don't fire the transport while the panel is capturing that same button.
   isSuppressed: () => midiTransportPanel.isLearning(),
+  // Into the MIDI monitor, beside the raw messages, so a button that does
+  // nothing can be traced without a debugger: whether it arrived, whether a
+  // binding claimed it, and if so what stopped it.
+  onDiagnostic: (line) => {
+    midiPanel.logTransportDiagnostic(line);
+  },
 });
 
 // --- Audio/visual sync calibration -------------------------------------

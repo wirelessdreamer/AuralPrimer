@@ -63,6 +63,8 @@ export type MidiPanelHandle = {
   outShutdown: () => Promise<void>;
   /** Snapshot of currently-pressed MIDI input notes (for tab renderer overlay). */
   inputActiveNotes: () => ReturnType<MidiInputStateTracker["snapshot"]>;
+  /** Write a transport-binding diagnostic into the MIDI input monitor. */
+  logTransportDiagnostic: (line: string) => void;
   /** True once an input port is connected — lets play mode say "no MIDI device". */
   inputIsConnected: () => boolean;
 };
@@ -531,6 +533,11 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     outSeek,
     outShutdown,
     inputActiveNotes: () => tracker.snapshot(),
+    /**
+     * Write a transport-binding diagnostic into the same monitor as the raw
+     * messages, marked so the two can be told apart at a glance.
+     */
+    logTransportDiagnostic: (line: string) => appendInputEventLine(`  ↳ transport: ${line}`),
     inputIsConnected: () => midiConnected,
   };
 }
