@@ -773,15 +773,21 @@ namespace AuralPrimer.Calibration
                         + forward * (depth * 0.30f);
                     // Lying on the key and readable from the playing position.
                     //
-                    // LookRotation's first argument is where the object's +Z
-                    // points and the second is its +Y. A TMP quad faces along
-                    // +Z and runs its text up its +Y, so to be read from above
-                    // the normal has to point at the ceiling and the page-up
-                    // direction away from the player. I had both backwards --
-                    // (-up, forward) faces the text down into the key and puts
-                    // its top toward the player, which is upside down and
-                    // pointing away from anyone who could read it.
-                    label.transform.localRotation = Quaternion.LookRotation(up, -forward);
+                    // Three orientations in and the lesson is that this cannot
+                    // be reasoned to in one go. What each symptom told us:
+                    //
+                    //   (-up, forward)  -> away from the reader and upside down
+                    //   (up, -forward)  -> faces the reader, mirrored L-R
+                    //   (-up, -forward) -> this
+                    //
+                    // Mirrored-but-visible is the diagnostic that matters: TMP's
+                    // shader does not cull backfaces, so a quad whose front
+                    // points away is still drawn, just reversed. Flipping the
+                    // page-up alone cannot fix that -- it rotates the quad 180
+                    // degrees in its own plane, which turns mirrored-upright
+                    // into mirrored-upside-down. Only flipping the normal
+                    // changes the handedness, so that is what changes here.
+                    label.transform.localRotation = Quaternion.LookRotation(-up, -forward);
                     // Sized off the key's WIDTH, which is what actually
                     // constrains a digit sitting on a key -- a white key is
                     // about 22mm across and 140mm deep, so sizing by depth
