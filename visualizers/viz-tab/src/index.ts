@@ -1209,12 +1209,29 @@ export class TabRenderer {
       const isAnchor = !nashville && mod(key.midi, 12) === 0;
       if (degree || isAnchor) {
         const tonic = degree === "1";
-        ctx.fillStyle =
-          intensity > 0 ? "rgba(12,20,28,0.92)" : tonic ? "rgba(18,26,34,0.86)" : "rgba(22,30,38,0.62)";
-        ctx.font = `${tonic ? "700 " : ""}10px ui-monospace, SFMono-Regular, Consolas, monospace`;
+        // Sized to the key rather than fixed, and placed against the bottom of
+        // the KEY rather than the bottom of the canvas: a degree is a label on
+        // an object the player is looking at, and at 10px pinned to the canvas
+        // edge it read as the same incidental grey as the octave markers it
+        // replaced.
+        const labelPx = degree
+          ? Math.round(clamp(key.w * 0.62, 11, 18))
+          : 10;
+        ctx.fillStyle = degree
+          ? intensity > 0
+            ? "rgba(10,16,24,0.95)"
+            : tonic
+              ? "rgba(14,20,28,0.95)"
+              : "rgba(28,38,50,0.78)"
+          : "rgba(22,30,38,0.52)";
+        ctx.font = `${degree ? (tonic ? "800 " : "700 ") : ""}${labelPx}px ui-monospace, SFMono-Regular, Consolas, monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        ctx.fillText(degree ?? midiToNoteName(key.midi, noteStyle), key.centerX, h - 6);
+        ctx.fillText(
+          degree ?? midiToNoteName(key.midi, noteStyle),
+          key.centerX,
+          keyboardTop + keyboardHeight - 5,
+        );
       }
     }
 
