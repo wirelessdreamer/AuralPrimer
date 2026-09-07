@@ -38,8 +38,9 @@ namespace AuralPrimer.Calibration
                + "to the TMP default when unset.")]
         [SerializeField] TMP_FontAsset degreeFont;
 
-        [Tooltip("Height of a degree number as a fraction of a white key's depth.")]
-        [SerializeField, Range(0.1f, 1f)] float degreeSizeFraction = 0.38f;
+        [Tooltip("Degree number size as a multiple of the key's width. A key is "
+               + "roughly 22mm across, so this is what keeps the digit on it.")]
+        [SerializeField, Range(1f, 12f)] float degreeSize = 5f;
 
         CalibrationProfile _profile;
         KeyboardLayout _layout;
@@ -770,11 +771,23 @@ namespace AuralPrimer.Calibration
                     label.transform.localPosition = marker.localPosition
                         + up * 0.004f
                         + forward * (depth * 0.30f);
-                    // Lying on the key and readable from the playing position:
-                    // the text's own up axis points away from the player along
-                    // the bed, its normal points at the ceiling.
-                    label.transform.localRotation = Quaternion.LookRotation(-up, forward);
-                    label.fontSize = Mathf.Max(0.35f, whiteKeyDepth * degreeSizeFraction * 10f);
+                    // Lying on the key and readable from the playing position.
+                    //
+                    // LookRotation's first argument is where the object's +Z
+                    // points and the second is its +Y. A TMP quad faces along
+                    // +Z and runs its text up its +Y, so to be read from above
+                    // the normal has to point at the ceiling and the page-up
+                    // direction away from the player. I had both backwards --
+                    // (-up, forward) faces the text down into the key and puts
+                    // its top toward the player, which is upside down and
+                    // pointing away from anyone who could read it.
+                    label.transform.localRotation = Quaternion.LookRotation(up, -forward);
+                    // Sized off the key's WIDTH, which is what actually
+                    // constrains a digit sitting on a key -- a white key is
+                    // about 22mm across and 140mm deep, so sizing by depth
+                    // produced numbers several times wider than the key they
+                    // belong to.
+                    label.fontSize = Mathf.Max(0.03f, keyWidth * degreeSize);
                     label.rectTransform.sizeDelta = new Vector2(keyWidth * 1.6f, depth);
                 }
             }
