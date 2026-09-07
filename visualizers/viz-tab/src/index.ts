@@ -287,6 +287,32 @@ export function pitchToNashville(pitch: number, analysis: KeySignatureAnalysis |
   return (useFlat ? NASHVILLE_FLAT : NASHVILLE_SHARP)[degree];
 }
 
+//: Semitones above the tonic for each degree of the scale, by mode.
+//:
+//: Minor is the natural minor, which is what "the key of A minor" means to a
+//: player reading a chart.
+const SCALE_STEPS: Record<"major" | "minor", readonly number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+};
+
+/**
+ * The scale degree 1-7 for a pitch, or null if it is not in the key.
+ *
+ * Derived from the scale rather than from the Nashville spelling, and that
+ * distinction is the whole of it. In a minor key three of the seven diatonic
+ * notes are spelled with flats -- A minor runs 1 2 b3 4 5 b6 b7 -- so testing
+ * "does the label have an accidental" throws away nearly half the scale. The
+ * ordinal position is what the player is counting; b3 IS the third degree.
+ */
+export function diatonicDegree(pitch: number, analysis: KeySignatureAnalysis | null): string | null {
+  if (!analysis) return null;
+  const steps = SCALE_STEPS[analysis.mode === "minor" ? "minor" : "major"];
+  const interval = mod(pitch - analysis.pitchClass, 12);
+  const index = steps.indexOf(interval);
+  return index === -1 ? null : String(index + 1);
+}
+
 function roundRectPath(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1176,20 +1202,19 @@ export class TabRenderer {
       ctx.strokeRect(key.x, keyboardTop, key.w, keyboardHeight);
 
       // In note-name mode, label only the C keys as octave anchors. In
-      // Nashville mode, label the tonic of every octave with "1" so the
-      // user can orient against the key's home note across the keyboard.
-      const isTonic = nashville && this.keySignature
-        ? mod(key.midi, 12) === mod(this.keySignature.pitchClass, 12)
-        : mod(key.midi, 12) === 0;
-      if (isTonic) {
-        ctx.fillStyle = intensity > 0 ? "rgba(12,20,28,0.92)" : "rgba(22,30,38,0.52)";
-        ctx.font = "10px ui-monospace, SFMono-Regular, Consolas, monospace";
+      // Nashville mode, number every key that belongs to the song: the 1-7
+      // pattern repeating up the board is the thing worth seeing, and one "1"
+      // per octave only tells you where home is, not the shape around it.
+      const degree = nashville ? diatonicDegree(key.midi, this.keySignature) : null;
+      const isAnchor = !nashville && mod(key.midi, 12) === 0;
+      if (degree || isAnchor) {
+        const tonic = degree === "1";
+        ctx.fillStyle =
+          intensity > 0 ? "rgba(12,20,28,0.92)" : tonic ? "rgba(18,26,34,0.86)" : "rgba(22,30,38,0.62)";
+        ctx.font = `${tonic ? "700 " : ""}10px ui-monospace, SFMono-Regular, Consolas, monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        const label = nashville
-          ? pitchToNashville(key.midi, this.keySignature) ?? midiToNoteName(key.midi, noteStyle)
-          : midiToNoteName(key.midi, noteStyle);
-        ctx.fillText(label, key.centerX, h - 6);
+        ctx.fillText(degree ?? midiToNoteName(key.midi, noteStyle), key.centerX, h - 6);
       }
     }
 
@@ -1197,9 +1222,16 @@ export class TabRenderer {
     for (const key of keyboard.black) {
       const intensity = activeKeys.get(key.midi) ?? 0;
       const live = liveKeys.get(key.midi);
+      // A black key can be a scale degree -- in A major three of them are --
+      // so the ones that belong to the song are lifted and the ones that do
+      // not are pushed back. Numbering without that contrast reads as numbers
+      // scattered over a uniform board; with it the key's own shape is legible
+      // before a single note falls.
+      const blackDegree = nashville ? diatonicDegree(key.midi, this.keySignature) : null;
+      const outsideKey = nashville && !blackDegree;
       const blackGrad = ctx.createLinearGradient(0, keyboardTop, 0, keyboardTop + blackKeyHeight);
-      blackGrad.addColorStop(0, "#171c24");
-      blackGrad.addColorStop(1, "#04070d");
+      blackGrad.addColorStop(0, outsideKey ? "#0d1016" : "#1d232d");
+      blackGrad.addColorStop(1, outsideKey ? "#03050a" : "#04070d");
       ctx.fillStyle = blackGrad;
       roundRectPath(ctx, key.x, keyboardTop, key.w, blackKeyHeight, 4);
       ctx.fill();
@@ -1225,14 +1257,23 @@ export class TabRenderer {
       roundRectPath(ctx, key.x, keyboardTop, key.w, blackKeyHeight, 4);
       ctx.stroke();
 
-      if (intensity > 0) {
-        ctx.fillStyle = "rgba(250,252,255,0.92)";
-        ctx.font = "8px ui-monospace, SFMono-Regular, Consolas, monospace";
+      // Numbered whenever it is in the key, not only while it is lit: the
+      // pattern has to be readable when nothing is playing, which is when
+      // someone is actually looking for it.
+      if (blackDegree || intensity > 0) {
+        ctx.fillStyle = blackDegree
+          ? intensity > 0
+            ? "rgba(250,252,255,0.95)"
+            : "rgba(228,238,252,0.78)"
+          : "rgba(250,252,255,0.92)";
+        ctx.font = `${blackDegree === "1" ? "700 " : ""}8px ui-monospace, SFMono-Regular, Consolas, monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        const blackLabel = nashville
-          ? pitchToNashville(key.midi, this.keySignature) ?? noteNameForPitchClass(mod(key.midi, 12), noteStyle)
-          : noteNameForPitchClass(mod(key.midi, 12), noteStyle);
+        const blackLabel =
+          blackDegree ??
+          (nashville
+            ? pitchToNashville(key.midi, this.keySignature) ?? noteNameForPitchClass(mod(key.midi, 12), noteStyle)
+            : noteNameForPitchClass(mod(key.midi, 12), noteStyle));
         ctx.fillText(blackLabel, key.centerX, keyboardTop + blackKeyHeight * 0.55);
       }
     }

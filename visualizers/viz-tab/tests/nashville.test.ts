@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pitchToNashville, type KeySignatureAnalysis } from "../src/index";
+import { pitchToNashville, diatonicDegree, type KeySignatureAnalysis } from "../src/index";
 
 function key(
   tonic: string,
@@ -87,3 +87,35 @@ describe("pitchToNashville", () => {
     }
   });
 });
+
+describe("diatonicDegree", () => {
+  // What the key bed numbers. Seven of the twelve get a digit; the other five
+  // get nothing, because an accidental on every remaining key buries the
+  // pattern the numbering exists to show.
+  it("numbers exactly the seven notes of a major key", () => {
+    const degrees = Array.from({ length: 12 }, (_, pc) => diatonicDegree(p(pc), C_MAJOR));
+    expect(degrees).toEqual(["1", null, "2", null, "3", "4", null, "5", null, "6", null, "7"]);
+  });
+
+  it("numbers the seven of a minor key, flat spellings included", () => {
+    // A minor: the b3, b6 and b7 ARE the key, so they must be numbered 3, 6, 7
+    // rather than skipped for carrying a flat in their Nashville spelling.
+    const degrees = Array.from({ length: 12 }, (_, pc) => diatonicDegree(p(pc), A_MINOR));
+    expect(degrees.filter(Boolean)).toHaveLength(7);
+    expect(diatonicDegree(p(9), A_MINOR)).toBe("1");   // A
+    expect(diatonicDegree(p(0), A_MINOR)).toBe("3");   // C — a b3 that is diatonic
+    expect(diatonicDegree(p(10), A_MINOR)).toBeNull(); // Bb — genuinely outside
+  });
+
+  it("numbers black keys when the key puts them in the scale", () => {
+    // F major: Bb is the 4, and Bb is a black key. The pattern has to follow
+    // the key, not the colour of the keys.
+    expect(diatonicDegree(p(10), F_MAJOR)).toBe("4");
+    expect(diatonicDegree(p(11), F_MAJOR)).toBeNull();
+  });
+
+  it("gives nothing without a key analysis", () => {
+    expect(diatonicDegree(p(0), null)).toBeNull();
+  });
+});
+
