@@ -60,6 +60,9 @@ namespace AuralPrimer.UI
         TextMeshProUGUI _status;
         BoxCollider _grabBounds;
         BoxCollider _topBounds;
+
+        /// <summary>Width and height of the panel face, for the gaze test.</summary>
+        Vector2 _faceSize;
         RectTransform _buttonRow;
         UnityEngine.UI.Slider _scrub;
         RectTransform _scrubRow;
@@ -167,6 +170,13 @@ namespace AuralPrimer.UI
             // is an invisible obstacle in the middle of the room.
             if (_grabBounds != null) _grabBounds.enabled = visible;
             if (_topBounds != null) _topBounds.enabled = visible;
+
+            // And so does the gaze target, for the same reason one step further
+            // on: hiding is done by switching the canvas off, not the object, so
+            // a panel that stopped registering would keep drawing a ray at a
+            // rectangle of empty room.
+            if (visible) MenuGaze.Register(transform, _faceSize);
+            else MenuGaze.Unregister(transform);
         }
 
         public void Toggle()
@@ -695,6 +705,12 @@ namespace AuralPrimer.UI
             _grabBounds.center = new Vector3(0f, -(canvasHeight * scale) * 0.5f + handleHeightMetres * 0.5f, 0f);
             _grabBounds.isTrigger = true;
 
+            // Say where the menu FACE is, so a hand ray can tell "aiming at the
+            // panel" from "hands resting over the keys". The whole face, not
+            // this bar: the head lands on the buttons, not on the grip.
+            _faceSize = new Vector2(widthMetres, canvasHeight * scale);
+            MenuGaze.Register(transform, _faceSize);
+
             // --- Top drag bar -------------------------------------------
             // A second bar along the top edge, feeding the SAME interactable.
             // With a dynamic attach the panel pivots about wherever it was taken
@@ -809,6 +825,13 @@ namespace AuralPrimer.UI
             // Text must not swallow the ray meant for the panel behind it.
             text.raycastTarget = false;
             return text;
+        }
+
+        void OnDestroy()
+        {
+            // The list is static and outlives the panel; a destroyed entry left
+            // in it is a dead one every gaze query has to step over.
+            MenuGaze.Unregister(transform);
         }
     }
 }

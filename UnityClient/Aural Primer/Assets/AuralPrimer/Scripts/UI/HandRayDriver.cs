@@ -38,13 +38,13 @@ namespace AuralPrimer.UI
                + "at the threshold does not chatter the selection on and off.")]
         [SerializeField] float pinchExitMetres = 0.035f;
 
-        [Tooltip("Within this distance of the keys, the ray is put away. A hand "
-               + "over the keyboard is playing, not pointing.")]
-        [SerializeField] float suppressNearKeysMetres = 0.16f;
+        [Tooltip("How far the head's gaze reaches when deciding whether it is on a "
+               + "menu. Beyond this a panel is scenery, not a target.")]
+        [SerializeField] float gazeRangeMetres = 4f;
 
-        [Tooltip("And beyond this it comes back. Wider than the suppress distance "
-               + "so a hand hovering at the boundary does not flicker the ray.")]
-        [SerializeField] float restoreNearKeysMetres = 0.22f;
+        [Tooltip("How long the ray stays after the gaze leaves a menu. Stops a "
+               + "glance at the music, or a panel edge, from strobing it.")]
+        [SerializeField] float gazeHoldSeconds = 0.35f;
 
         XRHandSubsystem _hands;
         XROrigin _origin;
@@ -70,7 +70,7 @@ namespace AuralPrimer.UI
         NearFarInteractor _interactor;
         bool _pinching;
         bool _posed;
-        bool _nearKeys;
+        float _gazeLeftMenuAt = -999f;
 
         void Awake()
         {
@@ -112,39 +112,44 @@ namespace AuralPrimer.UI
                 return;
             }
 
-            // Put the ray away over the keyboard. Playing produces a stream of
-            // pinch-like finger poses inches from the keys, and a laser sweeping
-            // the room from each hand while both are busy is noise at best — at
-            // worst it fires selections at whatever it crosses.
-            var distance = KeyboardProximity.SuppressOverKeys
-                ? KeyboardProximity.Distance(knuckle)
-                : -1f;
-            if (distance >= 0f)
-            {
-                // Hysteresis, for the same reason the pinch has it: a hand
-                // resting at the threshold would otherwise strobe the ray.
-                if (_nearKeys ? distance > restoreNearKeysMetres
-                              : distance < suppressNearKeysMetres)
-                {
-                    _nearKeys = !_nearKeys;
-                }
-
-            }
-
-            // Put away the RAY, not the interactor.
+            // Draw the ray only where it is being aimed: at a menu.
             //
-            // Lost() disables the whole NearFarInteractor, which also kills
-            // near-grab and every press. With the menu docked 0.30 m from the key
-            // bed and the restore threshold once set at 0.32 m, reaching from the
-            // keys to the menu never crossed back — so the interactor stayed off
-            // exactly where it was needed, and both drag bars went dead.
-            if (!KeyboardProximity.SuppressOverKeys) _nearKeys = false;
-            SetRayVisible(!_nearKeys);
+            // Hand proximity to the keys used to decide this, and it answered a
+            // near-enough question with the wrong evidence. A hand can be well
+            // clear of the keyboard and still not be pointing at anything, so
+            // the laser swept the room whenever the hands were raised. Where
+            // the head is looking is what actually says "I am aiming at that".
+            SetRayVisible(WantsRay());
 
             Aim(knuckle);
             Press(Vector3.Distance(thumbTip, indexTip));
 
             if (!_posed) { SetVisible(true); _posed = true; }
+        }
+
+        /// <summary>Should a laser be drawn from this hand right now?</summary>
+        /// <remarks>
+        /// Always during calibration: the edge handles sit ON the key bed, so a
+        /// rule that hides the ray unless the head is on a menu would hide the
+        /// only means of reaching them — the same trap the keys-proximity rule
+        /// had, and the reason SuppressOverKeys exists at all.
+        /// </remarks>
+        bool WantsRay()
+        {
+            if (!KeyboardProximity.SuppressOverKeys) return true;
+
+            var head = Camera.main;
+            if (head == null) return false;
+
+            var looking = MenuGaze.IsLookedAt(
+                new Ray(head.transform.position, head.transform.forward), gazeRangeMetres);
+            if (looking) _gazeLeftMenuAt = Time.time;
+
+            // Held briefly after the gaze leaves, rather than switched on the
+            // frame: reading a chart means glancing away from the panel
+            // constantly, and a laser blinking in the corner of the eye is
+            // worse than one that lingers.
+            return Time.time - _gazeLeftMenuAt < gazeHoldSeconds;
         }
 
         /// <summary>
