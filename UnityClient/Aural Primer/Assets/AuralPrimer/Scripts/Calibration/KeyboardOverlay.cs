@@ -410,8 +410,42 @@ namespace AuralPrimer.Calibration
             // shared material and still lets all sixty-one differ.
             _previewBlock ??= new MaterialPropertyBlock();
             _previewBlock.Clear();
-            _previewBlock.SetColor(BaseColorId, Color.Lerp(PreviewFar, PreviewNear, nearness));
+            _previewBlock.SetColor(BaseColorId, PreviewColour(note.Pitch, nearness));
             fill.SetPropertyBlock(_previewBlock);
+        }
+
+        /// <summary>What colour to paint a key that has a note coming.</summary>
+        /// <remarks>
+        /// The pitch's own Boomwhacker colour, flat: the same red on the key as
+        /// on the lane above it and on the desktop app, so a note keeps one
+        /// identity all the way down to the finger.
+        ///
+        /// Flat on purpose. The bar already grows as the note approaches, so
+        /// distance was being said twice, and the louder of the two sayings was
+        /// drowning out the quieter thing only colour can say -- which note this
+        /// is. A hue that slides through the approach cannot also name a pitch,
+        /// because by the time it arrives it is a different colour from the one
+        /// the lane taught. Length says when; colour says what.
+        ///
+        /// Opaque, which the far end of the old gradient was not. Black keys
+        /// are drawn above the white plate that still runs underneath them, and
+        /// two translucent plates show through each other -- a bar on a black
+        /// key could be read as one on the white key beside it. Transparent
+        /// geometry draws back-to-front, so depth writing cannot fix it and
+        /// opacity is the only lever that occludes.
+        ///
+        /// Falls back to the old green approach ramp when the player has turned
+        /// pitch colours off, so the one setting still means one thing on both
+        /// the lane and the bed.
+        /// </remarks>
+        Color PreviewColour(int pitch, float nearness)
+        {
+            if (_profile == null || !_profile.NoteColors)
+                return Color.Lerp(PreviewFar, PreviewNear, nearness);
+
+            var colour = NoteHighway.ForPitch(pitch);
+            colour.a = 1f;
+            return colour;
         }
 
         /// <summary>
@@ -543,12 +577,12 @@ namespace AuralPrimer.Calibration
 
             // What is coming, drawn inside the keys rather than over them.
             //
-            // One flat colour across every upcoming key answers "these are
-            // next" but not "in what order", which is the only question worth
-            // asking of a run. So each key gets a bar that grows as its note
-            // approaches and a colour that warms toward the lit one: the key
-            // you play next has the longest bar and the hottest colour, and the
-            // ranking is readable at a glance without counting anything.
+            // Marking every upcoming key the same answers "these are next" but
+            // not "in what order", which is the only question worth asking of a
+            // run. So each key gets a bar that grows as its note approaches:
+            // the key you play next has the longest bar, and the ranking is
+            // readable at a glance without counting anything. Colour is spent
+            // on which note it is, not on how soon -- see PreviewColour.
             HideAllPreviews();
             HideAllSustains();
             HideAllBreaks();

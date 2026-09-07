@@ -144,6 +144,15 @@ namespace AuralPrimer.Calibration
             new(0.925f, 0.110f, 0.557f), // B
         };
 
+        /// <summary>The Boomwhacker colour for a MIDI pitch.</summary>
+        /// <remarks>
+        /// Shared rather than copied. The key bed paints the same twelve, and a
+        /// second table of them is a table that drifts: the whole point of the
+        /// convention is that every C is the SAME red, on the lane, on the key,
+        /// and on the tube in the player's hand.
+        /// </remarks>
+        public static Color ForPitch(int pitch) => NoteColors[((pitch % 12) + 12) % 12];
+
         MaterialPropertyBlock _noteBlock;
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         Material _whiteMaterial;
@@ -665,7 +674,7 @@ namespace AuralPrimer.Calibration
 
             _noteBlock ??= new MaterialPropertyBlock();
             _noteBlock.Clear();
-            var colour = NoteColors[((pitch % 12) + 12) % 12];
+            var colour = ForPitch(pitch);
             colour.a = 0.9f;
             _noteBlock.SetColor(BaseColorId, colour);
             renderer.SetPropertyBlock(_noteBlock);
