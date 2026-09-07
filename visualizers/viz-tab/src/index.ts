@@ -1215,7 +1215,7 @@ export class TabRenderer {
         // edge it read as the same incidental grey as the octave markers it
         // replaced.
         const labelPx = degree
-          ? Math.round(clamp(key.w * 0.62, 11, 18))
+          ? Math.round(clamp(key.w * 0.78, 14, 24))
           : 10;
         ctx.fillStyle = degree
           ? intensity > 0
@@ -1280,10 +1280,17 @@ export class TabRenderer {
       if (blackDegree || intensity > 0) {
         ctx.fillStyle = blackDegree
           ? intensity > 0
-            ? "rgba(250,252,255,0.95)"
-            : "rgba(228,238,252,0.78)"
+            ? "rgba(252,253,255,0.98)"
+            : "rgba(236,244,255,0.92)"
           : "rgba(250,252,255,0.92)";
-        ctx.font = `${blackDegree === "1" ? "700 " : ""}8px ui-monospace, SFMono-Regular, Consolas, monospace`;
+        // A larger share of the width than the white keys get, because a black
+        // key is about 0.62 as wide: matching the multiplier would make these
+        // the smallest numbers on the board when they are the ones sitting on
+        // the narrowest, darkest target.
+        const blackLabelPx = blackDegree
+          ? Math.round(clamp(key.w * 1.02, 12, 19))
+          : 8;
+        ctx.font = `${blackDegree ? (blackDegree === "1" ? "800 " : "700 ") : ""}${blackLabelPx}px ui-monospace, SFMono-Regular, Consolas, monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         const blackLabel =
@@ -1291,7 +1298,7 @@ export class TabRenderer {
           (nashville
             ? pitchToNashville(key.midi, this.keySignature) ?? noteNameForPitchClass(mod(key.midi, 12), noteStyle)
             : noteNameForPitchClass(mod(key.midi, 12), noteStyle));
-        ctx.fillText(blackLabel, key.centerX, keyboardTop + blackKeyHeight * 0.55);
+        ctx.fillText(blackLabel, key.centerX, keyboardTop + blackKeyHeight * 0.72);
       }
     }
 
