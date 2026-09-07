@@ -46,7 +46,7 @@ function setup(overrides: Partial<MidiTransportDeps> = {}, state = { t: 30, isPl
   const startSession = vi.fn();
   const onSeeked = vi.fn();
   const deps = {
-    transportController: tc as unknown as MidiTransportDeps["transportController"],
+    getTransportController: () => tc as unknown as ReturnType<MidiTransportDeps["getTransportController"]>,
     getBindings: () => defaultBindings(),
     getCurrentRoute: () => "play",
     isPauseMenuVisible: () => false,
@@ -282,7 +282,7 @@ describe("midiTransportControl", () => {
         stop: vi.fn(),
       };
       handle = initMidiTransportControl({
-        transportController: tc as unknown as MidiTransportDeps["transportController"],
+        getTransportController: () => tc as unknown as ReturnType<MidiTransportDeps["getTransportController"]>,
         getBindings: () => defaultBindings(),
         getCurrentRoute: () => "play",
         isPauseMenuVisible: () => false,

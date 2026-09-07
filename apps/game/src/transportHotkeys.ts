@@ -22,7 +22,16 @@ export const JOG_COARSE_SEC = 5;
 export const JOG_FINE_SEC = 1;
 
 export type TransportHotkeysDeps = {
-  transportController: TransportController;
+  /**
+   * The transport in use right now, resolved per call.
+   *
+   * Not the controller itself: when native audio stalls the host disposes the
+   * controller and builds a new one around the HTML timebase, and anything
+   * holding the old reference then drives a dead object in silence. That is
+   * what took the transport keys and the MIDI transport buttons out together
+   * -- they kept working exactly until the first fallback.
+   */
+  getTransportController: () => TransportController;
   /** Current app route; hotkeys only act on "play". */
   getCurrentRoute: () => string;
   /** Pause menu open? If so we defer to it completely. */
@@ -51,14 +60,14 @@ function targetIsTyping(target: EventTarget | null): boolean {
 }
 
 export function initTransportHotkeys(deps: TransportHotkeysDeps): TransportHotkeys {
-  const { transportController } = deps;
+  const transportController = (): TransportController => deps.getTransportController();
 
   function jogBy(deltaSec: number): void {
-    const st = transportController.getState();
+    const st = transportController().getState();
     const next = Math.max(0, st.t + deltaSec);
-    transportController.seek(next);
+    transportController().seek(next);
     deps.onTransportChanged?.();
-    deps.onSeeked?.(transportController.getState().t);
+    deps.onSeeked?.(transportController().getState().t);
   }
 
   function togglePlayback(): void {
@@ -67,8 +76,8 @@ export function initTransportHotkeys(deps: TransportHotkeysDeps): TransportHotke
       if (deps.canStartSession()) deps.startSession();
       return;
     }
-    if (transportController.getState().isPlaying) transportController.pause();
-    else void transportController.play();
+    if (transportController().getState().isPlaying) transportController().pause();
+    else void transportController().play();
     deps.onTransportChanged?.();
   }
 

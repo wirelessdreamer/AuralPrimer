@@ -56,7 +56,16 @@ export function jogStepSecForTick(tickIndex: number): number {
 }
 
 export type MidiTransportDeps = {
-  transportController: TransportController;
+  /**
+   * The transport in use right now, resolved per call.
+   *
+   * Not the controller itself: when native audio stalls the host disposes the
+   * controller and builds a new one around the HTML timebase, and anything
+   * holding the old reference then drives a dead object in silence. That is
+   * what took the transport keys and the MIDI transport buttons out together
+   * -- they kept working exactly until the first fallback.
+   */
+  getTransportController: () => TransportController;
   /** Current bindings; read per message so Learn takes effect immediately. */
   getBindings: () => TransportBindings;
   /** Current app route; transport buttons only act on "play". */
@@ -87,7 +96,7 @@ export type MidiTransportControl = {
 };
 
 export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransportControl {
-  const { transportController } = deps;
+  const transportController = (): TransportController => deps.getTransportController();
 
   let jogTimer: number | null = null;
   let jogTick = 0;
@@ -111,12 +120,12 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
 
   function afterTransportChange(): void {
     deps.onTransportChanged?.();
-    deps.onSeeked?.(transportController.getState().t);
+    deps.onSeeked?.(transportController().getState().t);
   }
 
   function jogOnce(): void {
     jogTargetSec = Math.max(0, jogTargetSec + jogStepSecForTick(jogTick) * jogDir);
-    transportController.seek(jogTargetSec);
+    transportController().seek(jogTargetSec);
     jogTick += 1;
     afterTransportChange();
   }
@@ -141,7 +150,7 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
     cancelJog();
     jogDir = direction;
     // Anchor to wherever playback actually is, once, at the moment of press.
-    jogTargetSec = Math.max(0, transportController.getState().t);
+    jogTargetSec = Math.max(0, transportController().getState().t);
     jogOnce(); // respond on the press itself, not a tick later
     jogTimer = window.setInterval(jogOnce, JOG_TICK_MS);
   }
@@ -154,8 +163,8 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
     }
     // Toggle, matching Space: a transport button you have to pair with Stop to
     // re-use is worse than one that just does the obvious thing.
-    if (transportController.getState().isPlaying) transportController.pause();
-    else void transportController.play();
+    if (transportController().getState().isPlaying) transportController().pause();
+    else void transportController().play();
     deps.onTransportChanged?.();
   }
 
@@ -165,14 +174,14 @@ export function initMidiTransportControl(deps: MidiTransportDeps): MidiTransport
       if (deps.canStartSession()) deps.startSession();
       return;
     }
-    transportController.seek(0);
-    void transportController.play();
+    transportController().seek(0);
+    void transportController().play();
     afterTransportChange();
   }
 
   function stop(): void {
     cancelJog();
-    transportController.stop();
+    transportController().stop();
     afterTransportChange();
   }
 

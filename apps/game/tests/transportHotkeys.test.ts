@@ -42,7 +42,7 @@ function setup(overrides: Partial<TransportHotkeysDeps> = {}, state = { t: 30, i
   const onSeeked = vi.fn();
   const onTransportChanged = vi.fn();
   const deps = {
-    transportController: tc as unknown as TransportHotkeysDeps["transportController"],
+    getTransportController: () => tc as unknown as ReturnType<TransportHotkeysDeps["getTransportController"]>,
     getCurrentRoute: () => "play",
     isPauseMenuVisible: () => false,
     isSessionRunning: () => true,
@@ -208,6 +208,36 @@ describe("transportHotkeys", () => {
         new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
       );
       expect(h.tc.seek).toHaveBeenCalledTimes(1);
+    });
+
+    it("follows a controller the host swaps underneath it", () => {
+      // When native audio stalls the host disposes the transport controller
+      // and builds a new one around the HTML timebase. The hotkeys resolve the
+      // controller per call for exactly this reason -- holding the reference
+      // from init meant that after the first fallback both the keyboard and
+      // the MIDI transport buttons drove a disposed object and did nothing,
+      // silently, for the rest of the session.
+      const first = { getState: vi.fn(() => ({ t: 5, isPlaying: false })), seek: vi.fn(),
+                      play: vi.fn(), pause: vi.fn(), stop: vi.fn() };
+      const second = { getState: vi.fn(() => ({ t: 5, isPlaying: false })), seek: vi.fn(),
+                       play: vi.fn(), pause: vi.fn(), stop: vi.fn() };
+      let live = first;
+      handle = initTransportHotkeys({
+        getTransportController: () => live as never,
+        getCurrentRoute: () => "play",
+        isPauseMenuVisible: () => false,
+        isSessionRunning: () => true,
+        canStartSession: () => true,
+        startSession: () => {},
+      } as never);
+
+      press("ArrowRight");
+      expect(first.seek).toHaveBeenCalledTimes(1);
+
+      live = second;                       // the host swapped it
+      press("ArrowRight");
+      expect(second.seek).toHaveBeenCalledTimes(1);
+      expect(first.seek).toHaveBeenCalledTimes(1);   // and the dead one is left alone
     });
 
     it("ignores keys in a contenteditable element", () => {

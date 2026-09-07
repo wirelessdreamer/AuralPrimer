@@ -2216,7 +2216,10 @@ window.setInterval(() => {
 // Space start/pause/resume + Left/Right jog. Logic lives in
 // transportHotkeys.ts; the wiring here supplies the host state it needs.
 const transportHostDeps = {
-  transportController,
+  // A getter, not the controller: resetTransportController() replaces the
+  // instance on an audio-backend fallback, and a captured reference would keep
+  // driving the disposed one.
+  getTransportController: () => transportController,
   getCurrentRoute: () => routeController.getCurrentRoute(),
   isPauseMenuVisible: () => pauseMenu.isVisible(),
   isSessionRunning: () => sessionStarted,
