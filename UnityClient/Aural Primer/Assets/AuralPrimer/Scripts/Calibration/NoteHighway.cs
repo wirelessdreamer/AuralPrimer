@@ -82,6 +82,19 @@ namespace AuralPrimer.Calibration
         [SerializeField] int maxVisibleNotes = 256;
 
         readonly List<ChartNote> _notes = new();
+
+        /// <summary>Which hand the player is working on: -1 both, 0 left, 1 right.</summary>
+        /// <remarks>
+        /// Decided on the desktop and sent with the chart, which is why there is
+        /// no toggle in here. The desktop re-sends the chart the moment the
+        /// choice changes, so switching hands lands mid-song rather than at the
+        /// next one.
+        /// </remarks>
+        int _wantedHand = -1;
+        bool _showOtherHand = true;
+
+        /// <summary>Is this a note the player is NOT being asked to play?</summary>
+        bool IsOtherHand(int hand) => _wantedHand >= 0 && hand >= 0 && hand != _wantedHand;
         readonly List<Transform> _pool = new();
         readonly List<Renderer> _poolRenderers = new();
         readonly List<Transform> _heads = new();
@@ -169,13 +182,16 @@ namespace AuralPrimer.Calibration
             /// player has to lift and strike rather than simply arrive.
             /// </summary>
             public readonly bool IsRestrike;
+            /// <summary>0 left, 1 right, -1 for a part that was never split.</summary>
+            public readonly int Hand;
 
-            public ChartNote(float on, float off, int pitch, bool isRestrike = false)
+            public ChartNote(float on, float off, int pitch, bool isRestrike = false, int hand = -1)
             {
                 On = on;
                 Off = off;
                 Pitch = pitch;
                 IsRestrike = isRestrike;
+                Hand = hand;
             }
         }
 
@@ -268,12 +284,15 @@ namespace AuralPrimer.Calibration
             public readonly float Seconds;
             /// <summary>The key is sounding now and must be released first.</summary>
             public readonly bool IsRestrike;
+            /// <summary>Belongs to the hand the player is NOT working on.</summary>
+            public readonly bool IsOtherHand;
 
-            public UpcomingNote(int pitch, float seconds, bool isRestrike)
+            public UpcomingNote(int pitch, float seconds, bool isRestrike, bool isOtherHand = false)
             {
                 Pitch = pitch;
                 Seconds = seconds;
                 IsRestrike = isRestrike;
+                IsOtherHand = isOtherHand;
             }
         }
 
@@ -302,10 +321,14 @@ namespace AuralPrimer.Calibration
             /// <summary>0 at the strike, 1 at the release.</summary>
             public readonly float Progress;
 
-            public SustainingNote(int pitch, float progress)
+            /// <summary>Belongs to the hand the player is NOT working on.</summary>
+            public readonly bool IsOtherHand;
+
+            public SustainingNote(int pitch, float progress, bool isOtherHand = false)
             {
                 Pitch = pitch;
                 Progress = progress;
+                IsOtherHand = isOtherHand;
             }
         }
 
@@ -341,6 +364,9 @@ namespace AuralPrimer.Calibration
             _notes.Clear();
             _cursor = 0;
 
+            _wantedHand = ScanHandMode(json);
+            _showOtherHand = ScanFlag(json, "showOtherHand", true);
+
             try
             {
                 ParseNotes(json, _notes);
@@ -351,7 +377,9 @@ namespace AuralPrimer.Calibration
                 _notes.Clear();
             }
 
-            Debug.Log($"[highway] chart loaded: {_notes.Count} notes");
+            Debug.Log($"[highway] chart loaded: {_notes.Count} notes"
+                    + $" hand={(_wantedHand < 0 ? "both" : _wantedHand == 0 ? "left" : "right")}"
+                    + $" showOther={_showOtherHand}");
         }
 
         void Update()
@@ -399,6 +427,13 @@ namespace AuralPrimer.Calibration
                 var pitch = _profile.FoldPitch(_layout, note.Pitch);
                 if (pitch < 0) continue;
 
+                // The hand the player is not working on. Hidden outright when
+                // they asked for that, and otherwise drawn faintly -- present
+                // enough to show how the parts fit, never bright enough to read
+                // as "play this".
+                var otherHand = IsOtherHand(note.Hand);
+                if (otherHand && !_showOtherHand) continue;
+
                 // About to be played, on the key it will be played on.
                 //
                 // The window runs from previewSeconds before the onset to a
@@ -429,7 +464,8 @@ namespace AuralPrimer.Calibration
                     && untilOnset > -strikeGraceSeconds
                     && _upcomingPitches.Add(pitch))
                 {
-                    _upcoming.Add(new UpcomingNote(pitch, Mathf.Max(0f, untilOnset), note.IsRestrike));
+                    _upcoming.Add(new UpcomingNote(pitch, Mathf.Max(0f, untilOnset),
+                                                   note.IsRestrike, otherHand));
                 }
 
                 // Struck, and not finished. Picked up here rather than in a
@@ -448,7 +484,8 @@ namespace AuralPrimer.Calibration
                     && sustainSeconds >= minimumHoldSeconds
                     && _sustainingPitches.Add(pitch))
                 {
-                    _sustaining.Add(new SustainingNote(pitch, Mathf.Clamp01(held / Mathf.Max(sustainSeconds, 1e-4f))));
+                    _sustaining.Add(new SustainingNote(
+                        pitch, Mathf.Clamp01(held / Mathf.Max(sustainSeconds, 1e-4f)), otherHand));
                 }
 
                 // Lifted clear of the real keys. Notes arrive at the "play now"
@@ -472,7 +509,7 @@ namespace AuralPrimer.Calibration
                 var length = Mathf.Max(minimumNoteLengthMetres, span - articulationGapMetres);
 
                 var slab = Rent(used, isBlack);
-                TintNote(used, pitch);
+                TintNote(used, pitch, otherHand);
                 // Local: this lane is parented to the spatial anchor along with
                 // the keys it belongs above.
                 slab.localPosition = key + laneUp * (startHeight + length * 0.5f);
@@ -665,20 +702,42 @@ namespace AuralPrimer.Calibration
         /// solid bar with its onset lost inside it, which is the thing the head
         /// exists to prevent.
         /// </remarks>
-        void TintNote(int index, int pitch)
+        void TintNote(int index, int pitch, bool otherHand = false)
         {
-            if (_profile == null || !_profile.NoteColors) return;
             if (index < 0 || index >= _poolRenderers.Count) return;
             var renderer = _poolRenderers[index];
             if (renderer == null) return;
 
+            // The other hand is dimmed even when pitch colours are off, because
+            // there the two hands would otherwise be the same slab and the
+            // player could not tell which one they were being asked for.
+            if (_profile == null || !_profile.NoteColors)
+            {
+                if (!otherHand) return;
+                _noteBlock ??= new MaterialPropertyBlock();
+                _noteBlock.Clear();
+                _noteBlock.SetColor(BaseColorId, new Color(1f, 1f, 1f, OtherHandAlpha));
+                renderer.SetPropertyBlock(_noteBlock);
+                return;
+            }
+
             _noteBlock ??= new MaterialPropertyBlock();
             _noteBlock.Clear();
             var colour = ForPitch(pitch);
-            colour.a = 0.9f;
+            colour.a = otherHand ? OtherHandAlpha : 0.9f;
             _noteBlock.SetColor(BaseColorId, colour);
             renderer.SetPropertyBlock(_noteBlock);
         }
+
+        /// <summary>
+        /// How much of its opacity the hand the player is NOT working on keeps.
+        /// </summary>
+        /// <remarks>
+        /// Lower than the desktop's equivalent. Passthrough already washes the
+        /// lane out against a real room, so a value that reads as "faint" on a
+        /// monitor reads as "still lit" through the headset.
+        /// </remarks>
+        public const float OtherHandAlpha = 0.22f;
 
         void HideAll()
         {
@@ -762,7 +821,13 @@ namespace AuralPrimer.Calibration
                     TryNumber(span, "off", out var off) &&
                     TryNumber(span, "pitch", out var pitch))
                 {
-                    into.Add(new ChartNoteData((float)on, (float)off, Mathf.RoundToInt((float)pitch)));
+                    // Optional: only a piano part that has been split carries it,
+                    // and -1 then means "belongs to whichever hand is chosen".
+                    var hand = TryNumber(span, "hand", out var handValue)
+                        ? Mathf.RoundToInt((float)handValue)
+                        : -1;
+                    into.Add(new ChartNoteData((float)on, (float)off,
+                                               Mathf.RoundToInt((float)pitch), hand));
                 }
 
                 i = close + 1;
@@ -774,13 +839,45 @@ namespace AuralPrimer.Calibration
             public readonly float On;
             public readonly float Off;
             public readonly int Pitch;
+            /// <summary>0 left, 1 right, -1 when the chart did not say.</summary>
+            public readonly int Hand;
 
-            public ChartNoteData(float on, float off, int pitch)
+            public ChartNoteData(float on, float off, int pitch, int hand = -1)
             {
                 On = on;
                 Off = off;
                 Pitch = pitch;
+                Hand = hand;
             }
+        }
+
+        /// <summary>Which hand the desktop asked for: -1 both, 0 left, 1 right.</summary>
+        /// <remarks>
+        /// Scanned rather than deserialised, like the rest of this payload: the
+        /// chart arrives as one large string and a full parse of it to read two
+        /// words would cost more than the whole draw loop.
+        /// </remarks>
+        static int ScanHandMode(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return -1;
+            var at = json.IndexOf("\"handMode\"", StringComparison.Ordinal);
+            if (at < 0) return -1;
+            var tail = json.Substring(at, Mathf.Min(32, json.Length - at));
+            if (tail.IndexOf("left", StringComparison.OrdinalIgnoreCase) >= 0) return 0;
+            if (tail.IndexOf("right", StringComparison.OrdinalIgnoreCase) >= 0) return 1;
+            return -1;
+        }
+
+        /// <summary>A top-level boolean in the chart, or <paramref name="fallback"/>.</summary>
+        static bool ScanFlag(string json, string key, bool fallback)
+        {
+            if (string.IsNullOrEmpty(json)) return fallback;
+            var at = json.IndexOf("\"" + key + "\"", StringComparison.Ordinal);
+            if (at < 0) return fallback;
+            var tail = json.Substring(at, Mathf.Min(24 + key.Length, json.Length - at));
+            if (tail.IndexOf("true", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (tail.IndexOf("false", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            return fallback;
         }
 
         static bool TryNumber(string span, string key, out double value)
@@ -810,7 +907,7 @@ namespace AuralPrimer.Calibration
             var scratch = new List<ChartNoteData>();
             ParseNotes(json, scratch);
             into.Clear();
-            foreach (var n in scratch) into.Add(new ChartNote(n.On, n.Off, n.Pitch));
+            foreach (var n in scratch) into.Add(new ChartNote(n.On, n.Off, n.Pitch, false, n.Hand));
             MarkRestrikes(into);
         }
 
@@ -837,7 +934,7 @@ namespace AuralPrimer.Calibration
                 var n = notes[i];
                 var restrike = lastOffByPitch.TryGetValue(n.Pitch, out var lastOff)
                             && lastOff >= n.On - restrikeGapSeconds;
-                if (restrike) notes[i] = new ChartNote(n.On, n.Off, n.Pitch, true);
+                if (restrike) notes[i] = new ChartNote(n.On, n.Off, n.Pitch, true, n.Hand);
                 lastOffByPitch[n.Pitch] = Mathf.Max(n.Off, lastOff);
             }
         }

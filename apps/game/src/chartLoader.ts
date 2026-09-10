@@ -485,6 +485,14 @@ export type MelodicNote = {
   fret?: number;
   s?: number;
   f?: number;
+  /**
+   * Which hand plays this note, on a piano part that has been split.
+   *
+   * Absent everywhere else, and absent until `assignHands` has run -- a note
+   * with no hand belongs to whichever hand the player asked for, so every
+   * non-piano instrument needs no special case.
+   */
+  hand?: "L" | "R";
 };
 
 export type MelodicTrackSelection = {

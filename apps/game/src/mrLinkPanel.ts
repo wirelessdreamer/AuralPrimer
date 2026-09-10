@@ -68,6 +68,8 @@ export function buildChart(
   beatsPerBar: number,
   keySignature?: { pitchClass: number; mode: string } | null,
   nashville?: boolean,
+  handMode?: "both" | "left" | "right",
+  showOtherHand?: boolean,
 ): unknown | null {
   if (!track || track.notes.length === 0) return null;
 
@@ -78,6 +80,10 @@ export function buildChart(
       off: n.t_off,
       pitch: n.pitch,
       vel: n.velocity,
+      // 0 = left, 1 = right, omitted when the part was never split. A number
+      // rather than "L"/"R" because the headset scans this JSON with a numeric
+      // field reader; a string would need a second parser for one bit.
+      ...(n.hand ? { hand: n.hand === "L" ? 0 : 1 } : {}),
     }));
 
   return {
@@ -96,6 +102,11 @@ export function buildChart(
     // a per-song snapshot: toggling mid-song does not reach the headset until
     // the next chart, which is a real limit rather than an oversight.
     nashville: Boolean(nashville),
+    // The hand choice lives on the desktop and the headset follows it. Unlike
+    // the Nashville flag this is re-sent the moment it changes, so switching
+    // hands reaches the headset mid-song instead of at the next one.
+    handMode: handMode ?? "both",
+    showOtherHand: showOtherHand !== false,
     tempoMap: [{ tSec: 0, bpm, beatsPerBar }],
     role: track.role,
     notes,

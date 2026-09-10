@@ -72,6 +72,7 @@ import { readSongChartSelection } from "./songChartLoader";
 import { initSecondaryStagesController, type SecondaryStagesControllerHandle } from "./secondaryStagesController";
 import { initPlaybackRateAndMetronomePanel } from "./playbackRateAndMetronomePanel";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
+import { assignHands, isSelectedHand, type HandMode } from "./pianoHands";
 import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -371,6 +372,42 @@ let songChordLabels: { tSec: number; label: string }[] = [];
 let selectedAuralSongDetails: AuralSongDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
 let selectedMelodicTracks: MelodicTrackSelection[] = [];
+
+/**
+ * What the headset's current chart was built from.
+ *
+ * The hand choice lives on the desktop and the headset follows it, so the
+ * chart has to be rebuilt and re-sent when that choice changes. Keeping the
+ * inputs is cheaper than reloading the song, and it means switching hands
+ * mid-practice reaches the headset immediately rather than at the next song.
+ */
+let mrChartSource:
+  | {
+      containerPath: string;
+      title: string;
+      track: MelodicTrackSelection | null;
+      bpm: number;
+      beatsPerBar: number;
+      keySignature: Parameters<typeof buildChart>[5];
+    }
+  | null = null;
+
+function resendMrChart(): void {
+  if (!mrChartSource) return;
+  mrLink.setChart(
+    buildChart(
+      mrChartSource.containerPath,
+      mrChartSource.title,
+      mrChartSource.track,
+      mrChartSource.bpm,
+      mrChartSource.beatsPerBar,
+      mrChartSource.keySignature,
+      nashvilleMode,
+      handMode,
+      showOtherHand,
+    ),
+  );
+}
 // tabRenderer + activeTabInstrument now live inside playSurfaceController.
 let selectedAuralSongCharts: AuralSongChartsByPath | null = null;
 let selectedSongPreloadPromise: Promise<void> | null = null;
@@ -954,7 +991,13 @@ async function selectAuralSong(containerPath: string) {
     }
     const chartSelection = await readSongChartSelection({ containerPath, details, consoleBridge });
     selectedDrumChartSelection = chartSelection.drumSelection;
-    selectedMelodicTracks = chartSelection.melodicTracks;
+    // Tag the piano part's notes with the hand that plays them. No pack carries
+    // this, so it is derived here from the notes themselves -- after refinement
+    // overlays, so the hands are decided on the notes actually played, and once
+    // per song rather than per frame, since a note's hand is fixed at its onset.
+    selectedMelodicTracks = chartSelection.melodicTracks.map((t) =>
+      t.role === "keys" ? { ...t, notes: assignHands(t.notes) } : t,
+    );
 
     // Load the song's real meter (initial tempo + time signature) from
     // song_timeline.json so the metronome + visualizer bar grid use it instead
@@ -1005,17 +1048,18 @@ async function selectAuralSong(containerPath: string) {
     // MR client renders against a real keyboard.
     const mrTrack =
       selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
-    mrLink.setChart(
-      buildChart(
-        containerPath,
-        containerPath.split(/[\/]/).pop()?.replace(/\.(feedpak|auralsong)$/i, "") ?? "song",
-        mrTrack,
-        transport.bpm,
-        transport.timeSignature?.[0] ?? 4,
-        chordKey,
-        nashvilleMode,
-      ),
-    );
+    // Kept so a hand change can rebuild the chart without reloading the song.
+    // The headset follows the desktop's hand choice, so it needs re-sending
+    // the moment that choice changes rather than at the next song.
+    mrChartSource = {
+      containerPath,
+      title: containerPath.split(/[\/]/).pop()?.replace(/\.(feedpak|auralsong)$/i, "") ?? "song",
+      track: mrTrack,
+      bpm: transport.bpm,
+      beatsPerBar: transport.timeSignature?.[0] ?? 4,
+      keySignature: chordKey,
+    };
+    resendMrChart();
 
     // Populate instrument selector with available melodic tracks.
     updateInstrumentSelector();
@@ -1287,6 +1331,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
 
     // Render the melodic instrument tab/piano-roll below the main visualizer.
     if (transport.t !== undefined) {
+      syncHandModeVisibility();
       playSurfaceController.renderTabFrame(transport.t, {
         bpm: transport.bpm,
         timeSignature: transport.timeSignature,
@@ -1295,6 +1340,8 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
         nashville: nashvilleMode,
         noteColors: noteColorMode,
         chordLabels: songChordLabels,
+        handMode,
+        showOtherHand,
       });
     }
 
@@ -1368,6 +1415,32 @@ initScrollSpeedController({
 // Nashville Number System toggle — labels piano-roll notes by scale degree
 // relative to the inferred song key instead of note names. Persisted per
 // webview in localStorage. Read each frame by the tab render call below.
+// --- Which hand to practise ---------------------------------------------
+// Piano only. The split is computed at load time (see assignHands) because no
+// pack carries hand data, so this works on every song already in the library.
+const HAND_MODE_STORAGE_KEY = "auralprimer.handMode";
+const SHOW_OTHER_HAND_STORAGE_KEY = "auralprimer.showOtherHand";
+
+function readHandMode(): HandMode {
+  try {
+    const raw = window.localStorage.getItem(HAND_MODE_STORAGE_KEY);
+    return raw === "left" || raw === "right" ? raw : "both";
+  } catch {
+    return "both";
+  }
+}
+function readShowOtherHand(): boolean {
+  try {
+    // Defaults ON: hiding half the music without being asked is a surprise,
+    // and the dimmed hand is what makes the two parts legible together.
+    return window.localStorage.getItem(SHOW_OTHER_HAND_STORAGE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+let handMode: HandMode = readHandMode();
+let showOtherHand = readShowOtherHand();
+
 const NASHVILLE_STORAGE_KEY = "auralprimer.nashvilleMode";
 function readNashvilleMode(): boolean {
   try {
@@ -1420,6 +1493,83 @@ if (noteColorCheckbox) {
       // Best-effort -- session-only persistence is acceptable.
     }
   });
+}
+
+// The hand row: a three-way segmented button plus the "show the other one"
+// checkbox. Hidden entirely unless a piano part is on screen -- a guitar has
+// no hands to choose between, and an empty control invites the question.
+const handModeRow = document.getElementById("handModeRow") as HTMLElement | null;
+const handModeToggle = document.getElementById("handModeToggle") as HTMLElement | null;
+const showOtherHandCheckbox = document.getElementById("showOtherHand") as HTMLInputElement | null;
+
+function paintHandModeButtons(): void {
+  if (!handModeToggle) return;
+  for (const btn of Array.from(handModeToggle.querySelectorAll<HTMLButtonElement>("[data-hand]"))) {
+    btn.classList.toggle("isActive", btn.dataset.hand === handMode);
+  }
+  // Choosing a hand is what makes "show the other one" mean anything.
+  if (showOtherHandCheckbox) showOtherHandCheckbox.disabled = handMode === "both";
+}
+
+/**
+ * Show the hand controls only while the part on screen actually has hands.
+ *
+ * Polled from the frame loop rather than hooked to every path that can change
+ * the instrument -- the chip row, the players panel, and loading a song all
+ * change it, and one of them being missed would leave the control stranded on
+ * a guitar part. The DOM is only touched when the answer actually changes.
+ */
+let handRowShown: boolean | null = null;
+function syncHandModeVisibility(): void {
+  if (!handModeRow) return;
+  const hasKeys = selectedMelodicTracks.some((t) => t.role === "keys");
+  const shown = hasKeys && playSurfaceController.getActiveTabInstrument() === "keys";
+  if (shown === handRowShown) return;
+  handRowShown = shown;
+  handModeRow.style.display = shown ? "" : "none";
+}
+
+if (handModeToggle) {
+  paintHandModeButtons();
+  handModeToggle.addEventListener("click", (ev) => {
+    const btn = (ev.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-hand]");
+    const next = btn?.dataset.hand;
+    if (next !== "both" && next !== "left" && next !== "right") return;
+    if (next === handMode) return;
+    handMode = next;
+    try {
+      window.localStorage.setItem(HAND_MODE_STORAGE_KEY, handMode);
+    } catch {
+      // Best-effort — session-only persistence is acceptable.
+    }
+    paintHandModeButtons();
+    onHandSelectionChanged();
+  });
+}
+
+if (showOtherHandCheckbox) {
+  showOtherHandCheckbox.checked = showOtherHand;
+  showOtherHandCheckbox.addEventListener("change", () => {
+    showOtherHand = showOtherHandCheckbox.checked;
+    try {
+      window.localStorage.setItem(SHOW_OTHER_HAND_STORAGE_KEY, showOtherHand ? "1" : "0");
+    } catch {
+      // Best-effort — session-only persistence is acceptable.
+    }
+    onHandSelectionChanged();
+  });
+}
+
+/**
+ * Everything that has to follow a change of hand.
+ *
+ * Wait mode has to be regrouped or it keeps holding for notes the player is
+ * no longer being asked to play, and the headset has to be told, because the
+ * chart it is drawing was filtered before it was sent.
+ */
+function onHandSelectionChanged(): void {
+  if (learnMode) buildLearnGroups();
+  resendMrChart();
 }
 
 const nashvilleCheckbox = document.getElementById("nashvilleMode") as HTMLInputElement | null;
@@ -1588,6 +1738,12 @@ function buildLearnGroups(): void {
       // both invisible and impossible.
       const pitch = playablePitch(n.pitch);
       if (pitch === null) continue;
+
+      // The hand the player is not working on is not something to wait for,
+      // whether or not it is on screen. Holding the song for a note nobody
+      // asked them to play is the same dead stop as waiting for an invisible
+      // one, and not doing it is the whole point of choosing a hand.
+      if (!isSelectedHand(n, handMode)) continue;
 
       if (!cur || n.t_on - cur.t > 0.05) {
         cur = { t: n.t_on, pitches: [pitch] };
@@ -2112,6 +2268,10 @@ async function sendPianoNotes(): Promise<void> {
     void invoke("piano_set_notes", { notes: [] }).catch(() => {});
     return;
   }
+  // Every note, both hands, whatever hand the player is practising. Choosing
+  // a hand changes what you are asked to PLAY, not what the song sounds like:
+  // practising the left hand against a piano with no right hand in it is
+  // practising a different piece.
   const notes = track.notes.map((n) => ({
     tOn: n.t_on,
     tOff: n.t_off,

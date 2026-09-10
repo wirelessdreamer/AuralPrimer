@@ -25,6 +25,14 @@ export type MelodicNote = {
   s?: number;
   /** Compact alias for `fret`, matching arrangement wire JSON. */
   f?: number;
+  /**
+   * Which hand plays this note, on a piano part that has been split.
+   *
+   * Set by the host at load time; absent on every other instrument, and on a
+   * piano part before the split has run. Absent means "whichever hand is
+   * being practised", so unsplit parts render exactly as they always did.
+   */
+  hand?: "L" | "R";
 };
 export type MelodicTrackSelection = { role: InstrumentRole; trackName: string; channel: number; notes: MelodicNote[] };
 export type FretPosition = { string: number; fret: number };
@@ -80,6 +88,17 @@ export type PianoRenderOptions = {
    * key signature can't be inferred. Default: false (note names).
    */
   nashville?: boolean;
+  /**
+   * Which hand the player is working on. Absent means both, which is also
+   * what every part that was never split gets.
+   */
+  handMode?: "both" | "left" | "right";
+  /**
+   * Keep the hand you are NOT practising on screen, dimmed, rather than
+   * hiding it. Seeing how the two parts fit is worth something; being asked
+   * to play it is not, so it is drawn but never cued.
+   */
+  showOtherHand?: boolean;
 };
 
 export type PianoLiveInputNote = {
@@ -502,6 +521,15 @@ function buildKeyboardLayout(x0: number, width: number): KeyboardLayout {
  * confused with the key itself, with a note falling toward it, or with the cyan
  * that means a key is being held right now.
  */
+/**
+ * How much of its brightness the hand you are NOT practising keeps.
+ *
+ * Low enough that the eye skips it while reading the part you are playing,
+ * high enough to still show the shape of what the other hand is doing --
+ * which is the only reason to draw it at all.
+ */
+export const OTHER_HAND_ALPHA = 0.28;
+
 const KEY_READY_RGB = [86, 232, 133] as const;
 
 function keyReadyFill(intensity: number, blackKey: boolean): string {
@@ -764,6 +792,13 @@ export class TabRenderer {
     const { ctx, canvas, track } = this;
     if (!track) return;
 
+    // Which hand is being practised, as the tag the notes carry. Null means
+    // both, and then nothing below treats any note as the "other" one.
+    const handMode = opts.handMode ?? "both";
+    const wantedHand: "L" | "R" | null =
+      handMode === "left" ? "L" : handMode === "right" ? "R" : null;
+    const showOtherHand = opts.showOtherHand === true;
+
     const w = canvas.width;
     const h = canvas.height;
     const layoutPadX = 18;
@@ -930,6 +965,13 @@ export class TabRenderer {
       const height = Math.max(6, visibleBottom - visibleTop);
       const noteX = key.x + (key.isBlack ? 1.5 : 1.2);
       const noteW = Math.max(4, key.w - (key.isBlack ? 3 : 2.4));
+      // Whose note is this? An untagged note belongs to whoever is asking,
+      // so parts that were never split behave exactly as before.
+      const isOtherHand =
+        wantedHand !== null && note.hand !== undefined && note.hand !== wantedHand;
+      if (isOtherHand && !showOtherHand) continue;
+      const dim = isOtherHand ? OTHER_HAND_ALPHA : 1;
+
       const useNoteColors = opts.noteColors === true;
       const glowColor = useNoteColors
         ? pitchClassGlow(note.pitch, approach, velocity)
@@ -965,6 +1007,9 @@ export class TabRenderer {
       // Soft outer glow halo. The onset gets a full-width halo so the
       // attack pops; the hold only gets a thin halo matching its stem,
       // so the glow doesn't fatten the sustain back up.
+      ctx.save();
+      ctx.globalAlpha = dim;
+
       ctx.fillStyle = glowColor;
       if (hasHold) {
         roundRectPath(
@@ -992,7 +1037,7 @@ export class TabRenderer {
       // ringing, but the attack has already passed."
       if (hasHold) {
         ctx.save();
-        ctx.globalAlpha = 0.40;
+        ctx.globalAlpha = 0.40 * dim;
         ctx.fillStyle = bodyColor;
         roundRectPath(
           ctx,
@@ -1007,7 +1052,7 @@ export class TabRenderer {
 
         // Inner gradient stripe to suggest motion along the sustain.
         ctx.save();
-        ctx.globalAlpha = 0.28;
+        ctx.globalAlpha = 0.28 * dim;
         const holdGrad = ctx.createLinearGradient(0, holdTop, 0, holdBottom);
         holdGrad.addColorStop(0, "rgba(255,255,255,0.00)");
         holdGrad.addColorStop(1, "rgba(255,255,255,0.20)");
@@ -1039,7 +1084,11 @@ export class TabRenderer {
       // inside the onset cap it was limited to the cap's 12-21px width, which
       // capped the type at 8-10px -- too small to read while the notes move.
       // Alongside, it can be half again as large on a backing pill.
-      if (nashville) {
+      ctx.restore();
+
+      // No number and no key cue for the other hand: both say "play this",
+      // and that is the one thing the other hand is not being asked to do.
+      if (nashville && !isOtherHand) {
         const degree = pitchToNashville(note.pitch, this.keySignature);
         if (degree) {
           nashvilleLabels.push({
@@ -1052,7 +1101,7 @@ export class TabRenderer {
         }
       }
 
-      if (dt <= 0.08 && note.t_off >= t - 0.02) {
+      if (!isOtherHand && dt <= 0.08 && note.t_off >= t - 0.02) {
         activeKeys.set(note.pitch, Math.max(activeKeys.get(note.pitch) ?? 0, 0.35 + velocity * 0.65));
       }
     }

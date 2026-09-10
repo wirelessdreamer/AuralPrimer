@@ -355,7 +355,9 @@ namespace AuralPrimer.Calibration
                 // free to carry duration on its own.
                 _previewBlock ??= new MaterialPropertyBlock();
                 _previewBlock.Clear();
-                _previewBlock.SetColor(BaseColorId, Color.Lerp(SustainSpent, SustainHeld, remaining));
+                var sustainColour = Color.Lerp(SustainSpent, SustainHeld, remaining);
+                if (note.IsOtherHand) sustainColour.a = NoteHighway.OtherHandAlpha;
+                _previewBlock.SetColor(BaseColorId, sustainColour);
                 fill.SetPropertyBlock(_previewBlock);
 
                 _litLastFrame.Add(note.Pitch);
@@ -410,7 +412,7 @@ namespace AuralPrimer.Calibration
             // shared material and still lets all sixty-one differ.
             _previewBlock ??= new MaterialPropertyBlock();
             _previewBlock.Clear();
-            _previewBlock.SetColor(BaseColorId, PreviewColour(note.Pitch, nearness));
+            _previewBlock.SetColor(BaseColorId, PreviewColour(note.Pitch, nearness, note.IsOtherHand));
             fill.SetPropertyBlock(_previewBlock);
         }
 
@@ -438,13 +440,17 @@ namespace AuralPrimer.Calibration
         /// pitch colours off, so the one setting still means one thing on both
         /// the lane and the bed.
         /// </remarks>
-        Color PreviewColour(int pitch, float nearness)
+        Color PreviewColour(int pitch, float nearness, bool otherHand)
         {
-            if (_profile == null || !_profile.NoteColors)
-                return Color.Lerp(PreviewFar, PreviewNear, nearness);
-
-            var colour = NoteHighway.ForPitch(pitch);
-            colour.a = 1f;
+            var colour = _profile == null || !_profile.NoteColors
+                ? Color.Lerp(PreviewFar, PreviewNear, nearness)
+                : NoteHighway.ForPitch(pitch);
+            // Opaque for the hand being played -- see the remark above on why a
+            // translucent bar on a black key reads as one on the white key
+            // beside it. The other hand is the case where that trade is worth
+            // making the other way: it must not compete for attention, and it
+            // is never the thing the player is reaching for.
+            colour.a = otherHand ? NoteHighway.OtherHandAlpha : 1f;
             return colour;
         }
 

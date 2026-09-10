@@ -1403,6 +1403,21 @@ li {
   color: rgba(240, 255, 255, 0.95);
 }
 
+/* ─── Hand practice row (Both / Left / Right) ────────────────── */
+
+.handModeRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The shared toggle pushes itself right with margin-left:auto, which is what
+   it wants inside the instrument selector and exactly wrong here -- it would
+   shove the buttons away from the "Hands:" label they belong to. */
+.handModeRow .displayModeToggle {
+  margin-left: 0;
+}
+
 /* ─── Tab renderer container ─────────────────────────────────── */
 
 .tabContainer {

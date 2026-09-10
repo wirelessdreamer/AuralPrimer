@@ -47,6 +47,10 @@ export type TabRenderFrame = {
   noteColors?: boolean;
   /** Chord names for the chart, one per change; drawn beside the notes. */
   chordLabels?: { tSec: number; label: string }[];
+  /** Which hand the player is working on. Piano only; absent means both. */
+  handMode?: "both" | "left" | "right";
+  /** Draw the other hand dimmed rather than hiding it. */
+  showOtherHand?: boolean;
 };
 
 const INSTRUMENT_ROLE_LABELS: Record<string, string> = {

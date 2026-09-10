@@ -31,7 +31,7 @@
  */
 
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
-import { inferKeySignature, pitchToNashville } from "./index";
+import { inferKeySignature, pitchToNashville, OTHER_HAND_ALPHA } from "./index";
 import type {
   InstrumentRole,
   KeySignatureAnalysis,
@@ -350,8 +350,18 @@ export class SheetMusicRenderer {
     const tStart = t - lookBehindSec;
     const tEnd = t + lookAheadSec;
 
+    // Which hand is being practised. Null means both, and then no note here
+    // counts as the other one -- including every part that was never split.
+    const handMode = opts.handMode ?? "both";
+    const wantedHand: "L" | "R" | null =
+      handMode === "left" ? "L" : handMode === "right" ? "R" : null;
+    const showOtherHand = opts.showOtherHand === true;
+
     for (const note of track.notes) {
       if (note.t_on > tEnd || note.t_on < tStart) continue;
+      const isOtherHand =
+        wantedHand !== null && note.hand !== undefined && note.hand !== wantedHand;
+      if (isOtherHand && !showOtherHand) continue;
       const clef = this.pickClef(note.pitch, clefs);
       const { step, accidental } = pitchToDiatonicStep(note.pitch, this.keySignature);
       // y where the note head sits. topLineStep is on topLineY; each step up
@@ -370,13 +380,17 @@ export class SheetMusicRenderer {
       const dt = note.t_on - t;
       const past = dt < 0;
       const dist = Math.abs(dt) / totalWindow;
-      const alpha = past ? clamp(0.35 - dist * 0.3, 0.12, 0.4) : clamp(1 - dist * 0.7, 0.45, 1);
+      const nearness = past ? clamp(0.35 - dist * 0.3, 0.12, 0.4) : clamp(1 - dist * 0.7, 0.45, 1);
+      // The other hand keeps the same fade with distance, scaled down as a
+      // whole -- so it still reads as approaching, just quietly.
+      const alpha = isOtherHand ? nearness * OTHER_HAND_ALPHA : nearness;
 
       this.drawLedgerLines(x, y, clef, staffSpacing, halfSpace, step, alpha);
       this.drawNote(x, y, glyph, accidental, staffSpacing, stemDir, color, glow, alpha);
 
       // Nashville numbers overlay: scale-degree centred on the note head.
-      if (opts.nashville && this.keySignature) {
+      // Skipped for the other hand, which is not being asked for by number.
+      if (opts.nashville && this.keySignature && !isOtherHand) {
         const degree = pitchToNashville(note.pitch, this.keySignature);
         if (degree) {
           ctx.save();

@@ -257,6 +257,22 @@ export function appShellHtml(): string {
                     <input id="nashvilleMode" type="checkbox" />
                     <span>Nashville numbers</span>
                   </label>
+                  <div id="handModeRow" class="handModeRow" style="display:none">
+                    <span class="meta">Hands:</span>
+                    <div id="handModeToggle" class="displayModeToggle" role="group" aria-label="Which hand to practise">
+                      <button id="handModeBoth" class="displayModeBtn isActive" data-hand="both" type="button">Both</button>
+                      <button id="handModeLeft" class="displayModeBtn" data-hand="left" type="button">Left</button>
+                      <button id="handModeRight" class="displayModeBtn" data-hand="right" type="button">Right</button>
+                    </div>
+                    <label
+                      class="practiceToggle"
+                      for="showOtherHand"
+                      title="Keeps the hand you are not practising on screen, dimmed, so you can see how the two parts fit together. Wait mode never holds for it either way - turn this off to hide it completely."
+                    >
+                      <input id="showOtherHand" type="checkbox" />
+                      <span>Show other hand</span>
+                    </label>
+                  </div>
                   <label
                     class="practiceToggle"
                     for="learnMode"
