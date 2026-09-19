@@ -87,35 +87,39 @@ namespace AuralPrimer.Calibration
         Material _breakEdge;
         Material _breakCore;
 
-        /// <summary>Colour of a key at the far edge of the preview window.</summary>
+        /// <summary>Colour of a key with a note due on it.</summary>
         /// <remarks>
-        /// The near end is the lit colour on purpose: a preview that converges
-        /// on it means "about to be played" and "being played" meet as the same
-        /// hue at the moment the note lands, so the key does not jump colour at
-        /// the instant the player is watching it hardest.
+        /// The keys say STATE; the lane above says WHICH NOTE. Both were tried
+        /// the other way round -- the key bed wore each note's Boomwhacker
+        /// colour for a while, matching the lane -- and it read as worse, not
+        /// better: twelve hues on the keys leave nothing to tell "play this
+        /// now" from "keep holding it", which is the only thing a hand at the
+        /// keyboard needs to know. Identity is already being answered a few
+        /// centimetres higher up, by a note that is about to land on this exact
+        /// key. Saying it twice cost the one channel that was carrying state.
         ///
-        /// It is also opaque, which is what makes a highlight on a black key
-        /// readable. Black keys are drawn 12 mm above the white ones, but a
-        /// white key's plate still runs underneath -- as it does on the real
-        /// instrument. There, the black key hides it by being solid; here, two
-        /// translucent plates simply showed through each other and a bar on a
-        /// black key could be read as one on the white key beside it. Depth
-        /// writing cannot fix that: transparent geometry draws back-to-front, so
-        /// the white plate has already been drawn by the time the black one is.
-        /// Opacity is the only lever that actually occludes.
+        /// Green, and green is not used anywhere else on the instrument. It
+        /// means one thing: play this one next.
+        ///
+        /// Flat, not a ramp. How soon is already the length of the bar, which
+        /// grows as the note approaches -- a hue sliding through the approach
+        /// says the same thing again in a weaker channel, and makes the key a
+        /// different colour every time the player looks at it.
+        ///
+        /// Opaque, which matters more here than it looks. Black keys are drawn
+        /// 12 mm above the white ones, but a white key's plate still runs
+        /// underneath -- as it does on the real instrument. There the black key
+        /// hides it by being solid; here two translucent plates showed through
+        /// each other, and a bar on a black key could be read as one on the
+        /// white key beside it. Depth writing cannot fix that: transparent
+        /// geometry draws back-to-front, so the white plate is already down by
+        /// the time the black one is drawn. Opacity is the only lever that
+        /// actually occludes.
         ///
         /// Only the highlight goes solid. An unlit key stays see-through,
         /// because at rest the point is to look at the real keyboard.
-        ///
-        /// The near end is GREEN, and green is not used anywhere else on the
-        /// instrument. It used to be the lit cyan, on the reasoning that "about
-        /// to be played" and "being played" should meet as one hue -- but that
-        /// made the two states differ only in how much of the key was filled,
-        /// which is a weak signal to read at a glance while playing. Held keys
-        /// stay cyan; green means, and only means, play this one next.
         /// </remarks>
-        static readonly Color PreviewFar = new(0.482f, 0.247f, 0.949f, 0.45f);
-        static readonly Color PreviewNear = new(0.337f, 0.910f, 0.522f, 1f);
+        static readonly Color PlayNow = new(0.337f, 0.910f, 0.522f, 1f);
 
         /// <summary>A key that is being held, at the moment it is struck.</summary>
         /// <remarks>
@@ -412,7 +416,7 @@ namespace AuralPrimer.Calibration
             // shared material and still lets all sixty-one differ.
             _previewBlock ??= new MaterialPropertyBlock();
             _previewBlock.Clear();
-            _previewBlock.SetColor(BaseColorId, PreviewColour(note.Pitch, nearness, note.IsOtherHand));
+            _previewBlock.SetColor(BaseColorId, PreviewColour(note.IsOtherHand));
             fill.SetPropertyBlock(_previewBlock);
         }
 
@@ -440,17 +444,19 @@ namespace AuralPrimer.Calibration
         /// pitch colours off, so the one setting still means one thing on both
         /// the lane and the bed.
         /// </remarks>
-        Color PreviewColour(int pitch, float nearness, bool otherHand)
+        /// <summary>What colour to paint a key that has a note coming.</summary>
+        /// <remarks>
+        /// Not affected by the pitch-colour setting. That setting colours the
+        /// LANE, where hue is spent on identity; down here hue is spent on
+        /// state, and the two are answering different questions.
+        /// </remarks>
+        Color PreviewColour(bool otherHand)
         {
-            var colour = _profile == null || !_profile.NoteColors
-                ? Color.Lerp(PreviewFar, PreviewNear, nearness)
-                : NoteHighway.ForPitch(pitch);
-            // Opaque for the hand being played -- see the remark above on why a
-            // translucent bar on a black key reads as one on the white key
-            // beside it. The other hand is the case where that trade is worth
-            // making the other way: it must not compete for attention, and it
-            // is never the thing the player is reaching for.
-            colour.a = otherHand ? NoteHighway.OtherHandAlpha : 1f;
+            var colour = PlayNow;
+            // The hand the player is not working on is the one case where the
+            // occlusion trade above is worth making the other way: it must not
+            // compete for attention, and it is never what they are reaching for.
+            if (otherHand) colour.a = NoteHighway.OtherHandAlpha;
             return colour;
         }
 
@@ -587,8 +593,9 @@ namespace AuralPrimer.Calibration
             // not "in what order", which is the only question worth asking of a
             // run. So each key gets a bar that grows as its note approaches:
             // the key you play next has the longest bar, and the ranking is
-            // readable at a glance without counting anything. Colour is spent
-            // on which note it is, not on how soon -- see PreviewColour.
+            // readable at a glance without counting anything. Length carries
+            // that on its own, which is what leaves colour free to say which
+            // state the key is in -- see PlayNow.
             HideAllPreviews();
             HideAllSustains();
             HideAllBreaks();
