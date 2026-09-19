@@ -67,23 +67,69 @@ describe("leftHandCeiling", () => {
 });
 
 describe("assignHands", () => {
-  it("splits a two-handed chord", () => {
-    const tagged = assignHands([note(0, 48), note(0, 55), note(0, 72), note(0, 79)]);
-    expect(tagged.map((n) => `${n.pitch}${n.hand}`)).toEqual(["48L", "55L", "72R", "79R"]);
+  /** A bass line under a melody, the texture the split exists to separate. */
+  const twoPart = (): MelodicNote[] => {
+    const ns: MelodicNote[] = [];
+    for (let i = 0; i < 24; i++) {
+      ns.push(note(i * 0.5, 40 + (i % 3) * 3, i * 0.5 + 0.45)); // left, E2-G2
+      ns.push(note(i * 0.5, 72 + (i % 5), i * 0.5 + 0.45)); // right, C5-F5
+    }
+    return ns;
+  };
+
+  it("separates a bass line from a melody", () => {
+    const tagged = assignHands(twoPart());
+    const low = tagged.filter((n) => n.pitch < 60);
+    const high = tagged.filter((n) => n.pitch >= 60);
+    expect(low.every((n) => n.hand === "L")).toBe(true);
+    expect(high.every((n) => n.hand === "R")).toBe(true);
   });
 
-  it("keeps a bass line in the left hand and a melody in the right", () => {
-    const tagged = assignHands([note(0, 40), note(0.5, 43), note(1.0, 76), note(1.5, 79)]);
-    expect(tagged.map((n) => n.hand)).toEqual(["L", "L", "R", "R"]);
+  it("never lets the hands overlap in register at one moment", () => {
+    const tagged = assignHands(twoPart());
+    const highestLeft = Math.max(...tagged.filter((n) => n.hand === "L").map((n) => n.pitch));
+    const lowestRight = Math.min(...tagged.filter((n) => n.hand === "R").map((n) => n.pitch));
+    expect(highestLeft).toBeLessThan(lowestRight);
   });
 
-  it("groups notes that strike together and separates ones that do not", () => {
-    // 30 ms apart is one attack; 300 ms apart is two.
-    const together = assignHands([note(0, 48), note(0.03, 79)]);
-    expect(together.map((n) => n.hand)).toEqual(["L", "R"]);
+  // The regression that made the first two attempts unusable: a line moving
+  // across the split changed hands on every note, so the player was shown a
+  // part that alternated between their hands bar after bar.
+  it("keeps a line that walks across the middle in one hand", () => {
+    const ns: MelodicNote[] = [];
+    for (let i = 0; i < 20; i++) ns.push(note(i * 0.4, 36 + (i % 4))); // a real left part, low
+    // A melody wandering either side of middle C, over that bass.
+    const walk = [58, 60, 59, 61, 58, 62, 60, 59, 61, 60];
+    walk.forEach((p, i) => ns.push(note(i * 0.8, p)));
 
-    const apart = assignHands([note(0, 48), note(0.3, 79)]);
-    expect(apart.map((n) => n.hand)).toEqual(["L", "R"]);
+    const tagged = assignHands(ns);
+    const hands = new Set(
+      walk.map((p, i) => tagged.find((n) => n.pitch === p && Math.abs(n.t_on - i * 0.8) < 1e-9)?.hand),
+    );
+    expect(hands.size).toBe(1);
+  });
+
+  it("does not split a single melodic line down the middle", () => {
+    // One monophonic line and nothing else: there is no second part to find,
+    // so inventing a boundary through it is the failure to avoid.
+    const ns = [64, 66, 67, 69, 71, 72, 71, 69, 67, 66].map((p, i) => note(i * 0.4, p));
+    const tagged = assignHands(ns);
+    expect(new Set(tagged.map((n) => n.hand)).size).toBe(1);
+  });
+
+  it("follows a song that changes register, slowly", () => {
+    // Two parts that both move up an octave halfway through. The boundary has
+    // to follow, or the whole second half lands in one hand.
+    const ns: MelodicNote[] = [];
+    for (let i = 0; i < 40; i++) {
+      const up = i >= 20 ? 12 : 0;
+      ns.push(note(i * 0.5, 40 + up, i * 0.5 + 0.4));
+      ns.push(note(i * 0.5, 70 + up, i * 0.5 + 0.4));
+    }
+    const tagged = assignHands(ns);
+    const late = tagged.filter((n) => n.t_on >= 15);
+    expect(late.filter((n) => n.hand === "L").length).toBeGreaterThan(0);
+    expect(late.filter((n) => n.hand === "R").length).toBeGreaterThan(0);
   });
 
   it("does not mutate its input", () => {
@@ -93,10 +139,12 @@ describe("assignHands", () => {
   });
 
   it("keeps a note's hand for its whole sustain", () => {
-    // A long left-hand pedal under a moving right hand must not flip when the
-    // right hand's chord shape changes underneath it.
     const tagged = assignHands([note(0, 36, 4.0), note(1, 72), note(2, 76), note(3, 79)]);
     expect(tagged.find((n) => n.pitch === 36)?.hand).toBe("L");
+  });
+
+  it("handles an empty part", () => {
+    expect(assignHands([])).toEqual([]);
   });
 });
 
