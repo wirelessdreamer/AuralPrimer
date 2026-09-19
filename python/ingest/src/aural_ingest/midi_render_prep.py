@@ -69,7 +69,7 @@ def _note_onsets(midi_path: Path) -> list[float]:
     """Absolute onset seconds for every note, tempo map applied."""
     from aural_ingest.midi_feedpak import read_midi_roles
 
-    roles, _duration, _tmap = read_midi_roles(midi_path)
+    roles, _duration, _tmap, _pedal = read_midi_roles(midi_path)
     return sorted(note.t_on for notes in roles.values() for note in notes)
 
 

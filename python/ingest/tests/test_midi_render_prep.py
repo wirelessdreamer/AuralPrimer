@@ -120,8 +120,8 @@ def test_lead_in_shifts_the_notes(tmp_path):
 
     from aural_ingest.midi_feedpak import read_midi_roles
 
-    plain, _, _ = read_midi_roles(tmp_path / "none" / "rubato.mid")
-    lead, _, _ = read_midi_roles(tmp_path / "lead" / "rubato.mid")
+    plain, _, _, _pedal = read_midi_roles(tmp_path / "none" / "rubato.mid")
+    lead, _, _, _pedal = read_midi_roles(tmp_path / "lead" / "rubato.mid")
     first_plain = min(n.t_on for v in plain.values() for n in v)
     first_lead = min(n.t_on for v in lead.values() for n in v)
 

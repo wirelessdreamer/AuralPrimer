@@ -16,6 +16,7 @@ import pytest
 
 from aural_ingest.midi_feedpak import (
     build_feedpak_from_midi,
+    _build_notes_mid,
     read_midi_roles,
     role_for_track,
     tempo_map,
@@ -101,7 +102,7 @@ def test_note_times_survive_the_round_trip_exactly(tmp_path):
     _write_midi(src, [(0, 240, 60), (160, 240, 64), (411, 137, 67)])
     _write_wav(tmp_path / "src.wav")
 
-    roles, duration, _ = read_midi_roles(src)
+    roles, duration, _, _pedal = read_midi_roles(src)
     times = sorted(n.t_on for n in roles["keys"])
 
     # align=False: this fixture's audio is a bare sine placeholder, not a
@@ -206,7 +207,7 @@ def test_unmatched_note_off_is_dropped_not_guessed(tmp_path):
     mid.tracks.append(track)
     mid.save(str(src))
 
-    roles, _, _ = read_midi_roles(src)
+    roles, _, _, _pedal = read_midi_roles(src)
     assert [n.pitch for n in roles["keys"]] == [64]
 
 
@@ -289,7 +290,7 @@ def test_a_transport_lead_in_is_measured_and_removed(tmp_path):
     src = tmp_path / "late.mid"
     _write_midi(src, _phrase_notes())
 
-    roles, _, _ = read_midi_roles(src)
+    roles, _, _, _pedal = read_midi_roles(src)
     onsets = sorted(n.t_on for v in roles.values() for n in v)
     _write_click_wav(tmp_path / "late.wav", onsets, seconds=20.0, lead_in=5.17)
 
@@ -301,7 +302,7 @@ def test_an_aligned_render_is_left_alone(tmp_path):
     """Trimming an already-correct render would be churn, and would misalign it."""
     src = tmp_path / "ontime.mid"
     _write_midi(src, _phrase_notes())
-    roles, _, _ = read_midi_roles(src)
+    roles, _, _, _pedal = read_midi_roles(src)
     onsets = sorted(n.t_on for v in roles.values() for n in v)
     _write_click_wav(tmp_path / "ontime.wav", onsets, seconds=20.0, lead_in=0.0)
 
@@ -312,7 +313,7 @@ def test_an_aligned_render_is_left_alone(tmp_path):
 def test_no_align_attaches_the_render_untouched(tmp_path):
     src = tmp_path / "raw.mid"
     _write_midi(src, _phrase_notes())
-    roles, _, _ = read_midi_roles(src)
+    roles, _, _, _pedal = read_midi_roles(src)
     onsets = sorted(n.t_on for v in roles.values() for n in v)
     _write_click_wav(tmp_path / "raw.wav", onsets, seconds=20.0, lead_in=5.17)
 
@@ -353,3 +354,87 @@ def test_a_pack_without_a_sibling_manifest_is_not_credited_falsely(tmp_path):
                                      align=False)
     assert result["attributed"] is False
     assert not (Path(result["feedpak"]) / "attribution.json").exists()
+
+
+# --- damper pedal -----------------------------------------------------------
+#
+# The pedal was ignored entirely until it was noticed on Clair de Lune, where
+# the chart ended notes the recording was still holding. Across the ten
+# piano-midi.de imports it lengthens 27% to 77% of the notes.
+
+
+def _pedalled_midi(path, *, pedal_pairs, notes):
+    """A file with note events and CC64 spans, in ticks at 480 tpb."""
+    import mido
+
+    mid = mido.MidiFile(ticks_per_beat=480)
+    track = mido.MidiTrack()
+    track.append(mido.MetaMessage("track_name", name="Piano", time=0))
+    events = []
+    for on, off, pitch in notes:
+        events.append((on, mido.Message("note_on", note=pitch, velocity=90, time=0)))
+        events.append((off, mido.Message("note_off", note=pitch, velocity=0, time=0)))
+    for down, up in pedal_pairs:
+        events.append((down, mido.Message("control_change", control=64, value=127, time=0)))
+        events.append((up, mido.Message("control_change", control=64, value=0, time=0)))
+    events.sort(key=lambda e: e[0])
+    prev = 0
+    for tick, msg in events:
+        track.append(msg.copy(time=tick - prev))
+        prev = tick
+    track.append(mido.MetaMessage("end_of_track", time=0))
+    mid.tracks.append(track)
+    mid.save(str(path))
+
+
+def test_pedal_spans_are_read(tmp_path):
+    src = tmp_path / "pedal.mid"
+    _pedalled_midi(src, pedal_pairs=[(0, 960), (1440, 1920)], notes=[(0, 240, 60)])
+    _roles, _duration, _tmap, pedal = read_midi_roles(src)
+    assert len(pedal) == 2
+    # 480 ticks to the beat at 120 bpm -> half a second a beat.
+    assert pedal[0][0] == pytest.approx(0.0, abs=0.01)
+    assert pedal[0][1] == pytest.approx(1.0, abs=0.01)
+
+
+def test_note_ends_stay_written_so_a_hand_is_never_asked_to_hold_the_pedal(tmp_path):
+    """The pedal must not be folded into the note.
+
+    A note says how long to hold a key; the pedal says how long the string
+    rings. Folding them would ask the player to hold a chord for as long as the
+    pedal is down, which on this repertoire runs past fourteen seconds.
+    """
+    src = tmp_path / "pedal.mid"
+    _pedalled_midi(src, pedal_pairs=[(0, 3840)], notes=[(0, 240, 60)])
+    roles, _duration, _tmap, pedal = read_midi_roles(src)
+    note = roles["keys"][0]
+    assert note.t_off - note.t_on == pytest.approx(0.25, abs=0.02)
+    assert pedal[0][1] == pytest.approx(4.0, abs=0.02)
+
+
+def test_an_unterminated_pedal_does_not_swallow_the_song(tmp_path):
+    src = tmp_path / "pedal.mid"
+    _pedalled_midi(src, pedal_pairs=[], notes=[(0, 240, 60), (480, 720, 62)])
+    import mido
+
+    mid = mido.MidiFile(str(src))
+    mid.tracks[0].insert(1, mido.Message("control_change", control=64, value=127, time=0))
+    mid.save(str(src))
+    _roles, _duration, _tmap, pedal = read_midi_roles(src)
+    assert len(pedal) == 1
+    assert pedal[0][1] <= 1.1  # closed at the last event, not left open
+
+
+def test_notes_mid_carries_the_pedal(tmp_path):
+    src = tmp_path / "pedal.mid"
+    _pedalled_midi(src, pedal_pairs=[(0, 960)], notes=[(0, 240, 60)])
+    roles, _duration, _tmap, pedal = read_midi_roles(src)
+    out = tmp_path / "notes.mid"
+    _build_notes_mid(roles, out, pedal)
+
+    import mido
+
+    ccs = [m for t in mido.MidiFile(out).tracks for m in t
+           if m.type == "control_change" and m.control == 64]
+    assert len(ccs) == 2
+    assert [m.value for m in ccs] == [127, 0]

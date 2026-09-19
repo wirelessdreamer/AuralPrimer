@@ -24,6 +24,7 @@ agree sample for sample.
 from __future__ import annotations
 
 import bisect
+import dataclasses
 import json
 import shutil
 from pathlib import Path
@@ -104,10 +105,78 @@ def tempo_map(mid: Any) -> list[tuple[int, float, int]]:
     return out
 
 
+#: Value at or above which the damper pedal counts as pressed. The MIDI spec
+#: treats CC64 as a switch at 64; real pedals send 0 and 127 and nothing else,
+#: but half-pedalling exists and this is the conventional line.
+PEDAL_DOWN = 64
+
+
+def _pedal_spans(mid) -> dict[int, list[tuple[int, int]]]:
+    """Ticks the damper pedal is held down, per channel.
+
+    Per channel rather than globally because CC64 is a channel message, and a
+    multi-instrument file pedals one instrument without pedalling the rest.
+    On the single-piano files this was written for they all land on channel 0,
+    which is the case that has to be right and the least interesting one.
+
+    A pedal left down at the end of the file is closed at the last event, so an
+    unterminated span cannot swallow the rest of the song.
+    """
+    downs: dict[int, list[tuple[int, bool]]] = {}
+    last_tick = 0
+    for track in mid.tracks:
+        now = 0
+        for msg in track:
+            now += msg.time
+            last_tick = max(last_tick, now)
+            if msg.type == "control_change" and msg.control == 64:
+                downs.setdefault(msg.channel, []).append((now, msg.value >= PEDAL_DOWN))
+
+    spans: dict[int, list[tuple[int, int]]] = {}
+    for channel, events in downs.items():
+        events.sort()
+        out: list[tuple[int, int]] = []
+        start: int | None = None
+        for tick, is_down in events:
+            if is_down and start is None:
+                start = tick
+            elif not is_down and start is not None:
+                if tick > start:
+                    out.append((start, tick))
+                start = None
+        if start is not None and last_tick > start:
+            out.append((start, last_tick))
+        spans[channel] = out
+    return spans
+
+
+def _pedal_release(spans: list[tuple[int, int]], tick: int) -> int | None:
+    """When the pedal that is holding a note released at `tick` lifts."""
+    i = bisect.bisect_right([start for start, _ in spans], tick) - 1
+    if i < 0:
+        return None
+    start, end = spans[i]
+    return end if start <= tick < end else None
+
+
 def read_midi_roles(
     midi_path: str | Path,
 ) -> tuple[dict[str, list], float, list[tuple[int, float, int]]]:
-    """Notes per role, duration, and the file's tempo map -- times unaltered."""
+    """Notes per role, duration, tempo map, and damper-pedal spans.
+
+    Note ends are the WRITTEN ones -- when the finger leaves the key. The pedal
+    is returned beside them rather than folded into them, because the two are
+    different instructions: how long to hold a key is something a hand can do,
+    and how long the string rings is not. Folding them together would ask a
+    player to hold a chord for fourteen seconds.
+
+    Ignoring CC64 entirely, which is what this did before, is not an option on
+    this repertoire. Across the ten piano-midi.de imports the pedal lengthens
+    27% to 77% of the notes; Liszt's Liebestraum sounds for two and a half
+    times as long as its written note-offs claim, and Schubert holds one note
+    over fourteen seconds. The chart was ending notes the recording was still
+    sounding.
+    """
     import mido
 
     from aural_ingest.transcription import MelodicNote
@@ -121,37 +190,63 @@ def read_midi_roles(
         base_tick, base_sec, tempo = tmap[i]
         return base_sec + mido.tick2second(tick - base_tick, mid.ticks_per_beat, tempo)
 
+    spans = _pedal_spans(mid)
+
     roles: dict[str, list] = {}
     duration = 0.0
     for track in mid.tracks:
         role = role_for_track(track.name)
-        open_notes: dict[int, list[tuple[int, int]]] = {}
+        open_notes: dict[int, list[tuple[int, int, int]]] = {}
         now = 0
         for msg in track:
             now += msg.time
             if msg.type == "note_on" and msg.velocity > 0:
-                open_notes.setdefault(msg.note, []).append((now, msg.velocity))
+                channel = getattr(msg, "channel", 0)
+                open_notes.setdefault(msg.note, []).append((now, msg.velocity, channel))
             elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
                 pending = open_notes.get(msg.note)
                 if not pending:
                     # A release with nothing holding it: a malformed file, not
                     # a note. Dropping it beats inventing an onset for it.
                     continue
-                on_tick, velocity = pending.pop(0)
+                on_tick, velocity, channel = pending.pop(0)
                 t_on = to_sec(on_tick)
-                t_off = max(to_sec(now), t_on + MIN_NOTE_SEC)
-                roles.setdefault(role, []).append(MelodicNote(
-                    t_on=t_on, t_off=t_off, pitch=int(msg.note),
-                    velocity=int(velocity) or 100, instrument=role))
-                duration = max(duration, t_off)
+                off_tick = now
+                note = MelodicNote(
+                    t_on=t_on,
+                    t_off=max(to_sec(off_tick), t_on + MIN_NOTE_SEC),
+                    pitch=int(msg.note),
+                    velocity=int(velocity) or 100,
+                    instrument=role,
+                )
+                roles.setdefault(role, []).append(note)
+                duration = max(duration, note.t_off)
+
+    pedal = [(to_sec(a), to_sec(b)) for a, b in spans.get(0, [])]
+    for channel, channel_spans in spans.items():
+        if channel != 0:
+            pedal.extend((to_sec(a), to_sec(b)) for a, b in channel_spans)
+    pedal.sort()
+    if pedal:
+        duration = max(duration, pedal[-1][1])
 
     for notes in roles.values():
         notes.sort(key=lambda n: (n.t_on, n.pitch))
-    return roles, duration, tmap
+    return roles, duration, tmap, pedal
 
 
-def _build_notes_mid(roles: dict[str, list], out_path: Path) -> int:
-    """One named instrument per role, at the times read off the source."""
+def _build_notes_mid(
+    roles: dict[str, list],
+    out_path: Path,
+    pedal: list[tuple[float, float]] | None = None,
+) -> int:
+    """One named instrument per role, at the times read off the source.
+
+    The damper pedal rides along on the keys instrument as CC64, the way the
+    source wrote it. Kept separate from the note ends on purpose: a note says
+    how long to hold a key, the pedal says how long the string rings, and the
+    player can only do the first of those.
+    """
     import pretty_midi
 
     pm = pretty_midi.PrettyMIDI(initial_tempo=120.0)
@@ -171,6 +266,12 @@ def _build_notes_mid(roles: dict[str, list], out_path: Path) -> int:
                 end=float(max(note.t_off, note.t_on + MIN_NOTE_SEC))))
             total += 1
         if inst.notes:
+            if role == "keys" and pedal:
+                for down, up in pedal:
+                    inst.control_changes.append(
+                        pretty_midi.ControlChange(number=64, value=127, time=float(down)))
+                    inst.control_changes.append(
+                        pretty_midi.ControlChange(number=64, value=0, time=float(up)))
             pm.instruments.append(inst)
     pm.write(str(out_path))
     return total
@@ -297,7 +398,7 @@ def build_feedpak_from_midi(
     midi_path = Path(midi_path)
     out_dir = Path(out_dir)
 
-    roles, duration, tmap = read_midi_roles(midi_path)
+    roles, duration, tmap, pedal = read_midi_roles(midi_path)
     if not any(roles.values()):
         raise ValueError(f"{midi_path.name}: no notes found in the MIDI")
 
@@ -323,7 +424,7 @@ def build_feedpak_from_midi(
     (song / "features").mkdir(parents=True, exist_ok=True)
     (song / "audio").mkdir(parents=True, exist_ok=True)
 
-    note_count = _build_notes_mid(roles, song / "features" / "notes.mid")
+    note_count = _build_notes_mid(roles, song / "features" / "notes.mid", pedal)
     _build_beats(tmap, duration, beats_per_bar, song / "features" / "beats.json")
 
     # Every tempo the file declares, not an average of them.
