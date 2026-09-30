@@ -60,6 +60,8 @@ namespace AuralPrimer.Calibration
         readonly Dictionary<string, float> _soonest = new();
         /// <summary>When each pad was last struck, for the flash.</summary>
         readonly Dictionary<string, float> _struckAt = new();
+        /// <summary>Timing error of the last strike on each pad, seconds.</summary>
+        readonly Dictionary<string, float> _struckError = new();
         /// <summary>Pooled column marks, reused frame to frame.</summary>
         readonly List<Transform> _columnPool = new();
         MaterialPropertyBlock _block;
@@ -102,7 +104,31 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         static readonly Color Struck = new(0.961f, 0.647f, 0.141f, 1f);
 
+        /// <summary>A strike that landed on the beat.</summary>
+        /// <remarks>
+        /// White, not green. Green is already spoken for -- it means "play this
+        /// one next" -- and a judgement sharing that colour would make a
+        /// well-timed hit on the WRONG drum look like an instruction to keep
+        /// hitting it. White reads as a flash rather than an instruction, which
+        /// is what a judgement is.
+        /// </remarks>
+        static readonly Color StruckOnTime = new(1f, 1f, 1f, 1f);
+
+        /// <summary>A strike too far out to call good.</summary>
+        static readonly Color StruckOff = new(0.913f, 0.298f, 0.318f, 1f);
+
         const float StrikeFlashSeconds = 0.18f;
+
+        /// <summary>Inside this, a strike counts as landing on its note.</summary>
+        /// <remarks>
+        /// Drums are judged tighter than keys because they are heard tighter:
+        /// a snare 40 ms late is audibly behind the band, where a piano note
+        /// that far out passes as phrasing.
+        /// </remarks>
+        const float OnTimeSeconds = 0.025f;
+
+        /// <summary>How far either side a strike is still judged against a note.</summary>
+        const float JudgementWindowSeconds = 0.25f;
 
         void OnEnable()
         {
@@ -192,6 +218,37 @@ namespace AuralPrimer.Calibration
             var piece = _profile.PieceForNote(note);
             if (piece == null) return;
             _struckAt[piece.id] = Time.time;
+
+            // Where in the song the strike actually happened, from the clock the
+            // host stamped it with. Not the arrival time, which would measure
+            // the network, and not Time.time, which knows nothing about the song.
+            var struckAtSong = link != null ? (float)link.SongTimeForHostClock(hostClockUs) : 0f;
+            _struckError[piece.id] = NearestChartedError(piece.id, struckAtSong);
+        }
+
+        /// <summary>
+        /// How far off the nearest charted hit for this pad the strike was, in
+        /// seconds -- negative early, positive late. NaN when the chart asked
+        /// for nothing nearby.
+        /// </summary>
+        /// <remarks>
+        /// Searched within a window rather than against the very next hit: a
+        /// player who misses one entirely should be judged against the note they
+        /// were aiming at, not credited against the following one.
+        /// </remarks>
+        float NearestChartedError(string lane, float struckAtSong)
+        {
+            var best = float.NaN;
+            for (var i = 0; i < _hits.Count; i++)
+            {
+                var hit = _hits[i];
+                if (hit.Lane != lane) continue;
+                var error = struckAtSong - hit.T;
+                if (error < -JudgementWindowSeconds) break; // sorted: the rest are later still
+                if (error > JudgementWindowSeconds) continue;
+                if (float.IsNaN(best) || Mathf.Abs(error) < Mathf.Abs(best)) best = error;
+            }
+            return best;
         }
 
         void Update()
@@ -274,7 +331,17 @@ namespace AuralPrimer.Calibration
                 {
                     _block ??= new MaterialPropertyBlock();
                     _block.Clear();
-                    var colour = Struck;
+                    // Amber when the chart asked for nothing here -- the
+                    // player hit something extra, which is worth showing but is
+                    // not a judgement. Otherwise white for on the beat, reddening
+                    // as it drifts, so how far out is read from the colour
+                    // without a number to look at while both hands are busy.
+                    var error = _struckError.TryGetValue(pair.Key, out var e) ? e : float.NaN;
+                    var colour = float.IsNaN(error)
+                        ? Struck
+                        : Color.Lerp(StruckOnTime, StruckOff,
+                                     Mathf.InverseLerp(OnTimeSeconds, JudgementWindowSeconds,
+                                                       Mathf.Abs(error)));
                     colour.a = 1f - age / StrikeFlashSeconds;
                     _block.SetColor(BaseColorId, colour);
                     renderer.SetPropertyBlock(_block);

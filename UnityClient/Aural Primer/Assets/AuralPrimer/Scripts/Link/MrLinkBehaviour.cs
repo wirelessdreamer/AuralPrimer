@@ -40,6 +40,15 @@ namespace AuralPrimer.Link
         /// clock offset, display latency and the host's audio offset.</summary>
         public double SongTimeSec { get; private set; }
 
+        /// <summary>Where in the song a host-timestamped event happened.</summary>
+        /// <remarks>
+        /// For drum strikes, which arrive carrying the host clock from the
+        /// instant the host saw them. Placing one by arrival time instead would
+        /// measure the network rather than the player.
+        /// </remarks>
+        public double SongTimeForHostClock(ulong hostClockUs) =>
+            _session?.Clock.SongTimeForHostClock(hostClockUs) ?? 0.0;
+
         public bool IsConnected => _session is { IsConnected: true };
         public bool IsPlaying => _session?.Clock.Playing ?? false;
         public string HostName => _session?.HostName ?? "";

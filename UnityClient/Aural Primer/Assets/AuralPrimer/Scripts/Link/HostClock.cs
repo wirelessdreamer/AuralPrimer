@@ -139,6 +139,32 @@ namespace AuralPrimer.Link
         }
 
         /// <summary>
+        /// Song position at a moment the HOST timestamped, for an event it sent.
+        /// </summary>
+        /// <remarks>
+        /// The sibling of SongTimeForDisplay, and the difference is which clock
+        /// the caller holds. That one starts from a local time and converts into
+        /// host time to ask what to draw; this one is handed a host time already
+        /// -- a drum strike carries the clock reading from the instant the host
+        /// saw it -- and only has to place it in the song.
+        ///
+        /// The audio offset is included for the same reason it is there at all:
+        /// the player struck in response to what they HEARD, and that is the
+        /// timeline the rendered cue is aligned to. Leaving it out would measure
+        /// every hit as early by the host's audio latency.
+        ///
+        /// Extrapolated even while paused, unlike the display: a strike carries
+        /// its own timestamp, so there is no drift to avoid and no reason to
+        /// pretend it happened at the last position sample.
+        /// </remarks>
+        public double SongTimeForHostClock(ulong hostClockUs)
+        {
+            if (!_havePosition) return 0.0;
+            double elapsedUs = (double)hostClockUs - _lastPositionHostClockUs;
+            return _lastSongTimeSec + elapsedUs / 1_000_000.0 + AudioOffsetSec;
+        }
+
+        /// <summary>
         /// A backwards step at least this large means a different host process,
         /// not a reordered packet. Well above any plausible reordering and well
         /// below any plausible process uptime.
