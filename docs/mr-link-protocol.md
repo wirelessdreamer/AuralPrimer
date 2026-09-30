@@ -127,6 +127,7 @@ than trusted.
 | `0x16` | `VOICE_RESULT` | host → headset | JSON: `{ "text": string, "error": string? }` |
 | `0x17` | `KEYBOARD_LAYOUT` | headset → host | JSON, see §7 |
 | `0x18` | `DRUM CHART` | host → headset | JSON, see §4a. Optional; gated on `drums` in `features`. |
+| `0x19` | `KIT LAYOUT` | headset → host | JSON: `{ "pieces": [{ "id": string, "note": u8 }] }`. See §7a. |
 | `0x20` | `PING` | headset → host | `u64` client send time |
 | `0x21` | `PONG` | host → headset | `u64` echoed client time, `u64` host time at reply |
 | `0x30` | `TRANSPORT` | headset → host | JSON: `{ "action": "play"\|"pause"\|"stop"\|"seek", "tSec": f64? }` |
@@ -445,6 +446,37 @@ here, because the thing that must not differ is what the player SEES versus what
 the host WAITS FOR. Either policy is fine as long as both ends run the same one.
 
 ---
+
+### 7a. `KIT LAYOUT` (`0x19`)
+
+The mirror of §7, and needed for the same reason: only the headset knows.
+
+```json
+{ "pieces": [{ "id": "kick", "note": 36 }, { "id": "hihat_open", "note": 46 }] }
+```
+
+`id` is a `drum_tab.json` lane id; `note` is what that pad actually sends.
+Electronic kits disagree about note numbering and can be remapped, so each
+pad's note is learned during calibration by having the player strike it — the
+manual can be wrong about a kit, the pad cannot.
+
+Sent after each pad is learned and whenever the calibration is applied, not
+once at connect: a pad re-learned mid-session changes the answer, and a host
+still holding the old note would wait for a drum that no longer exists.
+
+Only complete pieces appear — a pad placed but never struck has no note to
+report.
+
+The host uses it to decide which note to wait for in Wait mode. Three cases:
+
+- **No frame received** (no kit placed, or an older client) — fall back to
+  General MIDI numbering, which is what most kits send. Far better than
+  refusing to wait for drums at all.
+- **A kit that omits a piece** — that lane is skipped. The player skipped it
+  because they do not own it, and waiting for a note no pad sends would stop
+  the song forever.
+- **A remapped pad** — the kit's note wins over the GM table, because there the
+  table is wrong and the pad is right.
 
 ## 8. Versioning
 

@@ -253,6 +253,7 @@ namespace AuralPrimer.Calibration
                         _profile.kitPieces.Add(_pendingPiece);
                         _pendingPiece = null;
                         _profile.Save();
+                        SendKitLayout();
                         NextKitPiece();
                     }
                     break;
@@ -288,6 +289,27 @@ namespace AuralPrimer.Calibration
                 drumOverlay = host.AddComponent<DrumOverlay>();
             }
             drumOverlay.Bind(link);
+        }
+
+        /// <summary>
+        /// Tell the host what this kit sends, so it can wait for the right pad.
+        /// </summary>
+        /// <remarks>
+        /// Sent with the rest of the calibration rather than once at startup:
+        /// a pad re-learned mid-session changes the answer, and a host still
+        /// holding the old note would wait for a drum that no longer exists.
+        /// Only complete pieces go -- a placed pad whose note was never learned
+        /// would name a note of -1.
+        /// </remarks>
+        void SendKitLayout()
+        {
+            if (link == null || _profile == null || !_profile.IsKitCalibrated) return;
+            var pieces = new List<(string, int)>();
+            foreach (var piece in _profile.kitPieces)
+            {
+                if (piece != null && piece.IsComplete) pieces.Add((piece.id, piece.midiNote));
+            }
+            if (pieces.Count > 0) link.SendKitLayout(pieces);
         }
 
         /// <summary>Move to the next piece, or finish the kit.</summary>
@@ -1240,6 +1262,7 @@ namespace AuralPrimer.Calibration
             // player without asking anyone to choose a mode.
             EnsureDrumOverlay();
             if (drumOverlay != null) drumOverlay.SetProfile(_profile);
+            SendKitLayout();
 
             // Whatever the player chose about their hands, applied here so it
             // survives a restart without them having to go and set it again.

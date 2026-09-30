@@ -2602,6 +2602,7 @@ pub fn run() {
             mr_link_publish,
             mr_link_take_selection,
             mr_link_keyboard_layout,
+            mr_link_kit_layout,
             mr_link_set_chart,
             mr_link_set_drum_chart,
             mr_link_drum_hits,
@@ -3231,6 +3232,16 @@ fn mr_link_take_selection(app: AppHandle, state: tauri::State<MrLinkState>) -> O
 #[tauri::command]
 fn mr_link_keyboard_layout(state: tauri::State<MrLinkState>) -> Option<serde_json::Value> {
     let raw = state.link.lock().unwrap().as_ref()?.state.keyboard_layout()?;
+    serde_json::from_str(&raw).ok()
+}
+
+/// What the headset says its drum kit sends, or None if no kit is placed.
+///
+/// The mirror of the keyboard layout beside it: only the headset knows, since
+/// that is where each pad was struck to learn its note.
+#[tauri::command]
+fn mr_link_kit_layout(state: tauri::State<MrLinkState>) -> Option<serde_json::Value> {
+    let raw = state.link.lock().unwrap().as_ref()?.state.kit_layout()?;
     serde_json::from_str(&raw).ok()
 }
 

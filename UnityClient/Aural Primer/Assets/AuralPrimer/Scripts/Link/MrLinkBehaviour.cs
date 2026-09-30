@@ -111,6 +111,10 @@ namespace AuralPrimer.Link
         public void SendKeyboardLayout(int lowestPitch, int highestPitch, bool dropOutOfRange) =>
             _session?.SendKeyboardLayout(lowestPitch, highestPitch, dropOutOfRange);
 
+        /// <summary>Tell the host which note each placed pad sends.</summary>
+        public void SendKitLayout(IReadOnlyList<(string id, int midiNote)> pieces) =>
+            _session?.SendKitLayout(pieces);
+
         /// <summary>Send recorded speech to be transcribed by the host.</summary>
         public void SendVoiceQuery(byte[] wav) => _session?.SendVoiceQuery(wav);
 

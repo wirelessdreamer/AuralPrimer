@@ -217,6 +217,40 @@ namespace AuralPrimer.Link
         /// again on every recalibration, because the answer changes when the
         /// player re-marks the ends of the instrument.
         /// </remarks>
+        /// <summary>
+        /// Tell the host which note each placed pad sends.
+        /// </summary>
+        /// <remarks>
+        /// The mirror of SendKeyboardLayout, and needed for the same reason:
+        /// only this end knows. Kits disagree about note numbers, so each pad's
+        /// was learned by striking it -- and the host cannot wait for a kick it
+        /// cannot identify.
+        ///
+        /// Built by hand rather than through JsonUtility, which will not
+        /// serialise a bare list without a wrapper type; the shape is four
+        /// fields and this is clearer than the type would be.
+        /// </remarks>
+        public void SendKitLayout(IReadOnlyList<(string id, int midiNote)> pieces)
+        {
+            if (!IsConnected || pieces == null) return;
+            try
+            {
+                var sb = new StringBuilder("{\"pieces\":[");
+                for (var i = 0; i < pieces.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append("{\"id\":\"").Append(pieces[i].id)
+                      .Append("\",\"note\":").Append(pieces[i].midiNote).Append('}');
+                }
+                sb.Append("]}");
+                Send(MrProtocol.FrameKitLayout, Encoding.UTF8.GetBytes(sb.ToString()));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[mr-link] kit layout send failed: {e.Message}");
+            }
+        }
+
         public void SendKeyboardLayout(int lowestPitch, int highestPitch, bool dropOutOfRange)
         {
             if (!IsConnected) return;

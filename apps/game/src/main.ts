@@ -35,6 +35,7 @@ import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
 import { initMrLinkPanel, buildChart, buildDrumChart } from "./mrLinkPanel";
+import type { MrKitLayout } from "./mrLinkPanel";
 import type { MrKeyboardLayout } from "./mrLinkPanel";
 import { nameChord, chordLabels } from "@auralprimer/core-music";
 import { initMidiTransportPanel } from "./midiTransportPanel";
@@ -73,6 +74,7 @@ import { initSecondaryStagesController, type SecondaryStagesControllerHandle } f
 import { initPlaybackRateAndMetronomePanel } from "./playbackRateAndMetronomePanel";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import { assignHands, isSelectedHand, type HandMode } from "./pianoHands";
+import type { DrumTabChart } from "./drumTabChart";
 import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -371,6 +373,15 @@ let sessionStarted = false;
 let songChordLabels: { tSec: number; label: string }[] = [];
 let selectedAuralSongDetails: AuralSongDetails | null = null;
 let selectedDrumChartSelection: DrumChartSelection | null = null;
+
+/**
+ * The drum tab in its own lane vocabulary, kept for wait mode and the headset.
+ *
+ * `selectedDrumChartSelection` beside it has already been folded into the
+ * desktop's eight GM lanes, which collapses the three hi-hat articulations
+ * into one -- so it cannot say which pad to wait for.
+ */
+let selectedDrumTab: DrumTabChart | null = null;
 let selectedMelodicTracks: MelodicTrackSelection[] = [];
 
 /**
@@ -691,7 +702,13 @@ const playersPanel: PlayersPanelHandle = initPlayersPanel({
   // add/remove/instrument-change so the melodic surface shows/hides as the
   // band gains or loses a melodic player. updateInstrumentSelector() calls
   // syncMelodicTrackSelectionFromPlayers() internally, so selection still syncs.
-  syncMelodicTrackSelectionFromPlayers: () => updateInstrumentSelector(),
+  syncMelodicTrackSelectionFromPlayers: () => {
+    updateInstrumentSelector();
+    // Switching to or from drums changes which chart wait mode is waiting on,
+    // and they are two different artifacts in two different vocabularies -- so
+    // the groups have to be built again rather than filtered.
+    if (learnMode) buildLearnGroups();
+  },
   restartVisualizerForPluginSelection: () => restartVisualizerForPluginSelection(),
   rebuildSecondaryStagesIfRunning: () => {
     if (viz) {
@@ -991,6 +1008,7 @@ async function selectAuralSong(containerPath: string) {
     }
     const chartSelection = await readSongChartSelection({ containerPath, details, consoleBridge });
     selectedDrumChartSelection = chartSelection.drumSelection;
+    selectedDrumTab = chartSelection.drumTab;
     // Tag the piano part's notes with the hand that plays them. No pack carries
     // this, so it is derived here from the notes themselves -- after refinement
     // overlays, so the hands are decided on the notes actually played, and once
@@ -1492,6 +1510,9 @@ const mrLink = initMrLinkPanel(
   // Wait mode must not hold the song open for a note the headset already
   // decided this keyboard cannot play.
   setMrKeyboardLayout,
+  // Nor for a drum the player's kit does not have, nor on the wrong note for
+  // one it does: the headset learned each pad's note by having it struck.
+  setMrKitLayout,
 );
 
 const noteColorCheckbox = document.getElementById("noteColorMode") as HTMLInputElement | null;
@@ -1713,6 +1734,15 @@ function learnNoteName(p: number): string {
 let mrKeyboardLayout: MrKeyboardLayout | null = null;
 
 /**
+ * Which note each pad on the headset's kit sends, when one is calibrated.
+ *
+ * Null means no kit has been placed, or no headset is connected. Wait mode
+ * then falls back to the General MIDI numbering, which is what most kits send
+ * and is a far better answer than refusing to wait for drums at all.
+ */
+let mrKitLayout: MrKitLayout | null = null;
+
+/**
  * Put a chart pitch onto a key the player actually has.
  *
  * Mirrors `CalibrationProfile.FoldPitch` on the headset exactly, and has to:
@@ -1722,6 +1752,38 @@ let mrKeyboardLayout: MrKeyboardLayout | null = null;
  *
  * Whole octaves only. Any other shift changes which note it is.
  */
+/**
+ * General MIDI note for a drum tab lane, used when no kit has been calibrated.
+ *
+ * The same table the sidecar writes tabs with, inverted. Only a fallback: a
+ * kit that has been placed in the headset says what it really sends, and that
+ * always wins, because a remapped pad makes this table wrong and the pad right.
+ */
+const GM_NOTE_FOR_LANE: Record<string, number> = {
+  kick: 36,
+  snare: 38,
+  clap: 39,
+  hihat_closed: 42,
+  hihat_pedal: 44,
+  hihat_open: 46,
+  crash: 49,
+  ride: 51,
+  tom_high: 48,
+  tom_mid: 45,
+  tom_low: 41,
+};
+
+/** The note the player's kit sends for a chart lane, or null if it has none. */
+function noteForDrumLane(lane: string): number | null {
+  const placed = mrKitLayout?.pieces.find((p) => p.id === lane);
+  if (placed) return placed.note;
+  // A kit that HAS been calibrated and does not include this piece genuinely
+  // cannot play it -- the player skipped it because they do not own it. Waiting
+  // for a note no pad sends would stop the song forever.
+  if (mrKitLayout && mrKitLayout.pieces.length > 0) return null;
+  return GM_NOTE_FOR_LANE[lane] ?? null;
+}
+
 function playablePitch(pitch: number): number | null {
   const layout = mrKeyboardLayout;
   // No headset, an older client, or one not yet calibrated: assume everything
@@ -1739,6 +1801,28 @@ function playablePitch(pitch: number): number | null {
 
 function buildLearnGroups(): void {
   learnGroups = [];
+
+  // Drums, when that is what is being played. The chart for them is a separate
+  // artifact in a separate vocabulary, so this cannot be folded into the
+  // melodic path below -- and until now wait mode simply did nothing on a
+  // drums-only pack, building zero groups and returning immediately.
+  if (playersPanel.getPrimaryInstrument() === "drums" && selectedDrumTab) {
+    let cur: LearnGroup | null = null;
+    for (const hit of selectedDrumTab.hits) {
+      const note = noteForDrumLane(hit.p);
+      if (note === null) continue;
+      if (!cur || hit.t - cur.t > 0.05) {
+        cur = { t: hit.t, pitches: [note] };
+        learnGroups.push(cur);
+      } else if (!cur.pitches.includes(note)) {
+        cur.pitches.push(note);
+      }
+    }
+    learnGroups = learnGroups.filter((g) => g.pitches.length > 0);
+    resetLearnFromTime(transportController.getState().t);
+    return;
+  }
+
   const track = selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
   if (track) {
     const sorted = [...track.notes].sort((a, b) => a.t_on - b.t_on);
@@ -1776,6 +1860,15 @@ function buildLearnGroups(): void {
  * Rebuilt rather than adjusted in place: the groups are derived from it, and a
  * recalibration mid-song can change which notes are reachable.
  */
+function setMrKitLayout(kit: MrKitLayout | null): void {
+  if (JSON.stringify(kit) === JSON.stringify(mrKitLayout)) return;
+  mrKitLayout = kit;
+  console.log("[mr-link] headset kit", kit);
+  // Rebuilt, not adjusted: the groups are derived from the mapping, so a pad
+  // re-learned in the headset changes which note the song is waiting for.
+  buildLearnGroups();
+}
+
 function setMrKeyboardLayout(layout: MrKeyboardLayout | null): void {
   const before = JSON.stringify(mrKeyboardLayout);
   if (JSON.stringify(layout) === before) return;
@@ -2337,6 +2430,11 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
   if (msg.channel === 9) {
     if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
       mrLink.reportDrumHits([[Math.round(pitch), Math.round(msg.data2 ?? 100)]]);
+      // Straight from the event, not from the polled held-note set the melodic
+      // gate reads. A drum hit is a note-on with an immediate note-off: it can
+      // begin and end between two frames, and the poll would never see it --
+      // so wait mode would hold forever for a drum the player had already hit.
+      if (learnMode) learnRegisterPlayed(Math.round(pitch));
     }
     return;
   }

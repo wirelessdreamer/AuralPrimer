@@ -29,6 +29,15 @@ const SELECTION_POLL_MS = 500;
 export type MrLinkStatus = { running: boolean; host?: string };
 
 /** What the headset says its keyboard can physically play (protocol §7). */
+/**
+ * Which MIDI note each placed pad on the headset's kit sends.
+ *
+ * Kits disagree about note numbers, so each pad's was learned by striking it
+ * during calibration. Without this the host would wait for a General MIDI kick
+ * on a kit that sends something else entirely.
+ */
+export type MrKitLayout = { pieces: { id: string; note: number }[] };
+
 export type MrKeyboardLayout = {
   lowestPitch: number;
   highestPitch: number;
@@ -154,6 +163,7 @@ export function buildDrumChart(
 export function initMrLinkPanel(
   onSongRequested?: (containerPath: string) => void,
   onKeyboardLayout?: (layout: MrKeyboardLayout | null) => void,
+  onKitLayout?: (kit: MrKitLayout | null) => void,
 ): MrLinkPanelHandle {
   const toggle = document.getElementById("mrLinkEnabled") as HTMLInputElement | null;
   const statusEl = document.getElementById("mrLinkStatus");
@@ -198,6 +208,13 @@ export function initMrLinkPanel(
       // the headset has to reach us without anything being re-selected.
       void invoke<MrKeyboardLayout | null>("mr_link_keyboard_layout")
         .then((layout) => onKeyboardLayout?.(layout ?? null))
+        .catch(() => {});
+
+      // Same reasoning for the kit: a pad re-learned in the headset changes
+      // which note the host should wait for, and nothing gets re-selected to
+      // carry the news.
+      void invoke<MrKitLayout | null>("mr_link_kit_layout")
+        .then((kit) => onKitLayout?.(kit ?? null))
         .catch(() => {});
     }, SELECTION_POLL_MS);
   }

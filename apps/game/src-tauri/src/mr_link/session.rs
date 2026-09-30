@@ -78,6 +78,14 @@ pub struct HostState {
     /// for a key that stays down and loses a drum hit entirely, since the hit
     /// is over before the next snapshot is taken.
     pub drum_hits: Mutex<Vec<(u8, u8, u64)>>,
+    /// The headset's kit map, as the JSON it sent (protocol §7a).
+    ///
+    /// Held verbatim, like the keyboard layout beside it: this layer carries it
+    /// to the app, which is what decides anything with it. None means no
+    /// headset has said -- no kit calibrated, or an older client -- and the app
+    /// must fall back to the General MIDI numbering rather than refusing to
+    /// work, which is what most kits send anyway.
+    pub kit_layout: Mutex<Option<String>>,
 }
 
 impl HostState {
@@ -143,6 +151,10 @@ impl HostState {
 
     pub fn keyboard_layout(&self) -> Option<String> {
         self.keyboard_layout.lock().unwrap().clone()
+    }
+
+    pub fn kit_layout(&self) -> Option<String> {
+        self.kit_layout.lock().unwrap().clone()
     }
 
     /// Take the headset's pending song choice, if any, clearing it.
@@ -481,6 +493,17 @@ fn serve_client(
                         *state.keyboard_layout.lock().unwrap() = Some(json.to_string());
                     }
                     Err(e) => eprintln!("mr-link: keyboard layout was not UTF-8: {e}"),
+                }
+            }
+            frame::KIT_LAYOUT => {
+                // Standing state, like the keyboard layout above: the app reads
+                // it whenever it rebuilds what it is waiting for.
+                match std::str::from_utf8(&payload) {
+                    Ok(json) => {
+                        println!("mr-link: headset kit {json}");
+                        *state.kit_layout.lock().unwrap() = Some(json.to_string());
+                    }
+                    Err(e) => eprintln!("mr-link: kit layout was not UTF-8: {e}"),
                 }
             }
             frame::SELECT_SONG => {

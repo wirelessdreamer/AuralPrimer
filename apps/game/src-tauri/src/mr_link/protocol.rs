@@ -25,6 +25,10 @@ pub mod frame {
     /// and no hands, and squeezing it through the melodic shape would mean
     /// inventing values for all three.
     pub const DRUM_CHART: u8 = 0x18;
+    /// The headset's kit: which note each placed pad sends. Headset -> host,
+    /// the mirror of KEYBOARD_LAYOUT, and for the same reason -- only the
+    /// headset knows, because that is where the pads were struck to learn it.
+    pub const KIT_LAYOUT: u8 = 0x19;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
     pub const TRANSPORT: u8 = 0x30;

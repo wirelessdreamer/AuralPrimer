@@ -46,6 +46,8 @@ namespace AuralPrimer.Link
         /// shape would mean inventing a value for each of them.
         /// </remarks>
         public const byte FrameDrumChart = 0x18;
+        /// <summary>The headset's kit map. Headset -> host.</summary>
+        public const byte FrameKitLayout = 0x19;
 
         /// <summary>Names used in the WELCOME `features` array.</summary>
         public const string FeatureLibrary = "library";
