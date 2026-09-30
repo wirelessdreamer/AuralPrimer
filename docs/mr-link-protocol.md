@@ -126,6 +126,7 @@ than trusted.
 | `0x15` | `VOICE_QUERY` | headset → host | WAV bytes, see §6 |
 | `0x16` | `VOICE_RESULT` | host → headset | JSON: `{ "text": string, "error": string? }` |
 | `0x17` | `KEYBOARD_LAYOUT` | headset → host | JSON, see §7 |
+| `0x18` | `DRUM CHART` | host → headset | JSON, see §4a. Optional; gated on `drums` in `features`. |
 | `0x20` | `PING` | headset → host | `u64` client send time |
 | `0x21` | `PONG` | host → headset | `u64` echoed client time, `u64` host time at reply |
 | `0x30` | `TRANSPORT` | headset → host | JSON: `{ "action": "play"\|"pause"\|"stop"\|"seek", "tSec": f64? }` |
@@ -208,6 +209,35 @@ A four-minute piano piece is on the order of a few thousand notes — a few hund
 KB of JSON, sent once. Not worth a binary format until measurement says so.
 
 ---
+
+### 4a. `DRUM CHART` (`0x18`)
+
+Sent alongside `CHART` when the song has drums, and independently of it: a
+song can have both, and a drummer in the headset with someone else at the keys
+is the case this exists for. A song with no drums simply gets no frame.
+
+```json
+{
+  "songId": "D:\...\fire_in_my_bones.feedpak",
+  "title": "Fire In My Bones",
+  "durationSec": 414.639,
+  "tempoMap": [{ "tSec": 0, "bpm": 136.4, "beatsPerBar": 4 }],
+  "kit": ["hihat_closed", "hihat_open", "kick", "snare"],
+  "hits": [{ "t": 75.134, "p": "kick", "v": 104 }]
+}
+```
+
+`p` is a lane id spelled exactly as `drum_tab.json` spells it — **not** a MIDI
+pitch and not one of the desktop's eight `BD/SD/HH/...` lanes. The desktop
+maps tab lanes to GM pitches and back, which collapses `hihat_closed`,
+`hihat_open` and `hihat_pedal` into a single `HH`; on one pack that is 650
+open hits against 8 closed. The headset draws cues on real pads, where those
+are three separate pieces of hardware, so it is given the tab as written.
+
+`kit` is the set of lanes the song actually uses, so the headset draws the
+pieces the song needs rather than a fixed kit with empty lanes.
+
+`v` is optional, 1..127 when present.
 
 ## 5. Clock discipline and why the headset needs no calibration
 
@@ -341,7 +371,7 @@ query alone rather than clearing it.
 implements:
 
 ```json
-{ "host": "STUDIO-PC", "protocol": 1, "features": ["library", "voice"] }
+{ "host": "STUDIO-PC", "protocol": 1, "features": ["library", "voice", "drums"] }
 ```
 
 New frame types do not break an old peer — both ends already ignore frame types

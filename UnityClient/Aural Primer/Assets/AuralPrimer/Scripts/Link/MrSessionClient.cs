@@ -34,6 +34,7 @@ namespace AuralPrimer.Link
         readonly object _notesLock = new();
         readonly List<(byte pitch, byte velocity)> _heldNotes = new();
         readonly ConcurrentQueue<string> _charts = new();
+        readonly ConcurrentQueue<string> _drumCharts = new();
         readonly ConcurrentQueue<string> _libraryPages = new();
         readonly ConcurrentQueue<string> _voiceResults = new();
 
@@ -80,6 +81,9 @@ namespace AuralPrimer.Link
 
         /// <summary>Dequeue a chart delivered by the host, if any.</summary>
         public bool TryDequeueChart(out string chartJson) => _charts.TryDequeue(out chartJson);
+
+        /// <summary>Dequeue a drum chart delivered by the host, if any.</summary>
+        public bool TryDequeueDrumChart(out string chartJson) => _drumCharts.TryDequeue(out chartJson);
 
         public bool TryDequeueLibraryPage(out string json) => _libraryPages.TryDequeue(out json);
 
@@ -388,6 +392,10 @@ namespace AuralPrimer.Link
 
                 case MrProtocol.FrameChart:
                     _charts.Enqueue(Encoding.UTF8.GetString(payload));
+                    break;
+
+                case MrProtocol.FrameDrumChart:
+                    _drumCharts.Enqueue(Encoding.UTF8.GetString(payload));
                     break;
 
                 case MrProtocol.FramePong:

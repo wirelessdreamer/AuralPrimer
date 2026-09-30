@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 
-import { drumChartFromTab, loadDrumChartFromTab } from "../src/drumTabChart";
+import { drumChartFromTab, loadDrumChartFromTab, drumTabChartFrom } from "../src/drumTabChart";
 
 function tab(hits: Array<{ t: number; p: string; v?: number }>) {
   return { version: 1, name: "drums", kit: [], hits };
@@ -150,5 +150,72 @@ describe("loadDrumChartFromTab", () => {
     await expect(loadDrumChartFromTab("/song.feedpak")).resolves.toBeNull();
     invoke.mockResolvedValueOnce(tab([]));
     await expect(loadDrumChartFromTab("/song.feedpak")).resolves.toBeNull();
+  });
+});
+
+// --- Tab-native reading, for the headset ---------------------------------
+//
+// The GM round-trip above collapses hihat_closed / hihat_open / hihat_pedal
+// into one lane. The headset draws cues on real pads, where those are three
+// different pieces of hardware, so it reads the tab as written.
+
+describe("drumTabChartFrom", () => {
+  it("keeps hi-hat articulation the GM round-trip destroys", () => {
+    const doc = {
+      version: 1,
+      hits: [
+        { t: 0, p: "hihat_closed", v: 60 },
+        { t: 0.5, p: "hihat_open", v: 90 },
+        { t: 1, p: "hihat_pedal", v: 40 },
+      ],
+    };
+    // What the game does today: all three become one lane.
+    const viaGm = drumChartFromTab(doc);
+    expect(new Set(viaGm?.events.map((e) => e.lane)).size).toBe(1);
+    // What the headset gets: three.
+    const native = drumTabChartFrom(doc);
+    expect(native?.kit).toEqual(["hihat_closed", "hihat_open", "hihat_pedal"]);
+  });
+
+  it("derives the kit from the hits, not the document's own kit field", () => {
+    // A hand-edited tab can disagree with itself; the lanes that exist are the
+    // ones worth drawing.
+    const native = drumTabChartFrom({
+      kit: [{ id: "crash" }, { id: "ride" }],
+      hits: [{ t: 0, p: "kick" }, { t: 1, p: "snare" }],
+    });
+    expect(native?.kit).toEqual(["kick", "snare"]);
+  });
+
+  it("sorts hits and clamps velocity into MIDI range", () => {
+    const native = drumTabChartFrom({
+      hits: [
+        { t: 2, p: "kick", v: 999 },
+        { t: 1, p: "snare", v: 0 },
+        { t: 3, p: "kick" },
+      ],
+    });
+    expect(native?.hits.map((h) => h.t)).toEqual([1, 2, 3]);
+    expect(native?.hits[0].v).toBe(1);
+    expect(native?.hits[1].v).toBe(127);
+    expect(native?.hits[2].v).toBeUndefined();
+  });
+
+  it("skips malformed hits rather than failing the whole tab", () => {
+    const native = drumTabChartFrom({
+      hits: [
+        { t: Number.NaN, p: "kick" },
+        { t: 1, p: "" },
+        { t: 2, p: "snare" },
+      ],
+    });
+    expect(native?.hits).toHaveLength(1);
+  });
+
+  it("returns null on anything unusable", () => {
+    expect(drumTabChartFrom(null)).toBeNull();
+    expect(drumTabChartFrom({})).toBeNull();
+    expect(drumTabChartFrom({ hits: [] })).toBeNull();
+    expect(drumTabChartFrom({ hits: [{ t: 0, p: "" }] })).toBeNull();
   });
 });

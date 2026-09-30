@@ -14,6 +14,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { MelodicTrackSelection } from "./chartLoader";
+import type { DrumTabChart } from "./drumTabChart";
 
 const STORAGE_KEY = "auralprimer.mrLinkEnabled";
 /** Publishing every frame would be wasteful; the headset disciplines its own
@@ -40,6 +41,8 @@ export type MrLinkPanelHandle = {
   publish: (songTimeSec: number, playing: boolean, heldNotes: { pitch: number; velocity?: number }[]) => void;
   /** Push the chart for a newly loaded song, or clear it. */
   setChart: (chart: unknown | null) => void;
+  /** Hand the headset the drum chart, or null when the song has none. */
+  setDrumChart: (chart: unknown | null) => void;
   setAudioOffsetSec: (offsetSec: number) => void;
   isEnabled: () => boolean;
 };
@@ -114,6 +117,34 @@ export function buildChart(
 }
 
 /**
+ * Build the DRUM CHART payload (protocol §4a) from the pack's drum tab.
+ *
+ * Lane ids travel exactly as `drum_tab.json` spells them. The desktop's own
+ * drum path maps them to GM pitches and back into eight lanes, which collapses
+ * hihat_closed, hihat_open and hihat_pedal into one -- on Fire In My Bones
+ * that is 650 open hits against 8 closed, an articulation the pack records and
+ * the game discards at load. The headset draws cues on real pads, where those
+ * are three separate pieces of hardware, so it gets the tab as written.
+ */
+export function buildDrumChart(
+  songId: string,
+  title: string,
+  tab: DrumTabChart | null,
+  bpm: number,
+  beatsPerBar: number,
+): unknown | null {
+  if (!tab || tab.hits.length === 0) return null;
+  return {
+    songId,
+    title,
+    durationSec: tab.hits[tab.hits.length - 1].t,
+    tempoMap: [{ tSec: 0, bpm, beatsPerBar }],
+    kit: tab.kit,
+    hits: tab.hits,
+  };
+}
+
+/**
  *  onSongRequested Called with a container path when the headset picks
  *   a song from its Songs menu. Already validated host-side against the real
  *   library, so it is safe to load directly.
@@ -128,6 +159,7 @@ export function initMrLinkPanel(
   let enabled = readEnabled();
   let lastPublish = 0;
   let lastChartJson: string | null = null;
+  let lastDrumChartJson: string | null = null;
   let selectionTimer: ReturnType<typeof setInterval> | null = null;
 
   function setStatus(text: string): void {
@@ -181,6 +213,9 @@ export function initMrLinkPanel(
         // Re-push whatever we already know, so a link started mid-session is
         // not blank until the next song change.
         if (lastChartJson) await invoke("mr_link_set_chart", { chartJson: lastChartJson });
+        if (lastDrumChartJson) {
+          await invoke("mr_link_set_drum_chart", { chartJson: lastDrumChartJson });
+        }
         pollSelection();
       } else {
         stopPollingSelection();
@@ -234,6 +269,11 @@ export function initMrLinkPanel(
       });
     },
 
+    setDrumChart(chart) {
+      const json = chart == null ? null : JSON.stringify(chart);
+      lastDrumChartJson = json;
+      void invoke("mr_link_set_drum_chart", { chartJson: json }).catch(() => {});
+    },
     setChart(chart) {
       const json = chart === null ? null : JSON.stringify(chart);
       if (json === lastChartJson) return;

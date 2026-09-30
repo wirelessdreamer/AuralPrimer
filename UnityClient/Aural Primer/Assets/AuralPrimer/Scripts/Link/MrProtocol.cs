@@ -37,10 +37,20 @@ namespace AuralPrimer.Link
         public const byte FrameVoiceQuery = 0x15;
         public const byte FrameVoiceResult = 0x16;
         public const byte FrameKeyboardLayout = 0x17;
+        /// <summary>
+        /// The drum chart, in the tab's own lane vocabulary.
+        /// </summary>
+        /// <remarks>
+        /// Its own frame rather than a role variant of CHART: a drum chart has
+        /// no pitches, no key and no hands, and pushing it through the melodic
+        /// shape would mean inventing a value for each of them.
+        /// </remarks>
+        public const byte FrameDrumChart = 0x18;
 
         /// <summary>Names used in the WELCOME `features` array.</summary>
         public const string FeatureLibrary = "library";
         public const string FeatureVoice = "voice";
+        public const string FeatureDrums = "drums";
         public const byte FramePing = 0x20;
         public const byte FramePong = 0x21;
         public const byte FrameTransport = 0x30;

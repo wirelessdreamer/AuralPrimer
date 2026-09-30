@@ -59,6 +59,8 @@ namespace AuralPrimer.Link
 
         /// <summary>Raised when the host delivers a chart (protocol §4).</summary>
         public event System.Action<string> ChartReceived;
+        /// <summary>The drum chart, in the tab's own lane vocabulary.</summary>
+        public event System.Action<string> DrumChartReceived;
 
         /// <summary>Raised with a page of the host's library (protocol §6).</summary>
         public event System.Action<LibraryPage> LibraryReceived;
@@ -165,6 +167,11 @@ namespace AuralPrimer.Link
                 while (_session.TryDequeueChart(out var chart))
                 {
                     ChartReceived?.Invoke(chart);
+                }
+
+                while (_session.TryDequeueDrumChart(out var drumChart))
+                {
+                    DrumChartReceived?.Invoke(drumChart);
                 }
 
                 // Drained here, on the main thread, for the same reason the

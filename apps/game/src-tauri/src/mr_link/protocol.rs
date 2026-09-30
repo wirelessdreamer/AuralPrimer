@@ -20,6 +20,11 @@ pub mod frame {
     pub const VOICE_QUERY: u8 = 0x15;
     pub const VOICE_RESULT: u8 = 0x16;
     pub const KEYBOARD_LAYOUT: u8 = 0x17;
+    /// The drum chart, in the tab's own lane vocabulary. Separate from CHART
+    /// rather than a role variant of it: a drum chart has no pitches, no key
+    /// and no hands, and squeezing it through the melodic shape would mean
+    /// inventing values for all three.
+    pub const DRUM_CHART: u8 = 0x18;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
     pub const TRANSPORT: u8 = 0x30;

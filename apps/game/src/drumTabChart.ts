@@ -133,3 +133,71 @@ export async function loadDrumChartFromTab(
     return null;
   }
 }
+
+// --- Tab-native reading, for the headset --------------------------------
+//
+// Everything above converts the tab into the eight-lane GM scheme the desktop
+// highway wants, and that conversion is lossy: hihat_closed, hihat_open and
+// hihat_pedal all collapse into HH. On `fire_in_my_bones` that is 650 open
+// hits against 8 closed -- an articulation the pack records and the game
+// throws away at load.
+//
+// The mixed-reality client draws cues on real pads, where open and closed are
+// two different pieces of hardware, so it reads the tab as written rather than
+// through the GM round-trip.
+
+/** A drum chart in the tab's own vocabulary: no GM pitches, nothing collapsed. */
+export type DrumTabChart = {
+  /** Lane ids the song actually uses, as the tab spells them. */
+  kit: string[];
+  hits: { t: number; p: string; v?: number }[];
+};
+
+/**
+ * Parse a `drum_tab.json` document without mapping it to GM pitches.
+ *
+ * Returns `null` on anything unusable, like every other reader here. The `kit`
+ * is derived from the hits rather than trusted from the document: the tab's
+ * own `kit` field is written as the set of lanes used, but a hand-edited file
+ * can disagree with its hits, and the lanes that exist are the ones to draw.
+ */
+export function drumTabChartFrom(doc: unknown): DrumTabChart | null {
+  if (typeof doc !== "object" || doc === null) return null;
+  const rawHits = (doc as { hits?: unknown }).hits;
+  if (!Array.isArray(rawHits) || rawHits.length === 0) return null;
+
+  const hits: DrumTabChart["hits"] = [];
+  for (const h of rawHits as DrumTabHit[]) {
+    if (typeof h?.t !== "number" || !Number.isFinite(h.t)) continue;
+    if (typeof h?.p !== "string" || h.p.length === 0) continue;
+    const hit: DrumTabChart["hits"][number] = { t: h.t, p: h.p };
+    if (typeof h.v === "number" && Number.isFinite(h.v)) {
+      hit.v = Math.max(1, Math.min(127, Math.round(h.v)));
+    }
+    hits.push(hit);
+  }
+  if (hits.length === 0) return null;
+  hits.sort((a, b) => a.t - b.t);
+
+  const kit = Array.from(new Set(hits.map((h) => h.p))).sort();
+  return { kit, hits };
+}
+
+/** Best-effort load of the tab in its own vocabulary. Never throws. */
+export async function loadDrumTabChart(
+  containerPath: string,
+  relPath = "drum_tab.json",
+): Promise<DrumTabChart | null> {
+  let raw: unknown;
+  try {
+    raw = await invoke<unknown>("read_auralsong_json", { containerPath, relPath });
+  } catch {
+    return null;
+  }
+  if (raw == null) return null;
+  try {
+    return drumTabChartFrom(raw);
+  } catch {
+    return null;
+  }
+}

@@ -96,7 +96,7 @@ describe("readSongChartSelection", () => {
       details: { has_notes_mid: false },
       consoleBridge: bridge,
     });
-    expect(out).toEqual({ drumSelection: null, melodicTracks: [] });
+    expect(out).toEqual({ drumSelection: null, melodicTracks: [], drumTab: null });
     // Never parses melodic MIDI — the only invoke is the drum_tab.json read.
     expect(invokeMock).not.toHaveBeenCalledWith("read_auralsong_mid", expect.anything());
   });
@@ -153,7 +153,7 @@ describe("readSongChartSelection", () => {
       details: { has_notes_mid: true },
       consoleBridge: makeBridge(),
     });
-    expect(out).toEqual({ drumSelection: null, melodicTracks: [] });
+    expect(out).toEqual({ drumSelection: null, melodicTracks: [], drumTab: null });
   });
 
   it("parses drums + melodic tracks and logs them", async () => {
@@ -463,7 +463,7 @@ describe("readSongChartSelection", () => {
       details: { has_notes_mid: true },
       consoleBridge: bridge,
     });
-    expect(out).toEqual({ drumSelection: null, melodicTracks: [] });
+    expect(out).toEqual({ drumSelection: null, melodicTracks: [], drumTab: null });
     expect(bridge.warn).toHaveBeenCalledWith(
       "debugging",
       expect.stringContaining("failed to load notes MIDI"),

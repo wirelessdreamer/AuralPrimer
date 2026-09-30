@@ -2603,6 +2603,7 @@ pub fn run() {
             mr_link_take_selection,
             mr_link_keyboard_layout,
             mr_link_set_chart,
+            mr_link_set_drum_chart,
             mr_link_set_audio_offset,
             midi_transport_bindings_get,
             midi_transport_bindings_set,
@@ -3277,6 +3278,17 @@ fn mr_link_publish(
 fn mr_link_set_chart(state: tauri::State<MrLinkState>, chart_json: Option<String>) {
     if let Some(link) = state.link.lock().unwrap().as_ref() {
         link.state.set_chart(chart_json);
+    }
+}
+
+/// Hand the headset the drum chart for the current song, or clear it.
+///
+/// Separate from the melodic chart because a song can have both: a drummer in
+/// the headset and someone else at the keys is the case this is for.
+#[tauri::command]
+fn mr_link_set_drum_chart(state: tauri::State<MrLinkState>, chart_json: Option<String>) {
+    if let Some(link) = state.link.lock().unwrap().as_ref() {
+        link.state.set_drum_chart(chart_json);
     }
 }
 

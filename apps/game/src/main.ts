@@ -34,7 +34,7 @@ import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
-import { initMrLinkPanel, buildChart } from "./mrLinkPanel";
+import { initMrLinkPanel, buildChart, buildDrumChart } from "./mrLinkPanel";
 import type { MrKeyboardLayout } from "./mrLinkPanel";
 import { nameChord, chordLabels } from "@auralprimer/core-music";
 import { initMidiTransportPanel } from "./midiTransportPanel";
@@ -1059,6 +1059,18 @@ async function selectAuralSong(containerPath: string) {
       beatsPerBar: transport.timeSignature?.[0] ?? 4,
       keySignature: chordKey,
     };
+    // The headset gets the drum chart too. Sent from the tab rather than from
+    // `chartSelection.drumSelection`, which has already been folded into the
+    // desktop's eight GM lanes and lost open-vs-closed hi-hat on the way.
+    mrLink.setDrumChart(
+      buildDrumChart(
+        containerPath,
+        mrChartSource.title,
+        chartSelection.drumTab,
+        transport.bpm,
+        transport.timeSignature?.[0] ?? 4,
+      ),
+    );
     resendMrChart();
 
     // Populate instrument selector with available melodic tracks.

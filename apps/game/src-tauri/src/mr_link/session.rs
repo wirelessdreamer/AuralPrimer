@@ -66,11 +66,20 @@ pub struct HostState {
     /// calibrated. The app must treat that as "assume everything is
     /// playable", which is the behaviour that existed before this frame.
     pub keyboard_layout: Mutex<Option<String>>,
+    /// Drum chart JSON for the current song (protocol §4a), or None when the
+    /// song has no drums. Held beside the melodic chart rather than replacing
+    /// it: a song can have both, and a band can have a drummer in the headset
+    /// while someone else plays the keys.
+    pub drum_chart_json: Mutex<Option<String>>,
 }
 
 impl HostState {
     pub fn set_chart(&self, json: Option<String>) {
         *self.chart_json.lock().unwrap() = json;
+    }
+
+    pub fn set_drum_chart(&self, json: Option<String>) {
+        *self.drum_chart_json.lock().unwrap() = json;
     }
 
     pub fn set_position(&self, song_time_sec: f64, playing: bool) {
@@ -121,6 +130,11 @@ impl HostState {
         if self.transcriber.lock().unwrap().is_some() {
             features.push("voice");
         }
+        // Announced unconditionally: the frame is implemented, and whether any
+        // given song has drums is answered by sending it or not. A feature
+        // flag that flickered per song would be a capability the headset had
+        // to re-check rather than one it could build a menu from.
+        features.push("drums");
         features
     }
 }
@@ -319,6 +333,9 @@ fn serve_client(
 
     // The chart, if a song is loaded. If none is, the headset simply waits for
     // a SONG_CHANGED rather than being told an empty chart is a real one.
+    if let Some(drums) = state.drum_chart_json.lock().unwrap().clone() {
+        stream.write_all(&encode_frame(frame::DRUM_CHART, drums.as_bytes()))?;
+    }
     if let Some(chart) = state.chart_json.lock().unwrap().clone() {
         stream.write_all(&encode_frame(frame::CHART, chart.as_bytes()))?;
     }
@@ -339,8 +356,17 @@ fn serve_client(
 
     // --- request loop ---
     let mut last_chart: Option<String> = state.chart_json.lock().unwrap().clone();
+    let mut last_drums: Option<String> = state.drum_chart_json.lock().unwrap().clone();
     while running.load(Ordering::Relaxed) {
         // Push a new chart when the song changes underneath us.
+        let drums_now = state.drum_chart_json.lock().unwrap().clone();
+        if drums_now != last_drums {
+            if let Some(drums) = &drums_now {
+                stream.write_all(&encode_frame(frame::DRUM_CHART, drums.as_bytes()))?;
+            }
+            last_drums = drums_now;
+        }
+
         let current = state.chart_json.lock().unwrap().clone();
         if current != last_chart {
             if let Some(chart) = &current {

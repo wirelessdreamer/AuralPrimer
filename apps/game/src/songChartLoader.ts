@@ -25,7 +25,7 @@ import {
   fingeringRolesFromManifest,
   loadFingeringForRoles,
 } from "./fingeringLoader";
-import { loadDrumChartFromTab } from "./drumTabChart";
+import { loadDrumChartFromTab, loadDrumTabChart, type DrumTabChart } from "./drumTabChart";
 import type { ConsoleBridge, ConsoleLogCategory } from "./consoleBridge";
 
 type MidiBlob = { bytes: number[] };
@@ -41,6 +41,12 @@ export type SongChartLoaderDetails = {
 export type SongChartSelection = {
   drumSelection: DrumChartSelection | null;
   melodicTracks: MelodicTrackSelection[];
+  /**
+   * The drum tab in its own lane vocabulary, for consumers that must not lose
+   * the articulation `drumSelection` collapses -- the headset draws cues on
+   * real pads, where open and closed hi-hat are different hardware.
+   */
+  drumTab: DrumTabChart | null;
 };
 
 export type ReadSongChartSelectionArgs = {
@@ -141,7 +147,11 @@ async function drumsOnlySelection(
       );
     }
   }
-  return { drumSelection: tabDrumSelection, melodicTracks };
+  return {
+    drumSelection: tabDrumSelection,
+    melodicTracks,
+    drumTab: await loadDrumTabChart(containerPath, tabRelPath),
+  };
 }
 
 /**
@@ -240,6 +250,7 @@ export async function readSongChartSelection(args: ReadSongChartSelectionArgs): 
     return {
       drumSelection,
       melodicTracks,
+      drumTab: await loadDrumTabChart(containerPath, tabRelPath),
     };
   } catch (e) {
     consoleBridge.warn(
