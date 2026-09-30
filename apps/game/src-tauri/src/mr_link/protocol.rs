@@ -34,6 +34,8 @@ pub mod frame {
 pub mod datagram {
     pub const POSITION: u8 = 0x40;
     pub const NOTES: u8 = 0x41;
+    /// Drum strikes since the last datagram. See `DrumHits`.
+    pub const DRUM_HITS: u8 = 0x42;
 }
 
 /// Payload ceiling. A larger prefix is treated as a protocol error and the
@@ -114,6 +116,68 @@ impl PositionSample {
             host_clock_us: u64::from_le_bytes(bytes[9..17].try_into().ok()?),
             playing: bytes[17] & 1 != 0,
         })
+    }
+}
+
+/// Drum strikes seen since the previous datagram.
+///
+/// Events, not state, which is the opposite of `NoteState` beside it and the
+/// only shape that works here. A held note can be published as a snapshot
+/// because it lasts: drop one and the next snapshot corrects it. A drum hit is
+/// a note-on with an immediate note-off, over in less than a frame -- a
+/// snapshot taken either side of it shows nothing, and the strike the player
+/// just made would simply never arrive.
+///
+/// Each strike carries the host clock at the moment it was seen, so the headset
+/// can place it against the song rather than against the frame it happened to
+/// be delivered in. That timestamp is the whole basis of any timing feedback;
+/// arrival time would measure the network.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DrumHits {
+    /// `(note, velocity 1..127, host clock microseconds)`, in strike order.
+    pub hits: Vec<(u8, u8, u64)>,
+}
+
+impl DrumHits {
+    /// Ceiling per datagram. A fast roll is perhaps 20 strikes a second and
+    /// this goes out every frame, so anything approaching this is a stuck
+    /// sensor rather than a drummer.
+    pub const MAX_HITS: usize = 64;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let hits = &self.hits[..self.hits.len().min(Self::MAX_HITS)];
+        let mut out = Vec::with_capacity(2 + hits.len() * 10);
+        out.push(datagram::DRUM_HITS);
+        out.push(hits.len() as u8);
+        for (note, velocity, clock) in hits {
+            out.push(*note);
+            out.push(*velocity);
+            out.extend_from_slice(&clock.to_le_bytes());
+        }
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 2 || bytes[0] != datagram::DRUM_HITS {
+            return None;
+        }
+        let count = bytes[1] as usize;
+        // A truncated tail is rejected outright rather than half-read: a
+        // partial strike list would report hits the player never made.
+        if bytes.len() != 2 + count * 10 {
+            return None;
+        }
+        let hits = bytes[2..]
+            .chunks_exact(10)
+            .map(|c| {
+                (
+                    c[0],
+                    c[1],
+                    u64::from_le_bytes(c[2..10].try_into().unwrap()),
+                )
+            })
+            .collect();
+        Some(Self { hits })
     }
 }
 
@@ -496,6 +560,44 @@ mod tests {
             held: vec![],
         };
         assert_eq!(state.encode(), vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0, 0x00]);
+    }
+
+    // The C# client parses these by hand, so the byte layout is pinned here:
+    // a silent reshaping would break the headset with no compile error.
+    #[test]
+    fn drum_hits_round_trip() {
+        let hits = DrumHits {
+            hits: vec![(36, 104, 1_234_567), (42, 60, 1_234_890)],
+        };
+        let bytes = hits.encode();
+        assert_eq!(bytes[0], datagram::DRUM_HITS);
+        assert_eq!(bytes[1], 2);
+        assert_eq!(bytes.len(), 2 + 2 * 10);
+        assert_eq!(DrumHits::decode(&bytes), Some(hits));
+    }
+
+    #[test]
+    fn empty_drum_hits_is_a_valid_datagram() {
+        // Sent every frame, and most frames have no strike in them.
+        let bytes = DrumHits::default().encode();
+        assert_eq!(bytes, vec![0x42, 0x00]);
+        assert_eq!(DrumHits::decode(&bytes), Some(DrumHits::default()));
+    }
+
+    #[test]
+    fn a_truncated_strike_list_is_rejected_not_half_read() {
+        let mut bytes = DrumHits { hits: vec![(38, 90, 42)] }.encode();
+        bytes.pop();
+        assert_eq!(DrumHits::decode(&bytes), None);
+    }
+
+    #[test]
+    fn a_stuck_sensor_cannot_overflow_the_count_byte() {
+        let hits = DrumHits {
+            hits: (0..400u32).map(|i| (36, 100, i as u64)).collect(),
+        };
+        let decoded = DrumHits::decode(&hits.encode()).expect("still decodable");
+        assert_eq!(decoded.hits.len(), DrumHits::MAX_HITS);
     }
 
     #[test]

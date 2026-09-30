@@ -37,6 +37,19 @@ namespace AuralPrimer.Calibration
 
         [SerializeField] Material cueMaterial;
 
+        [Tooltip("How far ahead the column above each pad reaches. Longer than "
+               + "the ring's window: the ring says which drum is next, the "
+               + "column says what the bar looks like.")]
+        [SerializeField] float columnSeconds = 2.5f;
+
+        [Tooltip("How tall that column stands above the pad.")]
+        [SerializeField] float columnHeightMetres = 0.5f;
+
+        [Tooltip("Ceiling on column marks drawn at once, across the whole kit.")]
+        [SerializeField] int maxColumnNotes = 128;
+
+        [SerializeField] Material columnNoteMaterial;
+
         CalibrationProfile _profile;
         readonly List<DrumHit> _hits = new();
         int _cursor;
@@ -45,6 +58,8 @@ namespace AuralPrimer.Calibration
         readonly Dictionary<string, Transform> _cues = new();
         readonly Dictionary<string, Renderer> _cueRenderers = new();
         readonly Dictionary<string, float> _soonest = new();
+        /// <summary>Pooled column marks, reused frame to frame.</summary>
+        readonly List<Transform> _columnPool = new();
         MaterialPropertyBlock _block;
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
@@ -85,6 +100,23 @@ namespace AuralPrimer.Calibration
         void OnDisable()
         {
             if (link != null) link.DrumChartReceived -= OnDrumChart;
+        }
+
+        /// <summary>
+        /// Point this at the session, for an overlay built at runtime.
+        /// </summary>
+        /// <remarks>
+        /// The scene has no drum object to serialise a reference into, and
+        /// adding one would mean a scene edit that a later merge can silently
+        /// drop -- the same reason the wizard panel builds its own UI in code.
+        /// Re-subscribes, so binding after OnEnable still hears charts.
+        /// </remarks>
+        public void Bind(MrLinkBehaviour source)
+        {
+            if (ReferenceEquals(link, source)) return;
+            if (link != null) link.DrumChartReceived -= OnDrumChart;
+            link = source;
+            if (link != null && isActiveAndEnabled) link.DrumChartReceived += OnDrumChart;
         }
 
         /// <summary>The kit to draw on. Set by the wizard once calibrated.</summary>
@@ -160,6 +192,80 @@ namespace AuralPrimer.Calibration
                 if (piece == null || !piece.IsComplete) continue;
                 ShowCue(piece, pair.Value);
             }
+
+            DrawColumns(now);
+        }
+
+        /// <summary>
+        /// The marks standing above each pad, one per hit still to come.
+        /// </summary>
+        /// <remarks>
+        /// The ring on the pad says which drum is next and cannot say what
+        /// follows it -- a bar of sixteenths on the hi-hat is one ring blinking.
+        /// The column is the lookahead, and it stands above the drum it belongs
+        /// to, which is the thing a flat screen cannot do: the mark you are
+        /// reading is directly over the drum your stick is going to.
+        /// </remarks>
+        void DrawColumns(float now)
+        {
+            var used = 0;
+            var head = Camera.main;
+
+            for (var i = _cursor; i < _hits.Count && used < maxColumnNotes; i++)
+            {
+                var hit = _hits[i];
+                var until = hit.T - now;
+                if (until > columnSeconds) break;
+                if (until < 0f) continue;
+
+                var piece = _profile.PieceForLane(hit.Lane);
+                if (piece == null || !piece.IsComplete) continue;
+
+                var mark = ColumnMark(used);
+                if (mark == null) break;
+
+                var up = piece.normal.normalized;
+                var height = hoverMetres + (until / Mathf.Max(0.01f, columnSeconds)) * columnHeightMetres;
+                mark.position = piece.centre + up * height;
+                // Turned to face the player rather than lying flat on the pad's
+                // plane: a mark half a metre up, seen edge-on, is invisible.
+                mark.rotation = head != null
+                    ? Quaternion.LookRotation(mark.position - head.transform.position, up)
+                    : Quaternion.LookRotation(up);
+
+                var width = Mathf.Max(0.02f, piece.RadiusMetres * 1.2f);
+                mark.localScale = new Vector3(width, width * 0.18f, 1f);
+                mark.gameObject.SetActive(true);
+                used++;
+            }
+
+            for (var i = used; i < _columnPool.Count; i++)
+            {
+                if (_columnPool[i] != null && _columnPool[i].gameObject.activeSelf)
+                {
+                    _columnPool[i].gameObject.SetActive(false);
+                }
+            }
+        }
+
+        Transform ColumnMark(int index)
+        {
+            while (_columnPool.Count <= index)
+            {
+                var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                quad.name = $"DrumColumnMark_{_columnPool.Count}";
+                var box = quad.GetComponent<Collider>();
+                if (box != null) Destroy(box);
+                quad.transform.SetParent(transform, worldPositionStays: true);
+                var renderer = quad.GetComponent<Renderer>();
+                // One flat colour for every mark. Which drum is next is the
+                // ring's job, down on the pad; the column only has to show the
+                // shape of what is coming.
+                if (columnNoteMaterial != null) renderer.sharedMaterial = columnNoteMaterial;
+                else if (cueMaterial != null) renderer.sharedMaterial = cueMaterial;
+                _columnPool.Add(quad.transform);
+            }
+            return _columnPool[index];
         }
 
         void ShowCue(KitPiece piece, float untilOnset)
@@ -219,6 +325,13 @@ namespace AuralPrimer.Calibration
             foreach (var cue in _cues.Values)
             {
                 if (cue != null && cue.gameObject.activeSelf) cue.gameObject.SetActive(false);
+            }
+            for (var i = 0; i < _columnPool.Count; i++)
+            {
+                if (_columnPool[i] != null && _columnPool[i].gameObject.activeSelf)
+                {
+                    _columnPool[i].gameObject.SetActive(false);
+                }
             }
         }
 

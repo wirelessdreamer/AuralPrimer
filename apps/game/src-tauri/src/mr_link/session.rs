@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::protocol::{
-    decode_frame_header, encode_frame, frame, host_clock_us, query_library, LibraryQuery,
-    LibrarySong, NoteState, PositionSample, PROTOCOL_VERSION,
+    decode_frame_header, encode_frame, frame, host_clock_us, query_library, DrumHits,
+    LibraryQuery, LibrarySong, NoteState, PositionSample, PROTOCOL_VERSION,
 };
 
 /// How often position is streamed. Fast enough that the client's clock
@@ -71,6 +71,13 @@ pub struct HostState {
     /// it: a song can have both, and a band can have a drummer in the headset
     /// while someone else plays the keys.
     pub drum_chart_json: Mutex<Option<String>>,
+    /// Drum strikes seen since the last datagram went out.
+    ///
+    /// Drained rather than snapshotted, because a strike is an event: the
+    /// held-note path beside this publishes full state every frame, which works
+    /// for a key that stays down and loses a drum hit entirely, since the hit
+    /// is over before the next snapshot is taken.
+    pub drum_hits: Mutex<Vec<(u8, u8, u64)>>,
 }
 
 impl HostState {
@@ -80,6 +87,28 @@ impl HostState {
 
     pub fn set_drum_chart(&self, json: Option<String>) {
         *self.drum_chart_json.lock().unwrap() = json;
+    }
+
+    /// Record a strike, stamped with the host clock at the moment it was seen.
+    ///
+    /// The timestamp is the point of the exercise: it is what lets the headset
+    /// place the hit against the song rather than against whichever datagram
+    /// happened to carry it, and any timing feedback built later rests on it.
+    /// Arrival time would measure the network instead of the drummer.
+    pub fn push_drum_hit(&self, note: u8, velocity: u8) {
+        let mut hits = self.drum_hits.lock().unwrap();
+        // A bound, so a stuck sensor cannot grow this without limit while no
+        // headset is connected to drain it. The oldest go first: in a flood the
+        // recent strikes are the ones still worth showing.
+        while hits.len() >= DrumHits::MAX_HITS {
+            hits.remove(0);
+        }
+        hits.push((note, velocity, host_clock_us()));
+    }
+
+    /// Take everything waiting, leaving the buffer empty.
+    pub fn take_drum_hits(&self) -> Vec<(u8, u8, u64)> {
+        std::mem::take(&mut *self.drum_hits.lock().unwrap())
     }
 
     pub fn set_position(&self, song_time_sec: f64, playing: bool) {
@@ -534,6 +563,16 @@ fn stream_loop(
             let _ = udp.send_to(&notes.encode(), to);
             last_notes = Some(notes);
             next_notes_keepalive = now + NOTES_KEEPALIVE;
+        }
+
+        // Strikes go out the moment there are any, with no keepalive and no
+        // change detection. Both of those exist for the held-note snapshot,
+        // where resending the same state is how a dropped packet heals; a
+        // strike is an event, so resending one would report a hit the drummer
+        // did not make, and an empty list is worth no bytes at all.
+        let hits = state.take_drum_hits();
+        if !hits.is_empty() {
+            let _ = udp.send_to(&DrumHits { hits }.encode(), to);
         }
 
         std::thread::sleep(Duration::from_millis(4));

@@ -265,6 +265,31 @@ namespace AuralPrimer.Calibration
             }
         }
 
+        /// <summary>
+        /// Build the drum overlay if the scene does not carry one.
+        /// </summary>
+        /// <remarks>
+        /// Created rather than authored, like the wizard panel. A serialised
+        /// reference is one more thing a scene merge can drop, and when it does
+        /// the failure is silent: the kit calibrates, the chart arrives, and
+        /// nothing is ever drawn on the drums.
+        ///
+        /// Parented to the same transform the keyboard overlay uses, so it is
+        /// re-seated onto the spatial anchor along with everything else.
+        /// </remarks>
+        void EnsureDrumOverlay()
+        {
+            if (drumOverlay == null)
+            {
+                var host = new GameObject("DrumOverlay");
+                host.transform.SetParent(
+                    overlay != null ? overlay.transform.parent : transform,
+                    worldPositionStays: false);
+                drumOverlay = host.AddComponent<DrumOverlay>();
+            }
+            drumOverlay.Bind(link);
+        }
+
         /// <summary>Move to the next piece, or finish the kit.</summary>
         void NextKitPiece()
         {
@@ -1213,6 +1238,7 @@ namespace AuralPrimer.Calibration
             // keyboard and a placed kit, and the overlay draws nothing when no
             // pieces were placed, which is the right answer for a keyboard-only
             // player without asking anyone to choose a mode.
+            EnsureDrumOverlay();
             if (drumOverlay != null) drumOverlay.SetProfile(_profile);
 
             // Whatever the player chose about their hands, applied here so it

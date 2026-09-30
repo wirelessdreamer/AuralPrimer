@@ -2316,10 +2316,30 @@ async function sendPianoNotes(): Promise<void> {
 // controllers actually send, and treating it as a strike leaves the key stuck
 // on forever.
 window.addEventListener("auralprimer:midi-input", (ev) => {
-  const msg = (ev as CustomEvent<{ message_type: string; data1?: number | null; data2?: number | null }>).detail;
+  const msg = (
+    ev as CustomEvent<{
+      message_type: string;
+      channel?: number | null;
+      data1?: number | null;
+      data2?: number | null;
+    }>
+  ).detail;
   const pitch = msg?.data1;
   if (typeof pitch !== "number") return;
   if (msg.message_type !== "note_on" && msg.message_type !== "note_off") return;
+
+  // Channel 10 (9 here, zero-based) is percussion by every convention there
+  // is, and an electronic kit uses it. Two things follow, and the second was
+  // already wrong before drums existed: the strike goes to the headset so it
+  // can place the hit in time, and it must NOT reach the piano sampler. Note
+  // 36 on a kit is a kick; the sampler would have played a C2 for it, so
+  // plugging a kit in made the piano play along with the drummer.
+  if (msg.channel === 9) {
+    if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
+      mrLink.reportDrumHits([[Math.round(pitch), Math.round(msg.data2 ?? 100)]]);
+    }
+    return;
+  }
 
   // Load on first touch rather than at startup or on a checkbox. Sixty
   // megabytes is too much to read before anyone has asked for a sound, and

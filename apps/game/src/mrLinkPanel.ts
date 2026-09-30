@@ -43,6 +43,8 @@ export type MrLinkPanelHandle = {
   setChart: (chart: unknown | null) => void;
   /** Hand the headset the drum chart, or null when the song has none. */
   setDrumChart: (chart: unknown | null) => void;
+  /** Report drum strikes as they happen, for the headset to place in time. */
+  reportDrumHits: (hits: [number, number][]) => void;
   setAudioOffsetSec: (offsetSec: number) => void;
   isEnabled: () => boolean;
 };
@@ -269,6 +271,13 @@ export function initMrLinkPanel(
       });
     },
 
+    reportDrumHits(hits) {
+      if (hits.length === 0) return;
+      void invoke("mr_link_drum_hits", { hits }).catch(() => {
+        // Best-effort, like publishing: a dropped strike is not worth a log
+        // line in the middle of a fill.
+      });
+    },
     setDrumChart(chart) {
       const json = chart == null ? null : JSON.stringify(chart);
       lastDrumChartJson = json;

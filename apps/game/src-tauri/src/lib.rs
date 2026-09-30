@@ -2604,6 +2604,7 @@ pub fn run() {
             mr_link_keyboard_layout,
             mr_link_set_chart,
             mr_link_set_drum_chart,
+            mr_link_drum_hits,
             mr_link_set_audio_offset,
             midi_transport_bindings_get,
             midi_transport_bindings_set,
@@ -3278,6 +3279,20 @@ fn mr_link_publish(
 fn mr_link_set_chart(state: tauri::State<MrLinkState>, chart_json: Option<String>) {
     if let Some(link) = state.link.lock().unwrap().as_ref() {
         link.state.set_chart(chart_json);
+    }
+}
+
+/// Report drum strikes to the link, stamped as the host saw them.
+///
+/// Its own command rather than a field on `mr_link_publish`, which publishes
+/// state on a timer. A strike is an event: batching it into the next timed
+/// publish would blur the timestamp that makes it worth sending.
+#[tauri::command]
+fn mr_link_drum_hits(state: tauri::State<MrLinkState>, hits: Vec<(u8, u8)>) {
+    if let Some(link) = state.link.lock().unwrap().as_ref() {
+        for (note, velocity) in hits {
+            link.state.push_drum_hit(note, velocity);
+        }
     }
 }
 
