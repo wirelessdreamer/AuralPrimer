@@ -35,6 +35,7 @@ namespace AuralPrimer.Link
         readonly List<(byte pitch, byte velocity)> _heldNotes = new();
         readonly ConcurrentQueue<string> _charts = new();
         readonly ConcurrentQueue<string> _drumCharts = new();
+        readonly ConcurrentQueue<(byte note, byte velocity, ulong hostClockUs)> _drumHits = new();
         readonly ConcurrentQueue<string> _libraryPages = new();
         readonly ConcurrentQueue<string> _voiceResults = new();
 
@@ -84,6 +85,10 @@ namespace AuralPrimer.Link
 
         /// <summary>Dequeue a drum chart delivered by the host, if any.</summary>
         public bool TryDequeueDrumChart(out string chartJson) => _drumCharts.TryDequeue(out chartJson);
+
+        /// <summary>Dequeue a drum strike the host reported, if any.</summary>
+        public bool TryDequeueDrumHit(out (byte note, byte velocity, ulong hostClockUs) hit) =>
+            _drumHits.TryDequeue(out hit);
 
         public bool TryDequeueLibraryPage(out string json) => _libraryPages.TryDequeue(out json);
 
@@ -453,6 +458,7 @@ namespace AuralPrimer.Link
         {
             var any = new IPEndPoint(IPAddress.Any, 0);
             var scratch = new List<(byte pitch, byte velocity)>();
+            var drumScratch = new List<(byte note, byte velocity, ulong hostClockUs)>();
 
             while (_running)
             {
@@ -470,6 +476,17 @@ namespace AuralPrimer.Link
                         {
                             _heldNotes.Clear();
                             _heldNotes.AddRange(scratch);
+                        }
+                    }
+                    else if (MrProtocol.TryDecodeDrumHits(data, data.Length, drumScratch))
+                    {
+                        // Queued, not stored. Held notes are state and the last
+                        // snapshot wins; strikes are events and every one of
+                        // them matters, so none may be overwritten by the next
+                        // datagram before the main thread has looked.
+                        for (var i = 0; i < drumScratch.Count; i++)
+                        {
+                            _drumHits.Enqueue(drumScratch[i]);
                         }
                     }
                 }

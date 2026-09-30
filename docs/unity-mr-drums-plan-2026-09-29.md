@@ -159,13 +159,33 @@ out. Decide it after seeing a kit in the headset.
 
 ## Phases
 
-| Phase | Delivers | Depends on |
+| Phase | Delivers | State |
 |---|---|---|
-| **1a** | `DRUM CHART` frame; host sends the tab; headset parses and holds it | nothing |
-| **1b** | Kit calibration: place pads, learn notes, profile v3, fine tuning | 1a for the lane set |
-| **1c** | Pad cues and per-pad columns | 1b |
-| **2** | `DRUM HITS` datagram; hits land visibly, with timing error | 1c |
-| **3** | Wait mode for drums — new on the desktop first, then the headset | 2 |
+| **1a** | `DRUM CHART` frame; host sends the tab; headset parses and holds it | **done** |
+| **1b** | Kit calibration: place pads, learn notes, fine tuning | **done** — no profile version bump, see below |
+| **1c** | Pad cues and per-pad columns | **done** |
+| **2** | `DRUM HITS` datagram; strikes land visibly | **partly** — strikes arrive and flash the pad; timing error not yet shown |
+| **3** | Wait mode for drums — new on the desktop first, then the headset | not started |
+
+Two things changed as they were built, and the plan was wrong about both.
+
+**Version 3, with a migration rather than a recalibration.** `IsAnchored`
+requires `version == CurrentVersion`, so a raised number un-anchors every older
+profile unless something carries it forward. This change only *adds* fields, so
+a v2 profile already is a valid v3 one with no kit in it, and `Load` stamps it
+forward. That is what separates it from v1 to v2, which changed what existing
+fields meant and could not be migrated — there, discarding the profile was the
+only safe answer.
+
+**The overlay is built at runtime, not authored into the scene.** A serialised
+reference is one more thing a scene merge can drop, and when it does the failure
+is silent: the kit calibrates, the chart arrives, and nothing is ever drawn.
+
+One defect was found and fixed on the way that had nothing to do with drums:
+the live-MIDI handler never looked at the channel, so every message reached the
+piano sampler. Note 36 on a kit is a kick and the sampler played a C2 for it —
+plugging an electronic kit into the desktop made the piano play along with the
+drummer, one wrong note per strike.
 
 Phase 1 is the whole of "put the headset on and play along"; 2 is the whole of
 "and know whether you were on time".

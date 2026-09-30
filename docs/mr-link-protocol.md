@@ -183,6 +183,36 @@ even in the pathological case, so there is no reason to be cleverer.
 The periodic resend exists for the same reason — if the last change was dropped,
 the state corrects within 250 ms rather than never.
 
+### Drum strikes (`0x42`)
+
+```
+┌──────────┬─────────┬──────────────────────────────────────────┐
+│ 0x42: u8 │ count u8│ n × { note u8, vel u8, hostClock u64 }   │
+└──────────┴─────────┴──────────────────────────────────────────┘
+```
+
+**Events, not state — the opposite of the notes datagram above, and the only
+shape that works here.** A held key can be a snapshot because it lasts, and a
+dropped one heals on the next frame. A drum hit is a note-on with an immediate
+note-off, over inside a frame: a snapshot taken either side of it shows nothing,
+so the strike would never arrive at all.
+
+For the same reason there is no keepalive and no change detection. Resending a
+snapshot is how a dropped packet heals; resending a strike would report a hit
+the drummer never made. An empty list is not sent.
+
+Raw MIDI note numbers, not lane ids. Which pad a note belongs to is the
+headset's knowledge, because that is where the kit was calibrated — each pad's
+note is learned by striking it, since kits disagree about numbering. The host
+forwards channel-10 note-ons without needing to know what kit is attached.
+
+`hostClock` is what lets the headset place a strike against the song rather than
+against whichever datagram carried it; arrival time would measure the network
+instead of the player.
+
+A truncated list is rejected rather than half-read, and the count cannot
+overflow: at most 64 strikes per datagram, beyond any real drummer.
+
 ---
 
 ## 4. `CHART` payload

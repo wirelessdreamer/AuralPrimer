@@ -58,6 +58,8 @@ namespace AuralPrimer.Calibration
         readonly Dictionary<string, Transform> _cues = new();
         readonly Dictionary<string, Renderer> _cueRenderers = new();
         readonly Dictionary<string, float> _soonest = new();
+        /// <summary>When each pad was last struck, for the flash.</summary>
+        readonly Dictionary<string, float> _struckAt = new();
         /// <summary>Pooled column marks, reused frame to frame.</summary>
         readonly List<Transform> _columnPool = new();
         MaterialPropertyBlock _block;
@@ -92,14 +94,32 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         static readonly Color PlayNow = new(0.337f, 0.910f, 0.522f, 1f);
 
+        /// <summary>A pad the player just hit. Amber, as a held key is.</summary>
+        /// <remarks>
+        /// Not green. Green means "play this"; this says "you did", and the two
+        /// showing the same colour would make a flash on the wrong drum look
+        /// like an instruction to hit it.
+        /// </remarks>
+        static readonly Color Struck = new(0.961f, 0.647f, 0.141f, 1f);
+
+        const float StrikeFlashSeconds = 0.18f;
+
         void OnEnable()
         {
-            if (link != null) link.DrumChartReceived += OnDrumChart;
+            if (link != null)
+            {
+                link.DrumChartReceived += OnDrumChart;
+                link.DrumHitReceived += OnDrumHit;
+            }
         }
 
         void OnDisable()
         {
-            if (link != null) link.DrumChartReceived -= OnDrumChart;
+            if (link != null)
+            {
+                link.DrumChartReceived -= OnDrumChart;
+                link.DrumHitReceived -= OnDrumHit;
+            }
         }
 
         /// <summary>
@@ -114,9 +134,17 @@ namespace AuralPrimer.Calibration
         public void Bind(MrLinkBehaviour source)
         {
             if (ReferenceEquals(link, source)) return;
-            if (link != null) link.DrumChartReceived -= OnDrumChart;
+            if (link != null)
+            {
+                link.DrumChartReceived -= OnDrumChart;
+                link.DrumHitReceived -= OnDrumHit;
+            }
             link = source;
-            if (link != null && isActiveAndEnabled) link.DrumChartReceived += OnDrumChart;
+            if (link != null && isActiveAndEnabled)
+            {
+                link.DrumChartReceived += OnDrumChart;
+                link.DrumHitReceived += OnDrumHit;
+            }
         }
 
         /// <summary>The kit to draw on. Set by the wizard once calibrated.</summary>
@@ -147,6 +175,23 @@ namespace AuralPrimer.Calibration
 
             var placed = _profile != null ? _profile.kitPieces.Count : 0;
             Debug.Log($"[drums] chart loaded: {_hits.Count} hits, {placed} piece(s) placed");
+        }
+
+        /// <summary>
+        /// The player hit something. Flash the pad it was.
+        /// </summary>
+        /// <remarks>
+        /// Looked up by note, which is the direction the information arrives
+        /// in: the kit sends a number, and only the calibration knows which pad
+        /// that is. A strike from a pad that was never placed -- a piece the
+        /// player skipped -- is ignored rather than guessed at.
+        /// </remarks>
+        void OnDrumHit(byte note, byte velocity, ulong hostClockUs)
+        {
+            if (_profile == null) return;
+            var piece = _profile.PieceForNote(note);
+            if (piece == null) return;
+            _struckAt[piece.id] = Time.time;
         }
 
         void Update()
@@ -194,6 +239,47 @@ namespace AuralPrimer.Calibration
             }
 
             DrawColumns(now);
+            DrawStrikes();
+        }
+
+        /// <summary>
+        /// Show the pads the player just hit.
+        /// </summary>
+        /// <remarks>
+        /// Drawn for every strike, including ones the chart did not ask for.
+        /// A drummer needs to see that the app heard them at all -- silence
+        /// after a hit reads as a broken cable, and on a kit whose notes were
+        /// learned wrong it is the only visible symptom there would be.
+        /// </remarks>
+        void DrawStrikes()
+        {
+            foreach (var pair in _struckAt)
+            {
+                var age = Time.time - pair.Value;
+                if (age > StrikeFlashSeconds) continue;
+                var piece = _profile.PieceForLane(pair.Key);
+                if (piece == null || !piece.IsComplete) continue;
+                // Only where nothing else is already drawn on that pad, so a
+                // cue and a flash never fight over the same quad.
+                if (_soonest.ContainsKey(pair.Key)) continue;
+
+                var cue = CueFor(piece);
+                if (cue == null) continue;
+                cue.localScale = new Vector3(piece.RadiusMetres * 2f, piece.RadiusMetres * 2f, 1f);
+                cue.position = piece.centre + piece.normal.normalized * hoverMetres;
+                cue.rotation = Quaternion.LookRotation(piece.normal.normalized);
+                cue.gameObject.SetActive(true);
+
+                if (_cueRenderers.TryGetValue(piece.id, out var renderer) && renderer != null)
+                {
+                    _block ??= new MaterialPropertyBlock();
+                    _block.Clear();
+                    var colour = Struck;
+                    colour.a = 1f - age / StrikeFlashSeconds;
+                    _block.SetColor(BaseColorId, colour);
+                    renderer.SetPropertyBlock(_block);
+                }
+            }
         }
 
         /// <summary>

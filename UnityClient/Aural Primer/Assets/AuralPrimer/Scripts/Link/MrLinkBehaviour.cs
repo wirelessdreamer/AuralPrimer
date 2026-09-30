@@ -62,6 +62,16 @@ namespace AuralPrimer.Link
         /// <summary>The drum chart, in the tab's own lane vocabulary.</summary>
         public event System.Action<string> DrumChartReceived;
 
+        /// <summary>
+        /// A drum strike the host saw, with the host clock from that moment.
+        /// </summary>
+        /// <remarks>
+        /// An event per strike rather than a set to read each frame, because
+        /// that is what a strike is. HeldNotes beside it is polled and would
+        /// miss one entirely: a hit is over inside a frame.
+        /// </remarks>
+        public event System.Action<byte, byte, ulong> DrumHitReceived;
+
         /// <summary>Raised with a page of the host's library (protocol §6).</summary>
         public event System.Action<LibraryPage> LibraryReceived;
 
@@ -172,6 +182,11 @@ namespace AuralPrimer.Link
                 while (_session.TryDequeueDrumChart(out var drumChart))
                 {
                     DrumChartReceived?.Invoke(drumChart);
+                }
+
+                while (_session.TryDequeueDrumHit(out var hit))
+                {
+                    DrumHitReceived?.Invoke(hit.note, hit.velocity, hit.hostClockUs);
                 }
 
                 // Drained here, on the main thread, for the same reason the

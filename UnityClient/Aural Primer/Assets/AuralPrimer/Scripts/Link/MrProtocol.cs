@@ -58,6 +58,8 @@ namespace AuralPrimer.Link
         // UDP datagram tags
         public const byte DatagramPosition = 0x40;
         public const byte DatagramNotes = 0x41;
+        /// <summary>Drum strikes since the previous datagram.</summary>
+        public const byte DatagramDrumHits = 0x42;
 
         /// A larger prefix is a protocol error: refuse rather than allocate on it.
         public const int MaxPayload = 16 * 1024 * 1024;
@@ -193,6 +195,34 @@ namespace AuralPrimer.Link
             for (var i = 0; i < count; i++)
             {
                 into.Add((data[10 + i * 2], data[11 + i * 2]));
+            }
+            return true;
+        }
+
+        /// <summary>Drum strikes seen since the previous datagram.</summary>
+        /// <remarks>
+        /// Events, unlike the held-note snapshot above, because a strike does
+        /// not last: a note-on with an immediate note-off is over inside a
+        /// frame, and a snapshot taken either side of it shows nothing at all.
+        /// Each carries the host clock from when the host saw it, so the hit
+        /// can be placed against the song rather than against the packet.
+        /// </remarks>
+        public static bool TryDecodeDrumHits(
+            byte[] data, int length, List<(byte note, byte velocity, ulong hostClockUs)> into)
+        {
+            if (data == null || length < 2 || data[0] != DatagramDrumHits) return false;
+
+            int count = data[1];
+            // Rejected outright rather than half-read, for the same reason a
+            // partial chord is: a truncated list would report strikes the
+            // player never made.
+            if (length != 2 + count * 10) return false;
+
+            into.Clear();
+            for (var i = 0; i < count; i++)
+            {
+                var at = 2 + i * 10;
+                into.Add((data[at], data[at + 1], ReadUInt64LE(data, at + 2)));
             }
             return true;
         }

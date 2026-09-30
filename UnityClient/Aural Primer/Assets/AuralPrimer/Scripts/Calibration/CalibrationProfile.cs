@@ -75,7 +75,7 @@ namespace AuralPrimer.Calibration
         /// because the wizard then skips calibration and the user is left with a
         /// silently misplaced overlay and nothing to act on.
         /// </remarks>
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         /// <remarks>
         /// Deliberately defaults to 0, not CurrentVersion. JsonUtility only
@@ -98,13 +98,14 @@ namespace AuralPrimer.Calibration
         /// The drum pieces, where a kit has been calibrated.
         /// </summary>
         /// <remarks>
-        /// Additive, and deliberately NOT a version bump. `IsAnchored` requires
-        /// `version == CurrentVersion`, so raising it would un-anchor every
-        /// keyboard profile already on a headset and make its owner recalibrate
-        /// an instrument that had not changed. The version guard exists because
-        /// v1 to v2 changed what existing fields MEANT; adding fields that
-        /// default to empty does not, and an older profile reads back correctly
-        /// as a keyboard with no kit.
+        /// Version 3 carries these. The bump is honest bookkeeping rather than
+        /// a break: `IsAnchored` requires `version == CurrentVersion`, so a
+        /// raised number un-anchors every older profile unless something
+        /// migrates it -- and since this change only ADDS fields, a v2 profile
+        /// already is a valid v3 one with no kit in it. `Load` stamps it
+        /// forward rather than throwing away a keyboard the player measured by
+        /// hand. That is the difference from v1 to v2, which changed what
+        /// existing fields meant and could not be migrated.
         /// </remarks>
         public List<KitPiece> kitPieces = new();
 
@@ -417,6 +418,18 @@ namespace AuralPrimer.Calibration
                                    + $"{profile.TiltDegrees:F0}° off level — discarding it "
                                    + "and asking for the edges again");
                     return null;
+                }
+
+                // A v2 profile is a v3 profile with no kit: version 3 only
+                // added fields, and JsonUtility has already defaulted them.
+                // Stamped forward here so the version guard in IsAnchored keeps
+                // its meaning without costing the player a keyboard they
+                // measured by hand, pinch by pinch.
+                if (profile.version == 2)
+                {
+                    profile.version = CurrentVersion;
+                    Debug.Log($"[calibration] {profileName} migrated v2 -> v{CurrentVersion} "
+                            + "(kit fields added; keyboard untouched)");
                 }
 
                 return profile;
