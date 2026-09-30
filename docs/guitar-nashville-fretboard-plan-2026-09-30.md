@@ -106,6 +106,45 @@ There is a schema validator for it but **no accuracy benchmark comparing our
 assigner against the ground truth** — that benchmark is the first thing to build,
 because it turns "the fingerings look wrong" into a number.
 
+### The fix already exists, unmerged
+
+`bass_tab_optimizer.py` — commit `0422136`, 2026-05-20, branch
+`claude/vigorous-beaver-ed24e1`, never merged. A Viterbi optimiser over the
+whole note chain, and it already carries both of the things the shipped
+assigner lacks:
+
+```python
+position_preference_fret: float = 3.0   # an anchor, not an unbounded pull
+position_weight: float = 0.4
+finger_span_threshold: int = 3
+finger_span_penalty_per_fret: float = 1.2
+```
+
+```python
+span = abs(cur_f - prev_f)
+if span > weights.finger_span_threshold and (cur_s == prev_s):
+    cost += (span - weights.finger_span_threshold) * weights.finger_span_penalty_per_fret
+```
+
+A hand *anchor* rather than a nut bias is exactly the difference between a hand
+that has a position and a hand that slides to fret 0 — and the docstring names
+the cure for our defect outright: *"For lead-style transcription that prefers
+staying at the 5th-fret box, raise position_preference_fret and weaken
+open_string_bonus."* It also solves the tuning duplication, carrying
+`TUNING_EADG_4`, `TUNING_BEADG_5`, `TUNING_BEADGC_6`, `TUNING_DROP_D_4` and a
+`tuning_for_name()` lookup.
+
+Written for four strings, but the cost structure generalises to six by swapping
+the tuning tuple. **Port it rather than re-deriving it**, and treat the GuitarSet
+benchmark as the thing that proves the port — the weights are tuned for bass and
+almost certainly want different values for lead guitar, which is a measurement,
+not a guess.
+
+This was missed on the first pass for a reason worth recording: ripgrep honours
+`.gitignore`, `.claude/worktrees/` is ignored, and so an unmerged branch's
+working copy is invisible to every working-tree search. Branch-complete coverage
+needs `git log --all` or `git grep` over `git rev-list --all`.
+
 ## Tracking
 
 **`XR_META_detached_controllers`** does exactly what is wanted: tracks a
@@ -180,7 +219,7 @@ serves both.
 |---|---|---|
 | **1** | Desktop Nashville fretboard view: zones, three tiers, position changes, reading from `harmony.json` | The concept is the risk. A monitor answers "does this read while playing?" in a day; a headset answers it in a fortnight. |
 | **2** | Jamstik input: per-string MIDI → live position, shown against the chart's | Cheap once phase 1 exists, and it is what makes the view interactive rather than a diagram. |
-| **3** | Position-aware fingering assigner + GuitarSet accuracy benchmark | Until this lands, the chart side of the view is wrong — see the blocker. Benchmark first, so the fix is measured rather than asserted. |
+| **3** | Port `bass_tab_optimizer` to six strings + GuitarSet accuracy benchmark | Until this lands, the chart side of the view is wrong — see the blocker. Benchmark first, so the port is measured rather than asserted. |
 | **4** | MR: detached controller, three-pinch fretboard calibration, notes onto real frets | Everything above is instrument-agnostic and reusable; this is the part that needs hardware. |
 
 Phase 3 can run in parallel with 1 and 2 — the view and the data are independent
@@ -205,6 +244,10 @@ problems, and the view can be developed against hand-written fingerings.
 
 ## Open questions
 
+- **Cherry-pick or re-derive `0422136`?** The commit brings a three-layer bass
+  pipeline, of which only the optimiser is wanted here. Taking the file alone is
+  cleaner than the merge; taking the branch drags in a technique classifier and
+  a `notes.tab.json` sidecar that this feature does not need.
 - **Position numbering** — the blues/rock convention above is a guess at what
   "first position" means to this player. It is one constant, but every label in
   the feature hangs off it.
