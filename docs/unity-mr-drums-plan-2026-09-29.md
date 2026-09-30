@@ -164,8 +164,17 @@ out. Decide it after seeing a kit in the headset.
 | **1a** | `DRUM CHART` frame; host sends the tab; headset parses and holds it | **done** |
 | **1b** | Kit calibration: place pads, learn notes, fine tuning | **done** — no profile version bump, see below |
 | **1c** | Pad cues and per-pad columns | **done** |
-| **2** | `DRUM HITS` datagram; strikes land visibly | **partly** — strikes arrive and flash the pad; timing error not yet shown |
-| **3** | Wait mode for drums — new on the desktop first, then the headset | not started |
+| **2** | `DRUM HITS` datagram; strikes land and are judged | **done** |
+| **3** | Wait mode for drums — desktop first, then the headset | **done** |
+
+Nothing here has been run on hardware yet: it is built, tested and installed
+only as far as a headset being connected allows, and at the time of writing one
+was not. Everything below is compile- and test-level.
+
+Phase 3 turned out to need a frame the plan had not foreseen. The chart names a
+lane; the kit sends a note; only the headset knows which, because that is where
+the pad was struck to learn it. `KIT LAYOUT` (`0x19`) is the mirror of
+`KEYBOARD_LAYOUT`, which exists for exactly the same reason.
 
 Two things changed as they were built, and the plan was wrong about both.
 
