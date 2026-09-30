@@ -3,11 +3,60 @@
 // A saved keyboard calibration: which instrument, and where it is in the room.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
 namespace AuralPrimer.Calibration
 {
+    /// <summary>Which instrument a calibration describes.</summary>
+    public enum Instrument
+    {
+        Keyboard = 0,
+        Drums = 1,
+    }
+
+    /// <summary>One drum pad or cymbal, where it is and what it sends.</summary>
+    /// <remarks>
+    /// Two captured points, not three. Centre and rim give the position and the
+    /// radius but only one vector lying in the pad's plane, so the facing is
+    /// seeded as pointing at the player's head at capture time -- which is how
+    /// a kit is set up -- and adjusted afterwards. Pinning the plane exactly
+    /// would take a third capture per piece: 24 pinches across a seven-piece
+    /// kit rather than 14, to replace a good assumption with a measurement the
+    /// player can already correct by eye.
+    /// </remarks>
+    [Serializable]
+    public sealed class KitPiece
+    {
+        /// <summary>Lane id, spelled as `drum_tab.json` spells it.</summary>
+        public string id;
+
+        /// <summary>
+        /// What this pad sends when struck.
+        /// </summary>
+        /// <remarks>
+        /// Learned by hitting it. Kits disagree about note numbers and the
+        /// player should never have to look one up -- and on a kit that has
+        /// been remapped the manual is wrong and the pad is not.
+        /// </remarks>
+        public int midiNote = -1;
+
+        public Vector3 centre;
+
+        /// <summary>A point on the rim. The distance to centre is the radius.</summary>
+        public Vector3 rim;
+
+        /// <summary>Which way the face points. Seeded toward the head, then adjustable.</summary>
+        public Vector3 normal = Vector3.up;
+
+        public float RadiusMetres => Vector3.Distance(centre, rim);
+
+        /// <summary>Is this piece usable -- placed, and with a note learned?</summary>
+        public bool IsComplete =>
+            !string.IsNullOrEmpty(id) && midiNote >= 0 && RadiusMetres > 0.01f;
+    }
+
     /// <summary>
     /// Everything needed to place the overlay on a real keyboard again next
     /// session. Serialised through JsonUtility, so the fields are deliberately
@@ -41,6 +90,23 @@ namespace AuralPrimer.Calibration
         public string profileName = "My keyboard";
         public int lowestPitch = 36;
         public int highestPitch = 96;
+
+        /// <summary>Which instrument this profile describes.</summary>
+        public Instrument instrument = Instrument.Keyboard;
+
+        /// <summary>
+        /// The drum pieces, where a kit has been calibrated.
+        /// </summary>
+        /// <remarks>
+        /// Additive, and deliberately NOT a version bump. `IsAnchored` requires
+        /// `version == CurrentVersion`, so raising it would un-anchor every
+        /// keyboard profile already on a headset and make its owner recalibrate
+        /// an instrument that had not changed. The version guard exists because
+        /// v1 to v2 changed what existing fields MEANT; adding fields that
+        /// default to empty does not, and an older profile reads back correctly
+        /// as a keyboard with no kit.
+        /// </remarks>
+        public List<KitPiece> kitPieces = new();
 
         /// <summary>
         /// Persistent spatial anchor this calibration is expressed against.
@@ -275,6 +341,37 @@ namespace AuralPrimer.Calibration
         {
             var t = (float)layout.NormalisedX(pitch);
             return Vector3.Lerp(leftEdge, rightEdge, t);
+        }
+
+        /// <summary>Is there a kit here to draw on?</summary>
+        public bool IsKitCalibrated => kitPieces != null && kitPieces.Count > 0;
+
+        /// <summary>The piece a MIDI note belongs to, or null.</summary>
+        /// <remarks>
+        /// Looked up by note rather than by lane because that is the direction
+        /// a hit arrives in: the kit sends a number and the headset has to know
+        /// which pad it came from. Kits do not agree on those numbers, which is
+        /// why they are learned by striking rather than assumed.
+        /// </remarks>
+        public KitPiece PieceForNote(int midiNote)
+        {
+            if (kitPieces == null) return null;
+            for (var i = 0; i < kitPieces.Count; i++)
+            {
+                if (kitPieces[i] != null && kitPieces[i].midiNote == midiNote) return kitPieces[i];
+            }
+            return null;
+        }
+
+        /// <summary>The piece a chart lane names, or null when the kit lacks it.</summary>
+        public KitPiece PieceForLane(string laneId)
+        {
+            if (kitPieces == null || string.IsNullOrEmpty(laneId)) return null;
+            for (var i = 0; i < kitPieces.Count; i++)
+            {
+                if (kitPieces[i] != null && kitPieces[i].id == laneId) return kitPieces[i];
+            }
+            return null;
         }
 
         // ---- Persistence ---------------------------------------------------
