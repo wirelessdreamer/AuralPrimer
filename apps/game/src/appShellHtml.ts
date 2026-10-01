@@ -257,6 +257,11 @@ export function appShellHtml(): string {
                     <input id="nashvilleMode" type="checkbox" />
                     <span>Nashville numbers</span>
                   </label>
+                  <div id="drumPadRow" class="handModeRow" style="display:none">
+                    <span class="meta">Drum pads:</span>
+                    <span id="drumPadStatus" class="meta">no controller</span>
+                    <button id="drumPadMapBtn" class="displayModeBtn" type="button">Map pads</button>
+                  </div>
                   <div id="handModeRow" class="handModeRow" style="display:none">
                     <span class="meta">Hands:</span>
                     <div id="handModeToggle" class="displayModeToggle" role="group" aria-label="Which hand to practise">

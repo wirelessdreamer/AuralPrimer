@@ -75,6 +75,7 @@ import { initPlaybackRateAndMetronomePanel } from "./playbackRateAndMetronomePan
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import { assignHands, isSelectedHand, type HandMode } from "./pianoHands";
 import type { DrumTabChart } from "./drumTabChart";
+import { initDrumPadInput, type DrumPadMap } from "./drumPadInput";
 import type { ManifestSummary } from "./manifestTypes";
 import type { AuralSongDetails } from "./auralsong";
 // MidiInputStateTracker + format helpers are consumed by midiPanel.ts (Phase 2.F).
@@ -1362,6 +1363,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     // Render the melodic instrument tab/piano-roll below the main visualizer.
     if (transport.t !== undefined) {
       syncHandModeVisibility();
+      pollDrumPads();
       playSurfaceController.renderTabFrame(transport.t, {
         bpm: transport.bpm,
         timeSignature: transport.timeSignature,
@@ -1445,6 +1447,94 @@ initScrollSpeedController({
 // Nashville Number System toggle — labels piano-roll notes by scale degree
 // relative to the inferred song key instead of note names. Persisted per
 // webview in localStorage. Read each frame by the tab render call below.
+// --- Guitar Hero / Rock Band drum kits ----------------------------------
+//
+// These arrive as gamepads rather than MIDI, so they get their own reader and
+// join the drum path at the same place a MIDI strike does.
+const DRUM_PAD_MAP_STORAGE_KEY = "auralprimer.drumPadMap";
+
+function readDrumPadMap(): DrumPadMap {
+  try {
+    const raw = window.localStorage.getItem(DRUM_PAD_MAP_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as DrumPadMap) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Lanes offered for binding, in the order a drummer would reach for them. */
+const DRUM_PAD_LANES = [
+  "kick", "snare", "hihat_closed", "hihat_open",
+  "tom_high", "tom_mid", "tom_low", "crash", "ride",
+] as const;
+
+let drumPadLearnIndex = -1;
+
+const drumPadInput = initDrumPadInput(
+  (map) => {
+    try {
+      window.localStorage.setItem(DRUM_PAD_MAP_STORAGE_KEY, JSON.stringify(map));
+    } catch {
+      // Best-effort — session-only persistence is acceptable.
+    }
+  },
+  (lane, button) => {
+    logConsole("play", `drum pad: ${lane} bound to button ${button}`);
+    // Walk on to the next lane, so mapping a kit is one pass round it rather
+    // than nine trips to the menu.
+    advanceDrumPadLearn();
+  },
+);
+drumPadInput.setMap(readDrumPadMap());
+
+const drumPadRow = document.getElementById("drumPadRow") as HTMLElement | null;
+const drumPadStatusEl = document.getElementById("drumPadStatus");
+const drumPadMapBtn = document.getElementById("drumPadMapBtn") as HTMLButtonElement | null;
+
+function setDrumPadStatus(text: string): void {
+  if (drumPadStatusEl && drumPadStatusEl.textContent !== text) {
+    drumPadStatusEl.textContent = text;
+  }
+}
+
+/**
+ * Ask for the next lane in the walk, or finish.
+ *
+ * A pass round the kit rather than nine separate bindings: a drummer maps by
+ * hitting each pad in turn, and stopping to pick a name between every one is
+ * the part that makes people give up halfway.
+ */
+function advanceDrumPadLearn(): void {
+  drumPadLearnIndex++;
+  if (drumPadLearnIndex >= DRUM_PAD_LANES.length) {
+    drumPadLearnIndex = -1;
+    drumPadInput.learn(null);
+    if (drumPadMapBtn) drumPadMapBtn.textContent = "Map pads";
+    setDrumPadStatus(`${Object.keys(drumPadInput.getMap()).length} pad(s) mapped`);
+    return;
+  }
+  const lane = DRUM_PAD_LANES[drumPadLearnIndex];
+  drumPadInput.learn(lane);
+  if (drumPadMapBtn) drumPadMapBtn.textContent = "Stop";
+  // Skip is explicit, because a kit with four pads should not have to invent a
+  // ride to get past the question.
+  setDrumPadStatus(`hit your ${lane.replace(/_/g, " ")} — or press Stop to skip the rest`);
+}
+
+if (drumPadMapBtn) {
+  drumPadMapBtn.addEventListener("click", () => {
+    if (drumPadInput.learning() !== null || drumPadLearnIndex >= 0) {
+      drumPadLearnIndex = -1;
+      drumPadInput.learn(null);
+      drumPadMapBtn.textContent = "Map pads";
+      setDrumPadStatus(`${Object.keys(drumPadInput.getMap()).length} pad(s) mapped`);
+      return;
+    }
+    drumPadLearnIndex = -1;
+    advanceDrumPadLearn();
+  });
+}
+
 // --- Which hand to practise ---------------------------------------------
 // Piano only. The split is computed at load time (see assignHands) because no
 // pack carries hand data, so this works on every song already in the library.
@@ -2459,6 +2549,40 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
     void invoke("piano_note_off", { pitch }).catch(() => {});
   }
 });
+
+/**
+ * Read the gamepad drum kit and feed its strikes to the drum path.
+ *
+ * Polled, unlike MIDI, because the Gamepad API offers nothing else -- there is
+ * no event for a button. That is a real limitation and worth stating: a strike
+ * that begins and ends inside one frame is invisible here, where a MIDI note-on
+ * never is. At display rate the window is 8-14 ms and a pad stays down longer
+ * than that, so it holds in practice -- but a MIDI kit remains the more
+ * faithful input and this is the convenient one.
+ *
+ * The lane is turned into the note the rest of the app expects via the same
+ * `noteForDrumLane` the wait gate uses, so a gamepad kit and a calibrated MIDI
+ * kit agree about what a kick is without either knowing the other exists.
+ */
+function pollDrumPads(): void {
+  if (drumPadRow) {
+    const show = playersPanel.getPrimaryInstrument() === "drums" && drumPadInput.connected();
+    const shown = drumPadRow.style.display !== "none";
+    if (show !== shown) {
+      drumPadRow.style.display = show ? "" : "none";
+      if (show && drumPadLearnIndex < 0) {
+        setDrumPadStatus(`${Object.keys(drumPadInput.getMap()).length} pad(s) mapped`);
+      }
+    }
+  }
+
+  for (const hit of drumPadInput.poll()) {
+    const note = noteForDrumLane(hit.lane);
+    if (note === null) continue;
+    mrLink.reportDrumHits([[note, hit.velocity]]);
+    if (learnMode) learnRegisterPlayed(note);
+  }
+}
 
 /**
  * Whether the chart should play its own part right now.
