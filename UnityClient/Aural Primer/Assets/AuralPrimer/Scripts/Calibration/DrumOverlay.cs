@@ -35,6 +35,11 @@ namespace AuralPrimer.Calibration
                + "the real surface for the same pixels.")]
         [SerializeField] float hoverMetres = 0.01f;
 
+        [Tooltip("How sharply the ring favours the final approach. 1 is a "
+               + "straight ramp, which makes the pad due next look much like "
+               + "the one after it.")]
+        [SerializeField, Range(1f, 5f)] float previewCurve = 3f;
+
         [SerializeField] Material cueMaterial;
 
         [Tooltip("How far ahead the column above each pad reaches. Longer than "
@@ -432,7 +437,13 @@ namespace AuralPrimer.Calibration
             // The ring grows into the pad as the hit approaches, so how soon is
             // size and not colour -- the same division the key bed uses, where
             // length says when and hue says what.
-            var radius = piece.RadiusMetres * Mathf.Lerp(0.25f, 1f, nearness);
+            //
+            // Curved for the same reason the key bed is: a straight ramp spends
+            // most of its travel far from the strike, so the pad due next looks
+            // much like the one after it. Weighting the final approach is what
+            // separates them.
+            var eased = Mathf.Pow(nearness, previewCurve);
+            var radius = piece.RadiusMetres * Mathf.Lerp(0.25f, 1f, eased);
             cue.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
             cue.position = piece.centre + piece.normal.normalized * hoverMetres;
             cue.rotation = Quaternion.LookRotation(piece.normal.normalized);
@@ -446,7 +457,7 @@ namespace AuralPrimer.Calibration
                 // Faint far out, solid at the strike. Opacity rather than hue,
                 // for the reason the key bed learned the hard way: a translucent
                 // cue over a dark drum in passthrough stops reading at all.
-                colour.a = Mathf.Lerp(0.25f, 1f, nearness);
+                colour.a = Mathf.Lerp(0.25f, 1f, eased);
                 _block.SetColor(BaseColorId, colour);
                 renderer.SetPropertyBlock(_block);
             }

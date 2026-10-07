@@ -153,6 +153,21 @@ namespace AuralPrimer.Calibration
         /// <summary>Shortest bar drawn, so the furthest note is still visible.</summary>
         const float MinimumPreviewFill = 0.14f;
 
+        /// <summary>
+        /// How sharply the bar favours the final approach.
+        /// </summary>
+        /// <remarks>
+        /// 1 is the old straight ramp. Higher holds the bar short through most
+        /// of the window and opens it quickly at the end, so the key due next
+        /// separates from the ones behind it instead of leading a queue of
+        /// near-identical bars.
+        ///
+        /// Serialized rather than fixed because the right value depends on the
+        /// preview window and on the player: too high and a note arrives with
+        /// no warning at all, which trades one unreadable extreme for another.
+        /// </remarks>
+        [SerializeField, Range(1f, 5f)] float previewCurve = 3f;
+
         /// <summary>Where the break sits, as a fraction of the key from its far edge.</summary>
         /// <remarks>
         /// A third of the way in, not the middle. Pressing a key from above
@@ -403,10 +418,23 @@ namespace AuralPrimer.Calibration
             var away = Mathf.Clamp01(note.Seconds / window);
             var nearness = 1f - away;
 
+            // Curved, not linear, and this is the whole of telling "now" from
+            // "next". The bar used to grow at a constant rate, so two notes a
+            // fifth of a second apart in a 1.2 s window differed by a sixth of
+            // the bar -- a difference the eye has to measure rather than see,
+            // while both hands are busy. Weighting the last moments expands
+            // that same gap to nearly half the bar.
+            //
+            // It also matters more than it did. The fill is one flat colour
+            // now, deliberately, which left length carrying the whole of WHEN
+            // on its own; a straight ramp was spending most of its travel on
+            // the part of the approach nobody is reading.
+            var eased = Mathf.Pow(nearness, previewCurve);
+
             // Grows from the far edge of the key toward the player. The marker
             // is a unit cube scaled to the key, so this is all in its own space
             // and needs no knowledge of how big the key actually is.
-            var fraction = Mathf.Lerp(MinimumPreviewFill, 1f, nearness);
+            var fraction = Mathf.Lerp(MinimumPreviewFill, 1f, eased);
             var t = fill.transform;
             t.localScale = new Vector3(0.86f, 1.3f, fraction);
             t.localPosition = new Vector3(0f, 0.25f, -0.5f + fraction * 0.5f);
