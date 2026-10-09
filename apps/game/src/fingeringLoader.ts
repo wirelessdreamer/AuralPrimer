@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { InstrumentRole, MelodicTrackSelection } from "./chartLoader";
+import type { FretAnchor, InstrumentRole, MelodicTrackSelection } from "./chartLoader";
 
 type FingeringInstrument = InstrumentRole | "guitar";
 
@@ -23,12 +23,18 @@ export type FingeringNote = {
   velocity?: number;
   string: number;
   fret: number;
+  tech?: Record<string, unknown>;
+  chord?: string;
+  finger?: number;
 };
 
 export type FingeringFile = {
   version?: string;
   instrument: FingeringInstrument;
   notes: FingeringNote[];
+  /** Absolute MIDI open strings, lowest first. */
+  tuning?: number[];
+  anchors?: FretAnchor[];
 };
 
 export type FingeringLoaderDeps = {
@@ -162,19 +168,67 @@ export function validateFingering(raw: unknown, expectedRole?: FingeringInstrume
         velocity: velocity ?? undefined,
         string: stringIdx,
         fret,
+        ...noteExtras(item),
       });
     }
   }
 
   if (errors.length > 0) return { ok: false, errors };
   notes.sort((a, b) => a.t_on - b.t_on || a.pitch - b.pitch || a.string - b.string || a.fret - b.fret);
+  const tuning = tuningOrUndefined(raw.tuning);
+  const anchors = anchorsOrUndefined(raw.anchors);
   return {
     ok: true,
     value: {
       version: typeof raw.version === "string" ? raw.version : undefined,
       instrument: raw.instrument as FingeringInstrument,
       notes,
+      ...(tuning ? { tuning } : {}),
+      ...(anchors ? { anchors } : {}),
     },
+  };
+}
+
+// The fields below ride along for the guitar views and the headset. They are
+// optional and read leniently: a malformed technique or hand position is
+// dropped on its own rather than failing the file, because the strings and
+// frets beside it are still right and are what everything else needs.
+
+function noteExtras(item: Record<string, unknown>): Pick<FingeringNote, "tech" | "chord" | "finger"> {
+  const out: Pick<FingeringNote, "tech" | "chord" | "finger"> = {};
+  if (isObject(item.tech) && Object.keys(item.tech).length > 0) out.tech = { ...item.tech };
+  if (typeof item.chord === "string" && item.chord.trim()) out.chord = item.chord;
+  const finger = intInRange(item.finger, 1, 4);
+  if (finger !== null) out.finger = finger;
+  return out;
+}
+
+function tuningOrUndefined(value: unknown): number[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const strings = value.map((v) => intInRange(v, 0, 127));
+  return strings.every((v): v is number => v !== null) ? strings : undefined;
+}
+
+function anchorsOrUndefined(value: unknown): FretAnchor[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const anchors: FretAnchor[] = [];
+  for (const item of value) {
+    if (!isObject(item)) continue;
+    const t = numberOrNull(item.t);
+    const fret = intInRange(item.fret, 0, 36);
+    if (t === null || fret === null) continue;
+    // 4 frets when the tab leaves the width out, as the importer does.
+    anchors.push({ t, fret, width: intInRange(item.width, 1, 36) ?? 4 });
+  }
+  anchors.sort((a, b) => a.t - b.t);
+  return anchors.length > 0 ? anchors : undefined;
+}
+
+function tabExtras(note: FingeringNote): Pick<FingeringNote, "tech" | "chord" | "finger"> {
+  return {
+    ...(note.tech ? { tech: note.tech } : {}),
+    ...(note.chord ? { chord: note.chord } : {}),
+    ...(note.finger ? { finger: note.finger } : {}),
   };
 }
 
@@ -273,8 +327,11 @@ export function fingeringFilesToMelodicTracks(files: ReadonlyArray<FingeringFile
         fret: note.fret,
         s: note.string,
         f: note.fret,
+        ...tabExtras(note),
       });
     }
+    if (file.tuning && !track.tuning) track.tuning = file.tuning;
+    if (file.anchors && !track.anchors) track.anchors = file.anchors;
 
     byRole.set(role, track);
   }
@@ -319,10 +376,12 @@ export function applyFingeringToMelodicTracks(
 
     return {
       ...track,
+      ...(file.tuning ? { tuning: file.tuning } : {}),
+      ...(file.anchors ? { anchors: file.anchors } : {}),
       notes: track.notes.map((note) => {
         const match = byNote.get(noteKey(note.t_on, note.pitch))?.shift();
         if (!match) return { ...note };
-        return { ...note, string: match.string, fret: match.fret };
+        return { ...note, string: match.string, fret: match.fret, ...tabExtras(match) };
       }),
     };
   });

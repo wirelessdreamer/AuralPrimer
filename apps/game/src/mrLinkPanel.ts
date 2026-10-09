@@ -13,7 +13,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-import type { MelodicTrackSelection } from "./chartLoader";
+import type { InstrumentRole, MelodicTrackSelection } from "./chartLoader";
 import type { DrumTabChart } from "./drumTabChart";
 
 const STORAGE_KEY = "auralprimer.mrLinkEnabled";
@@ -55,8 +55,42 @@ export type MrLinkPanelHandle = {
   /** Report drum strikes as they happen, for the headset to place in time. */
   reportDrumHits: (hits: [number, number][]) => void;
   setAudioOffsetSec: (offsetSec: number) => void;
+  /** The desktop's note-spacing multiplier, pushed to the headset on change (protocol §7c). */
+  setNoteSpacing: (multiplier: number) => void;
+  /** The desktop's playback rate, pushed to the headset on change (protocol §7c). */
+  setPlaybackRate: (rate: number) => void;
   isEnabled: () => boolean;
 };
+
+/** Parts a fretted chart is built for: these carry strings and frets. */
+const FRETTED_ROLES: ReadonlySet<InstrumentRole> = new Set<InstrumentRole>([
+  "bass",
+  "lead_guitar",
+  "rhythm_guitar",
+]);
+
+/**
+ * The melodic track the headset's chart is built from (protocol §7b).
+ *
+ * `requested` is the role the headset asked for with INSTRUMENT, or null for
+ * a headset that never asks -- which gets keys first, exactly as before.
+ * "guitar" means lead, else rhythm. A part the song does not have falls back
+ * the same way rather than sending nothing, since sending nothing would leave
+ * the headset drawing the previous song: the chart's `role` says what was
+ * actually sent, and the headset can tell the player the part is missing.
+ */
+export function pickMrTrack(
+  tracks: readonly MelodicTrackSelection[],
+  requested: string | null,
+): MelodicTrackSelection | null {
+  const wanted: string[] =
+    requested === "guitar" ? ["lead_guitar", "rhythm_guitar"] : requested ? [requested] : [];
+  for (const role of wanted) {
+    const track = tracks.find((t) => t.role === role);
+    if (track) return track;
+  }
+  return tracks.find((t) => t.role === "keys") ?? tracks[0] ?? null;
+}
 
 function readEnabled(): boolean {
   try {
@@ -84,8 +118,14 @@ export function buildChart(
   nashville?: boolean,
   handMode?: "both" | "left" | "right",
   showOtherHand?: boolean,
+  fretted?: boolean,
 ): unknown | null {
   if (!track || track.notes.length === 0) return null;
+
+  // Strings and frets go only to a headset that asked for an instrument
+  // (protocol §7b): one that never asks predates them, and is sent exactly
+  // what it always was.
+  const withFrets = Boolean(fretted) && FRETTED_ROLES.has(track.role);
 
   const notes = [...track.notes]
     .sort((a, b) => a.t_on - b.t_on)
@@ -98,6 +138,7 @@ export function buildChart(
       // rather than "L"/"R" because the headset scans this JSON with a numeric
       // field reader; a string would need a second parser for one bit.
       ...(n.hand ? { hand: n.hand === "L" ? 0 : 1 } : {}),
+      ...(withFrets ? frettedFields(n) : {}),
     }));
 
   return {
@@ -123,7 +164,31 @@ export function buildChart(
     showOtherHand: showOtherHand !== false,
     tempoMap: [{ tSec: 0, bpm, beatsPerBar }],
     role: track.role,
+    ...(withFrets && track.tuning ? { tuning: track.tuning } : {}),
+    ...(withFrets && track.anchors?.length ? { anchors: track.anchors } : {}),
     notes,
+  };
+}
+
+/**
+ * A note's place on the neck, for a fretted chart: `s` (0 = lowest string)
+ * and `f`, plus the tab's finger, chord name and technique keys when it has
+ * them. A note the fingering never placed carries none of it, and the headset
+ * leaves it off the neck rather than guessing a position.
+ */
+function frettedFields(n: MelodicTrackSelection["notes"][number]): Record<string, unknown> {
+  const s = n.string ?? n.s;
+  const f = n.fret ?? n.f;
+  if (typeof s !== "number" || typeof f !== "number") return {};
+  const techKeys = n.tech ? Object.keys(n.tech) : [];
+  return {
+    s,
+    f,
+    ...(n.finger ? { finger: n.finger } : {}),
+    ...(n.chord ? { chord: n.chord } : {}),
+    // Key names only. The values (bend amounts, slide targets) would need a
+    // nested object the headset's reader has no use for yet.
+    ...(techKeys.length > 0 ? { tech: techKeys } : {}),
   };
 }
 
@@ -164,6 +229,7 @@ export function initMrLinkPanel(
   onSongRequested?: (containerPath: string) => void,
   onKeyboardLayout?: (layout: MrKeyboardLayout | null) => void,
   onKitLayout?: (kit: MrKitLayout | null) => void,
+  onInstrument?: (role: string | null) => void,
 ): MrLinkPanelHandle {
   const toggle = document.getElementById("mrLinkEnabled") as HTMLInputElement | null;
   const statusEl = document.getElementById("mrLinkStatus");
@@ -172,7 +238,19 @@ export function initMrLinkPanel(
   let lastPublish = 0;
   let lastChartJson: string | null = null;
   let lastDrumChartJson: string | null = null;
+  // The headset's copy of the desktop's spacing and speed. Kept here so a link
+  // started mid-session, or restarted, sends the current values at once.
+  const settings = { noteSpacing: 1, playbackRate: 1 };
+  let lastSettingsJson: string | null = null;
   let selectionTimer: ReturnType<typeof setInterval> | null = null;
+
+  function pushSettings(): void {
+    const json = JSON.stringify(settings);
+    if (json === lastSettingsJson) return;
+    lastSettingsJson = json;
+    if (!enabled) return;
+    void invoke("mr_link_set_settings", { ...settings }).catch(() => {});
+  }
 
   function setStatus(text: string): void {
     if (statusEl && statusEl.textContent !== text) statusEl.textContent = text;
@@ -216,6 +294,12 @@ export function initMrLinkPanel(
       void invoke<MrKitLayout | null>("mr_link_kit_layout")
         .then((kit) => onKitLayout?.(kit ?? null))
         .catch(() => {});
+
+      // And the instrument: the player can switch from keys to guitar in the
+      // headset without anything on the desktop changing.
+      void invoke<{ role?: unknown } | null>("mr_link_instrument")
+        .then((v) => onInstrument?.(typeof v?.role === "string" ? v.role : null))
+        .catch(() => {});
     }, SELECTION_POLL_MS);
   }
 
@@ -235,6 +319,8 @@ export function initMrLinkPanel(
         if (lastDrumChartJson) {
           await invoke("mr_link_set_drum_chart", { chartJson: lastDrumChartJson });
         }
+        // A freshly started link holds no settings, so always send them.
+        await invoke("mr_link_set_settings", { ...settings });
         pollSelection();
       } else {
         stopPollingSelection();
@@ -311,6 +397,18 @@ export function initMrLinkPanel(
     setAudioOffsetSec(offsetSec) {
       if (!enabled) return;
       void invoke("mr_link_set_audio_offset", { offsetSec }).catch(() => {});
+    },
+
+    setNoteSpacing(multiplier) {
+      if (!Number.isFinite(multiplier) || multiplier <= 0) return;
+      settings.noteSpacing = multiplier;
+      pushSettings();
+    },
+
+    setPlaybackRate(rate) {
+      if (!Number.isFinite(rate) || rate <= 0) return;
+      settings.playbackRate = rate;
+      pushSettings();
     },
   };
 }

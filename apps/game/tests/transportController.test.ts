@@ -112,6 +112,22 @@ describe("TransportController", () => {
     tc.dispose();
   });
 
+  it("tells rate listeners about a change, once, and stops after unsubscribing", () => {
+    const tc = new TransportController(new FakeTimebase());
+    const heard: number[] = [];
+    const unsubscribe = tc.onPlaybackRateChange((r) => heard.push(r));
+
+    tc.setPlaybackRate(0.5);
+    // Re-applying the same rate (a backend reload does this) is not a change.
+    tc.setPlaybackRate(0.5);
+    tc.setPlaybackRate(Number.NaN); // invalid -> 1
+    unsubscribe();
+    tc.setPlaybackRate(0.75);
+
+    expect(heard).toEqual([0.5, 1]);
+    tc.dispose();
+  });
+
   it("clamps seek into loop and wraps simulated time at loop end", async () => {
     const tb = new FakeTimebase();
     (tb as any).duration = null;

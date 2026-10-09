@@ -128,6 +128,8 @@ than trusted.
 | `0x17` | `KEYBOARD_LAYOUT` | headset → host | JSON, see §7 |
 | `0x18` | `DRUM CHART` | host → headset | JSON, see §4a. Optional; gated on `drums` in `features`. |
 | `0x19` | `KIT LAYOUT` | headset → host | JSON: `{ "pieces": [{ "id": string, "note": u8 }] }`. See §7a. |
+| `0x1A` | `INSTRUMENT` | headset → host | JSON: `{ "role": string }`. See §7b. Optional; gated on `instrument` in `features`. |
+| `0x1B` | `SETTINGS` | host → headset | JSON: `{ "noteSpacing": f64, "playbackRate": f64 }`. See §7c. Optional; gated on `settings` in `features`. |
 | `0x20` | `PING` | headset → host | `u64` client send time |
 | `0x21` | `PONG` | host → headset | `u64` echoed client time, `u64` host time at reply |
 | `0x30` | `TRANSPORT` | headset → host | JSON: `{ "action": "play"\|"pause"\|"stop"\|"seek", "tSec": f64? }` |
@@ -239,6 +241,38 @@ scanning. `vel` is normalised 0..1 to match `MelodicNote` on the desktop side.
 A four-minute piano piece is on the order of a few thousand notes — a few hundred
 KB of JSON, sent once. Not worth a binary format until measurement says so.
 
+### Fretted parts — guitar and bass
+
+`role` is whichever part was sent: keys first by default, or the part the
+headset asked for with `INSTRUMENT` (§7b). When the headset has asked and the
+part is `lead_guitar`, `rhythm_guitar` or `bass`, the chart also says where on
+the neck each note is played:
+
+```json
+{
+  "role": "lead_guitar",
+  "tuning": [40, 45, 50, 55, 59, 64],
+  "anchors": [ { "t": 12.0, "fret": 5, "width": 4 } ],
+  "notes": [
+    { "on": 12.34, "off": 12.9, "pitch": 69, "vel": 0.8,
+      "s": 4, "f": 10, "finger": 3, "chord": "A5", "tech": ["pm", "sl"] }
+  ]
+}
+```
+
+- `tuning` — absolute MIDI pitch of each open string, **lowest string first**.
+- `s` — string index, **0 = the lowest string** (low E on a guitar), matching
+  `tuning`. `f` — fret, 0 = open. A note the fingering never placed has
+  neither, and the headset leaves it off the neck rather than guessing.
+- `finger` (1 index … 4 pinky), `chord` (name) and `tech` (feedpak technique
+  keys present on the note) are optional, and only present when the tab says.
+- `anchors` — the tab's hand positions: index finger at `fret`, spanning
+  `width` frets, from time `t`. Optional; the headset derives positions from
+  the notes when a pack has none.
+
+These fields are sent **only to a headset that sent `INSTRUMENT`**. One that
+never does predates them, and keeps receiving exactly the chart it always did.
+
 ---
 
 ### 4a. `DRUM CHART` (`0x18`)
@@ -298,9 +332,16 @@ Per frame:
 ```
 hostClockAtPhotons = predictedDisplayTime + clockOffset
 songTimeToRender   = lastSongTime
-                   + (hostClockAtPhotons - lastPositionHostClock)
+                   + (hostClockAtPhotons - lastPositionHostClock) * playbackRate
                    + audioOffsetSec
 ```
+
+`playbackRate` comes from `SETTINGS` (§7c) and is 1 until one arrives, which is
+also what a host without `settings` means. Song time advances at the playback
+rate, so extrapolating at 1× would run a slowed song ahead of its audio between
+samples and pull it back at each one. Only the elapsed term is scaled:
+`audioOffsetSec` is a wall-clock latency, which the desktop also leaves
+unscaled.
 
 While `flags.playing` is clear, the position is held rather than extrapolated.
 
@@ -402,7 +443,8 @@ query alone rather than clearing it.
 implements:
 
 ```json
-{ "host": "STUDIO-PC", "protocol": 1, "features": ["library", "voice", "drums"] }
+{ "host": "STUDIO-PC", "protocol": 1,
+  "features": ["library", "voice", "drums", "instrument", "settings"] }
 ```
 
 New frame types do not break an old peer — both ends already ignore frame types
@@ -477,6 +519,66 @@ The host uses it to decide which note to wait for in Wait mode. Three cases:
   the song forever.
 - **A remapped pad** — the kit's note wins over the GM table, because there the
   table is wrong and the pad is right.
+
+### 7b. `INSTRUMENT` (`0x1A`)
+
+Which part the headset is playing, so the host sends that part's `CHART`.
+
+```json
+{ "role": "guitar" }
+```
+
+`role` is `keys`, `bass`, `lead_guitar`, `rhythm_guitar`, or `guitar` — which
+means lead, else rhythm. Before this frame the host always sent keys first,
+which leaves a guitarist in the headset with nothing to play.
+
+Only sent when the host lists `instrument` in `features`: an older host ignores
+the frame, and a headset that asked would wait for a guitar chart that never
+comes. A headset that finds no `instrument` says the host is too old for
+guitar, rather than drawing a keys part on a neck.
+
+Standing state, like §7: sent after `WELCOME` and whenever the player switches
+instrument. The host keeps it for **as long as that session lasts** and then
+forgets it — unlike a keyboard range, it changes what is sent, and a guitar
+part left over from a guitar session would greet the next, older headset with
+frets it cannot read.
+
+The host answers by sending the `CHART` for that part, with the fretted fields
+of §4. A song without the part gets the usual default instead of nothing —
+nothing would leave the headset drawing the previous song — and `role` in the
+chart says what was actually sent, so the headset can tell the player the part
+is missing.
+
+### 7c. `SETTINGS` (`0x1B`)
+
+The desktop's display and speed settings, which the headset follows rather than
+duplicating.
+
+```json
+{ "noteSpacing": 1.25, "playbackRate": 0.5 }
+```
+
+- `noteSpacing` — the desktop's note-spacing multiplier (its `[` / `]`
+  control). Same meaning in the headset, now in metres: a lane shows
+  `lookAheadSec / noteSpacing` seconds over its fixed length, so a larger value
+  spreads notes further apart. Keys and guitar alike.
+- `playbackRate` — the transport's speed, 1 = normal. The headset advances its
+  disciplined clock at this rate between `POSITION` samples (§5).
+
+Sent after `WELCOME`, before any chart, so the first notes drawn are already
+spaced correctly; then whenever either value changes. Every frame carries both
+values: it is the whole state, not a delta. A host without `settings` sends
+none, and the headset keeps its own spacing and a rate of 1.
+
+**Why the rate travels here and not in `POSITION`.** `POSITION` stays the fixed
+18-byte datagram both sides pin byte-for-byte, and an old headset reading it
+needs no change. The cost is timing: a rate change reaches the headset within
+one pass of the host's request loop (≤ ~200 ms) rather than with the next
+sample. Until it lands, the headset extrapolates each ~30 ms gap between
+samples at the old rate, so the playhead judders by a few tens of
+milliseconds for a fraction of a second after a speed change — and is exact
+again from then on. A speed change is a deliberate act between passages, so
+that brief window is a fair price for leaving the stream format alone.
 
 ## 8. Versioning
 

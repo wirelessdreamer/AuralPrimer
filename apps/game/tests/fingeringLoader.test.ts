@@ -235,6 +235,63 @@ describe("fingeringLoader", () => {
     });
   });
 
+  it("carries the tab's tuning, hand positions, techniques, fingers and chord names", () => {
+    const result = validateFingering({
+      version: "1.0.0",
+      instrument: "lead_guitar",
+      tuning: [40, 45, 50, 55, 59, 64],
+      anchors: [
+        { t: 4, fret: 5, width: 4 },
+        { t: 1, fret: 1 }, // width left out: four frets, as the importer writes it
+        { t: "soon", fret: 3 }, // unreadable: dropped on its own
+      ],
+      notes: [
+        { t_on: 1, pitch: 45, string: 1, fret: 0, chord: "A5", finger: 1, tech: { pm: 1 } },
+        { t_on: 1, pitch: 52, string: 2, fret: 2, chord: "A5", finger: 3 },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("validation failed");
+    expect(result.value.tuning).toEqual([40, 45, 50, 55, 59, 64]);
+    expect(result.value.anchors).toEqual([
+      { t: 1, fret: 1, width: 4 },
+      { t: 4, fret: 5, width: 4 },
+    ]);
+
+    const tracks = fingeringFilesToMelodicTracks([result.value]);
+    expect(tracks[0]!.tuning).toEqual([40, 45, 50, 55, 59, 64]);
+    expect(tracks[0]!.anchors).toHaveLength(2);
+    expect(tracks[0]!.notes[0]).toMatchObject({ string: 1, fret: 0, chord: "A5", finger: 1, tech: { pm: 1 } });
+
+    const merged = applyFingeringToMelodicTracks(
+      [
+        {
+          role: "lead_guitar",
+          trackName: "Lead Guitar",
+          channel: 2,
+          notes: [{ t_on: 1, t_off: 1.5, pitch: 52, velocity: 0.8 }],
+        },
+      ],
+      [result.value],
+    );
+    expect(merged[0]!.tuning).toEqual([40, 45, 50, 55, 59, 64]);
+    expect(merged[0]!.notes[0]).toMatchObject({ string: 2, fret: 2, chord: "A5", finger: 3 });
+    expect(merged[0]!.notes[0]!.tech).toBeUndefined();
+  });
+
+  it("ignores a tuning it cannot read rather than rejecting the strings and frets", () => {
+    const result = validateFingering({
+      instrument: "bass",
+      tuning: [28, "A", 38],
+      notes: [{ t_on: 0, pitch: 28, string: 0, fret: 0 }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("validation failed");
+    expect(result.value.tuning).toBeUndefined();
+    expect(result.value.notes).toHaveLength(1);
+  });
+
   it("warns and skips invalid sidecars", async () => {
     invokeMock.mockResolvedValue({
       version: "1.0.0",

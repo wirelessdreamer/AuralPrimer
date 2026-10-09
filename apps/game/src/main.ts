@@ -34,7 +34,7 @@ import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
-import { initMrLinkPanel, buildChart, buildDrumChart } from "./mrLinkPanel";
+import { initMrLinkPanel, buildChart, buildDrumChart, pickMrTrack } from "./mrLinkPanel";
 import type { MrKitLayout } from "./mrLinkPanel";
 import type { MrKeyboardLayout } from "./mrLinkPanel";
 import { nameChord, chordLabels } from "@auralprimer/core-music";
@@ -397,12 +397,24 @@ let mrChartSource:
   | {
       containerPath: string;
       title: string;
-      track: MelodicTrackSelection | null;
+      tracks: MelodicTrackSelection[];
       bpm: number;
       beatsPerBar: number;
       keySignature: Parameters<typeof buildChart>[5];
     }
   | null = null;
+
+/**
+ * The part the headset asked for with INSTRUMENT (protocol §7b), or null for a
+ * headset that never asks -- which keeps getting keys first, as it always did.
+ */
+let mrInstrumentRole: string | null = null;
+
+function setMrInstrument(role: string | null): void {
+  if (role === mrInstrumentRole) return;
+  mrInstrumentRole = role;
+  resendMrChart();
+}
 
 function resendMrChart(): void {
   if (!mrChartSource) return;
@@ -410,13 +422,14 @@ function resendMrChart(): void {
     buildChart(
       mrChartSource.containerPath,
       mrChartSource.title,
-      mrChartSource.track,
+      pickMrTrack(mrChartSource.tracks, mrInstrumentRole),
       mrChartSource.bpm,
       mrChartSource.beatsPerBar,
       mrChartSource.keySignature,
       nashvilleMode,
       handMode,
       showOtherHand,
+      mrInstrumentRole !== null,
     ),
   );
 }
@@ -564,6 +577,7 @@ function resetTransportController(timebase: TransportTimebase): void {
     timeSignature: [4, 4]
   });
   transportController.setPlaybackRate(currentPlaybackRate);
+  followPlaybackRateOnHeadset(transportController);
   // Re-apply the persisted A/V calibration — a fresh controller starts at
   // offset 0, so without this a native->HTML fallback silently drops the
   // user's calibration until they next touch the slider.
@@ -1063,17 +1077,16 @@ async function selectAuralSong(containerPath: string) {
         : "sharp";
     songChordLabels = chordTrack ? chordLabels(chordTrack.notes, chordSpelling) : [];
 
-    // Hand the headset this song's chart. Prefers keys, since that is what the
-    // MR client renders against a real keyboard.
-    const mrTrack =
-      selectedMelodicTracks.find((t) => t.role === "keys") ?? selectedMelodicTracks[0] ?? null;
+    // Hand the headset this song's chart, for the part it asked for -- keys
+    // first when it has not asked (see pickMrTrack).
     // Kept so a hand change can rebuild the chart without reloading the song.
     // The headset follows the desktop's hand choice, so it needs re-sending
-    // the moment that choice changes rather than at the next song.
+    // the moment that choice changes rather than at the next song. The same
+    // goes for the headset switching instrument.
     mrChartSource = {
       containerPath,
       title: containerPath.split(/[\/]/).pop()?.replace(/\.(feedpak|auralsong)$/i, "") ?? "song",
-      track: mrTrack,
+      tracks: selectedMelodicTracks,
       bpm: transport.bpm,
       beatsPerBar: transport.timeSignature?.[0] ?? 4,
       keySignature: chordKey,
@@ -1431,16 +1444,51 @@ initPlaybackRateAndMetronomePanel({
   },
 });
 
+// MR headset link: serves the chart, playhead and live notes to the Quest app.
+// The headset's Songs menu loads through exactly the same path as a click
+// in the desktop library, so the two cannot drift apart in what "select a
+// song" means.
+//
+// Created before the note-spacing controller below, which reports its
+// restored value during init and pushes it to the headset from there.
+const mrLink = initMrLinkPanel(
+  (containerPath) => {
+    void selectAuralSong(containerPath);
+  },
+  // Wait mode must not hold the song open for a note the headset already
+  // decided this keyboard cannot play.
+  setMrKeyboardLayout,
+  // Nor for a drum the player's kit does not have, nor on the wrong note for
+  // one it does: the headset learned each pad's note by having it struck.
+  setMrKitLayout,
+  // The part the headset is playing: keys, guitar or bass.
+  setMrInstrument,
+);
+
+/**
+ * Push the playback rate to the headset whenever the transport changes it, so
+ * the headset's clock runs at the song's speed between position samples
+ * rather than at 1x (protocol §5). Re-attached when an audio fallback
+ * replaces the controller.
+ */
+function followPlaybackRateOnHeadset(controller: TransportController): void {
+  controller.onPlaybackRateChange((rate) => mrLink.setPlaybackRate(rate));
+  mrLink.setPlaybackRate(controller.getPlaybackRate());
+}
+followPlaybackRateOnHeadset(transportController);
+
 // Scroll-speed (Note spacing) controller — DOM + persistence + transport
 // wiring live in scrollSpeedController.ts. The init call here preserves
 // the original module-init ordering (must run after transportController
 // exists, before the visualizer starts).
 initScrollSpeedController({
   transportController,
-  onChange: () => {
+  onChange: (multiplier) => {
     // Refresh the cached transport state so consumers (tabRenderer.render,
     // viz frame state) see the new multiplier on the next frame.
     transport = transportController.getState();
+    // The headset spaces its notes the same way (protocol §7c).
+    mrLink.setNoteSpacing(multiplier);
   },
 });
 
@@ -1589,22 +1637,6 @@ function readNoteColorMode(): boolean {
   }
 }
 let noteColorMode = readNoteColorMode();
-// MR headset link: serves the chart, playhead and live notes to the Quest app.
-// The headset's Songs menu loads through exactly the same path as a click
-// in the desktop library, so the two cannot drift apart in what "select a
-// song" means.
-const mrLink = initMrLinkPanel(
-  (containerPath) => {
-    void selectAuralSong(containerPath);
-  },
-  // Wait mode must not hold the song open for a note the headset already
-  // decided this keyboard cannot play.
-  setMrKeyboardLayout,
-  // Nor for a drum the player's kit does not have, nor on the wrong note for
-  // one it does: the headset learned each pad's note by having it struck.
-  setMrKitLayout,
-);
-
 const noteColorCheckbox = document.getElementById("noteColorMode") as HTMLInputElement | null;
 if (noteColorCheckbox) {
   noteColorCheckbox.checked = noteColorMode;

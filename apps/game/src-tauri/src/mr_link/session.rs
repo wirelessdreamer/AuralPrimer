@@ -86,6 +86,19 @@ pub struct HostState {
     /// must fall back to the General MIDI numbering rather than refusing to
     /// work, which is what most kits send anyway.
     pub kit_layout: Mutex<Option<String>>,
+    /// The part the headset asked to be sent (protocol §7b), as the JSON it
+    /// sent. None means no headset has asked -- an older client -- and the app
+    /// keeps sending keys first, as it always did.
+    ///
+    /// Cleared when the session that set it ends. Unlike a keyboard range,
+    /// this changes what the host sends to everyone, and a guitar chart left
+    /// over from a guitar session would greet the next, older headset with a
+    /// part it cannot draw.
+    pub instrument: Mutex<Option<String>>,
+    /// The desktop's note spacing and playback rate, as the SETTINGS JSON
+    /// (protocol §7c). None until the app has said, which is what an older
+    /// headset gets anyway: no frame, and its own defaults.
+    pub settings_json: Mutex<Option<String>>,
 }
 
 impl HostState {
@@ -157,6 +170,14 @@ impl HostState {
         self.kit_layout.lock().unwrap().clone()
     }
 
+    pub fn instrument(&self) -> Option<String> {
+        self.instrument.lock().unwrap().clone()
+    }
+
+    pub fn set_settings(&self, json: Option<String>) {
+        *self.settings_json.lock().unwrap() = json;
+    }
+
     /// Take the headset's pending song choice, if any, clearing it.
     pub fn take_pending_selection(&self) -> Option<String> {
         self.pending_selection.lock().unwrap().take()
@@ -176,7 +197,26 @@ impl HostState {
         // flag that flickered per song would be a capability the headset had
         // to re-check rather than one it could build a menu from.
         features.push("drums");
+        // Unconditional for the same reason: both frames are implemented, and
+        // what they carry is answered per song and per change.
+        features.push("instrument");
+        features.push("settings");
         features
+    }
+}
+
+/// Forgets a session's instrument request when that session ends, however it
+/// ends -- the request loop leaves by `?` on any socket error.
+struct InstrumentRequest<'a> {
+    state: &'a HostState,
+    made: bool,
+}
+
+impl Drop for InstrumentRequest<'_> {
+    fn drop(&mut self) {
+        if self.made {
+            *self.state.instrument.lock().unwrap() = None;
+        }
     }
 }
 
@@ -372,6 +412,17 @@ fn serve_client(
         welcome.to_string().as_bytes(),
     ))?;
 
+    // Spacing and speed before any chart, so the first notes drawn are already
+    // spaced the way the desktop spaces them (§7c).
+    let mut last_settings: Option<String> = state.settings_json.lock().unwrap().clone();
+    if let Some(settings) = &last_settings {
+        stream.write_all(&encode_frame(frame::SETTINGS, settings.as_bytes()))?;
+    }
+    let mut instrument_request = InstrumentRequest {
+        state: &state,
+        made: false,
+    };
+
     // The chart, if a song is loaded. If none is, the headset simply waits for
     // a SONG_CHANGED rather than being told an empty chart is a real one.
     if let Some(drums) = state.drum_chart_json.lock().unwrap().clone() {
@@ -399,6 +450,17 @@ fn serve_client(
     let mut last_chart: Option<String> = state.chart_json.lock().unwrap().clone();
     let mut last_drums: Option<String> = state.drum_chart_json.lock().unwrap().clone();
     while running.load(Ordering::Relaxed) {
+        // Settings first, for the same reason as at connect. Checked once per
+        // pass of this loop, which wakes at least every read timeout -- so a
+        // change reaches the headset within about 200 ms.
+        let settings_now = state.settings_json.lock().unwrap().clone();
+        if settings_now != last_settings {
+            if let Some(settings) = &settings_now {
+                stream.write_all(&encode_frame(frame::SETTINGS, settings.as_bytes()))?;
+            }
+            last_settings = settings_now;
+        }
+
         // Push a new chart when the song changes underneath us.
         let drums_now = state.drum_chart_json.lock().unwrap().clone();
         if drums_now != last_drums {
@@ -493,6 +555,18 @@ fn serve_client(
                         *state.keyboard_layout.lock().unwrap() = Some(json.to_string());
                     }
                     Err(e) => eprintln!("mr-link: keyboard layout was not UTF-8: {e}"),
+                }
+            }
+            frame::INSTRUMENT => {
+                // Standing state the app polls, like the layouts. Held until
+                // this session ends, then forgotten: see `instrument`.
+                match std::str::from_utf8(&payload) {
+                    Ok(json) => {
+                        println!("mr-link: headset instrument {json}");
+                        *state.instrument.lock().unwrap() = Some(json.to_string());
+                        instrument_request.made = true;
+                    }
+                    Err(e) => eprintln!("mr-link: instrument was not UTF-8: {e}"),
                 }
             }
             frame::KIT_LAYOUT => {
@@ -880,6 +954,85 @@ mod tests {
         }
         assert!(saw_position, "no POSITION datagram within 3s");
         assert!(saw_notes, "no NOTES datagram within 3s");
+    }
+
+    fn json(payload: &[u8]) -> serde_json::Value {
+        serde_json::from_slice(payload).expect("JSON payload")
+    }
+
+    #[test]
+    fn welcome_offers_the_instrument_and_settings_frames() {
+        let state = Arc::new(HostState::default());
+        let server = SessionServer::start(Arc::clone(&state), "TEST".into()).unwrap();
+
+        let mut client = connect(&server);
+        client.write_all(&hello(PROTOCOL_VERSION)).unwrap();
+
+        let (frame_type, payload) = read_frame(&mut client);
+        assert_eq!(frame_type, frame::WELCOME);
+        let welcome = json(&payload);
+        let features: Vec<&str> = welcome["features"]
+            .as_array()
+            .expect("features array")
+            .iter()
+            .filter_map(|f| f.as_str())
+            .collect();
+        assert!(features.contains(&"instrument"), "{features:?}");
+        assert!(features.contains(&"settings"), "{features:?}");
+    }
+
+    /// Settings go out before the chart, so the first notes the headset draws
+    /// are already spaced the way the desktop spaces them -- and again on every
+    /// change, which is what keeps a slowed song's clock in step on the headset.
+    #[test]
+    fn settings_precede_the_chart_and_follow_every_change() {
+        let state = Arc::new(HostState::default());
+        state.set_settings(Some(r#"{"noteSpacing":1.5,"playbackRate":1.0}"#.into()));
+        state.set_chart(Some(r#"{"songId":"psalm-6"}"#.into()));
+        let server = SessionServer::start(Arc::clone(&state), "TEST".into()).unwrap();
+
+        let mut client = connect(&server);
+        client.write_all(&hello(PROTOCOL_VERSION)).unwrap();
+        assert_eq!(read_frame(&mut client).0, frame::WELCOME);
+
+        let (frame_type, payload) = read_frame(&mut client);
+        assert_eq!(frame_type, frame::SETTINGS);
+        assert_eq!(json(&payload)["noteSpacing"], 1.5);
+        assert_eq!(read_frame(&mut client).0, frame::CHART);
+
+        state.set_settings(Some(r#"{"noteSpacing":1.5,"playbackRate":0.5}"#.into()));
+        let (frame_type, payload) = read_frame(&mut client);
+        assert_eq!(frame_type, frame::SETTINGS);
+        assert_eq!(json(&payload)["playbackRate"], 0.5);
+    }
+
+    /// Standing state for the app while the headset that asked is connected,
+    /// and forgotten when it goes -- or the next, older headset would be sent
+    /// a guitar part it has no way to draw.
+    #[test]
+    fn an_instrument_request_lasts_as_long_as_its_session() {
+        let state = Arc::new(HostState::default());
+        let server = SessionServer::start(Arc::clone(&state), "TEST".into()).unwrap();
+
+        let mut client = connect(&server);
+        client.write_all(&hello(PROTOCOL_VERSION)).unwrap();
+        assert_eq!(read_frame(&mut client).0, frame::WELCOME);
+        client
+            .write_all(&encode_frame(frame::INSTRUMENT, br#"{"role":"guitar"}"#))
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while state.instrument().is_none() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(state.instrument().as_deref(), Some(r#"{"role":"guitar"}"#));
+
+        drop(client);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while state.instrument().is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(state.instrument(), None, "kept after the session ended");
     }
 
     #[test]
