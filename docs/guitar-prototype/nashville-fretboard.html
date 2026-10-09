@@ -1,0 +1,708 @@
+<title>Nashville Fretboard</title>
+<meta name="description" content="Mock-ups for Nashville numbers on guitar, organised by the five pentatonic positions: melody, lead triads and barre chords.">
+<style>
+  :root {
+    /* Layout: a design board. Key and position controls on top drive every panel; each section shows two or three
+       variants side by side (stacked on phones), each a dark game-style canvas with a short caption. One dark look on
+       purpose: it is the game's own palette, shared with the guitar surfaces mock-up. */
+    color-scheme: dark;
+    --bg: #05060a;
+    --bg-2: #0b0f18;
+    --panel: #0f1522;
+    --panel-2: #151d2e;
+    --line: rgba(140, 170, 255, 0.16);
+    --line-2: rgba(140, 170, 255, 0.30);
+    --ink: rgba(245, 247, 255, 0.93);
+    --muted: rgba(220, 228, 250, 0.68);
+    --faint: rgba(220, 228, 250, 0.44);
+    --accent: #22d3ee;          /* the key's 1, and roots */
+    --accent-ink: #031418;
+    --tone-3: #ff7aa2;          /* a chord's third */
+    --tone-5: #a78bfa;          /* a chord's fifth */
+    --chromatic: #ffb547;       /* notes outside the key */
+    --box: #e7ecf8;             /* pentatonic box notes */
+    --wood-1: #1d1712;
+    --wood-2: #140f0c;
+    --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-num: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font-ui); }
+  .app {
+    max-width: 1480px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 40px;
+    display: grid; gap: 22px;
+    background: radial-gradient(1100px 480px at 15% -10%, rgba(34, 211, 238, 0.10), transparent 60%),
+                radial-gradient(900px 420px at 100% 0%, rgba(124, 58, 237, 0.12), transparent 60%);
+  }
+  header { display: grid; gap: 8px; max-width: 78ch; }
+  .eyebrow { font: 700 11px/1 var(--font-ui); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 0; font: 800 28px/1.1 var(--font-ui); letter-spacing: -0.01em; text-wrap: balance; }
+  header p { margin: 0; color: var(--muted); }
+  header b { color: var(--ink); }
+
+  .controls {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(8px);
+  }
+  .group { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font: 600 12.5px var(--font-ui); }
+  select, .btn, .chip {
+    min-height: 34px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel-2);
+    color: var(--ink); font: 700 13px var(--font-ui); cursor: pointer;
+  }
+  select { padding: 0 10px; }
+  .btn { padding: 0 14px; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .chips { display: inline-flex; gap: 4px; }
+  .chip { min-width: 34px; padding: 0 8px; font-family: var(--font-num); }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: rgba(34, 211, 238, 0.08); }
+  .switch { display: inline-flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+  .switch button { min-height: 34px; padding: 0 12px; border: 0; background: var(--panel-2); color: var(--muted); font: 700 12.5px var(--font-ui); cursor: pointer; }
+  .switch button[aria-pressed="true"] { background: rgba(34, 211, 238, 0.12); color: var(--ink); }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .readout { font: 700 13px var(--font-num); color: var(--ink); }
+
+  section { display: grid; gap: 12px; }
+  .section-head { display: grid; gap: 4px; max-width: 80ch; }
+  h2 { margin: 0; font: 800 19px/1.2 var(--font-ui); text-wrap: balance; }
+  .section-head p { margin: 0; color: var(--muted); }
+  .variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+  .card { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); min-width: 0; }
+  .card canvas { width: 100%; aspect-ratio: 16 / 10; display: block; border-radius: 10px; background: var(--bg-2); }
+  .card h3 { margin: 0; font: 800 13px/1.2 var(--font-ui); letter-spacing: 0.04em; text-transform: uppercase; }
+  .card p { margin: 0; color: var(--muted); font-size: 13px; }
+  .card .trade { color: var(--faint); }
+  .wide { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 10px; }
+  .wide canvas { display: block; width: 100%; min-width: 760px; aspect-ratio: 3.4 / 1; border-radius: 10px; background: var(--bg-2); cursor: pointer; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 12.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+  .questions { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 16px 18px; display: grid; gap: 10px; max-width: 90ch; }
+  .questions h2 { font-size: 16px; }
+  .questions ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--muted); }
+  .questions b { color: var(--ink); }
+  @media (max-width: 640px) { h1 { font-size: 23px; } .card canvas { aspect-ratio: 4 / 3; } }
+</style>
+
+<div class="app">
+  <header>
+    <div class="eyebrow">AuralPrimer · guitar mock-ups</div>
+    <h1>Nashville numbers on the fretboard</h1>
+    <p><b>Positions are geometry; numbers come from the key.</b> The five pentatonic boxes are places on the neck. Inside a box every dot gets its number in the song's key, in three tiers: the box's five notes, the two that complete the scale, and notes outside the key, drawn only when the song plays them. Switch <b>Count from</b> to see the same box read from the major tonic (the box root is 6) or from its relative minor (the box root is 1).</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Key and position">
+    <label class="group" for="keySel">Key
+      <select id="keySel"></select>
+    </label>
+    <div class="group">Count from
+      <div class="switch" role="group" aria-label="Count from">
+        <button type="button" id="countMajor" aria-pressed="true">Major 1</button>
+        <button type="button" id="countMinor" aria-pressed="false">Relative minor 1</button>
+      </div>
+    </div>
+    <div class="group">Position
+      <div class="chips" id="posChips"></div>
+    </div>
+    <button class="btn primary" type="button" id="playBtn">Pause</button>
+    <span class="readout" id="keyReadout"></span>
+  </div>
+
+  <section aria-labelledby="h-positions">
+    <div class="section-head">
+      <h2 id="h-positions">The five positions</h2>
+      <p>All five boxes across the neck, numbered with the blues/rock convention: position 1 is the minor box with its root on the low E string. The selected one shows every tier. Click a box to select it.</p>
+    </div>
+    <div class="wide"><canvas id="cv-positions" role="img" aria-label="The five pentatonic positions on a guitar neck, labelled with Nashville numbers"></canvas></div>
+    <div class="legend">
+      <span><i style="background: var(--accent)"></i>The key's 1</span>
+      <span><i style="background: var(--box)"></i>Box note (pentatonic)</span>
+      <span><i style="border: 2px solid var(--muted)"></i>Completes the scale (2 more numbers)</span>
+      <span><i style="border: 2px dashed var(--chromatic)"></i>Outside the key, only when played</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-melody">
+    <div class="section-head">
+      <h2 id="h-melody">Melody inside a position</h2>
+      <p>A four-bar phrase in position 1 that moves to position 2 in bar 3 and bends into a blue note. Three ways to read it.</p>
+    </div>
+    <div class="variants">
+      <div class="card"><canvas id="cv-mel-box" role="img" aria-label="Melody lighting numbers inside the current box"></canvas>
+        <h3>Box with lit numbers</h3><p>The box stays drawn; each note lights up on its dot with its number, and the next one counts down in place. The view slides when the phrase changes position.</p><p class="trade">Best for learning where a number lives. Fast runs blur together.</p></div>
+      <div class="card"><canvas id="cv-mel-tab" role="img" aria-label="Number tab: tab lines carrying numbers instead of frets"></canvas>
+        <h3>Number tab</h3><p>Tab lines, but each note carries its number instead of a fret, with the position marked above. Inside a known box, a string and a number name exactly one dot.</p><p class="trade">Reads like a chart. Needs the box in your head, so it suits players who already know it.</p></div>
+      <div class="card"><canvas id="cv-mel-lanes" role="img" aria-label="String lanes with numbered gems and a box strip"></canvas>
+        <h3>Lanes with numbers</h3><p>The string-lanes highway with numbers on the gems and the box on the strip below, so the hand position stays visible.</p><p class="trade">Fits band mode. The number and the place are in two spots.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-triads">
+    <div class="section-head">
+      <h2 id="h-triads">Triads inside the position</h2>
+      <p>A 1 5 6m 4 progression as three-string triads, voiced inside whichever position is selected. Pick another position and they re-voice. The box stays faint behind.</p>
+    </div>
+    <div class="variants">
+      <div class="card"><canvas id="cv-tri-deg" role="img" aria-label="Triads labelled with scale numbers"></canvas>
+        <h3>Scale numbers</h3><p>Each triad note shows its number in the key. The 4 chord reads 4 6 1, so the chord is visibly built from the box.</p><p class="trade">Keeps one language with the melody. Hides which note is the chord's root.</p></div>
+      <div class="card"><canvas id="cv-tri-fn" role="img" aria-label="Triads labelled R 3 5"></canvas>
+        <h3>Chord tones</h3><p>Each note shows its job in the chord: R, 3 (♭3 for minor) and 5. The chord's number sits beside the shape.</p><p class="trade">Teaches inversions. Loses the link back to the melody's numbers.</p></div>
+      <div class="card"><canvas id="cv-tri-both" role="img" aria-label="Triads with scale numbers and chord-tone rings"></canvas>
+        <h3>Both at once</h3><p>The dot carries the scale number; its ring colour carries the chord tone: cyan root, rose third, violet fifth.</p><p class="trade">The most information. Needs the colour key learned once.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-barres">
+    <div class="section-head">
+      <h2 id="h-barres">Barre chords as they are</h2>
+      <p>The same progression as full barre chords, each taking the E or A shape nearest the selected position. Each card says which box the barre overlaps most. The 6m barre is position 1's own root shape.</p>
+    </div>
+    <div class="variants">
+      <div class="card"><canvas id="cv-bar-shape" role="img" aria-label="Barre chords as plain shapes with the chord number"></canvas>
+        <h3>Shape and number</h3><p>The barre as a plain shape, with the chord's Nashville number large beside it. No numbers on the dots.</p><p class="trade">Closest to how barres are played: one grip, one number.</p></div>
+      <div class="card"><canvas id="cv-bar-deg" role="img" aria-label="Barre chords with scale numbers on each dot"></canvas>
+        <h3>Numbers on the shape</h3><p>Every dot in the barre shows its number in the key, so the shape and the box share one language.</p><p class="trade">Busy: six numbers per chord, most of them repeats.</p></div>
+      <div class="card"><canvas id="cv-bar-fn" role="img" aria-label="Barre chords with chord-tone labels"></canvas>
+        <h3>Chord tones on the shape</h3><p>R, 3 and 5 on the barre, roots highlighted, plus the chord's number. Shows where the roots are for moving the grip.</p><p class="trade">Useful for switching between E and A shapes; the key is only in the big number.</p></div>
+    </div>
+  </section>
+
+  <div class="questions">
+    <h2>Questions these raise</h2>
+    <ol>
+      <li><b>Default count in a major-key song.</b> Count from the major 1 (position 1's root reads 6) or from the relative minor? This page defaults to the major 1, since charts are written that way.</li>
+      <li><b>Spelling notes outside a major key.</b> This page writes a blue note as ♭3 and ♭7. The app's current table writes the same notes as #2 and #6 in sharp keys, which reads wrong to most players.</li>
+      <li><b>What moves the box.</b> The chart's hand positions, the player's live position from the Jamstik, or the chord? Here the melody carries its own position, and triads and barres follow the selected position.</li>
+      <li><b>Barre labels.</b> Shape and number for rhythm parts, with numbers on the dots only in a practice view?</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Music model
+// ---------------------------------------------------------------------------
+const STD = [40, 45, 50, 55, 59, 64];            // E2 A2 D3 G3 B3 E4, lowest string first
+const N_STRINGS = 6;
+const MAX_FRET = 17;
+const SHARP = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+const FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
+const KEYS = [["C", 0, false], ["G", 7, false], ["D", 2, false], ["A", 9, false], ["E", 4, false], ["B", 11, false], ["F♯", 6, false],
+  ["D♭", 1, true], ["A♭", 8, true], ["E♭", 3, true], ["B♭", 10, true], ["F", 5, true]];
+const PENT_OFFSETS = [0, 3, 5, 7, 10];             // minor pentatonic from its root: 1 ♭3 4 5 ♭7
+// Labels for every semitone above the tonic. Notes outside a major key are spelled the way players say
+// blue notes (♭3, ♭7), with ♯4 for the tritone; in minor the raised notes read 3, 6 and 7 as on the app's flat table.
+const LABELS_MAJOR = ["1", "♭2", "2", "♭3", "3", "4", "♯4", "5", "♭6", "6", "♭7", "7"];
+const LABELS_MINOR = ["1", "♭2", "2", "♭3", "3", "4", "♭5", "5", "♭6", "6", "♭7", "7"];
+
+const S = { keyIdx: 0, minor: false, pos: 1, playing: true, t: 0, last: 0 };
+const mod = (a, n) => ((a % n) + n) % n;
+const keyPc = () => KEYS[S.keyIdx][1];
+const flatKey = () => KEYS[S.keyIdx][2] || S.minor && [0, 5, 7, 2, 10, 3].includes(mod(keyPc() + 9, 12));
+const boxRoot = () => mod(keyPc() + 9, 12);       // relative minor root: the pentatonic box's root
+const tonic = () => (S.minor ? boxRoot() : keyPc());
+const pcName = (pc) => (KEYS[S.keyIdx][2] ? FLAT : SHARP)[mod(pc, 12)];
+const degreeLabel = (pc) => (S.minor ? LABELS_MINOR : LABELS_MAJOR)[mod(pc - tonic(), 12)];
+const PENT = () => new Set(PENT_OFFSETS.map((o) => mod(boxRoot() + o, 12)));
+const COMPLETERS = () => new Set([mod(keyPc() + 5, 12), mod(keyPc() + 11, 12)]); // 4 and 7 of the major key = ♭6 and 2 of the minor
+const tierOf = (pc) => (PENT().has(mod(pc, 12)) ? "box" : COMPLETERS().has(mod(pc, 12)) ? "mode" : "chrom");
+const lowERootFret = () => mod(boxRoot() - 4, 12);  // position 1 starts here (0..11)
+
+/** One copy of position k (1..5), `oct` octaves up: two notes per string, the box's twelve notes in order. */
+function positionInstance(k, oct) {
+  const pent = PENT();
+  let p = 40 + lowERootFret() + PENT_OFFSETS[k - 1] + 12 * oct;
+  const pitches = [];
+  while (pitches.length < 12) { if (pent.has(mod(p, 12))) pitches.push(p); p++; }
+  const notes = [];
+  const perString = [];
+  for (let s = 0; s < N_STRINGS; s++) {
+    const pair = [pitches[2 * s] - STD[s], pitches[2 * s + 1] - STD[s]];
+    perString.push(pair);
+    for (const f of pair) notes.push({ s, f, pc: mod(STD[s] + f, 12) });
+  }
+  const frets = notes.map((n) => n.f);
+  const inst = { k, oct, notes, perString, lo: Math.min(...frets), hi: Math.max(...frets) };
+  const comp = COMPLETERS();
+  inst.mode = [];
+  for (let s = 0; s < N_STRINGS; s++) {
+    for (let f = inst.lo; f <= inst.hi; f++) {
+      const pc = mod(STD[s] + f, 12);
+      if (comp.has(pc) && !perString[s].includes(f)) inst.mode.push({ s, f, pc });
+    }
+  }
+  return inst;
+}
+/** Every copy of position k that fits on the drawn neck. */
+function instancesOf(k) {
+  return [-1, 0, 1].map((o) => positionInstance(k, o)).filter((i) => i.lo >= 0 && i.hi <= MAX_FRET);
+}
+/** The copy of position k nearest a fret. */
+function instanceNear(k, fret) {
+  const all = [-1, 0, 1, 2].map((o) => positionInstance(k, o)).filter((i) => i.lo >= 0 && i.hi <= 20);
+  return all.reduce((best, i) => (Math.abs((i.lo + i.hi) / 2 - fret) < Math.abs((best.lo + best.hi) / 2 - fret) ? i : best), all[0]);
+}
+const selectedInstance = () => instanceNear(S.pos, 8);
+
+// ---------------------------------------------------------------------------
+// Content: written in C major (position 1 at fret 5), moved to the chosen key
+// ---------------------------------------------------------------------------
+const BPM = 90, BEAT = 60 / BPM;
+// [string, fret, beats, position]. Position 1 for two bars, position 2 for two, a blue note (E♭) in bar 4.
+const MELODY_C = [
+  [5, 5, 0.5, 1], [5, 8, 0.5, 1], [4, 8, 0.5, 1], [4, 5, 0.5, 1], [3, 7, 0.5, 1], [3, 5, 0.5, 1], [2, 7, 1, 1],
+  [2, 5, 0.5, 1], [2, 7, 0.5, 1], [3, 5, 0.5, 1], [3, 7, 0.5, 1], [4, 5, 0.5, 1], [4, 6, 0.5, 1], [4, 8, 1, 1],
+  [5, 8, 0.5, 2], [5, 10, 0.5, 2], [4, 10, 0.5, 2], [4, 8, 0.5, 2], [3, 9, 0.5, 2], [3, 7, 0.5, 2], [2, 10, 1, 2],
+  [3, 8, 0.5, 2], [3, 9, 0.5, 2], [2, 10, 0.5, 2], [2, 7, 0.5, 2], [1, 10, 1, 2], [1, 7, 1, 2],
+];
+// 1 5 6m 4, a bar each: [semitones above the major tonic, minor?]
+const PROGRESSION = [[0, false], [7, false], [9, true], [5, false]];
+const BAR = 4 * BEAT;
+
+function transposedMelody() {
+  const shift = lowERootFret() - 5;
+  let notes = [];
+  let t = 0;
+  for (const [s, f, beats, pos] of MELODY_C) { notes.push({ s, f: f + shift, t, dur: beats * BEAT, pos }); t += beats * BEAT; }
+  const frets = notes.map((n) => n.f);
+  if (Math.min(...frets) < 0) notes.forEach((n) => (n.f += 12));
+  else if (Math.max(...frets) > MAX_FRET && Math.min(...frets) >= 12) notes.forEach((n) => (n.f -= 12));
+  notes.forEach((n) => (n.pc = mod(STD[n.s] + n.f, 12)));
+  return { notes, length: t };
+}
+
+function chordOf(i) {
+  const [deg, minor] = PROGRESSION[i];
+  const root = mod(keyPc() + deg, 12);
+  const pcs = [root, mod(root + (minor ? 3 : 4), 12), mod(root + 7, 12)];
+  const semis = mod(root - tonic(), 12);
+  const number = (S.minor ? LABELS_MINOR : LABELS_MAJOR)[semis] + (minor ? "m" : "");
+  return { root, minor, pcs, number, name: pcName(root) + (minor ? "m" : "") };
+}
+function toneOf(chord, pc) {
+  const d = mod(pc - chord.root, 12);
+  return d === 0 ? "R" : d === 7 ? "5" : chord.minor ? "♭3" : "3";
+}
+
+/** A three-string voicing of `chord` inside the box: top strings first, the tightest grip nearest the box's middle. */
+function triadIn(chord, inst) {
+  const lo = Math.max(0, inst.lo - 1), hi = inst.hi + 1, centre = (inst.lo + inst.hi) / 2;
+  for (const strings of [[3, 4, 5], [2, 3, 4], [1, 2, 3]]) {
+    const options = strings.map((s) => {
+      const out = [];
+      for (let f = lo; f <= hi; f++) if (chord.pcs.includes(mod(STD[s] + f, 12))) out.push(f);
+      return out;
+    });
+    let best = null;
+    for (const a of options[0]) for (const b of options[1]) for (const c of options[2]) {
+      const frets = [a, b, c];
+      const pcs = new Set(frets.map((f, i) => mod(STD[strings[i]] + f, 12)));
+      if (pcs.size !== 3) continue;
+      const span = Math.max(...frets) - Math.min(...frets);
+      const score = span * 2 + Math.abs(frets.reduce((x, y) => x + y, 0) / 3 - centre);
+      if (!best || score < best.score) best = { score, notes: frets.map((f, i) => ({ s: strings[i], f, pc: mod(STD[strings[i]] + f, 12) })) };
+    }
+    if (best) return best.notes;
+  }
+  return [];
+}
+
+const SHAPES = {
+  E: { major: [0, 2, 2, 1, 0, 0], minor: [0, 2, 2, 0, 0, 0], rootString: 0 },
+  A: { major: [-1, 0, 2, 2, 2, 0], minor: [-1, 0, 2, 2, 1, 0], rootString: 1 },
+};
+/** The E- or A-shape barre for `chord` whose grip sits nearest the selected box. */
+function barreFor(chord, inst) {
+  const centre = (inst.lo + inst.hi) / 2;
+  let best = null;
+  for (const [name, shape] of Object.entries(SHAPES)) {
+    const base = mod(chord.root - STD[shape.rootString], 12);
+    for (const b of [base, base + 12]) {
+      if (b < 1 || b + 3 > MAX_FRET) continue;
+      const d = Math.abs(b + 1.5 - centre);
+      if (!best || d < best.d) best = { d, b, name, rel: shape[chord.minor ? "minor" : "major"] };
+    }
+  }
+  const notes = best.rel.map((r, s) => (r < 0 ? null : { s, f: best.b + r, pc: mod(STD[s] + best.b + r, 12) })).filter(Boolean);
+  // The box it overlaps most: the same frets on the same strings, in any copy of any position.
+  let overlap = { k: 0, n: -1 };
+  for (let k = 1; k <= 5; k++) for (const inst2 of instancesOf(k)) {
+    const n = notes.filter((x) => inst2.notes.some((y) => y.s === x.s && y.f === x.f)).length;
+    if (n > overlap.n) overlap = { k, n };
+  }
+  return { shape: best.name, fret: best.b, notes, overlap };
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+let C = {};
+function readColors() {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  C = { bg: css("--bg"), ink: css("--ink"), muted: css("--muted"), faint: css("--faint"), accent: css("--accent"), accentInk: css("--accent-ink"),
+    t3: css("--tone-3"), t5: css("--tone-5"), chrom: css("--chromatic"), box: css("--box"), wood1: css("--wood-1"), wood2: css("--wood-2"),
+    ui: css("--font-ui"), num: css("--font-num") };
+}
+function rgba(hex, a) { const v = parseInt(hex.replace("#", ""), 16); return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`; }
+const wire = (n) => 1 - 2 ** (-n / 12);
+
+/** A neck showing frets f0..f1 in the box (x, y, w, h); returns where frets and strings land. */
+function neck(ctx, box, f0, f1, opts = {}) {
+  const openGap = f0 === 0 ? Math.min(28, box.w * 0.06) : 0;
+  const x0 = box.x + openGap, x1 = box.x + box.w;
+  const w0 = wire(Math.max(0, f0 - 1)), w1 = wire(f1);
+  const xw = (n) => x0 + ((wire(n) - w0) / (w1 - w0)) * (x1 - x0);
+  const fx = (f) => (f === 0 ? box.x + openGap / 2 : (xw(f - 1) + xw(f)) / 2);
+  const gap = box.h / (N_STRINGS - 1 + 0.9);
+  const top = box.y + gap * 0.45;
+  const sy = (s) => top + (N_STRINGS - 1 - s) * gap;   // high e on top, as tab reads
+  const g = ctx.createLinearGradient(0, box.y, 0, box.y + box.h);
+  g.addColorStop(0, C.wood1); g.addColorStop(1, C.wood2);
+  ctx.fillStyle = g; ctx.fillRect(x0 - (f0 === 0 ? 0 : 2), box.y, x1 - x0 + 2, box.h);
+  for (const m of [3, 5, 7, 9, 15, 17]) if (m >= f0 && m <= f1) dotInlay(ctx, fx(m), box.y + box.h / 2);
+  if (12 >= f0 && 12 <= f1) { dotInlay(ctx, fx(12), box.y + box.h * 0.3); dotInlay(ctx, fx(12), box.y + box.h * 0.7); }
+  ctx.strokeStyle = "#b9b2a4"; ctx.lineWidth = 2;
+  for (let n = Math.max(1, f0); n <= f1; n++) { ctx.beginPath(); ctx.moveTo(xw(n), box.y); ctx.lineTo(xw(n), box.y + box.h); ctx.stroke(); }
+  if (f0 === 0) { ctx.strokeStyle = "#efe9da"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x0, box.y); ctx.lineTo(x0, box.y + box.h); ctx.stroke(); }
+  for (let s = 0; s < N_STRINGS; s++) {
+    ctx.strokeStyle = "rgba(230,226,214,0.55)"; ctx.lineWidth = 0.8 + (N_STRINGS - 1 - s) * 0.35;
+    ctx.beginPath(); ctx.moveTo(box.x, sy(s)); ctx.lineTo(x1, sy(s)); ctx.stroke();
+  }
+  if (opts.numbers !== false) {
+    ctx.fillStyle = C.faint; ctx.font = `700 10.5px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let f = Math.max(1, f0); f <= f1; f++) if (opts.allNumbers || [3, 5, 7, 9, 12, 15, 17].includes(f)) ctx.fillText(String(f), fx(f), box.y + box.h + 5);
+  }
+  const cell = xw(Math.min(f1, Math.max(1, f0) + 1)) - xw(Math.max(1, f0));
+  return { fx, sy, r: Math.max(6, Math.min(gap * 0.42, Math.abs(cell) * 0.36)), gap };
+}
+function dotInlay(ctx, x, y) { ctx.fillStyle = "rgba(240,232,215,0.16)"; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+/** A numbered dot. kind: root | box | mode | chrom | plain; ring: an optional chord-tone colour. */
+function dot(ctx, x, y, r, kind, label, o = {}) {
+  ctx.save();
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = r * 1.6; }
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (kind === "root") { ctx.fillStyle = C.accent; ctx.fill(); }
+  else if (kind === "box" || kind === "plain") { ctx.fillStyle = C.box; ctx.fill(); }
+  else if (kind === "mode") { ctx.fillStyle = "rgba(10,14,22,0.85)"; ctx.fill(); ctx.strokeStyle = C.muted; ctx.lineWidth = 2; ctx.stroke(); }
+  else if (kind === "chrom") { ctx.fillStyle = "rgba(10,14,22,0.9)"; ctx.fill(); ctx.setLineDash([3, 2.5]); ctx.strokeStyle = C.chrom; ctx.lineWidth = 2.2; ctx.stroke(); ctx.setLineDash([]); }
+  ctx.shadowBlur = 0;
+  if (o.ring) { ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.strokeStyle = o.ring; ctx.lineWidth = 3.2; ctx.stroke(); }
+  if (label) {
+    ctx.fillStyle = kind === "root" ? C.accentInk : kind === "box" || kind === "plain" ? "#0a0e16" : kind === "chrom" ? C.chrom : C.ink;
+    ctx.font = `800 ${Math.round(r * (label.length > 1 ? 0.92 : 1.1))}px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, x, y + 0.5);
+  }
+  ctx.restore();
+}
+function kindOf(pc) { return mod(pc - tonic(), 12) === 0 ? "root" : tierOf(pc); }
+
+/** The box's outline: around the lowest and highest dot on each string. */
+function boxOutline(ctx, inst, m, alpha = 1, label = true) {
+  const pad = m.r + 5;
+  const left = [], right = [];
+  for (let s = N_STRINGS - 1; s >= 0; s--) left.push([m.fx(inst.perString[s][0]) - pad, m.sy(s)]);
+  for (let s = 0; s < N_STRINGS; s++) right.push([m.fx(inst.perString[s][1]) + pad, m.sy(s)]);
+  const pts = [[left[0][0], left[0][1] - pad], ...left, [left[left.length - 1][0], left[left.length - 1][1] + pad],
+    [right[0][0], right[0][1] + pad], ...right, [right[right.length - 1][0], right[right.length - 1][1] - pad]];
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
+  ctx.lineJoin = "round"; ctx.fillStyle = rgba(C.accent, 0.08); ctx.fill();
+  ctx.strokeStyle = rgba(C.accent, 0.55); ctx.lineWidth = 1.5; ctx.stroke();
+  if (label) {
+    ctx.fillStyle = C.accent; ctx.font = `800 11px ${C.ui}`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText(`POSITION ${inst.k}`, (pts[0][0] + pts[pts.length - 1][0]) / 2, pts[0][1] - 4);
+  }
+  ctx.restore();
+}
+/** Every note in a box, by tier; `dim` fades it behind other content. */
+function drawBox(ctx, inst, m, dim = 1) {
+  ctx.save(); ctx.globalAlpha = dim;
+  for (const n of inst.mode) dot(ctx, m.fx(n.f), m.sy(n.s), m.r * 0.78, "mode", degreeLabel(n.pc));
+  for (const n of inst.notes) dot(ctx, m.fx(n.f), m.sy(n.s), m.r, kindOf(n.pc), degreeLabel(n.pc));
+  ctx.restore();
+}
+function caption(ctx, text, x, y, color, size = 13, align = "left") {
+  ctx.fillStyle = color; ctx.font = `800 ${size}px ${C.ui}`; ctx.textAlign = align; ctx.textBaseline = "top"; ctx.fillText(text, x, y);
+}
+function chordBadge(ctx, chord, x, y) {
+  ctx.fillStyle = "rgba(10,14,22,0.88)"; ctx.beginPath(); ctx.roundRect(x, y, 86, 52, 10); ctx.fill();
+  ctx.strokeStyle = rgba(C.accent, 0.5); ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = C.ink; ctx.font = `800 28px ${C.num}`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(chord.number, x + 10, y + 24);
+  ctx.fillStyle = C.muted; ctx.font = `700 11px ${C.ui}`; ctx.textAlign = "right"; ctx.fillText(chord.name, x + 78, y + 41);
+}
+
+// ---------------------------------------------------------------------------
+// Panels
+// ---------------------------------------------------------------------------
+const panels = [];
+function panel(id, draw) {
+  const canvas = document.getElementById(id);
+  const p = { canvas, ctx: canvas.getContext("2d"), w: 0, h: 0, draw };
+  const fit = () => {
+    const r = canvas.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+    p.w = Math.max(1, r.width); p.h = Math.max(1, r.height);
+    canvas.width = Math.round(p.w * dpr); canvas.height = Math.round(p.h * dpr);
+    p.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  new ResizeObserver(fit).observe(canvas); fit();
+  panels.push(p);
+  return p;
+}
+function clear(p) { p.ctx.clearRect(0, 0, p.w, p.h); p.ctx.fillStyle = "#0b0f18"; p.ctx.fillRect(0, 0, p.w, p.h); }
+
+// --- The five positions ------------------------------------------------------
+const positionsPanel = panel("cv-positions", (p) => {
+  const { ctx, w, h } = p; clear(p);
+  const m = neck(ctx, { x: 18, y: 34, w: w - 30, h: h - 66 }, 0, MAX_FRET);
+  p.map = m;
+  for (let k = 1; k <= 5; k++) for (const inst of instancesOf(k)) if (k !== S.pos) {
+    boxOutline(ctx, inst, m, 0.35);
+    for (const n of inst.notes) dot(ctx, m.fx(n.f), m.sy(n.s), m.r * 0.55, kindOf(n.pc), "", {});
+  }
+  for (const inst of instancesOf(S.pos)) { boxOutline(ctx, inst, m, 1); drawBox(ctx, inst, m); }
+});
+positionsPanel.canvas.addEventListener("click", (e) => {
+  const m = positionsPanel.map; if (!m) return;
+  const r = positionsPanel.canvas.getBoundingClientRect();
+  const x = e.clientX - r.left;
+  let best = null;
+  for (let k = 1; k <= 5; k++) for (const inst of instancesOf(k)) {
+    const cx = (m.fx(inst.lo) + m.fx(inst.hi)) / 2;
+    if (!best || Math.abs(cx - x) < best.d) best = { k, d: Math.abs(cx - x) };
+  }
+  if (best) setPos(best.k);
+});
+
+// --- Melody ------------------------------------------------------------------
+function melodyState(t) {
+  const mel = transposedMelody();
+  const tt = t % mel.length;
+  let i = mel.notes.findIndex((n) => tt >= n.t && tt < n.t + n.dur);
+  if (i < 0) i = 0;
+  return { mel, tt, i, cur: mel.notes[i], next: mel.notes[(i + 1) % mel.notes.length] };
+}
+// The zoomed views ease toward the current position instead of jumping.
+const view = { lo: null };
+function easedWindow(target, dt) {
+  if (view.lo === null) view.lo = target;
+  view.lo += (target - view.lo) * Math.min(1, dt * 5);
+  return view.lo;
+}
+let lastDt = 0;
+
+panel("cv-mel-box", (p) => {
+  const { ctx, w, h } = p; clear(p);
+  const st = melodyState(S.t);
+  const inst = instanceNear(st.cur.pos, st.cur.f);
+  const lo = easedWindow(inst.lo - 1, lastDt);
+  const f0 = Math.max(0, Math.floor(lo)), f1 = Math.min(MAX_FRET + 2, f0 + 7);
+  const m = neck(ctx, { x: 14, y: 40, w: w - 28, h: h - 76 }, f0, f1, { allNumbers: true });
+  boxOutline(ctx, inst, m, 1, false);
+  drawBox(ctx, inst, m, 0.45);
+  // Upcoming: a ring that closes as the note arrives.
+  const tt = st.tt, next = st.next;
+  const until = next.t >= tt ? next.t - tt : next.t + st.mel.length - tt;
+  if (until < 0.9 && next !== st.cur) {
+    const x = m.fx(next.f), y = m.sy(next.s), pr = 1 - until / 0.9;
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, m.r + 5, -Math.PI / 2, -Math.PI / 2 + pr * Math.PI * 2); ctx.stroke();
+  }
+  const c = st.cur;
+  dot(ctx, m.fx(c.f), m.sy(c.s), m.r * 1.18, kindOf(c.pc), degreeLabel(c.pc), { glow: tierOf(c.pc) === "chrom" ? C.chrom : C.accent });
+  caption(ctx, `POSITION ${c.pos}`, 14, 12, C.accent, 12);
+  caption(ctx, tierOf(c.pc) === "chrom" ? `${degreeLabel(c.pc)} · outside the key` : tierOf(c.pc) === "mode" ? `${degreeLabel(c.pc)} · completes the scale` : `${degreeLabel(c.pc)}`, w - 14, 12, tierOf(c.pc) === "chrom" ? C.chrom : C.muted, 12, "right");
+});
+
+panel("cv-mel-tab", (p) => {
+  const { ctx, w, h } = p; clear(p);
+  const st = melodyState(S.t);
+  const px = w * 0.22, pps = Math.max(70, w / 5.2);
+  const gap = Math.min(22, (h - 90) / 5), top = (h - gap * 5) / 2 + 12;
+  const ry = (s) => top + (N_STRINGS - 1 - s) * gap;
+  ctx.strokeStyle = "rgba(220,228,250,0.25)"; ctx.lineWidth = 1;
+  for (let s = 0; s < N_STRINGS; s++) { ctx.beginPath(); ctx.moveTo(10, ry(s)); ctx.lineTo(w - 10, ry(s)); ctx.stroke(); }
+  // Draw two copies so the loop scrolls without a seam.
+  for (const lap of [-1, 0, 1]) {
+    const off = lap * st.mel.length;
+    let lastPos = null;
+    st.mel.notes.forEach((n, idx) => {
+      const x = px + (n.t + off - st.tt) * pps;
+      if (n.pos !== lastPos) {
+        if (x > -40 && x < w + 40) {
+          ctx.strokeStyle = rgba(C.accent, 0.6); ctx.beginPath(); ctx.moveTo(x - 8, top - 26); ctx.lineTo(x - 8, ry(0) + 10); ctx.stroke();
+          caption(ctx, `POSITION ${n.pos}`, x - 4, top - 34, C.accent, 11);
+        }
+        lastPos = n.pos;
+      }
+      if (x < -20 || x > w + 20) return;
+      const label = degreeLabel(n.pc), y = ry(n.s), tier = kindOf(n.pc);
+      ctx.font = `800 14px ${C.num}`;
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "#0b0f18"; ctx.fillRect(x - tw / 2 - 3, y - 9, tw + 6, 18);
+      const active = lap === 0 && idx === st.i;
+      ctx.fillStyle = tier === "root" ? C.accent : tier === "chrom" ? C.chrom : tier === "mode" ? C.muted : C.ink;
+      if (active) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 14; }
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(label, x, y + 0.5); ctx.shadowBlur = 0;
+    });
+  }
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, top - 14); ctx.lineTo(px, ry(0) + 14); ctx.stroke();
+  caption(ctx, "e B G D A E, top to bottom", 10, h - 22, C.faint, 11);
+});
+
+panel("cv-mel-lanes", (p) => {
+  const { ctx, w, h } = p; clear(p);
+  const st = melodyState(S.t);
+  const stripH = Math.min(70, h * 0.28), hitY = h - stripH - 26;
+  const laneW = Math.min(46, (w * 0.7) / N_STRINGS), left = (w - laneW * N_STRINGS) / 2;
+  const lx = (s) => left + s * laneW + laneW / 2;
+  const look = 2.2, pps = (hitY - 10) / look;
+  for (let s = 0; s < N_STRINGS; s++) { ctx.strokeStyle = "rgba(220,228,250,0.12)"; ctx.beginPath(); ctx.moveTo(lx(s), 0); ctx.lineTo(lx(s), hitY); ctx.stroke(); }
+  for (const lap of [0, 1]) {
+    for (const n of st.mel.notes) {
+      const dt = n.t + lap * st.mel.length - st.tt;
+      if (dt < -0.15 || dt > look) continue;
+      const y = hitY - dt * pps;
+      const kind = kindOf(n.pc);
+      const gw = laneW * 0.8, gh = 22;
+      ctx.beginPath(); ctx.roundRect(lx(n.s) - gw / 2, y - gh / 2, gw, gh, 8);
+      ctx.fillStyle = kind === "root" ? C.accent : kind === "box" ? C.box : "rgba(10,14,22,0.9)"; ctx.fill();
+      if (kind === "mode") { ctx.strokeStyle = C.muted; ctx.lineWidth = 2; ctx.stroke(); }
+      if (kind === "chrom") { ctx.setLineDash([3, 2]); ctx.strokeStyle = C.chrom; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
+      ctx.fillStyle = kind === "root" ? C.accentInk : kind === "box" ? "#0a0e16" : kind === "chrom" ? C.chrom : C.ink;
+      ctx.font = `800 13px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(degreeLabel(n.pc), lx(n.s), y + 0.5);
+    }
+  }
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(left - 6, hitY); ctx.lineTo(left + laneW * N_STRINGS + 6, hitY); ctx.stroke();
+  ctx.fillStyle = C.faint; ctx.font = `700 10px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ["E", "A", "D", "G", "B", "e"].forEach((n, s) => ctx.fillText(n, lx(s), hitY + 4));
+  // The box strip below, zoomed on the current position.
+  const inst = instanceNear(st.cur.pos, st.cur.f);
+  const m = neck(ctx, { x: 14, y: h - stripH - 6, w: w - 28, h: stripH - 14 }, Math.max(0, inst.lo - 1), inst.hi + 1, { numbers: false });
+  drawBox(ctx, inst, { ...m, r: m.r * 0.85 }, 0.5);
+  dot(ctx, m.fx(st.cur.f), m.sy(st.cur.s), m.r, kindOf(st.cur.pc), degreeLabel(st.cur.pc), { glow: C.accent });
+  caption(ctx, `POSITION ${st.cur.pos}`, 14, 10, C.accent, 11);
+});
+
+// --- Triads --------------------------------------------------------------------
+function triadPanel(id, labelMode) {
+  panel(id, (p) => {
+    const { ctx, w, h } = p; clear(p);
+    const inst = selectedInstance();
+    const i = Math.floor((S.t % (BAR * PROGRESSION.length)) / BAR);
+    const chord = chordOf(i);
+    const notes = triadIn(chord, inst);
+    const f0 = Math.max(0, Math.min(inst.lo, ...notes.map((n) => n.f)) - 1), f1 = Math.max(inst.hi, ...notes.map((n) => n.f)) + 1;
+    const m = neck(ctx, { x: 14, y: 70, w: w - 28, h: h - 104 }, f0, f1, { allNumbers: true });
+    boxOutline(ctx, inst, m, 0.6, false);
+    drawBox(ctx, inst, m, 0.22);
+    if (notes.length === 3) {
+      ctx.beginPath(); notes.forEach((n, j) => (j ? ctx.lineTo(m.fx(n.f), m.sy(n.s)) : ctx.moveTo(m.fx(n.f), m.sy(n.s)))); ctx.closePath();
+      ctx.fillStyle = rgba(C.accent, 0.12); ctx.fill(); ctx.strokeStyle = rgba(C.accent, 0.7); ctx.lineWidth = 2; ctx.stroke();
+    }
+    const pulse = 1 + 0.08 * Math.max(0, 1 - ((S.t % (BAR / 2)) / 0.25));
+    for (const n of notes) {
+      const tone = toneOf(chord, n.pc);
+      const ringColour = tone === "R" ? C.accent : tone === "5" ? C.t5 : C.t3;
+      const x = m.fx(n.f), y = m.sy(n.s), r = m.r * 1.08 * pulse;
+      if (labelMode === "deg") dot(ctx, x, y, r, kindOf(n.pc), degreeLabel(n.pc));
+      else if (labelMode === "fn") {
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = ringColour; ctx.fill();
+        ctx.fillStyle = "#0a0e16"; ctx.font = `800 ${Math.round(r * 1.0)}px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(tone, x, y + 0.5);
+      } else dot(ctx, x, y, r, kindOf(n.pc), degreeLabel(n.pc), { ring: ringColour });
+    }
+    chordBadge(ctx, chord, 14, 10);
+    caption(ctx, `in position ${inst.k}`, w - 14, 14, C.accent, 11, "right");
+    PROGRESSION.forEach((_, j) => {
+      const c = chordOf(j); ctx.font = `800 12px ${C.num}`; ctx.textAlign = "right"; ctx.textBaseline = "top";
+      ctx.fillStyle = j === i ? C.ink : C.faint; ctx.fillText(c.number, w - 14 - (PROGRESSION.length - 1 - j) * 34, 34);
+    });
+  });
+}
+triadPanel("cv-tri-deg", "deg");
+triadPanel("cv-tri-fn", "fn");
+triadPanel("cv-tri-both", "both");
+
+// --- Barres --------------------------------------------------------------------
+function barrePanel(id, labelMode) {
+  panel(id, (p) => {
+    const { ctx, w, h } = p; clear(p);
+    const inst = selectedInstance();
+    const i = Math.floor((S.t % (BAR * PROGRESSION.length)) / BAR);
+    const chord = chordOf(i);
+    const barre = barreFor(chord, inst);
+    const frets = barre.notes.map((n) => n.f);
+    const f0 = Math.max(0, Math.min(inst.lo, ...frets) - 1), f1 = Math.max(inst.hi, ...frets) + 1;
+    const m = neck(ctx, { x: 14, y: 70, w: w - 28, h: h - 104 }, f0, f1, { allNumbers: true });
+    boxOutline(ctx, inst, m, 0.45, false);
+    drawBox(ctx, inst, m, 0.15);
+    // The barre itself: one bar across every string fretted at the barre fret.
+    const onBarre = barre.notes.filter((n) => n.f === barre.fret).map((n) => n.s);
+    const yA = m.sy(Math.max(...onBarre)), yB = m.sy(Math.min(...onBarre));
+    ctx.fillStyle = "rgba(231,236,248,0.85)"; ctx.beginPath(); ctx.roundRect(m.fx(barre.fret) - m.r * 0.7, yA - m.r * 0.9, m.r * 1.4, yB - yA + m.r * 1.8, m.r * 0.7); ctx.fill();
+    for (let s = 0; s < N_STRINGS; s++) if (!barre.notes.some((n) => n.s === s)) caption(ctx, "×", m.fx(f0) - m.r * 1.6, m.sy(s) - 7, C.muted, 13, "center");
+    for (const n of barre.notes) {
+      const tone = toneOf(chord, n.pc);
+      const x = m.fx(n.f), y = m.sy(n.s);
+      if (labelMode === "shape") dot(ctx, x, y, m.r * 0.72, n.f === barre.fret ? "plain" : "plain", "");
+      else if (labelMode === "deg") dot(ctx, x, y, m.r, kindOf(n.pc), degreeLabel(n.pc));
+      else {
+        const colour = tone === "R" ? C.accent : tone === "5" ? C.t5 : C.t3;
+        ctx.beginPath(); ctx.arc(x, y, m.r, 0, Math.PI * 2); ctx.fillStyle = colour; ctx.fill();
+        ctx.fillStyle = "#0a0e16"; ctx.font = `800 ${Math.round(m.r * 1.0)}px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(tone, x, y + 0.5);
+      }
+    }
+    chordBadge(ctx, chord, 14, 10);
+    caption(ctx, `${barre.shape}-shape barre at fret ${barre.fret}`, w - 14, 12, C.muted, 11, "right");
+    caption(ctx, `overlaps position ${barre.overlap.k} (${barre.overlap.n} of ${barre.notes.length} dots)`, w - 14, 30, C.accent, 11, "right");
+  });
+}
+barrePanel("cv-bar-shape", "shape");
+barrePanel("cv-bar-deg", "deg");
+barrePanel("cv-bar-fn", "fn");
+
+// ---------------------------------------------------------------------------
+// Controls + loop
+// ---------------------------------------------------------------------------
+function setPos(k) {
+  S.pos = k;
+  for (const b of document.querySelectorAll("#posChips .chip")) b.setAttribute("aria-pressed", String(+b.dataset.pos === k));
+  refreshReadout();
+}
+function refreshReadout() {
+  const key = S.minor ? `${pcName(boxRoot())} minor` : `${pcName(keyPc())} major`;
+  const inst = selectedInstance();
+  document.getElementById("keyReadout").textContent = `${key} · position ${S.pos} at frets ${inst.lo}–${inst.hi}`;
+}
+function init() {
+  readColors();
+  const sel = document.getElementById("keySel");
+  KEYS.forEach(([name], i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = `${name} major / ${(KEYS[i][2] ? FLAT : SHARP)[mod(KEYS[i][1] + 9, 12)]} minor`; sel.appendChild(o); });
+  sel.addEventListener("change", () => { S.keyIdx = +sel.value; view.lo = null; refreshReadout(); });
+  const chips = document.getElementById("posChips");
+  for (let k = 1; k <= 5; k++) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.pos = String(k); b.textContent = String(k);
+    b.setAttribute("aria-pressed", String(k === S.pos)); b.setAttribute("aria-label", `Position ${k}`);
+    b.addEventListener("click", () => setPos(k)); chips.appendChild(b);
+  }
+  const maj = document.getElementById("countMajor"), min = document.getElementById("countMinor");
+  const setCount = (minor) => { S.minor = minor; maj.setAttribute("aria-pressed", String(!minor)); min.setAttribute("aria-pressed", String(minor)); refreshReadout(); };
+  maj.addEventListener("click", () => setCount(false)); min.addEventListener("click", () => setCount(true));
+  const play = document.getElementById("playBtn");
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  S.playing = !reduce; play.textContent = S.playing ? "Pause" : "Play";
+  play.addEventListener("click", () => { S.playing = !S.playing; play.textContent = S.playing ? "Pause" : "Play"; });
+  refreshReadout();
+  requestAnimationFrame(frame);
+}
+function frame(ts) {
+  const dt = S.last ? Math.min(0.1, (ts - S.last) / 1000) : 0; S.last = ts; lastDt = dt;
+  if (S.playing) S.t += dt;
+  for (const p of panels) p.draw(p);
+  requestAnimationFrame(frame);
+}
+init();
+</script>
