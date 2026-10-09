@@ -23,8 +23,16 @@
  */
 
 import type { InstrumentRole, MelodicTrackSelection } from "./chartLoader";
-import { TabRenderer, SheetMusicRenderer, GuitarRenderer, isFrettedRole } from "./tabRenderer";
-import type { FretView, FrettedRole, GridBeat, GridSection, PianoLiveInputNote } from "./tabRenderer";
+import { TabRenderer, SheetMusicRenderer, GuitarRenderer, DEFAULT_FRET_NUMBERING, isFrettedRole } from "./tabRenderer";
+import type {
+  FretNumbering,
+  FretView,
+  FrettedRole,
+  GridBeat,
+  GridSection,
+  PianoLiveInputNote,
+  SongKey,
+} from "./tabRenderer";
 import type { PlayersPanelHandle } from "./playersPanel";
 import type { ConsoleBridge } from "./consoleBridge";
 
@@ -33,17 +41,37 @@ export type DisplayMode = "piano" | "sheet";
 
 /** What a bass or guitar part is drawn as: one of the guitar views, or sheet music. */
 export type FrettedView = FretView | "sheet";
-export const FRETTED_VIEWS: readonly FrettedView[] = ["lanes", "highway", "tab", "coach", "sheet"];
+export const FRETTED_VIEWS: readonly FrettedView[] = ["lanes", "highway", "tab", "coach", "nashville", "sheet"];
 
 /**
  * Views that are a whole play surface rather than a strip. For a guitar or bass
  * player on their own part they take the stage, the way the piano roll does
  * for a keys player. Tab and sheet keep the strip under the visualizer.
  */
-const FULL_SURFACE_VIEWS = new Set<FrettedView>(["lanes", "highway", "coach"]);
+const FULL_SURFACE_VIEWS = new Set<FrettedView>(["lanes", "highway", "coach", "nashville"]);
 
 /** Per role, beside the game's other view prefs: auralprimer.fretView.bass etc. */
 const FRETTED_VIEW_STORAGE_PREFIX = "auralprimer.fretView.";
+/** Frets or numbers, and how numbers read, per role: auralprimer.fretNumbers.bass etc. */
+const FRET_NUMBERING_STORAGE_PREFIX = "auralprimer.fretNumbers.";
+
+/** A stored numbering, field by field: anything missing or unknown takes its default. */
+function readNumbering(raw: string | null): FretNumbering {
+  let parsed: Record<string, unknown> = {};
+  try {
+    const v: unknown = raw ? JSON.parse(raw) : {};
+    if (v && typeof v === "object") parsed = v as Record<string, unknown>;
+  } catch {
+    // A corrupt entry is a default, not an error.
+  }
+  const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
+    allowed.includes(value as T) ? (value as T) : fallback;
+  return {
+    labels: pick(parsed.labels, ["frets", "numbers"] as const, DEFAULT_FRET_NUMBERING.labels),
+    chords: pick(parsed.chords, ["numbers", "tones", "both"] as const, DEFAULT_FRET_NUMBERING.chords),
+    count: pick(parsed.count, ["song", "relative"] as const, DEFAULT_FRET_NUMBERING.count),
+  };
+}
 /** The old tab lane became the tab view, so that is where a part starts. */
 const DEFAULT_FRETTED_VIEW: FrettedView = "tab";
 
@@ -77,6 +105,8 @@ export type TabRenderFrame = {
   beats?: GridBeat[];
   /** The song's sections, for the guitar views' section marks. */
   sections?: GridSection[];
+  /** The song's key, for the guitar views' Nashville numbers; null when it has none. */
+  songKey?: SongKey | null;
 };
 
 const INSTRUMENT_ROLE_LABELS: Record<string, string> = {
@@ -123,6 +153,10 @@ export type PlaySurfaceControllerHandle = {
   getFrettedView: (role: FrettedRole) => FrettedView;
   /** Switch a bass or guitar part's view, rebuilding the surface if it is on screen. */
   setFrettedView: (role: FrettedRole, view: FrettedView) => void;
+  /** Frets or Nashville numbers for a bass or guitar part, and how numbers read (persisted per role). */
+  getFretNumbering: (role: FrettedRole) => FretNumbering;
+  /** Change any of a part's numbering settings; the surface picks it up on the next frame. */
+  setFretNumbering: (role: FrettedRole, change: Partial<FretNumbering>) => void;
 };
 
 export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): PlaySurfaceControllerHandle {
@@ -136,6 +170,7 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
   // and a host without the guitar toggle simply never offers the views.
   const displayModeToggleEl = document.getElementById("displayModeToggle");
   const fretViewToggleEl = document.getElementById("fretViewToggle");
+  const fretNumbersRowEl = document.getElementById("fretNumbersRow");
 
   let tabRenderer: MelodicRenderer | null = null;
   /** Which renderer `tabRenderer` is, so a track switch rebuilds only when it must. */
@@ -143,6 +178,29 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
   let activeTabInstrument: InstrumentRole | null = null;
   let displayMode: DisplayMode = deps.initialDisplayMode ?? "piano";
   const frettedViews = new Map<FrettedRole, FrettedView>();
+  const fretNumberings = new Map<FrettedRole, FretNumbering>();
+
+  function getFretNumbering(role: FrettedRole): FretNumbering {
+    let numbering = fretNumberings.get(role);
+    if (!numbering) {
+      let raw: string | null = null;
+      try {
+        raw = window.localStorage.getItem(FRET_NUMBERING_STORAGE_PREFIX + role);
+      } catch {
+        // localStorage may be unavailable in some embedded webviews; default safely.
+      }
+      numbering = readNumbering(raw);
+      fretNumberings.set(role, numbering);
+    }
+    return numbering;
+  }
+
+  /** Hand the guitar renderer the numbering for the part it is drawing. */
+  function applyNumbering(): void {
+    if (tabRenderer instanceof GuitarRenderer && isFrettedRole(activeTabInstrument)) {
+      tabRenderer.setNumbering(getFretNumbering(activeTabInstrument));
+    }
+  }
 
   function getFrettedView(role: FrettedRole): FrettedView {
     let view = frettedViews.get(role);
@@ -178,12 +236,26 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     const role = activeTabInstrument;
     const fretted = isFrettedRole(role);
     if (displayModeToggleEl) displayModeToggleEl.hidden = fretted;
-    if (!fretViewToggleEl) return;
-    fretViewToggleEl.hidden = !fretted;
+    if (fretViewToggleEl) fretViewToggleEl.hidden = !fretted;
+    // Labels, chords and counting belong to the guitar views; sheet music has its own.
+    if (fretNumbersRowEl) fretNumbersRowEl.hidden = !fretted || getFrettedView(role) === "sheet";
     if (!fretted) return;
     const view = getFrettedView(role);
-    for (const btn of Array.from(fretViewToggleEl.querySelectorAll<HTMLButtonElement>("button[data-view]"))) {
+    for (const btn of Array.from(fretViewToggleEl?.querySelectorAll<HTMLButtonElement>("button[data-view]") ?? [])) {
       btn.classList.toggle("isActive", btn.dataset.view === view);
+    }
+    if (!fretNumbersRowEl) return;
+    const numbering = getFretNumbering(role);
+    for (const btn of Array.from(fretNumbersRowEl.querySelectorAll<HTMLButtonElement>("button"))) {
+      const { labels, chords, count } = btn.dataset;
+      btn.classList.toggle(
+        "isActive",
+        labels === numbering.labels || chords === numbering.chords || count === numbering.count,
+      );
+    }
+    // Chords and Count from only mean something once notes are numbered.
+    for (const el of Array.from(fretNumbersRowEl.querySelectorAll<HTMLElement>(".numbersOnly"))) {
+      el.hidden = numbering.labels !== "numbers";
     }
   }
 
@@ -238,6 +310,7 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     }
     tabRenderer.setTrack(track);
     activeTabInstrument = role;
+    applyNumbering();
     syncViewToggles();
     syncSurfaceMode();
 
@@ -339,6 +412,34 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     deps.consoleBridge.log("play", `${role} view: ${view}`);
   }
 
+  function setFretNumbering(role: FrettedRole, change: Partial<FretNumbering>): void {
+    const next = readNumbering(JSON.stringify({ ...getFretNumbering(role), ...change }));
+    fretNumberings.set(role, next);
+    try {
+      window.localStorage.setItem(FRET_NUMBERING_STORAGE_PREFIX + role, JSON.stringify(next));
+    } catch {
+      // Best-effort -- session-only persistence is acceptable.
+    }
+    if (activeTabInstrument === role) {
+      applyNumbering();
+      syncViewToggles();
+    }
+    deps.consoleBridge.log("play", `${role} labels: ${next.labels} (chords ${next.chords}, count from ${next.count})`);
+  }
+
+  fretNumbersRowEl?.addEventListener("click", (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("button");
+    if (!btn || !isFrettedRole(activeTabInstrument)) return;
+    const { labels, chords, count } = btn.dataset;
+    const change: Partial<FretNumbering> = {};
+    if (labels === "frets" || labels === "numbers") change.labels = labels;
+    if (chords === "numbers" || chords === "tones" || chords === "both") change.chords = chords;
+    if (count === "song" || count === "relative") change.count = count;
+    if (Object.keys(change).length === 0) return;
+    setFretNumbering(activeTabInstrument, change);
+    btn.blur();
+  });
+
   fretViewToggleEl?.addEventListener("click", (event) => {
     const btn = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("button[data-view]");
     const view = btn?.dataset.view;
@@ -360,5 +461,7 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     getDisplayMode: () => displayMode,
     getFrettedView,
     setFrettedView,
+    getFretNumbering,
+    setFretNumbering,
   };
 }

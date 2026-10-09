@@ -34,12 +34,14 @@ vi.mock("../src/tabRenderer", () => {
     setTrack = vi.fn();
     render = vi.fn();
     dispose = vi.fn();
+    setNumbering = vi.fn();
     constructor(public container: HTMLElement, public view: string) {
       guitarInstances.push(this as unknown as Record<string, ReturnType<typeof vi.fn>> & { view: string });
     }
   }
   const isFrettedRole = (role: unknown) => role === "bass" || role === "rhythm_guitar" || role === "lead_guitar";
-  return { TabRenderer, SheetMusicRenderer, GuitarRenderer, isFrettedRole };
+  const DEFAULT_FRET_NUMBERING = { labels: "frets", chords: "numbers", count: "song" };
+  return { TabRenderer, SheetMusicRenderer, GuitarRenderer, isFrettedRole, DEFAULT_FRET_NUMBERING };
 });
 
 import { initPlaySurfaceController, type PlaySurfaceControllerDeps } from "../src/playSurfaceController";
@@ -50,7 +52,13 @@ function stageDom(): void {
     '<div id="instrumentSelector"><span class="label">x</span>' +
     '<div id="displayModeToggle"></div>' +
     '<div id="fretViewToggle" hidden>' +
-    ["lanes", "highway", "tab", "coach", "sheet"].map((v) => `<button data-view="${v}"></button>`).join("") +
+    ["lanes", "highway", "tab", "coach", "nashville", "sheet"].map((v) => `<button data-view="${v}"></button>`).join("") +
+    "</div>" +
+    '<div id="fretNumbersRow" hidden>' +
+    '<button data-labels="frets"></button><button data-labels="numbers"></button>' +
+    '<span class="numbersOnly" id="chordsLabel"></span>' +
+    '<button data-chords="numbers"></button><button data-chords="tones"></button><button data-chords="both"></button>' +
+    '<button data-count="song"></button><button data-count="relative"></button>' +
     "</div></div>" +
     '<div id="tabContainer"></div>';
 }
@@ -373,6 +381,59 @@ describe("playSurfaceController guitar views", () => {
 
     ctl.setFrettedView("lead_guitar", "tab");
     expect(deps.playSurfaceEl.classList.contains("isPianoPrimary")).toBe(false);
+  });
+
+  it("offers frets or Nashville numbers per part, and hands the choice to the surface", () => {
+    const row = () => document.getElementById("fretNumbersRow") as HTMLDivElement;
+    const btn = (attr: string, v: string) => row().querySelector<HTMLButtonElement>(`button[data-${attr}="${v}"]`)!;
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass"), track("lead_guitar")]) });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("bass");
+
+    // Frets by default; Chords and Count from wait until numbers are on.
+    expect(row().hidden).toBe(false);
+    expect(guitarInstances[0].setNumbering).toHaveBeenLastCalledWith({ labels: "frets", chords: "numbers", count: "song" });
+    expect(btn("labels", "frets").classList.contains("isActive")).toBe(true);
+    expect((document.getElementById("chordsLabel") as HTMLElement).hidden).toBe(true);
+
+    btn("labels", "numbers").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    btn("chords", "both").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    btn("count", "relative").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(guitarInstances[0].setNumbering).toHaveBeenLastCalledWith({ labels: "numbers", chords: "both", count: "relative" });
+    expect((document.getElementById("chordsLabel") as HTMLElement).hidden).toBe(false);
+    expect(btn("chords", "both").classList.contains("isActive")).toBe(true);
+    expect(JSON.parse(window.localStorage.getItem("auralprimer.fretNumbers.bass")!)).toEqual({
+      labels: "numbers",
+      chords: "both",
+      count: "relative",
+    });
+
+    // Another part keeps its own.
+    ctl.selectInstrumentTrack("lead_guitar");
+    expect(ctl.getFretNumbering("lead_guitar").labels).toBe("frets");
+    expect(btn("labels", "frets").classList.contains("isActive")).toBe(true);
+  });
+
+  it("reads a stored numbering field by field, defaulting anything unknown", () => {
+    window.localStorage.setItem("auralprimer.fretNumbers.bass", JSON.stringify({ labels: "numbers", chords: "nonsense" }));
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]) });
+    const ctl = initPlaySurfaceController(deps);
+    expect(ctl.getFretNumbering("bass")).toEqual({ labels: "numbers", chords: "numbers", count: "song" });
+  });
+
+  it("hides the labels row for sheet music, and gives the Nashville neck the stage", () => {
+    const deps = makeDeps({
+      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]),
+      playersPanel: makePlayersPanel({ primary: "bass", preferred: "bass" }),
+    });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("bass");
+    ctl.setFrettedView("bass", "sheet");
+    expect((document.getElementById("fretNumbersRow") as HTMLDivElement).hidden).toBe(true);
+    ctl.setFrettedView("bass", "nashville");
+    expect(guitarInstances.at(-1)!.view).toBe("nashville");
+    expect((document.getElementById("fretNumbersRow") as HTMLDivElement).hidden).toBe(false);
+    expect(deps.playSurfaceEl.classList.contains("isPianoPrimary")).toBe(true);
   });
 
   it("does not hand the stage to someone else's part", () => {

@@ -1425,6 +1425,12 @@ li {
   margin-left: 0;
 }
 
+/* Labels / Chords / Count from for the guitar views: hidden for keys and for
+   sheet music, and the inline-flex above would override the attribute. */
+.fretNumbersRow[hidden] {
+  display: none;
+}
+
 /* ─── Tab renderer container ─────────────────────────────────── */
 
 .tabContainer {

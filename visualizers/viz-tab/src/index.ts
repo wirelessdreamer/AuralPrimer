@@ -8,6 +8,7 @@
 
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 import type { FretAnchor, FretHandshape, GridBeat, GridSection } from "./fretted";
+import type { SongKey } from "./fretNumbers";
 // Type aliases local to this package — structurally compatible with the
 // host's chartLoader types. The host's setTrack() callsite supplies a
 // MelodicTrackSelection from chartLoader; TypeScript's structural typing
@@ -121,6 +122,8 @@ export type PianoRenderOptions = {
   beats?: GridBeat[];
   /** The song's sections, from its timeline. */
   sections?: GridSection[];
+  /** The song's key, for the guitar views' Nashville numbers; null when it has none. */
+  songKey?: SongKey | null;
 };
 
 export type PianoLiveInputNote = {
@@ -1251,4 +1254,14 @@ export class TabRenderer {
 
 export { SheetMusicRenderer } from "./sheetMusic";
 export * from "./fretted";
-export { GuitarRenderer, FRET_VIEWS, STRING_COLORS, TAB_BASE_PX_PER_SEC, type FretView, type GuitarRendererOptions } from "./guitarViews";
+export * from "./fretNumbers";
+export {
+  GuitarRenderer,
+  DEFAULT_FRET_NUMBERING,
+  FRET_VIEWS,
+  STRING_COLORS,
+  TAB_BASE_PX_PER_SEC,
+  type FretNumbering,
+  type FretView,
+  type GuitarRendererOptions,
+} from "./guitarViews";

@@ -71,7 +71,18 @@ describe("buildFretChart", () => {
     expect(a.chord!.name).toBe("E5");
     expect(a.chord!.size).toBe(2);
     expect(single.chord).toBeNull();
-    expect(chart.changes).toEqual([{ t: 1, end: 1, name: "E5", frets: [0, 2, -1, -1, -1, -1], fingers: [-1, -1, -1, -1, -1, -1] }]);
+    expect(chart.changes).toEqual([
+      {
+        t: 1,
+        end: 1,
+        name: "E5",
+        frets: [0, 2, -1, -1, -1, -1],
+        fingers: [-1, -1, -1, -1, -1, -1],
+        triad: { root: 4, third: null, fifth: 7, suffix: "" },
+      },
+    ]);
+    // Its root and quality ride along for chord numbers and chord tones.
+    expect(a.chord!.triad).toMatchObject({ root: 4, third: null });
   });
 
   it("prefers the tab's chord name and fingers", () => {

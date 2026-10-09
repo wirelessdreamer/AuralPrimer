@@ -199,7 +199,26 @@ export function appShellHtml(): string {
                     <button class="displayModeBtn" data-view="highway" type="button" title="The fretboard in perspective: fret is left to right, string is height and colour, time is depth. The camera follows your hand.">Neck highway</button>
                     <button class="displayModeBtn" data-view="tab" type="button" title="Tablature scrolling past the playhead, with bar lines, sections and the tab's own marks.">Tab scroll</button>
                     <button class="displayModeBtn" data-view="coach" type="button" title="A still neck: notes light where they are played, the next ones count down in place, and cards show the chord shapes coming up.">Neck coach</button>
+                    <button class="displayModeBtn" data-view="nashville" type="button" title="The neck around the box your hand is in, every Nashville number in the key on it, fading out across the boxes either side. The note you play lights, and every other octave of it is ringed.">Nashville neck</button>
                     <button class="displayModeBtn" data-view="sheet" type="button">Sheet music</button>
+                  </div>
+                  <div id="fretNumbersRow" class="handModeRow fretNumbersRow" hidden>
+                    <span class="meta">Labels:</span>
+                    <div class="displayModeToggle" role="group" aria-label="Note labels">
+                      <button class="displayModeBtn" data-labels="frets" type="button">Frets</button>
+                      <button class="displayModeBtn" data-labels="numbers" type="button" title="Label every note by its Nashville number in the song's key, coloured by octave: a new colour starts at each 1.">Numbers</button>
+                    </div>
+                    <span class="meta numbersOnly">Chords:</span>
+                    <div class="displayModeToggle numbersOnly" role="group" aria-label="Chord notes show">
+                      <button class="displayModeBtn" data-chords="numbers" type="button">Numbers</button>
+                      <button class="displayModeBtn" data-chords="tones" type="button" title="Each chord note shows its job in the chord: R, 3 (or ♭3) and 5.">Chord tones</button>
+                      <button class="displayModeBtn" data-chords="both" type="button" title="The number, ringed by its job in the chord: cyan root, rose third, violet fifth.">Both</button>
+                    </div>
+                    <span class="meta numbersOnly">Count from:</span>
+                    <div class="displayModeToggle numbersOnly" role="group" aria-label="Count from">
+                      <button class="displayModeBtn" data-count="song" type="button">Song key</button>
+                      <button class="displayModeBtn" data-count="relative" type="button" title="Count from the relative key on the same notes: in C major the A-minor box's root reads 6 by the song key and 1 counted from the relative.">Relative</button>
+                    </div>
                   </div>
                 </div>
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>

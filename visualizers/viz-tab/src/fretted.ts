@@ -13,6 +13,7 @@
  */
 
 import { nameChord } from "@auralprimer/core-music";
+import { triadOf, type Triad } from "./fretNumbers";
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 import {
   noteToFretPosition,
@@ -36,7 +37,14 @@ export type FretAnchor = { t: number; fret: number; width: number };
 export type FretHandshape = { t: number; t_end: number; name: string; frets: number[]; fingers: number[] };
 
 /** One struck chord, shared by every note in it. */
-export type FretChord = { t: number; name: string; size: number; fingers: number[] };
+export type FretChord = {
+  t: number;
+  name: string;
+  size: number;
+  fingers: number[];
+  /** Root and quality read from the notes, for chord numbers and chord tones; null if no triad fits. */
+  triad: Triad | null;
+};
 
 export type FretNote = {
   t: number;
@@ -53,7 +61,7 @@ export type FretNote = {
 };
 
 /** A chord shape coming up, for the coach's cards. */
-export type ChordChange = { t: number; end: number; name: string; frets: number[]; fingers: number[] };
+export type ChordChange = { t: number; end: number; name: string; frets: number[]; fingers: number[]; triad: Triad | null };
 
 export type FretChart = {
   isBass: boolean;
@@ -199,9 +207,10 @@ export function buildFretChart(track: MelodicTrackSelection): FretChart {
       }
       const authored = group.map((x) => tabChordName.get(x)).find(Boolean);
       const name = authored || nameChord(group.map((x) => x.midi)) || "";
-      const chord: FretChord = { t: group[0].t, name, size: group.length, fingers };
+      const triad = triadOf(group.map((x) => x.midi));
+      const chord: FretChord = { t: group[0].t, name, size: group.length, fingers, triad };
       for (const x of group) x.chord = chord;
-      changes.push({ t: chord.t, end: chord.t, name, frets, fingers });
+      changes.push({ t: chord.t, end: chord.t, name, frets, fingers, triad });
     }
     i = j;
   }
@@ -212,7 +221,7 @@ export function buildFretChart(track: MelodicTrackSelection): FretChart {
     const fingers = Array.from({ length: n }, (_, s) => h.fingers[s] ?? -1);
     const pitches = frets.flatMap((f, s) => (f >= 0 ? [open[s] + f] : []));
     const name = h.name || nameChord(pitches) || "";
-    changes.push({ t: h.t, end: h.t_end, name, frets, fingers });
+    changes.push({ t: h.t, end: h.t_end, name, frets, fingers, triad: triadOf(pitches) });
   }
 
   // One card per change: a chord restruck, or struck inside the shape it came

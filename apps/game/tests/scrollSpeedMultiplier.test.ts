@@ -77,8 +77,8 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     // on any window, and what makes this lane and the chord lane above it
     // scroll together rather than at two different rates.
     expect(src).toMatch(/pxPerSec\s*=\s*TAB_BASE_PX_PER_SEC\s*\*\s*f\.scrollMul/);
-    // The other three divide their look-ahead by it (lookAheadSec, tested in viz-tab).
-    for (const base of ["LANES_LOOK_SEC", "HIGHWAY_LOOK_SEC", "COACH_LEAD_SEC", "STRIP_LOOK_SEC"]) {
+    // The others divide their look-ahead by it (lookAheadSec, tested in viz-tab).
+    for (const base of ["LANES_LOOK_SEC", "HIGHWAY_LOOK_SEC", "COACH_LEAD_SEC", "STRIP_LOOK_SEC", "NASHVILLE_LEAD_SEC"]) {
       expect(src).toMatch(new RegExp(`lookAheadSec\\(${base},\\s*f\\.scrollMul\\)`));
     }
   });

@@ -83,6 +83,8 @@ import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
 import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 import { readSongTimeline, tempoAt, type SongTimeline } from "./songTimeline";
+import { songKeyFor } from "./songKey";
+import type { SongKey } from "@auralprimer/viz-tab";
 
 function haveTauri(): boolean {
   // Tauri v2 does **not** necessarily expose `window.__TAURI__` unless
@@ -472,6 +474,8 @@ let currentVocalPitchContour: unknown | null = null;
 let currentSongTimeline: unknown | null = null;
 /** The timeline read once per song: beats and sections for the guitar views, tempos for the speed readout. */
 let songTimeline: SongTimeline = readSongTimeline(null);
+/** The song's key for the guitar views' numbers; null when the pack has none and the notes say nothing. */
+let songKey: SongKey | null = null;
 
 // Desktop default: use Rust native audio engine.
 let currentTimebase: TransportTimebase = new NativeAudioTimebase({ sampleRateHz: 48_000, channels: 2 });
@@ -993,6 +997,7 @@ async function selectAuralSong(containerPath: string) {
   currentVocalPitchContour = null;
   currentSongTimeline = null;
   songTimeline = readSongTimeline(null);
+  songKey = null;
   setSelectedSongCard(containerPath);
   songLibraryPanel.setDetailsHTML("Loading details...");
   try {
@@ -1081,6 +1086,7 @@ async function selectAuralSong(containerPath: string) {
         ? "flat"
         : "sharp";
     songChordLabels = chordTrack ? chordLabels(chordTrack.notes, chordSpelling) : [];
+    songKey = songKeyFor(keyModeArtifacts, selectedMelodicTracks.flatMap((t) => t.notes));
 
     // Hand the headset this song's chart, for the part it asked for -- keys
     // first when it has not asked (see pickMrTrack).
@@ -1394,6 +1400,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
         showOtherHand,
         beats: songTimeline.beats,
         sections: songTimeline.sections,
+        songKey,
       });
     }
 
