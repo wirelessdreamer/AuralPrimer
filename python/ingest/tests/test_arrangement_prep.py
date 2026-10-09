@@ -1,9 +1,11 @@
 """Tests for aural_ingest.arrangement_prep.
 
-Pitch math (capo-0 / capo-2 / fret-0, tuning offsets), template expansion +
-per-string overrides, song_timeline sub-beat carry-forward + sections
-passthrough + first-arrangement-only, role assignment, and the end-to-end
-prep (MIDI re-read for track names + pitches; drums-only skips notes.mid).
+Pitch math via build_role_notes (the capo / tuning / bass-octave rules
+themselves are unit-tested in test_feedpak_tab.py), template expansion vs
+per-chord notes, song_timeline sub-beat carry-forward + sections passthrough +
+first-arrangement-only, role assignment, and the end-to-end prep (MIDI re-read
+for track names + pitches; full-difficulty phrase levels; authored fingering
+sidecars matching notes.mid onsets; drums-only skips notes.mid).
 
 The MIDI-building tests require pretty_midi; the pure pitch / timeline /
 role-assignment tests do not.
@@ -17,12 +19,10 @@ from pathlib import Path
 import pytest
 
 from aural_ingest.arrangement_prep import (
-    STANDARD,
     assign_roles,
     build_notes_mid,
     build_role_notes,
     build_song_timeline,
-    note_midi,
     prep_arrangements,
 )
 
@@ -37,38 +37,6 @@ FIXTURE_SLOPPAK = (
 
 def _load(rel: str) -> dict:
     return json.loads((FIXTURE_SLOPPAK / rel).read_text(encoding="utf-8"))
-
-
-# --- pitch math (CONFIRMED capo rule) --------------------------------------
-
-
-def test_note_midi_open_string_no_capo():
-    # Open low E, standard tuning, no capo -> 40.
-    assert note_midi(0, 0, [0, 0, 0, 0, 0, 0], 0) == 40
-
-
-def test_note_midi_open_string_capo_2_raises_open():
-    # The fixture capo test note: open string (f==0) under capo 2 sounds 2
-    # semitones above its nominal open pitch. STANDARD[0]=40 -> 42.
-    assert note_midi(0, 0, [0, 0, 0, 0, 0, 0], 2) == 42
-
-
-def test_note_midi_fretted_ignores_capo():
-    # A fretted note (f>0) sounds at its absolute fret regardless of capo.
-    # String 1 (A2=45), fret 5, capo 2 -> 45 + 5 = 50 (NOT 45+2+5).
-    assert note_midi(1, 5, [0, 0, 0, 0, 0, 0], 2) == 50
-    # Same with capo 0 — identical, confirming capo doesn't touch fretted notes.
-    assert note_midi(1, 5, [0, 0, 0, 0, 0, 0], 0) == 50
-
-
-def test_note_midi_tuning_offset():
-    # Drop-D (string 0 down a semitone) shifts every note on that string.
-    assert note_midi(0, 0, [-2, 0, 0, 0, 0, 0], 0) == 38
-    assert note_midi(0, 3, [-2, 0, 0, 0, 0, 0], 0) == 41
-
-
-def test_standard_tuning_array():
-    assert STANDARD == [40, 45, 50, 55, 59, 64]
 
 
 # --- build_role_notes: fixture lead arrangement ----------------------------
@@ -106,7 +74,7 @@ def test_build_role_notes_explicit_sustain():
     assert t_off - t_on == pytest.approx(0.4)
 
 
-# --- chord template expansion + per-string overrides -----------------------
+# --- chord expansion (per-chord notes vs template), bass octave -----------
 
 
 def test_chord_template_expansion():
@@ -122,7 +90,7 @@ def test_chord_template_expansion():
     assert chord_midis == [42, 47, 52]
 
 
-def test_chord_per_string_override_wins():
+def test_chord_notes_replace_template():
     arr = {
         "notes": [],
         "chords": [{"t": 0.0, "id": 0, "notes": [{"s": 0, "f": 5}]}],
@@ -130,9 +98,29 @@ def test_chord_per_string_override_wins():
     }
     triples = build_role_notes(arr, {"tuning": [0] * 6, "capo": 0})
     midis = sorted(m for _, _, m in triples)
-    # Override string 0 to fret 5 -> 40+5 = 45 (not open 40); strings 1,2 from
-    # template -> 45+2=47, 50+2=52.
-    assert midis == [45, 47, 52]
+    # The chord's own notes are what is played (string 0 fret 5 -> 45); the
+    # template only fills in for a chord with no notes.
+    assert midis == [45]
+
+
+def test_chord_note_sustain_is_per_note():
+    arr = {
+        "notes": [{"t": 1.0, "s": 0, "f": 0}],
+        "chords": [
+            {"t": 0.0, "id": 0, "sus": 2.0, "notes": [{"s": 0, "f": 3, "sus": 0.6}, {"s": 1, "f": 2}]}
+        ],
+        "templates": [{"frets": [3, 2, -1, -1, -1, -1]}],
+    }
+    durs = {m: t_off - t_on for t_on, t_off, m in build_role_notes(arr, None) if t_on == 0.0}
+    # Own per-note sus wins; a note without one gets min(gap to next, 0.25).
+    # The chord-level "sus" is not part of the format and is ignored.
+    assert durs == {43: pytest.approx(0.6), 47: pytest.approx(0.25)}
+
+
+def test_bass_open_strings_octave_below_guitar():
+    arr = {"notes": [{"t": 0.0, "s": 0, "f": 3}]}
+    assert [m for _, _, m in build_role_notes(arr, {"id": "bass"})] == [31]  # G1
+    assert [m for _, _, m in build_role_notes(arr, {"id": "lead"})] == [43]  # G2
 
 
 def test_chord_skip_string_minus_one():
@@ -228,6 +216,22 @@ def test_assign_roles_rhythm_lead_keys():
     ]
     assigned = assign_roles(entries)
     assert [r for r, _, _ in assigned] == ["rhythm_guitar", "lead_guitar", "keys"]
+
+
+def test_assign_roles_generic_guitar_type_defers_to_id():
+    # feedpak packs label every guitar part `type: guitar`; the id says which part.
+    entries = [
+        ({"id": "bass", "type": "bass"}, {}),
+        ({"id": "lead", "type": "guitar"}, {}),
+        ({"id": "lead-2", "type": "guitar"}, {}),
+        ({"id": "rhythm", "type": "guitar"}, {}),
+    ]
+    assigned = assign_roles(entries)
+    assert [(r, e["id"]) for r, e, _ in assigned] == [
+        ("bass", "bass"),
+        ("lead_guitar", "lead"),
+        ("rhythm_guitar", "rhythm"),
+    ]
 
 
 def test_build_notes_mid_keeps_vocals_track():
@@ -339,3 +343,158 @@ def test_prep_empty_vocals_skips_notes_mid(tmp_path: Path):
     # beats -> minimal timeline) and stamped.
     assert (pack / "song_timeline.json").is_file()
     assert mf["song_timeline"] == "song_timeline.json"
+
+
+def test_prep_fixture_bass_track_is_an_octave_below_guitar(tmp_path: Path):
+    import pretty_midi
+
+    pack = _copy_sloppak(tmp_path)
+    prep_arrangements(pack)
+    pm = pretty_midi.PrettyMIDI(str(pack / "aural" / "notes.mid"))
+    bass = next(i for i in pm.instruments if i.name == "Bass")
+    # bass.json: s0 f3, s0 f5, s1 f3, s1 f0 on E1 A1 -> G1 A1 C2 A1.
+    assert sorted(n.pitch for n in bass.notes) == [31, 33, 33, 36]
+
+
+# --- full-difficulty chart + authored fingering sidecars --------------------
+
+FINGERING_SCHEMA = (
+    Path(__file__).resolve().parents[3]
+    / "packages"
+    / "feedpak"
+    / "schemas"
+    / "aural-fingering.schema.json"
+)
+
+# Onsets deliberately OFF the notes.mid tick grid (120 BPM, 220 ppq -> 1/440 s)
+# so the fingering t_on keys only match notes.mid if they are snapped too.
+T1 = 0.1234567
+T2 = 1.00013
+
+
+def _laddered_pack(tmp_path: Path) -> Path:
+    lead = {
+        "name": "Lead",
+        "notes": [{"t": 0.25, "s": 5, "f": 12}],  # sparse top-level summary
+        "chords": [],
+        "templates": [{"name": "E5", "frets": [0, 2, -1, -1, -1, -1]}],
+        "phrases": [
+            {
+                "start_time": 0.0,
+                "end_time": 2.0,
+                "max_difficulty": 1,
+                "levels": [
+                    {"difficulty": 0, "notes": [{"t": 0.25, "s": 5, "f": 12}], "chords": []},
+                    {
+                        "difficulty": 1,
+                        "notes": [
+                            {"t": T1, "s": 0, "f": 3},
+                            {"t": T2, "s": 2, "f": 7, "sus": 0.3},
+                        ],
+                        "chords": [{"t": 1.5, "id": 0}],
+                    },
+                ],
+            }
+        ],
+    }
+    bass = {"name": "Bass", "notes": [{"t": T1, "s": 0, "f": 3}, {"t": T2, "s": 1, "f": 0}]}
+    pack = tmp_path / "laddered.feedpak"
+    (pack / "arrangements").mkdir(parents=True)
+    (pack / "arrangements" / "lead.json").write_text(json.dumps(lead), encoding="utf-8")
+    (pack / "arrangements" / "bass.json").write_text(json.dumps(bass), encoding="utf-8")
+    (pack / "manifest.yaml").write_text(
+        "title: L\n"
+        "artist: A\n"
+        "duration: 2.0\n"
+        "arrangements:\n"
+        "- id: lead\n  name: Lead\n  type: guitar\n  file: arrangements/lead.json\n"
+        "- id: bass\n  name: Bass\n  type: bass\n  file: arrangements/bass.json\n"
+        "aural_fingering:\n  keys: aural/fingering.keys.json\n",
+        encoding="utf-8",
+    )
+    return pack
+
+
+def _midi_keys(notes) -> list[tuple[int, int]]:
+    """The game's fingering merge key: (round(t_on * 1e4), pitch) -- 0.1 ms."""
+    return sorted((round(t * 10_000), p) for t, p in notes)
+
+
+def test_prep_charts_full_difficulty_levels(tmp_path: Path):
+    import pretty_midi
+
+    pack = _laddered_pack(tmp_path)
+    assert prep_arrangements(pack)["notes_mid"] == "written"
+    pm = pretty_midi.PrettyMIDI(str(pack / "aural" / "notes.mid"))
+    lead = next(i for i in pm.instruments if i.name == "Lead Guitar")
+    # Max-difficulty level: G2, A3 and the E5 chord (E2 B2); the top-level-only
+    # summary note (s5 f12 -> 76) is not charted.
+    assert sorted(n.pitch for n in lead.notes) == [40, 43, 47, 57]
+
+
+def test_prep_writes_authored_fingering_sidecars(tmp_path: Path):
+    import pretty_midi
+
+    jsonschema = pytest.importorskip("jsonschema")
+    pack = _laddered_pack(tmp_path)
+    status = prep_arrangements(pack)
+    assert status["fingering"] == {"lead_guitar": "written", "bass": "written"}
+
+    schema = json.loads(FINGERING_SCHEMA.read_text(encoding="utf-8"))
+    docs = {}
+    for role in ("lead_guitar", "bass"):
+        doc = json.loads((pack / "aural" / f"fingering.{role}.json").read_text(encoding="utf-8"))
+        jsonschema.Draft202012Validator(schema).validate(doc)
+        assert doc["instrument"] == role
+        docs[role] = doc
+
+    # Authored positions + absolute open-string tuning (bass an octave down).
+    assert docs["lead_guitar"]["tuning"] == [40, 45, 50, 55, 59, 64]
+    assert docs["bass"]["tuning"] == [28, 33, 38, 43, 47, 52]
+    assert [(n["string"], n["fret"], n["pitch"]) for n in docs["lead_guitar"]["notes"]] == [
+        (0, 3, 43),
+        (2, 7, 57),
+        (0, 0, 40),
+        (1, 2, 47),
+    ]
+    assert [(n["string"], n["fret"], n["pitch"]) for n in docs["bass"]["notes"]] == [
+        (0, 3, 31),
+        (1, 0, 33),
+    ]
+
+    # Manifest: roles stamped, a pre-existing role entry survives.
+    from aural_ingest.pack_paths import load_pack_manifest
+
+    assert load_pack_manifest(pack)["aural_fingering"] == {
+        "keys": "aural/fingering.keys.json",
+        "lead_guitar": "aural/fingering.lead_guitar.json",
+        "bass": "aural/fingering.bass.json",
+    }
+
+    # Every fingering note lands on a notes.mid note under the game's merge key.
+    pm = pretty_midi.PrettyMIDI(str(pack / "aural" / "notes.mid"))
+    for role, track in (("lead_guitar", "Lead Guitar"), ("bass", "Bass")):
+        inst = next(i for i in pm.instruments if i.name == track)
+        midi_keys = _midi_keys((n.start, n.pitch) for n in inst.notes)
+        fing_keys = _midi_keys((n["t_on"], n["pitch"]) for n in docs[role]["notes"])
+        assert fing_keys == midi_keys
+    # ...which only holds because t_on was snapped: the raw authored onsets
+    # would miss (T1 -> 1235 vs tick-grid 1227, T2 -> 10001 vs 10000).
+    raw = _midi_keys([(T1, 31), (T2, 33)])
+    snapped = _midi_keys((n["t_on"], n["pitch"]) for n in docs["bass"]["notes"])
+    assert raw != snapped
+
+
+def test_prep_fingering_skips_existing_without_force(tmp_path: Path):
+    pack = _laddered_pack(tmp_path)
+    prep_arrangements(pack)
+    path = pack / "aural" / "fingering.bass.json"
+    mtime = path.stat().st_mtime_ns
+
+    status = prep_arrangements(pack)
+    assert status["fingering"] == {"lead_guitar": "skipped_exists", "bass": "skipped_exists"}
+    assert "aural/fingering.bass.json" in status["skipped"]
+    assert path.stat().st_mtime_ns == mtime
+
+    status = prep_arrangements(pack, force=True)
+    assert status["fingering"] == {"lead_guitar": "written", "bass": "written"}

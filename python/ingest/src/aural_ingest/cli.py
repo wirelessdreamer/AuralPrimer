@@ -7177,6 +7177,63 @@ def cmd_prep_arrangements(args: argparse.Namespace) -> int:
     return 0 if status.get("ok") else 1
 
 
+def _tab_truth_doc(pack: Path) -> dict[str, Any]:
+    """Normalized tab truth (authored string/fret per note) for every arrangement.
+
+    ``pack`` is a feedpak/sloppak directory or zip. ``role`` is the melodic
+    role prep-arrangements would chart the arrangement as (``None`` when a
+    previous arrangement already claimed it). See ``feedpak_tab`` for the note
+    shape.
+    """
+    from aural_ingest.arrangement_prep import assign_roles
+    from aural_ingest.feedpak_tab import capo_of, open_strings_midi, read_pack
+
+    manifest, arrangements = read_pack(pack)
+    pairs = [(a["entry"], a["arrangement"]) for a in arrangements]
+    roles = {id(entry): role for role, entry, _ in assign_roles(pairs)}
+    out: list[dict[str, Any]] = []
+    for a in arrangements:
+        entry, arr = a["entry"], a["arrangement"]
+        out.append(
+            {
+                "id": entry.get("id"),
+                "name": entry.get("name") or arr.get("name"),
+                "type": entry.get("type"),
+                "role": roles.get(id(entry)),
+                "capo": capo_of(arr, entry),
+                "open_strings_midi": open_strings_midi(arr, entry),
+                "notes": a["notes"],
+            }
+        )
+    return {"title": manifest.get("title"), "artist": manifest.get("artist"), "arrangements": out}
+
+
+def cmd_tab_truth(args: argparse.Namespace) -> int:
+    """Dump the normalized tab truth JSON of a feedpak/sloppak (dir or zip).
+
+    Writes to ``--out`` (then prints a one-line JSON status) or to stdout.
+    """
+    pack = Path(args.pack)
+    if not pack.exists():
+        print(json.dumps({"ok": False, "error": f"pack not found: {pack}"}, sort_keys=True))
+        return 1
+    try:
+        doc = _tab_truth_doc(pack)
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": f"tab-truth failed: {exc}"}, sort_keys=True))
+        return 1
+    text = json.dumps(doc, indent=2)
+    if not args.out:
+        print(text)
+        return 0
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text + "\n", encoding="utf-8")
+    counts = {a["id"]: len(a["notes"]) for a in doc["arrangements"]}
+    print(json.dumps({"ok": True, "out": str(out), "notes": counts}, sort_keys=True))
+    return 0
+
+
 def cmd_piano_reduce(args: argparse.Namespace) -> int:
     """Reduce a pack's melodic score to a two-hand piano arrangement.
 
@@ -7945,6 +8002,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing aural/notes.mid + song_timeline.json (default: skip existing to protect cleanup anchors).",
     )
     s_prep_arr.set_defaults(func=cmd_prep_arrangements)
+
+    s_tab_truth = sub.add_parser(
+        "tab-truth",
+        help=(
+            "Dump the authored string/fret tab of every arrangement in a "
+            "feedpak/sloppak (directory or zip) as normalized JSON."
+        ),
+    )
+    s_tab_truth.add_argument("pack", help="Path to a pack directory or a zipped .feedpak/.sloppak.")
+    s_tab_truth.add_argument("--out", default=None, help="Write the JSON here instead of stdout.")
+    s_tab_truth.set_defaults(func=cmd_tab_truth)
 
     s_piano_reduce = sub.add_parser(
         "piano-reduce",

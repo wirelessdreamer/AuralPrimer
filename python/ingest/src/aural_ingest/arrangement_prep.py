@@ -8,13 +8,22 @@ it reads the arrangement wire JSONs and writes
 
   * ``aural/notes.mid``       — pretty_midi, one named Instrument per melodic
                                 role in the exact layout the game requires.
+  * ``aural/fingering.<role>.json`` — for bass / guitar roles, the AUTHORED
+                                string/fret of every note (aural-fingering
+                                schema), t_on snapped to the notes.mid tick
+                                grid so the game's merge keys match.
   * ``song_timeline.json``    — beats / sections / tempos / time_signatures,
                                 matching the feedpak_writer shape.
 
-and stamps the corresponding ``aural_notes_mid`` / ``song_timeline`` /
-``drum_tab`` keys into the manifest (order-preserving). Drums are NOT charted
-here — the game charts drums from the pack-root ``drum_tab.json`` shared with
-Slopsmith.
+and stamps the corresponding ``aural_notes_mid`` / ``aural_fingering`` /
+``song_timeline`` / ``drum_tab`` keys into the manifest (order-preserving).
+Drums are NOT charted here — the game charts drums from the pack-root
+``drum_tab.json`` shared with Slopsmith.
+
+The tab itself is read by ``feedpak_tab``: the full chart (each phrase's
+hardest difficulty level, not the sparse top-level notes), open strings from
+the tuning (offsets from standard, a bass an octave lower, or absolute MIDI),
+chord expansion and sustains.
 
 Pitch / capo rule (RISK R1 — CONFIRMED)
 ---------------------------------------
@@ -25,7 +34,9 @@ Standard tuning base MIDI (string 0 = low E to string 5 = high E)::
 A note is ``{s: string_index, f: fret, sus: seconds}``; tuning is a per-string
 semitone offset array; capo is an integer fret. The MIDI pitch is::
 
-    midi = STANDARD[s] + tuning[s] + (capo if f == 0 else f)
+    midi = open[s] + (capo if f == 0 else f)
+    open[s] = STANDARD[s] + tuning[s]          # guitar
+    open[s] = STANDARD[s] - 12 + tuning[s]     # bass (E1 A1 D2 G2)
 
 i.e. a capo raises the OPEN string (``f == 0``) to the capo fret, while a
 fretted note (``f > 0``) sounds at its absolute fret-from-nut regardless of the
@@ -43,11 +54,10 @@ consistent with the fixture's capo test note (open string under capo 2 sounds
 
 Chords
 ------
-A chord is ``{t, id, notes: [...]}``. ``id`` indexes ``templates[]``; the
-template's ``frets`` array (``-1`` = skip string) is expanded to per-string
-notes. Per-chord ``notes[]`` (per-string overrides) take precedence when
-non-empty. Chord note-off = per-note ``sus`` if given, else
-``min(gap to next event, 0.25s)``.
+A chord is ``{t, id, notes: [...]}``. Its per-chord ``notes[]`` are the
+played strings; when empty, ``id`` indexes ``templates[]`` and the template's
+``frets`` array (``-1`` = skip string) is expanded instead. Chord note-off =
+per-note ``sus`` if given, else ``min(gap to next event, 0.25s)``.
 
 Technique flags (``pm``/``ho``/``po``/...) are ignored for MIDI. ``ig``
 (ignore/muted) notes are still charted.
@@ -60,19 +70,13 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .feedpak_tab import MIN_NOTE_SEC, open_strings_midi, tab_notes
 from .pack_paths import load_pack_manifest, pack_feature_dirname, update_manifest_keys
 
 if TYPE_CHECKING:  # pragma: no cover — type-only; avoids a hard runtime dep.
     import pretty_midi
 
 
-# Standard 6-string guitar tuning, low-E first: E2 A2 D3 G3 B3 E4.
-STANDARD: list[int] = [40, 45, 50, 55, 59, 64]
-
-# Minimum note length so a zero-sustain note is still an audible/visible blip.
-MIN_NOTE_SEC = 0.05
-# Cap on a chord note's implied duration when no per-note sustain is given.
-CHORD_MAX_SUS_SEC = 0.25
 # Single constant tempo for the emitted MIDI. Note times are absolute seconds
 # (the game reads seconds via its own tempo map); this only sets the tick grid.
 CONSTANT_BPM = 120.0
@@ -91,160 +95,28 @@ ROLE_TRACK_NAME: dict[str, str] = {
 }
 ROLE_ORDER: list[str] = ["bass", "rhythm_guitar", "lead_guitar", "keys", "melodic", "vocals"]
 
+# Fretted roles that get an authored fingering.<role>.json sidecar.
+FINGERING_ROLES: tuple[str, ...] = ("bass", "rhythm_guitar", "lead_guitar")
+
 
 # ---------------------------------------------------------------------------
-# Pure pitch / note helpers (no pretty_midi needed — unit-testable directly).
+# Pure note helpers (no pretty_midi needed — unit-testable directly).
 # ---------------------------------------------------------------------------
-
-
-def note_midi(string_index: int, fret: int, tuning: list[int], capo: int) -> int:
-    """MIDI pitch for a string/fret note under a tuning + capo (see module docstring).
-
-    ``midi = STANDARD[s] + tuning[s] + (capo if f == 0 else f)``. Out-of-range
-    string indices fall back to a 0 offset defensively.
-    """
-    base = STANDARD[string_index] if 0 <= string_index < len(STANDARD) else 40
-    offset = 0
-    if isinstance(tuning, list) and 0 <= string_index < len(tuning):
-        try:
-            offset = int(tuning[string_index])
-        except (TypeError, ValueError):
-            offset = 0
-    played = int(capo) if fret == 0 else int(fret)
-    return int(base + offset + played)
-
-
-def _tuning_of(arr: dict[str, Any], manifest_entry: dict[str, Any] | None) -> list[int]:
-    """Resolve the effective tuning: manifest override wins over the wire JSON.
-
-    Per the sloppak spec, manifest-level ``tuning``/``capo`` override the
-    arrangement JSON's own values. Falls back to all-zeros (standard tuning).
-    """
-    for src in (manifest_entry, arr):
-        if isinstance(src, dict):
-            t = src.get("tuning")
-            if isinstance(t, list) and t:
-                return [int(x) if isinstance(x, (int, float)) else 0 for x in t]
-    return [0, 0, 0, 0, 0, 0]
-
-
-def _capo_of(arr: dict[str, Any], manifest_entry: dict[str, Any] | None) -> int:
-    for src in (manifest_entry, arr):
-        if isinstance(src, dict) and src.get("capo") is not None:
-            try:
-                return int(src["capo"])
-            except (TypeError, ValueError):
-                pass
-    return 0
-
-
-def _expand_chord_frets(
-    chord: dict[str, Any], templates: list[dict[str, Any]]
-) -> list[int]:
-    """Per-string frets for a chord: template ``frets`` with per-string overrides.
-
-    Returns a list parallel to strings; ``-1`` means "skip this string". A
-    per-chord ``notes[]`` array (each ``{s, f}``) overrides the template fret
-    for its string. An empty/absent template resolves to all-skipped.
-    """
-    frets: list[int] = [-1, -1, -1, -1, -1, -1]
-    tid = chord.get("id")
-    if isinstance(tid, int) and 0 <= tid < len(templates):
-        tmpl = templates[tid]
-        tf = tmpl.get("frets") if isinstance(tmpl, dict) else None
-        if isinstance(tf, list):
-            frets = [int(x) if isinstance(x, (int, float)) else -1 for x in tf]
-            # Normalize length to 6.
-            if len(frets) < 6:
-                frets = frets + [-1] * (6 - len(frets))
-            else:
-                frets = frets[:6]
-    # Per-string overrides (non-empty chord.notes take precedence).
-    overrides = chord.get("notes")
-    if isinstance(overrides, list) and overrides:
-        for ov in overrides:
-            if not isinstance(ov, dict):
-                continue
-            s = ov.get("s")
-            f = ov.get("f")
-            if isinstance(s, int) and 0 <= s < 6 and isinstance(f, (int, float)):
-                frets[s] = int(f)
-    return frets
 
 
 def build_role_notes(
     arr: dict[str, Any], manifest_entry: dict[str, Any] | None
 ) -> list[tuple[float, float, int]]:
-    """Flatten an arrangement's notes + chords to ``(t_on, t_off, midi)`` triples.
+    """Flatten an arrangement's full chart to ``(t_on, t_off, midi)`` triples.
 
-    Pure — no pretty_midi. Applies the confirmed capo rule, expands chords via
-    templates (per-string overrides win), and computes sustains:
+    Pure — no pretty_midi. A pitch-only view of ``feedpak_tab.tab_notes``
+    (full-difficulty chart, tuning / bass octave / capo, chord expansion):
       * single note: ``t_off = t + max(sus, MIN_NOTE_SEC)``.
-      * chord note: ``t_off = t + (sus if given else min(gap-to-next, 0.25))``,
-        floored at ``MIN_NOTE_SEC``.
+      * chord note: ``t_off = t + (its own sus if given else
+        min(gap-to-next, 0.25))``, floored at ``MIN_NOTE_SEC``.
     Technique flags are ignored; ``ig`` notes are still emitted.
     """
-    tuning = _tuning_of(arr, manifest_entry)
-    capo = _capo_of(arr, manifest_entry)
-    templates = arr.get("templates") if isinstance(arr.get("templates"), list) else []
-
-    single = arr.get("notes") if isinstance(arr.get("notes"), list) else []
-    chords = arr.get("chords") if isinstance(arr.get("chords"), list) else []
-
-    # Event onset times used to bound chord sustains (all notes + chords).
-    onset_times: list[float] = []
-    for n in single:
-        if isinstance(n, dict) and isinstance(n.get("t"), (int, float)):
-            onset_times.append(float(n["t"]))
-    for c in chords:
-        if isinstance(c, dict) and isinstance(c.get("t"), (int, float)):
-            onset_times.append(float(c["t"]))
-    onset_times = sorted(set(onset_times))
-
-    def _next_onset_after(t: float) -> float | None:
-        for ot in onset_times:
-            if ot > t + 1e-9:
-                return ot
-        return None
-
-    out: list[tuple[float, float, int]] = []
-
-    for n in single:
-        if not isinstance(n, dict):
-            continue
-        t = n.get("t")
-        s = n.get("s")
-        f = n.get("f")
-        if not isinstance(t, (int, float)) or not isinstance(s, int) or not isinstance(f, (int, float)):
-            continue
-        midi = note_midi(int(s), int(f), tuning, capo)
-        sus = n.get("sus")
-        sus_sec = float(sus) if isinstance(sus, (int, float)) else 0.0
-        t_off = float(t) + max(sus_sec, MIN_NOTE_SEC)
-        out.append((float(t), t_off, midi))
-
-    for c in chords:
-        if not isinstance(c, dict):
-            continue
-        t = c.get("t")
-        if not isinstance(t, (int, float)):
-            continue
-        t = float(t)
-        frets = _expand_chord_frets(c, templates)
-        # Chord duration: per-chord sus if present, else gap-to-next capped.
-        sus = c.get("sus")
-        if isinstance(sus, (int, float)) and float(sus) > 0:
-            dur = max(float(sus), MIN_NOTE_SEC)
-        else:
-            nxt = _next_onset_after(t)
-            gap = (nxt - t) if nxt is not None else CHORD_MAX_SUS_SEC
-            dur = max(min(gap, CHORD_MAX_SUS_SEC), MIN_NOTE_SEC)
-        for s, fret in enumerate(frets):
-            if fret < 0:
-                continue
-            midi = note_midi(s, int(fret), tuning, capo)
-            out.append((t, t + dur, midi))
-
+    out = [(n["t"], n["t_off"], n["midi"]) for n in tab_notes(arr, manifest_entry)]
     out.sort(key=lambda x: (x[0], x[2]))
     return out
 
@@ -255,13 +127,19 @@ def build_role_notes(
 
 
 def _arrangement_kind(entry: dict[str, Any], arr: dict[str, Any]) -> str:
-    """Best-effort lowercase kind for role mapping, from id/type/name."""
-    for key in ("type", "id", "name"):
-        v = entry.get(key) if isinstance(entry, dict) else None
+    """Best-effort lowercase kind for role mapping, from type/id/name.
+
+    A generic ``type: guitar`` does not say lead or rhythm, so the id/name
+    decide then (feedpak packs put the part there: ``lead``, ``rhythm-2``).
+    """
+    found: list[str] = []
+    for v in (*(entry.get(k) for k in ("type", "id", "name")), arr.get("name")):
         if isinstance(v, str) and v.strip():
-            return v.strip().lower()
-    name = arr.get("name") if isinstance(arr, dict) else None
-    return name.strip().lower() if isinstance(name, str) else ""
+            found.append(v.strip().lower())
+    for kind in found:
+        if kind != "guitar":
+            return kind
+    return found[0] if found else ""
 
 
 def assign_roles(
@@ -360,6 +238,61 @@ def build_notes_mid(
     if not any_notes:
         return None
     return pm
+
+
+def _snap_to_midi_grid(times: list[float]) -> list[float]:
+    """Snap seconds onto the notes.mid tick grid exactly as pretty_midi writes it.
+
+    Same tempo + default resolution as ``build_notes_mid``, so a snapped time
+    equals the note onset read back from the written notes.mid.
+    """
+    import pretty_midi  # lazy: keeps the pure helpers importable without it.
+
+    pm = pretty_midi.PrettyMIDI(initial_tempo=CONSTANT_BPM)
+    if times:  # size pretty_midi's tick->time table once, not per note
+        pm.tick_to_time(int(pm.time_to_tick(max(times))) + 1)
+    return [float(pm.tick_to_time(int(pm.time_to_tick(t)))) for t in times]
+
+
+def build_fingering_doc(
+    role: str, arr: dict[str, Any], manifest_entry: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """aural-fingering sidecar doc from the AUTHORED string/fret positions.
+
+    Times are snapped to the notes.mid tick grid so each ``t_on`` equals the
+    onset the game reads back from notes.mid — its merge key is
+    ``(round(t_on * 1e4), pitch)``. Notes the game's validator would reject
+    (pitch outside 0..127, string > 8, fret > 36, negative time) are left out.
+    ``tuning`` is the absolute MIDI open strings (capo excluded). Returns
+    ``None`` when no note survives.
+    """
+    kept = [
+        n
+        for n in tab_notes(arr, manifest_entry)
+        if 0 <= n["midi"] <= 127 and n["s"] <= 8 and n["f"] <= 36 and n["t"] >= 0
+    ]
+    if not kept:
+        return None
+    t_on = _snap_to_midi_grid([n["t"] for n in kept])
+    t_off = _snap_to_midi_grid([n["t_off"] for n in kept])
+    notes = [
+        {
+            "t_on": on,
+            "t_off": off,
+            "pitch": n["midi"],
+            "velocity": 100,
+            "string": n["s"],
+            "fret": n["f"],
+        }
+        for n, on, off in zip(kept, t_on, t_off)
+    ]
+    notes.sort(key=lambda x: (x["t_on"], x["pitch"], x["string"]))
+    return {
+        "version": "1.0.0",
+        "instrument": role,
+        "tuning": open_strings_midi(arr, manifest_entry),
+        "notes": notes,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -478,12 +411,13 @@ def _load_arrangement_json(pack_root: Path, rel: str) -> dict[str, Any] | None:
 
 
 def prep_arrangements(pack_root: Path | str, *, force: bool = False) -> dict[str, Any]:
-    """Read manifest arrangements, write aural/notes.mid + song_timeline.json.
+    """Read manifest arrangements, write aural/notes.mid + fingering + song_timeline.json.
 
     Returns a status dict ``{ok, roles, wrote, skipped, ...}``. Existing output
     files are SKIPPED unless ``force`` (protects cleanup anchors). Updates the
-    manifest with ``aural_notes_mid`` / ``song_timeline`` / ``drum_tab`` keys
-    (the latter only if ``drum_tab.json`` exists and the key is missing).
+    manifest with ``aural_notes_mid`` / ``aural_fingering`` (merged into any
+    existing role map) / ``song_timeline`` / ``drum_tab`` keys (the latter
+    only if ``drum_tab.json`` exists and the key is missing).
 
     A drums-only pack (zero melodic arrangements) does NOT get a bogus
     ``aural_notes_mid`` key — ``roles`` is empty and notes.mid is skipped.
@@ -551,6 +485,36 @@ def prep_arrangements(pack_root: Path | str, *, force: bool = False) -> dict[str
             status["notes_mid"] = "written"
             status["wrote"].append(notes_rel)
             manifest_updates["aural_notes_mid"] = notes_rel
+
+    # --- fingering.<role>.json (authored string/fret, bass + guitars) ----
+    fingering_status: dict[str, str] = {}
+    fingering_map: dict[str, str] = {}
+    for role, entry, arr in assigned:
+        if role not in FINGERING_ROLES:
+            continue
+        rel = f"{feat_dir}/fingering.{role}.json"
+        path = root / rel
+        if path.exists() and not force:
+            fingering_status[role] = "skipped_exists"
+            status["skipped"].append(rel)
+            fingering_map[role] = rel
+            continue
+        doc = build_fingering_doc(role, arr, entry)
+        if doc is None:
+            fingering_status[role] = "skipped_no_notes"
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+        fingering_status[role] = "written"
+        status["wrote"].append(rel)
+        fingering_map[role] = rel
+    if fingering_status:
+        status["fingering"] = fingering_status
+    existing_fingering = manifest.get("aural_fingering")
+    existing_fingering = existing_fingering if isinstance(existing_fingering, dict) else {}
+    merged_fingering = {**existing_fingering, **fingering_map}
+    if merged_fingering != existing_fingering:
+        manifest_updates["aural_fingering"] = merged_fingering
 
     # --- song_timeline.json (FIRST arrangement's beats/sections) --------
     first_arr = loaded[0][1]
