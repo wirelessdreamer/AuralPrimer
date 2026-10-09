@@ -207,6 +207,9 @@ pub struct PianoEngine {
     enabled: bool,
     /// Output rate, remembered so a live note can be started between blocks.
     engine_rate_hz: u32,
+    /// Song frames the transport advances per output frame (the playback
+    /// rate). Frames here are the song's, so below 100% a block covers fewer.
+    rate: f64,
     /// Frame each pitch last sounded on, whoever played it. `u64::MAX` means
     /// never, so pitch 0 at frame 0 is not mistaken for a recent note.
     last_sound: [u64; 128],
@@ -224,6 +227,7 @@ impl Default for PianoEngine {
             gain: 0.8,
             enabled: false,
             engine_rate_hz: 48_000,
+            rate: 1.0,
             last_sound: [u64::MAX; 128],
             grace_sec: DEFAULT_GRACE_SEC,
         }
@@ -270,7 +274,9 @@ impl PianoEngine {
         if last == u64::MAX || now < last {
             return false;
         }
-        (now - last) < (self.grace_sec * self.engine_rate_hz.max(1) as f32) as u64
+        // The grace is a length of real time; in song frames it shrinks with the rate.
+        (now - last)
+            < (self.grace_sec as f64 * self.engine_rate_hz.max(1) as f64 * self.rate) as u64
     }
 
     fn mark_sounded(&mut self, pitch: u8, frame: u64) {
@@ -344,7 +350,10 @@ impl PianoEngine {
     /// Mix scheduled notes for `frames` of output starting at `start_frame`.
     ///
     /// `out` already holds the song; this adds to it rather than replacing, so
-    /// the piano sits over the mix at whatever gain is set.
+    /// the piano sits over the mix at whatever gain is set. `rate` is the
+    /// playback rate: the song moves `rate` frames per output frame, so a
+    /// slowed song covers fewer of its own frames per block. The notes still
+    /// sound at their own speed; only when they start moves with the song.
     pub fn mix(
         &mut self,
         out: &mut [f32],
@@ -352,16 +361,24 @@ impl PianoEngine {
         start_frame: u64,
         engine_rate_hz: u32,
         playing: bool,
+        rate: f64,
     ) {
         if channels == 0 || self.pack.is_none() {
             return;
         }
         self.engine_rate_hz = engine_rate_hz;
+        self.rate = if rate.is_finite() && rate > 0.0 {
+            rate
+        } else {
+            1.0
+        };
 
         let frames = out.len() / channels;
         if frames == 0 {
             return;
         }
+        // Song frames this block covers.
+        let span = ((frames as f64 * self.rate).round() as u64).max(1);
 
         // A jump either way means the playhead moved under us -- a seek, a loop
         // wrap, or the first block after a load. Walking forward from a stale
@@ -372,19 +389,27 @@ impl PianoEngine {
         // block as a backward seek -- which cleared the voices roughly a
         // millisecond after a key was pressed. Pressing a key with the song
         // stopped, which is most of practising, made no sound at all.
+        //
+        // Below 100% the song advances `span`, not `frames`, per block; judged
+        // against `frames`, every block read as a backward seek and cut the
+        // part's notes as they started. The transport floors a fractional
+        // cursor, so allow a few frames either side before calling it a seek.
         if playing {
+            const SLACK: u64 = 4;
             let expected = self.last_frame;
-            if start_frame < expected || start_frame.saturating_sub(expected) > frames as u64 * 4 {
+            if start_frame + SLACK < expected
+                || start_frame.saturating_sub(expected) > span * 4 + SLACK
+            {
                 self.resync(start_frame);
             }
-            self.last_frame = start_frame + frames as u64;
+            self.last_frame = start_frame + span;
         } else {
             // Still advance a clock for the grace window, or two presses of the
             // same key while stopped would look simultaneous forever.
-            self.last_frame = self.last_frame.wrapping_add(frames as u64);
+            self.last_frame = self.last_frame.wrapping_add(span);
         }
 
-        let end_frame = start_frame + frames as u64;
+        let end_frame = start_frame + span;
 
         // Start everything whose onset lands inside this block, at the exact
         // frame it asked for. Only the SCHEDULE is gated on `enabled` -- a live
@@ -394,7 +419,8 @@ impl PianoEngine {
             if note.on_frame >= end_frame {
                 break;
             }
-            let offset = note.on_frame.saturating_sub(start_frame) as usize;
+            // Song frames into the block -> output frames into the block.
+            let offset = (note.on_frame.saturating_sub(start_frame) as f64 / self.rate) as usize;
             // The player got here first: this is their note, not ours.
             if !self.already_sounding(note.pitch, note.on_frame) {
                 self.start_voice(note, offset.min(frames), engine_rate_hz);
@@ -510,5 +536,118 @@ impl PianoEngine {
             release_left: None,
             release_total: 1,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RATE_HZ: u32 = 48_000;
+    const BLOCK: usize = 256;
+
+    /// A pack with one constant-level sample at middle C, long enough to outlast any test.
+    fn engine() -> PianoEngine {
+        let frames = RATE_HZ as usize * 4;
+        let pack = PianoPack {
+            name: "test".into(),
+            author: String::new(),
+            license: String::new(),
+            samples: vec![LoadedSample {
+                data: vec![0.5; frames * 2],
+                frames,
+                rate_hz: RATE_HZ,
+                root_pitch: 60,
+                vel_min: 0,
+                vel_max: 127,
+            }],
+            roots: vec![60],
+        };
+        let mut e = PianoEngine::default();
+        e.set_pack(Some(std::sync::Arc::new(pack)));
+        e.set_enabled(true);
+        e
+    }
+
+    fn note(on: u64, off: u64) -> ScheduledNote {
+        ScheduledNote {
+            on_frame: on,
+            off_frame: off,
+            pitch: 60,
+            velocity: 100,
+        }
+    }
+
+    /// Mix `blocks` blocks with the song advancing `rate` song frames per output
+    /// frame, the way the transport does; returns each block's peak level.
+    fn run(e: &mut PianoEngine, start: u64, blocks: usize, rate: f64) -> Vec<f32> {
+        let mut song = start as f64;
+        (0..blocks)
+            .map(|_| {
+                let mut out = vec![0.0f32; BLOCK * 2];
+                e.mix(&mut out, 2, song.floor() as u64, RATE_HZ, true, rate);
+                song += BLOCK as f64 * rate;
+                out.iter().fold(0.0f32, |m, s| m.max(s.abs()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_slowed_song_keeps_its_scheduled_notes() {
+        // A half-second note, starting one block in, at 50% speed.
+        let mut e = engine();
+        e.set_notes(vec![note(BLOCK as u64, BLOCK as u64 + RATE_HZ as u64 / 2)]);
+        let peaks = run(&mut e, 0, 40, 0.5);
+        // It starts within the first few blocks and is still sounding 30 blocks
+        // later: before the fix every block read as a backward seek and cut it.
+        assert!(
+            peaks[..4].iter().any(|&p| p > 0.0),
+            "note never started: {peaks:?}"
+        );
+        assert!(peaks[30] > 0.0, "note was cut while still held: {peaks:?}");
+    }
+
+    #[test]
+    fn slowed_onsets_land_later_in_the_block() {
+        // Song frame 64 into a block at 50% speed is output frame 128.
+        let mut e = engine();
+        e.set_notes(vec![note(1000 + 64, 1000 + RATE_HZ as u64)]);
+        let mut warm = vec![0.0f32; BLOCK * 2];
+        e.mix(&mut warm, 2, 1000, RATE_HZ, true, 0.5); // first block resyncs here
+        let first = warm.chunks(2).position(|f| f[0] != 0.0);
+        assert_eq!(first, Some(128));
+    }
+
+    #[test]
+    fn a_real_seek_still_resyncs() {
+        let mut e = engine();
+        e.set_notes(vec![note(10, RATE_HZ as u64 * 3)]);
+        run(&mut e, 0, 4, 0.75);
+        assert!(!e.voices.is_empty());
+        // Jump back to before the note's start: the held voice is cut, and the
+        // note is due again from the new position.
+        let mut out = vec![0.0f32; BLOCK * 2];
+        e.mix(&mut out, 2, 0, RATE_HZ, true, 0.75);
+        assert_eq!(
+            e.cursor, 1,
+            "note should be re-scheduled from the seek point and started"
+        );
+        assert_eq!(
+            e.voices.len(),
+            1,
+            "only the re-started voice should be sounding"
+        );
+    }
+
+    #[test]
+    fn full_speed_is_unchanged() {
+        let mut e = engine();
+        e.set_notes(vec![note(
+            BLOCK as u64 + 10,
+            BLOCK as u64 + RATE_HZ as u64 / 4,
+        )]);
+        let peaks = run(&mut e, 0, 20, 1.0);
+        assert_eq!(peaks[0], 0.0);
+        assert!(peaks[1] > 0.0 && peaks[10] > 0.0);
     }
 }
