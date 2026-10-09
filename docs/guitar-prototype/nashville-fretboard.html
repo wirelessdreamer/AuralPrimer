@@ -20,7 +20,13 @@
     --tone-3: #ff7aa2;          /* a chord's third */
     --tone-5: #a78bfa;          /* a chord's fifth */
     --chromatic: #ffb547;       /* notes outside the key */
-    --box: #e7ecf8;             /* pentatonic box notes */
+    --box: #e7ecf8;             /* plain barre dots */
+    /* Octaves, low to high: a new colour starts at each 1, so a dot's colour says which octave it is in. */
+    --oct-0: #fb7185;
+    --oct-1: #fbbf24;
+    --oct-2: #34d399;
+    --oct-3: #38bdf8;
+    --oct-4: #c084fc;
     --wood-1: #1d1712;
     --wood-2: #140f0c;
     --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -79,6 +85,8 @@
   .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 12.5px; }
   .legend span { display: inline-flex; align-items: center; gap: 8px; }
   .legend i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+  .legend .octaves { gap: 4px; }
+  .legend .octaves i { width: 22px; height: 12px; border-radius: 6px; }
   .questions { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 16px 18px; display: grid; gap: 10px; max-width: 90ch; }
   .questions h2 { font-size: 16px; }
   .questions ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--muted); }
@@ -90,7 +98,7 @@
   <header>
     <div class="eyebrow">AuralPrimer · guitar mock-ups</div>
     <h1>Nashville numbers on the fretboard</h1>
-    <p><b>Positions are geometry; numbers come from the key.</b> The five pentatonic boxes are places on the neck, and every dot gets its number in the song's key, in three tiers: the box's five notes, the two that complete the scale, and notes outside the key, drawn only when the song plays them. <b>A position is a focus, not a fence.</b> The box you are in is brightest, the boxes either side stay readable, and the numbers carry on across the whole neck, so position 1 runs straight into 5 below it and 2 above it. Switch <b>Count from</b> to read the same box from the major tonic (its root is 6) or from its relative minor (its root is 1).</p>
+    <p><b>Positions are geometry; numbers come from the key.</b> The five pentatonic boxes are places on the neck, and every dot gets its number in the song's key, in three tiers: the box's five notes, the two that complete the scale, and notes outside the key, drawn only when the song plays them. <b>A position is a focus, not a fence.</b> The box you are in is brightest, the boxes either side stay readable, and the numbers carry on across the whole neck, so position 1 runs straight into 5 below it and 2 above it. <b>Colour is the octave</b>, starting fresh at each 1, and <b>any octave counts</b>: play a 3 anywhere and it is a 3. Switch <b>Count from</b> to read the same box from the major tonic (its root is 6) or from its relative minor (its root is 1).</p>
   </header>
 
   <div class="controls" role="group" aria-label="Key and position">
@@ -117,10 +125,12 @@
     </div>
     <div class="wide"><canvas id="cv-positions" role="img" aria-label="The five pentatonic positions on a guitar neck, labelled with Nashville numbers"></canvas></div>
     <div class="legend">
-      <span><i style="background: var(--accent)"></i>The key's 1</span>
-      <span><i style="background: var(--box)"></i>Box note (pentatonic)</span>
-      <span><i style="border: 2px solid var(--muted)"></i>Completes the scale (2 more numbers)</span>
-      <span><i style="border: 2px dashed var(--chromatic)"></i>Outside the key, only when played</span>
+      <span class="octaves">Colour = octave, low to high, new at each 1:
+        <i style="background: var(--oct-0)"></i><i style="background: var(--oct-1)"></i><i style="background: var(--oct-2)"></i><i style="background: var(--oct-3)"></i><i style="background: var(--oct-4)"></i></span>
+      <span><i style="background: var(--oct-2); box-shadow: 0 0 0 2px var(--ink)"></i>A 1, ringed</span>
+      <span><i style="background: var(--oct-2)"></i>Box note</span>
+      <span><i style="border: 2px solid var(--oct-2)"></i>Completes the scale</span>
+      <span><i style="border: 2px dashed var(--oct-2)"></i>Outside the key, only when played</span>
       <span><i style="border: 2px dashed var(--accent); border-radius: 4px"></i>A neighbouring position</span>
     </div>
   </section>
@@ -128,7 +138,7 @@
   <section aria-labelledby="h-melody">
     <div class="section-head">
       <h2 id="h-melody">Melody inside a position</h2>
-      <p>A four-bar phrase in position 1 that moves to position 2 in bar 3 and bends into a blue note. The next box is already on screen before the phrase gets there. Three ways to read it.</p>
+      <p>A four-bar phrase in position 1 that moves to position 2 in bar 3 and bends into a blue note. The next box is already on screen before the phrase gets there, and every other octave of the sounding number is ringed, because any of them counts. Three ways to read it.</p>
     </div>
     <div class="variants">
       <div class="card"><canvas id="cv-mel-box" role="img" aria-label="Melody lighting numbers inside the current box"></canvas>
@@ -276,7 +286,7 @@ function drawKeyNotes(ctx, m, f0, f1, windows, alpha = 1) {
     const w = focusWeight(n.f, windows);
     ctx.save(); ctx.globalAlpha = alpha * (0.25 + 0.75 * w);
     const r = m.r * (tierOf(n.pc) === "mode" ? 0.78 : 1) * (0.72 + 0.28 * w);
-    dot(ctx, m.fx(n.f), m.sy(n.s), r, kindOf(n.pc), degreeLabel(n.pc));
+    numDot(ctx, m.fx(n.f), m.sy(n.s), r, n);
     ctx.restore();
   }
 }
@@ -387,7 +397,7 @@ let C = {};
 function readColors() {
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   C = { bg: css("--bg"), ink: css("--ink"), muted: css("--muted"), faint: css("--faint"), accent: css("--accent"), accentInk: css("--accent-ink"),
-    t3: css("--tone-3"), t5: css("--tone-5"), chrom: css("--chromatic"), box: css("--box"), wood1: css("--wood-1"), wood2: css("--wood-2"),
+    t3: css("--tone-3"), t5: css("--tone-5"), chrom: css("--chromatic"), box: css("--box"), oct: [0, 1, 2, 3, 4].map((i) => css(`--oct-${i}`)), wood1: css("--wood-1"), wood2: css("--wood-2"),
     ui: css("--font-ui"), num: css("--font-num") };
 }
 function rgba(hex, a) { const v = parseInt(hex.replace("#", ""), 16); return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`; }
@@ -424,25 +434,41 @@ function neck(ctx, box, f0, f1, opts = {}) {
 }
 function dotInlay(ctx, x, y) { ctx.fillStyle = "rgba(240,232,215,0.16)"; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
 
-/** A numbered dot. kind: root | box | mode | chrom | plain; ring: an optional chord-tone colour. */
+/**
+ * A numbered dot. kind: root | box | mode | chrom | plain. The colour is the
+ * note's octave; the kind decides the shape: filled for box notes (a 1 also
+ * gets a white ring), hollow for scale-completing notes, dashed outside the
+ * key. o.ring adds a chord-tone ring.
+ */
 function dot(ctx, x, y, r, kind, label, o = {}) {
+  const colour = o.colour || C.box;
   ctx.save();
   if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = r * 1.6; }
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-  if (kind === "root") { ctx.fillStyle = C.accent; ctx.fill(); }
-  else if (kind === "box" || kind === "plain") { ctx.fillStyle = C.box; ctx.fill(); }
-  else if (kind === "mode") { ctx.fillStyle = "rgba(10,14,22,0.85)"; ctx.fill(); ctx.strokeStyle = C.muted; ctx.lineWidth = 2; ctx.stroke(); }
-  else if (kind === "chrom") { ctx.fillStyle = "rgba(10,14,22,0.9)"; ctx.fill(); ctx.setLineDash([3, 2.5]); ctx.strokeStyle = C.chrom; ctx.lineWidth = 2.2; ctx.stroke(); ctx.setLineDash([]); }
+  if (kind === "root" || kind === "box" || kind === "plain") { ctx.fillStyle = kind === "plain" ? C.box : colour; ctx.fill(); }
+  else if (kind === "mode") { ctx.fillStyle = "rgba(10,14,22,0.85)"; ctx.fill(); ctx.strokeStyle = colour; ctx.lineWidth = 2.2; ctx.stroke(); }
+  else if (kind === "chrom") { ctx.fillStyle = "rgba(10,14,22,0.9)"; ctx.fill(); ctx.setLineDash([3, 2.5]); ctx.strokeStyle = colour; ctx.lineWidth = 2.2; ctx.stroke(); ctx.setLineDash([]); }
   ctx.shadowBlur = 0;
-  if (o.ring) { ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.strokeStyle = o.ring; ctx.lineWidth = 3.2; ctx.stroke(); }
+  if (kind === "root") { ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, Math.PI * 2); ctx.strokeStyle = C.ink; ctx.lineWidth = 2.4; ctx.stroke(); }
+  if (o.ring) { ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.strokeStyle = o.ring; ctx.lineWidth = 3.2; ctx.stroke(); }
   if (label) {
-    ctx.fillStyle = kind === "root" ? C.accentInk : kind === "box" || kind === "plain" ? "#0a0e16" : kind === "chrom" ? C.chrom : C.ink;
+    ctx.fillStyle = kind === "mode" || kind === "chrom" ? colour : "#0a0e16";
     ctx.font = `800 ${Math.round(r * (label.length > 1 ? 0.92 : 1.1))}px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(label, x, y + 0.5);
   }
   ctx.restore();
 }
 function kindOf(pc) { return mod(pc - tonic(), 12) === 0 ? "root" : tierOf(pc); }
+/** The octave colour for a pitch: bands start at each 1 of the key, counted up from the guitar's lowest string. */
+function octColour(midi) {
+  const band = Math.floor((midi - tonic()) / 12) - Math.floor((STD[0] - tonic()) / 12);
+  return C.oct[Math.max(0, Math.min(C.oct.length - 1, band))];
+}
+const midiOf = (n) => STD[n.s] + n.f;
+/** A note's dot: its number, its tier's shape, its octave's colour. */
+function numDot(ctx, x, y, r, n, o = {}) {
+  dot(ctx, x, y, r, kindOf(n.pc), degreeLabel(n.pc), { ...o, colour: octColour(midiOf(n)) });
+}
 
 /** The box's outline: around the lowest and highest dot on each string. */
 function boxOutline(ctx, inst, m, alpha = 1, label = true, dashed = false) {
@@ -557,9 +583,17 @@ panel("cv-mel-box", (p) => {
     ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, m.r + 5, -Math.PI / 2, -Math.PI / 2 + pr * Math.PI * 2); ctx.stroke();
   }
   const c = st.cur;
-  dot(ctx, m.fx(c.f), m.sy(c.s), m.r * 1.18, kindOf(c.pc), degreeLabel(c.pc), { glow: tierOf(c.pc) === "chrom" ? C.chrom : C.accent });
+  // Any octave of the sounding number counts: ring every other copy in view.
+  ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = C.ink; ctx.lineWidth = 1.6;
+  for (const n of keyNotes(f0, f1)) {
+    if (n.pc !== c.pc || (n.s === c.s && n.f === c.f)) continue;
+    ctx.beginPath(); ctx.arc(m.fx(n.f), m.sy(n.s), m.r + 4, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+  numDot(ctx, m.fx(c.f), m.sy(c.s), m.r * 1.18, c, { glow: octColour(midiOf(c)) });
   caption(ctx, `POSITION ${c.pos}`, 14, 12, C.accent, 12);
-  caption(ctx, tierOf(c.pc) === "chrom" ? `${degreeLabel(c.pc)} · outside the key` : tierOf(c.pc) === "mode" ? `${degreeLabel(c.pc)} · completes the scale` : `${degreeLabel(c.pc)}`, w - 14, 12, tierOf(c.pc) === "chrom" ? C.chrom : C.muted, 12, "right");
+  const what = tierOf(c.pc) === "chrom" ? "outside the key" : tierOf(c.pc) === "mode" ? "completes the scale" : "any octave counts";
+  caption(ctx, `${degreeLabel(c.pc)} · ${what}`, w - 14, 12, tierOf(c.pc) === "chrom" ? C.chrom : C.muted, 12, "right");
 });
 
 panel("cv-mel-tab", (p) => {
@@ -589,7 +623,7 @@ panel("cv-mel-tab", (p) => {
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = "#0b0f18"; ctx.fillRect(x - tw / 2 - 3, y - 9, tw + 6, 18);
       const active = lap === 0 && idx === st.i;
-      ctx.fillStyle = tier === "root" ? C.accent : tier === "chrom" ? C.chrom : tier === "mode" ? C.muted : C.ink;
+      ctx.fillStyle = octColour(midiOf(n));
       if (active) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 14; }
       ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(label, x, y + 0.5); ctx.shadowBlur = 0;
     });
@@ -614,10 +648,13 @@ panel("cv-mel-lanes", (p) => {
       const kind = kindOf(n.pc);
       const gw = laneW * 0.8, gh = 22;
       ctx.beginPath(); ctx.roundRect(lx(n.s) - gw / 2, y - gh / 2, gw, gh, 8);
-      ctx.fillStyle = kind === "root" ? C.accent : kind === "box" ? C.box : "rgba(10,14,22,0.9)"; ctx.fill();
-      if (kind === "mode") { ctx.strokeStyle = C.muted; ctx.lineWidth = 2; ctx.stroke(); }
-      if (kind === "chrom") { ctx.setLineDash([3, 2]); ctx.strokeStyle = C.chrom; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
-      ctx.fillStyle = kind === "root" ? C.accentInk : kind === "box" ? "#0a0e16" : kind === "chrom" ? C.chrom : C.ink;
+      const colour = octColour(midiOf(n));
+      const filled = kind === "root" || kind === "box";
+      ctx.fillStyle = filled ? colour : "rgba(10,14,22,0.9)"; ctx.fill();
+      if (kind === "root") { ctx.strokeStyle = C.ink; ctx.lineWidth = 2.2; ctx.stroke(); }
+      if (kind === "mode") { ctx.strokeStyle = colour; ctx.lineWidth = 2; ctx.stroke(); }
+      if (kind === "chrom") { ctx.setLineDash([3, 2]); ctx.strokeStyle = colour; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
+      ctx.fillStyle = filled ? "#0a0e16" : colour;
       ctx.font = `800 13px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(degreeLabel(n.pc), lx(n.s), y + 0.5);
     }
   }
@@ -630,7 +667,7 @@ panel("cv-mel-lanes", (p) => {
   const m = neck(ctx, { x: 14, y: h - stripH - 6, w: w - 28, h: stripH - 14 }, s0, s1, { numbers: false });
   boxOutline(ctx, inst, { ...m, r: m.r * 0.6 }, 0.9, false);
   drawKeyNotes(ctx, { ...m, r: m.r * 0.85 }, s0, s1, [inst], 0.6);
-  dot(ctx, m.fx(st.cur.f), m.sy(st.cur.s), m.r, kindOf(st.cur.pc), degreeLabel(st.cur.pc), { glow: C.accent });
+  numDot(ctx, m.fx(st.cur.f), m.sy(st.cur.s), m.r, st.cur, { glow: octColour(midiOf(st.cur)) });
   caption(ctx, `POSITION ${st.cur.pos}`, 14, 10, C.accent, 11);
 });
 
@@ -656,11 +693,11 @@ function triadPanel(id, labelMode) {
       const tone = toneOf(chord, n.pc);
       const ringColour = tone === "R" ? C.accent : tone === "5" ? C.t5 : C.t3;
       const x = m.fx(n.f), y = m.sy(n.s), r = m.r * 1.08 * pulse;
-      if (labelMode === "deg") dot(ctx, x, y, r, kindOf(n.pc), degreeLabel(n.pc));
+      if (labelMode === "deg") numDot(ctx, x, y, r, n);
       else if (labelMode === "fn") {
         ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = ringColour; ctx.fill();
         ctx.fillStyle = "#0a0e16"; ctx.font = `800 ${Math.round(r * 1.0)}px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(tone, x, y + 0.5);
-      } else dot(ctx, x, y, r, kindOf(n.pc), degreeLabel(n.pc), { ring: ringColour });
+      } else numDot(ctx, x, y, r, n, { ring: ringColour });
     }
     chordBadge(ctx, chord, 14, 10);
     caption(ctx, `in position ${inst.k}`, w - 14, 14, C.accent, 11, "right");
@@ -695,8 +732,8 @@ function barrePanel(id, labelMode) {
     for (const n of barre.notes) {
       const tone = toneOf(chord, n.pc);
       const x = m.fx(n.f), y = m.sy(n.s);
-      if (labelMode === "shape") dot(ctx, x, y, m.r * 0.72, n.f === barre.fret ? "plain" : "plain", "");
-      else if (labelMode === "deg") dot(ctx, x, y, m.r, kindOf(n.pc), degreeLabel(n.pc));
+      if (labelMode === "shape") dot(ctx, x, y, m.r * 0.72, "plain", "");
+      else if (labelMode === "deg") numDot(ctx, x, y, m.r, n);
       else {
         const colour = tone === "R" ? C.accent : tone === "5" ? C.t5 : C.t3;
         ctx.beginPath(); ctx.arc(x, y, m.r, 0, Math.PI * 2); ctx.fillStyle = colour; ctx.fill();
