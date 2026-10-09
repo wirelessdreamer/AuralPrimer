@@ -14,6 +14,81 @@ namespace AuralPrimer.Calibration
     {
         Keyboard = 0,
         Drums = 1,
+        /// <summary>A guitar or a bass: see <see cref="FretboardProfile.isBass"/>.</summary>
+        Guitar = 2,
+    }
+
+    /// <summary>
+    /// A guitar or bass neck, measured against the controller mounted on it.
+    /// </summary>
+    /// <remarks>
+    /// Stored relative to the controller's grip pose, not the room: the mount
+    /// fixes the controller to the instrument, so the neck moves with the
+    /// guitar and nothing needs re-measuring when the player shifts in their
+    /// seat. That is also why it needs no spatial anchor.
+    ///
+    /// Dimensions default to the Jamstik Studio. String spreads are string
+    /// centre to string centre, lowest to highest.
+    /// </remarks>
+    [Serializable]
+    public sealed class FretboardProfile
+    {
+        public string name = "Jamstik Studio";
+
+        /// <summary>A bass: asks the host for the bass part rather than the guitar's.</summary>
+        public bool isBass;
+        public int stringCount = 6;
+        public int fretCount = 24;
+        public float scaleLengthMetres = 0.648f;
+        public float nutSpreadMetres = 0.034f;
+        public float bridgeSpreadMetres = 0.052f;
+
+        /// <summary>Which hand's controller is strapped to the guitar.</summary>
+        public bool controllerOnLeft = true;
+
+        /// <summary>
+        /// The alignment check has run, so the offset below is a measurement.
+        /// </summary>
+        /// <remarks>
+        /// Until it has, the CAD's offset is used instead (MountOffset.Cad), and
+        /// the fields below mean nothing -- a default-initialised offset would
+        /// put the nut inside the controller.
+        /// </remarks>
+        public bool isChecked;
+
+        /// <summary>The nut centre in the controller's grip frame, metres.</summary>
+        public Vector3 neckOriginInGrip;
+        /// <summary>The neck's axes in the controller's grip frame.</summary>
+        public Quaternion neckRotationInGrip = Quaternion.identity;
+
+        /// <summary>Lean of the note lane from the fretboard face toward the player, degrees.</summary>
+        public float laneTiltDegrees = 35f;
+        /// <summary>How far out from the neck the lane reaches: the look-ahead, in metres.</summary>
+        public float laneLengthMetres = 0.30f;
+
+        public FretboardGeometry Geometry =>
+            new(scaleLengthMetres, fretCount, stringCount, nutSpreadMetres, bridgeSpreadMetres);
+
+        /// <summary>The part to ask the host for (protocol §7b).</summary>
+        public string Role => isBass ? "bass" : "guitar";
+
+        public static FretboardProfile Guitar() => new();
+
+        /// <summary>A four-string bass on a 34" scale; adjust the spreads to the instrument.</summary>
+        public static FretboardProfile Bass()
+        {
+            var bass = FretboardGeometry.FourStringBass;
+            return new FretboardProfile
+            {
+                name = "Bass",
+                isBass = true,
+                stringCount = bass.StringCount,
+                fretCount = bass.FretCount,
+                scaleLengthMetres = bass.ScaleLength,
+                nutSpreadMetres = bass.NutSpread,
+                bridgeSpreadMetres = bass.BridgeSpread,
+            };
+        }
     }
 
     /// <summary>One drum pad or cymbal, where it is and what it sends.</summary>
@@ -108,6 +183,21 @@ namespace AuralPrimer.Calibration
         /// existing fields meant and could not be migrated.
         /// </remarks>
         public List<KitPiece> kitPieces = new();
+
+        /// <summary>
+        /// The guitar or bass, where one has been set up.
+        /// </summary>
+        /// <remarks>
+        /// Additive, so no version bump: a profile written before this field
+        /// existed loads with the defaults here and an unchecked neck, and its
+        /// keyboard stays anchored. Bumping the version would un-anchor every
+        /// instrument the player had already measured, to add one they may
+        /// never own.
+        /// </remarks>
+        public FretboardProfile fretboard = new();
+
+        /// <summary>Is there a guitar here whose alignment has been checked?</summary>
+        public bool IsFretboardChecked => fretboard is { isChecked: true };
 
         /// <summary>
         /// Persistent spatial anchor this calibration is expressed against.
@@ -405,19 +495,28 @@ namespace AuralPrimer.Calibration
             {
                 if (!File.Exists(path)) return null;
                 var profile = JsonUtility.FromJson<CalibrationProfile>(File.ReadAllText(path));
+                if (profile == null) return null;
+                profile.fretboard ??= new FretboardProfile();
+
                 // A profile that never completed calibration is worse than none:
                 // it would place the overlay at the origin and look like a bug.
-                if (profile is not { IsCalibrated: true }) return null;
+                // A checked guitar counts: it is measured against the controller
+                // on it, not the room, so it has no keyboard edges to have.
+                if (!profile.IsCalibrated && !profile.IsFretboardChecked) return null;
 
                 // Nor is a saved-but-impossible one worth restoring. Silently
                 // re-running the wizard beats drawing a keyboard that climbs into
                 // the ceiling and leaving the player to work out why.
-                if (!profile.IsPlausible)
+                if (profile.IsCalibrated && !profile.IsPlausible)
                 {
                     Debug.LogWarning($"[calibration] {profileName} tilts "
                                    + $"{profile.TiltDegrees:F0}° off level — discarding it "
                                    + "and asking for the edges again");
-                    return null;
+                    if (!profile.IsFretboardChecked) return null;
+
+                    // Forget only the impossible keyboard, not a good guitar.
+                    profile.leftEdge = Vector3.zero;
+                    profile.rightEdge = Vector3.zero;
                 }
 
                 // A v2 profile is a v3 profile with no kit: version 3 only

@@ -106,6 +106,50 @@ namespace AuralPrimer.Link
 
         string[] _features = Array.Empty<string>();
 
+        /// <summary>
+        /// The desktop's note-spacing multiplier, from its last SETTINGS frame.
+        /// </summary>
+        /// <remarks>
+        /// 1 until one arrives. Kept across a dropped link: it is a display
+        /// preference, and snapping the lane back to 1 for a moment's Wi-Fi
+        /// stall would be a visible jump for nothing. The rate, which drives
+        /// the clock, lives on <see cref="Clock"/> and is forgotten with it.
+        /// </remarks>
+        public double NoteSpacing => Volatile.Read(ref _noteSpacing);
+
+        double _noteSpacing = 1.0;
+
+        /// <summary>The part this headset plays, re-sent on every WELCOME.</summary>
+        volatile string _instrumentRole;
+
+        /// <summary>
+        /// Tell the host which part this headset plays (protocol §7b).
+        /// </summary>
+        /// <remarks>
+        /// Remembered and sent again whenever a session opens, because the host
+        /// forgets it when a session ends. Not sent at all to a host that does
+        /// not list `instrument`: it would ignore the frame, and a guitar chart
+        /// would simply never come.
+        /// </remarks>
+        public void SetInstrument(string role)
+        {
+            _instrumentRole = role;
+            if (IsConnected && HostSupports(MrProtocol.FeatureInstrument)) SendInstrument(role);
+        }
+
+        void SendInstrument(string role)
+        {
+            if (string.IsNullOrEmpty(role)) return;
+            try
+            {
+                Send(MrProtocol.FrameInstrument, MrProtocol.EncodeInstrument(role));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[mr-link] instrument send failed: {e.Message}");
+            }
+        }
+
         public void Connect(HostEndpoint host)
         {
             Disconnect();
@@ -458,6 +502,18 @@ namespace AuralPrimer.Link
                 case MrProtocol.FrameVoiceResult:
                     _voiceResults.Enqueue(Encoding.UTF8.GetString(payload));
                     break;
+
+                case MrProtocol.FrameSettings:
+                    // Applied here, on the socket thread, like the clock samples
+                    // beside it: the rate has to be in force for the very next
+                    // POSITION, not a frame later when the main thread looks.
+                    if (MrProtocol.TryParseSettings(Encoding.UTF8.GetString(payload),
+                                                    out var spacing, out var rate))
+                    {
+                        Volatile.Write(ref _noteSpacing, spacing);
+                        Clock.PlaybackRate = rate;
+                    }
+                    break;
             }
         }
 
@@ -470,6 +526,11 @@ namespace AuralPrimer.Link
             var udpPort = (int)(ExtractNumber(json, "udpPort") ?? 0);
             Clock.AudioOffsetSec = ExtractNumber(json, "audioOffsetSec") ?? 0.0;
             _features = ExtractStringArray(json, "features");
+
+            // The host forgot the instrument when the last session ended, so
+            // say it again; one that does not offer the frame is not told.
+            var role = _instrumentRole;
+            if (role != null && HostSupports(MrProtocol.FeatureInstrument)) SendInstrument(role);
 
             if (_udp == null)
             {

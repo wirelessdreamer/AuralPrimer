@@ -29,6 +29,13 @@ pub mod frame {
     /// the mirror of KEYBOARD_LAYOUT, and for the same reason -- only the
     /// headset knows, because that is where the pads were struck to learn it.
     pub const KIT_LAYOUT: u8 = 0x19;
+    /// The part the headset is playing: keys, guitar, bass. Headset -> host,
+    /// standing state like KEYBOARD_LAYOUT. Gated on `instrument` in WELCOME;
+    /// the host answers it by sending that part's CHART, frets and all.
+    pub const INSTRUMENT: u8 = 0x1A;
+    /// The desktop's note spacing and playback rate. Host -> headset, sent on
+    /// connect and whenever either changes. Gated on `settings` in WELCOME.
+    pub const SETTINGS: u8 = 0x1B;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
     pub const TRANSPORT: u8 = 0x30;

@@ -11,7 +11,9 @@
         "Unity.XR.Management",
         "Unity.XR.ARFoundation",
         "Unity.XR.ARSubsystems",
-        "Unity.XR.CoreUtils"
+        "Unity.XR.CoreUtils",
+        "Unity.InputSystem",
+        "Oculus.VR"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -20,6 +22,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.meta.xr.sdk.core",
+            "expression": "",
+            "define": "META_XR_CORE"
+        }
+    ],
     "noEngineReferences": false
 }

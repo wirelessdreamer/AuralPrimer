@@ -302,6 +302,18 @@ describe("fingeringLoader", () => {
     expect(out[0]!.notes[0]).not.toHaveProperty("tech");
   });
 
+  it("ignores a tuning it cannot read rather than rejecting the strings and frets", () => {
+    const result = validateFingering({
+      instrument: "bass",
+      tuning: [28, "A", 38],
+      notes: [{ t_on: 0, pitch: 28, string: 0, fret: 0 }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("validation failed");
+    expect(result.value.tuning).toBeUndefined();
+    expect(result.value.notes).toHaveLength(1);
+  });
+
   it("warns and skips invalid sidecars", async () => {
     invokeMock.mockResolvedValue({
       version: "1.0.0",

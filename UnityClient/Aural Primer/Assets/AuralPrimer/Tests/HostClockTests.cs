@@ -58,6 +58,51 @@ namespace AuralPrimer.Link.Tests
         }
 
         [Test]
+        public void ExtrapolatesASlowedSongAtItsOwnRate()
+        {
+            // At half speed, 0.1s of host time is 0.05s of song. Extrapolating
+            // at 1x would run the notes ahead of the audio between samples and
+            // snap them back at each one.
+            var clock = new HostClock { PlaybackRate = 0.5 };
+            clock.AddClockSample(1_000, 1_001_100, 1_200);
+            clock.AddPositionSample(10.0, 5_000_000, playing: true);
+
+            Assert.AreEqual(10.05, clock.SongTimeForDisplay(4_100_000), 1e-6);
+            Assert.AreEqual(10.05, clock.SongTimeForHostClock(5_100_000), 1e-6);
+        }
+
+        [Test]
+        public void ScalesOnlyTheElapsedTimeNotTheAudioOffset()
+        {
+            // The audio offset is a latency in wall-clock time, which the
+            // desktop leaves unscaled too.
+            var clock = new HostClock { PlaybackRate = 0.25, AudioOffsetSec = 0.04 };
+            clock.AddClockSample(1_000, 1_001_100, 1_200);
+            clock.AddPositionSample(10.0, 5_000_000, playing: true);
+
+            Assert.AreEqual(10.0 + 0.1 * 0.25 + 0.04, clock.SongTimeForDisplay(4_100_000), 1e-6);
+        }
+
+        [Test]
+        public void TakesAnUnusableRateAsNormalSpeed()
+        {
+            var clock = new HostClock { PlaybackRate = 0.0 };
+            Assert.AreEqual(1.0, clock.PlaybackRate, 1e-9);
+            clock.PlaybackRate = double.NaN;
+            Assert.AreEqual(1.0, clock.PlaybackRate, 1e-9);
+        }
+
+        [Test]
+        public void ForgetsTheRateWithTheHost()
+        {
+            // A host too old to send a rate means 1x; the last host's half
+            // speed must not outlive it.
+            var clock = new HostClock { PlaybackRate = 0.5 };
+            clock.Reset();
+            Assert.AreEqual(1.0, clock.PlaybackRate, 1e-9);
+        }
+
+        [Test]
         public void HoldsPositionWhilePausedInsteadOfExtrapolating()
         {
             // Running the clock on through a pause would drift the lane away

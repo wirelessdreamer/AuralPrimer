@@ -22,6 +22,8 @@ export class TransportController {
   // Simulated clock fields (used when duration is unknown / nothing loaded)
   private simT = 0;
 
+  private readonly playbackRateListeners = new Set<(rate: number) => void>();
+
   // Manual audio/visual sync calibration. Positive = compensate for MORE
   // audio output latency, i.e. show an earlier song position so falling
   // notes reach the hit line LATER (use when the visual leads the audio).
@@ -111,7 +113,23 @@ export class TransportController {
   setPlaybackRate(rate: number): void {
     const r = Number.isFinite(rate) && rate > 0 ? rate : 1;
     this.timebase.setPlaybackRate(r);
+    const changed = r !== this.state.playbackRate;
     this.state = { ...this.state, playbackRate: r };
+    if (changed) for (const listener of this.playbackRateListeners) listener(r);
+  }
+
+  /**
+   * Be told whenever `setPlaybackRate` changes the rate. Returns an unsubscribe.
+   *
+   * For consumers outside the frame loop: the MR headset is pushed the rate
+   * when it changes, rather than polling it every frame, so it can advance
+   * its own clock at the same speed between position samples.
+   */
+  onPlaybackRateChange(listener: (rate: number) => void): () => void {
+    this.playbackRateListeners.add(listener);
+    return () => {
+      this.playbackRateListeners.delete(listener);
+    };
   }
 
   /**

@@ -2603,6 +2603,8 @@ pub fn run() {
             mr_link_take_selection,
             mr_link_keyboard_layout,
             mr_link_kit_layout,
+            mr_link_instrument,
+            mr_link_set_settings,
             mr_link_set_chart,
             mr_link_set_drum_chart,
             mr_link_drum_hits,
@@ -3243,6 +3245,32 @@ fn mr_link_keyboard_layout(state: tauri::State<MrLinkState>) -> Option<serde_jso
 fn mr_link_kit_layout(state: tauri::State<MrLinkState>) -> Option<serde_json::Value> {
     let raw = state.link.lock().unwrap().as_ref()?.state.kit_layout()?;
     serde_json::from_str(&raw).ok()
+}
+
+/// The part the headset asked for (protocol §7b), e.g. `{ "role": "guitar" }`.
+///
+/// `None` when no headset has asked -- an older client, or none connected --
+/// which the frontend reads as "keys first", the behaviour before this existed.
+#[tauri::command]
+fn mr_link_instrument(state: tauri::State<MrLinkState>) -> Option<serde_json::Value> {
+    let raw = state.link.lock().unwrap().as_ref()?.state.instrument()?;
+    serde_json::from_str(&raw).ok()
+}
+
+/// The desktop's note spacing and playback rate, for the headset (protocol §7c).
+///
+/// The session pushes it on connect and whenever it changes, so a slowed song
+/// is extrapolated at its real speed between position samples, and the
+/// headset's lanes space notes the way the desktop's do.
+#[tauri::command]
+fn mr_link_set_settings(state: tauri::State<MrLinkState>, note_spacing: f64, playback_rate: f64) {
+    if let Some(link) = state.link.lock().unwrap().as_ref() {
+        let json = serde_json::json!({
+            "noteSpacing": note_spacing,
+            "playbackRate": playback_rate,
+        });
+        link.state.set_settings(Some(json.to_string()));
+    }
 }
 
 #[tauri::command]
