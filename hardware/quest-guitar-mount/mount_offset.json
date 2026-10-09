@@ -1,0 +1,24 @@
+{
+  "controller": "meta-quest-touch-plus",
+  "pose": "openxr-grip",
+  "neck_origin_in_grip_m": [
+    -0.0011,
+    -0.0007,
+    -0.1235
+  ],
+  "neck_rotation_in_grip_quat": [
+    0.58762,
+    0.39332,
+    -0.65656,
+    0.26255
+  ],
+  "note": "First guess from the CAD (approximate grip-pose model); the headset's alignment check replaces it.",
+  "params": {
+    "nut_to_tip": 40.0,
+    "head_top_z": 0.0,
+    "arm_len": 26.0,
+    "grip_tilt": 12.0,
+    "face_roll": 125.0,
+    "grip_len": 84.0
+  }
+}

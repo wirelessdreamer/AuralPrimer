@@ -224,3 +224,6 @@ UnityClient/RenderChecks/
 # is untracked in every worktree -- and if committed, a fresh clone gets a meta
 # with no folder beside it and Unity deletes it again.
 UnityClient/Aural Primer/Assets/XR/Temp.meta
+
+# Mount STLs/renders are generated from your own measurements; never commit them.
+hardware/quest-guitar-mount/out/

@@ -1,0 +1,14 @@
+{
+  "head_width": 46.0,
+  "head_thickness": 22.0,
+  "head_top_z": 0.0,
+  "nut_to_tip": 40.0,
+  "string_spread_at_clamp": 36.0,
+  "clamp_len": 20.0,
+  "lip": 3.0,
+  "grip_width": 34.0,
+  "grip_depth": 40.0,
+  "grip_len": 84.0,
+  "face_roll": 125.0,
+  "grip_tilt": 12.0
+}
