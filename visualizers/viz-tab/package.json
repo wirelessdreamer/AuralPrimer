@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@auralprimer/core-music": "*",
     "@auralprimer/viz-sdk": "*"
   }
 }

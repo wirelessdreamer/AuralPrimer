@@ -6,9 +6,11 @@
  * primary or expand to wide-solo-keys mode.
  *
  * Owns:
- *   - #instrumentSelector, #tabContainer DOM
+ *   - #instrumentSelector, #tabContainer, #fretViewToggle DOM
  *   - playSurfaceEl, appMainEl class toggles (via deps)
- *   - the TabRenderer instance + active instrument role
+ *   - the renderer instance + active instrument role
+ *   - each fretted role's view (string lanes / neck highway / tab scroll /
+ *     neck coach / sheet music), persisted per role
  *   - per-frame tab render (called from the host's RAF tick)
  *
  * Reads (via dep getters):
@@ -21,19 +23,39 @@
  */
 
 import type { InstrumentRole, MelodicTrackSelection } from "./chartLoader";
-import { TabRenderer, SheetMusicRenderer } from "./tabRenderer";
-import type { PianoLiveInputNote } from "./tabRenderer";
+import { TabRenderer, SheetMusicRenderer, GuitarRenderer, isFrettedRole } from "./tabRenderer";
+import type { FretView, FrettedRole, GridBeat, GridSection, PianoLiveInputNote } from "./tabRenderer";
 import type { PlayersPanelHandle } from "./playersPanel";
 import type { ConsoleBridge } from "./consoleBridge";
 
 /** Display mode for the melodic play surface. */
 export type DisplayMode = "piano" | "sheet";
 
+/** What a bass or guitar part is drawn as: one of the guitar views, or sheet music. */
+export type FrettedView = FretView | "sheet";
+export const FRETTED_VIEWS: readonly FrettedView[] = ["lanes", "highway", "tab", "coach", "sheet"];
+
 /**
- * Both renderers expose the same imperative surface, so the controller can
+ * Views that are a whole play surface rather than a strip. For a guitar or bass
+ * player on their own part they take the stage, the way the piano roll does
+ * for a keys player. Tab and sheet keep the strip under the visualizer.
+ */
+const FULL_SURFACE_VIEWS = new Set<FrettedView>(["lanes", "highway", "coach"]);
+
+/** Per role, beside the game's other view prefs: auralprimer.fretView.bass etc. */
+const FRETTED_VIEW_STORAGE_PREFIX = "auralprimer.fretView.";
+/** The old tab lane became the tab view, so that is where a part starts. */
+const DEFAULT_FRETTED_VIEW: FrettedView = "tab";
+
+function isFrettedView(value: unknown): value is FrettedView {
+  return typeof value === "string" && (FRETTED_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * All renderers expose the same imperative surface, so the controller can
  * hold one behind a single handle and swap implementations on mode change.
  */
-type MelodicRenderer = TabRenderer | SheetMusicRenderer;
+type MelodicRenderer = TabRenderer | SheetMusicRenderer | GuitarRenderer;
 
 /** Per-frame state required by TabRenderer.render(). */
 export type TabRenderFrame = {
@@ -51,6 +73,10 @@ export type TabRenderFrame = {
   handMode?: "both" | "left" | "right";
   /** Draw the other hand dimmed rather than hiding it. */
   showOtherHand?: boolean;
+  /** The song's beats, for the guitar views' bar lines. */
+  beats?: GridBeat[];
+  /** The song's sections, for the guitar views' section marks. */
+  sections?: GridSection[];
 };
 
 const INSTRUMENT_ROLE_LABELS: Record<string, string> = {
@@ -93,6 +119,10 @@ export type PlaySurfaceControllerHandle = {
   setDisplayMode: (mode: DisplayMode) => void;
   /** Currently-active display mode. */
   getDisplayMode: () => DisplayMode;
+  /** The view a bass or guitar part is drawn as (persisted per role). */
+  getFrettedView: (role: FrettedRole) => FrettedView;
+  /** Switch a bass or guitar part's view, rebuilding the surface if it is on screen. */
+  setFrettedView: (role: FrettedRole, view: FrettedView) => void;
 };
 
 export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): PlaySurfaceControllerHandle {
@@ -102,14 +132,59 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     throw new Error("initPlaySurfaceController: required DOM (#instrumentSelector/#tabContainer) missing");
   }
 
+  // Optional: the keys toggle is wired by the host and only hidden from here,
+  // and a host without the guitar toggle simply never offers the views.
+  const displayModeToggleEl = document.getElementById("displayModeToggle");
+  const fretViewToggleEl = document.getElementById("fretViewToggle");
+
   let tabRenderer: MelodicRenderer | null = null;
+  /** Which renderer `tabRenderer` is, so a track switch rebuilds only when it must. */
+  let rendererKey: string | null = null;
   let activeTabInstrument: InstrumentRole | null = null;
   let displayMode: DisplayMode = deps.initialDisplayMode ?? "piano";
+  const frettedViews = new Map<FrettedRole, FrettedView>();
 
-  function createRenderer(): MelodicRenderer {
-    return displayMode === "sheet"
-      ? new SheetMusicRenderer(tabContainerEl!)
-      : new TabRenderer(tabContainerEl!);
+  function getFrettedView(role: FrettedRole): FrettedView {
+    let view = frettedViews.get(role);
+    if (!view) {
+      view = DEFAULT_FRETTED_VIEW;
+      try {
+        const raw = window.localStorage.getItem(FRETTED_VIEW_STORAGE_PREFIX + role);
+        if (isFrettedView(raw)) view = raw;
+      } catch {
+        // localStorage may be unavailable in some embedded webviews; default safely.
+      }
+      frettedViews.set(role, view);
+    }
+    return view;
+  }
+
+  function rendererKeyFor(role: InstrumentRole): string {
+    if (isFrettedRole(role)) {
+      const view = getFrettedView(role);
+      return view === "sheet" ? "sheet" : `guitar:${view}`;
+    }
+    return displayMode === "sheet" ? "sheet" : "piano";
+  }
+
+  function createRenderer(key: string): MelodicRenderer {
+    if (key === "sheet") return new SheetMusicRenderer(tabContainerEl!);
+    if (key.startsWith("guitar:")) return new GuitarRenderer(tabContainerEl!, key.slice("guitar:".length) as FretView);
+    return new TabRenderer(tabContainerEl!);
+  }
+
+  /** Offer the view choice that fits the part on screen: guitar views, or piano/sheet. */
+  function syncViewToggles(): void {
+    const role = activeTabInstrument;
+    const fretted = isFrettedRole(role);
+    if (displayModeToggleEl) displayModeToggleEl.hidden = fretted;
+    if (!fretViewToggleEl) return;
+    fretViewToggleEl.hidden = !fretted;
+    if (!fretted) return;
+    const view = getFrettedView(role);
+    for (const btn of Array.from(fretViewToggleEl.querySelectorAll<HTMLButtonElement>("button[data-view]"))) {
+      btn.classList.toggle("isActive", btn.dataset.view === view);
+    }
   }
 
   function findMelodicTrack(role: InstrumentRole | null): MelodicTrackSelection | null {
@@ -118,7 +193,13 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
   }
 
   function shouldPromoteMelodicSurface(): boolean {
-    return deps.playersPanel.getPrimaryInstrument() === "keys" && Boolean(findMelodicTrack("keys"));
+    const primary = deps.playersPanel.getPrimaryInstrument();
+    if (primary === "keys") return Boolean(findMelodicTrack("keys"));
+    return (
+      isFrettedRole(primary)
+      && activeTabInstrument === primary
+      && FULL_SURFACE_VIEWS.has(getFrettedView(primary))
+    );
   }
 
   function shouldUseWideSoloKeysLayout(): boolean {
@@ -147,13 +228,17 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
       btn.classList.toggle("isActive", btn.dataset.role === role);
     }
 
-    // Create or update tab renderer.
-    if (!tabRenderer) {
+    // Create or update the renderer; a part that needs a different one gets it.
+    const key = rendererKeyFor(role);
+    if (!tabRenderer || rendererKey !== key) {
+      tabRenderer?.dispose();
       tabContainerEl!.innerHTML = "";
-      tabRenderer = createRenderer();
+      tabRenderer = createRenderer(key);
+      rendererKey = key;
     }
     tabRenderer.setTrack(track);
     activeTabInstrument = role;
+    syncViewToggles();
     syncSurfaceMode();
 
     deps.consoleBridge.log("play", `selected instrument: ${role} (${track.notes.length} notes)`);
@@ -183,7 +268,9 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
       tabRenderer.dispose();
       tabRenderer = null;
     }
+    rendererKey = null;
     activeTabInstrument = null;
+    syncViewToggles();
 
     // Clear old instrument buttons (keep the label span AND the
     // display-mode toggle, which also lives in this row).
@@ -240,6 +327,28 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     deps.consoleBridge.log("play", `display mode: ${mode}`);
   }
 
+  function setFrettedView(role: FrettedRole, view: FrettedView): void {
+    if (!isFrettedView(view)) return;
+    frettedViews.set(role, view);
+    try {
+      window.localStorage.setItem(FRETTED_VIEW_STORAGE_PREFIX + role, view);
+    } catch {
+      // Best-effort -- session-only persistence is acceptable.
+    }
+    if (activeTabInstrument === role) selectInstrumentTrack(role);
+    deps.consoleBridge.log("play", `${role} view: ${view}`);
+  }
+
+  fretViewToggleEl?.addEventListener("click", (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("button[data-view]");
+    const view = btn?.dataset.view;
+    if (!btn || !isFrettedRole(activeTabInstrument) || !isFrettedView(view)) return;
+    setFrettedView(activeTabInstrument, view);
+    // Hand the keyboard back, or Space would press this button again instead
+    // of pausing the song.
+    btn.blur();
+  });
+
   return {
     syncSurfaceMode,
     syncMelodicTrackSelectionFromPlayers,
@@ -249,5 +358,7 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     getActiveTabInstrument: () => activeTabInstrument,
     setDisplayMode,
     getDisplayMode: () => displayMode,
+    getFrettedView,
+    setFrettedView,
   };
 }

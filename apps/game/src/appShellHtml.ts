@@ -193,6 +193,13 @@ export function appShellHtml(): string {
                     <button id="displayModePiano" class="displayModeBtn isActive" data-mode="piano" type="button">Piano roll</button>
                     <button id="displayModeSheet" class="displayModeBtn" data-mode="sheet" type="button">Sheet music</button>
                   </div>
+                  <div id="fretViewToggle" class="displayModeToggle" role="group" aria-label="Guitar view" hidden>
+                    <button class="displayModeBtn" data-view="lanes" type="button" title="Six lanes falling onto a hit line, like the keys highway, with the hand position on a neck strip below.">String lanes</button>
+                    <button class="displayModeBtn" data-view="highway" type="button" title="The fretboard in perspective: fret is left to right, string is height and colour, time is depth. The camera follows your hand.">Neck highway</button>
+                    <button class="displayModeBtn" data-view="tab" type="button" title="Tablature scrolling past the playhead, with bar lines, sections and the tab's own marks.">Tab scroll</button>
+                    <button class="displayModeBtn" data-view="coach" type="button" title="A still neck: notes light where they are played, the next ones count down in place, and cards show the chord shapes coming up.">Neck coach</button>
+                    <button class="displayModeBtn" data-view="sheet" type="button">Sheet music</button>
+                  </div>
                 </div>
                 <div id="tabContainer" class="tabContainer" style="display:none"></div>
 

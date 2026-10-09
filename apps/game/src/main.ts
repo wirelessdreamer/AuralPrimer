@@ -82,6 +82,7 @@ import type { AuralSongDetails } from "./auralsong";
 import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
 import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
+import { readSongTimeline, type SongTimeline } from "./songTimeline";
 
 function haveTauri(): boolean {
   // Tauri v2 does **not** necessarily expose `window.__TAURI__` unless
@@ -456,6 +457,8 @@ let currentHarmony: unknown | null = null;
 let currentVocalPitch: unknown | null = null;
 let currentVocalPitchContour: unknown | null = null;
 let currentSongTimeline: unknown | null = null;
+/** The timeline read once per song: beats and sections for the guitar views, tempos for the speed readout. */
+let songTimeline: SongTimeline = readSongTimeline(null);
 
 // Desktop default: use Rust native audio engine.
 let currentTimebase: TransportTimebase = new NativeAudioTimebase({ sampleRateHz: 48_000, channels: 2 });
@@ -975,6 +978,7 @@ async function selectAuralSong(containerPath: string) {
   currentVocalPitch = null;
   currentVocalPitchContour = null;
   currentSongTimeline = null;
+  songTimeline = readSongTimeline(null);
   setSelectedSongCard(containerPath);
   songLibraryPanel.setDetailsHTML("Loading details...");
   try {
@@ -997,6 +1001,7 @@ async function selectAuralSong(containerPath: string) {
         currentSongTimeline = null;
       }
     }
+    songTimeline = readSongTimeline(currentSongTimeline);
     const keyModeArtifacts = { keys: currentKeys, harmony: currentHarmony };
     songDetailsView.setHudKeyMode(details.manifest_raw, null, keyModeArtifacts);
     if (details.charts.length > 0) {
@@ -1374,6 +1379,8 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
         chordLabels: songChordLabels,
         handMode,
         showOtherHand,
+        beats: songTimeline.beats,
+        sections: songTimeline.sections,
       });
     }
 

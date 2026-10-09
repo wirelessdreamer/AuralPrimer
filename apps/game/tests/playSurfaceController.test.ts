@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock the renderer module that re-exports TabRenderer/SheetMusicRenderer.
 const tabInstances: Array<Record<string, ReturnType<typeof vi.fn>>> = [];
 const sheetInstances: Array<Record<string, ReturnType<typeof vi.fn>>> = [];
+const guitarInstances: Array<Record<string, ReturnType<typeof vi.fn>> & { view: string }> = [];
 vi.mock("../src/tabRenderer", () => {
   class TabRenderer {
     setTrack = vi.fn();
@@ -29,7 +30,16 @@ vi.mock("../src/tabRenderer", () => {
       sheetInstances.push(this as unknown as Record<string, ReturnType<typeof vi.fn>>);
     }
   }
-  return { TabRenderer, SheetMusicRenderer };
+  class GuitarRenderer {
+    setTrack = vi.fn();
+    render = vi.fn();
+    dispose = vi.fn();
+    constructor(public container: HTMLElement, public view: string) {
+      guitarInstances.push(this as unknown as Record<string, ReturnType<typeof vi.fn>> & { view: string });
+    }
+  }
+  const isFrettedRole = (role: unknown) => role === "bass" || role === "rhythm_guitar" || role === "lead_guitar";
+  return { TabRenderer, SheetMusicRenderer, GuitarRenderer, isFrettedRole };
 });
 
 import { initPlaySurfaceController, type PlaySurfaceControllerDeps } from "../src/playSurfaceController";
@@ -37,7 +47,11 @@ import type { MelodicTrackSelection } from "../src/chartLoader";
 
 function stageDom(): void {
   document.body.innerHTML =
-    '<div id="instrumentSelector"><span class="label">x</span></div>' +
+    '<div id="instrumentSelector"><span class="label">x</span>' +
+    '<div id="displayModeToggle"></div>' +
+    '<div id="fretViewToggle" hidden>' +
+    ["lanes", "highway", "tab", "coach", "sheet"].map((v) => `<button data-view="${v}"></button>`).join("") +
+    "</div></div>" +
     '<div id="tabContainer"></div>';
 }
 
@@ -87,6 +101,8 @@ describe("playSurfaceController", () => {
     stageDom();
     tabInstances.length = 0;
     sheetInstances.length = 0;
+    guitarInstances.length = 0;
+    window.localStorage.clear();
   });
 
   it("throws when required DOM is missing", () => {
@@ -199,19 +215,19 @@ describe("playSurfaceController", () => {
   });
 
   it("renderTabFrame is a no-op with no active renderer, then renders once selected", () => {
-    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]) });
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("keys")]) });
     const ctl = initPlaySurfaceController(deps);
     const frame = { bpm: 120, timeSignature: [4, 4] as [number, number], liveInputNotes: [] };
     ctl.renderTabFrame(1, frame); // no renderer yet
-    ctl.selectInstrumentTrack("bass");
+    ctl.selectInstrumentTrack("keys");
     ctl.renderTabFrame(2, frame);
     expect(tabInstances[0].render).toHaveBeenCalledWith(2, frame);
   });
 
   it("updateInstrumentSelector disposes the previous renderer", () => {
-    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]) });
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("keys")]) });
     const ctl = initPlaySurfaceController(deps);
-    ctl.selectInstrumentTrack("bass");
+    ctl.selectInstrumentTrack("keys");
     expect(tabInstances.length).toBe(1);
     ctl.updateInstrumentSelector();
     expect(tabInstances[0].dispose).toHaveBeenCalled();
@@ -219,19 +235,19 @@ describe("playSurfaceController", () => {
 
   it("setDisplayMode swaps to the sheet renderer, preserving the track", () => {
     const deps = makeDeps({
-      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]),
+      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("keys")]),
       initialDisplayMode: "piano",
     });
     const ctl = initPlaySurfaceController(deps);
     expect(ctl.getDisplayMode()).toBe("piano");
-    ctl.selectInstrumentTrack("bass");
+    ctl.selectInstrumentTrack("keys");
     expect(tabInstances.length).toBe(1);
     ctl.setDisplayMode("sheet");
     expect(ctl.getDisplayMode()).toBe("sheet");
     expect(tabInstances[0].dispose).toHaveBeenCalled();
     expect(sheetInstances.length).toBe(1);
     expect(sheetInstances[0].setTrack).toHaveBeenCalled();
-    expect(ctl.getActiveTabInstrument()).toBe("bass");
+    expect(ctl.getActiveTabInstrument()).toBe("keys");
   });
 
   it("setDisplayMode is a no-op for the same mode", () => {
@@ -251,12 +267,122 @@ describe("playSurfaceController", () => {
 
   it("honors an initial sheet display mode when creating the renderer", () => {
     const deps = makeDeps({
-      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]),
+      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("keys")]),
       initialDisplayMode: "sheet",
     });
     const ctl = initPlaySurfaceController(deps);
-    ctl.selectInstrumentTrack("bass");
+    ctl.selectInstrumentTrack("keys");
     expect(sheetInstances.length).toBe(1);
     expect(tabInstances.length).toBe(0);
+  });
+});
+
+describe("playSurfaceController guitar views", () => {
+  const fretToggle = () => document.getElementById("fretViewToggle") as HTMLDivElement;
+  const keysToggle = () => document.getElementById("displayModeToggle") as HTMLDivElement;
+  const viewBtn = (view: string) => fretToggle().querySelector<HTMLButtonElement>(`button[data-view="${view}"]`)!;
+
+  beforeEach(() => {
+    stageDom();
+    tabInstances.length = 0;
+    sheetInstances.length = 0;
+    guitarInstances.length = 0;
+    window.localStorage.clear();
+  });
+
+  it("draws a bass or guitar part with the guitar views, starting on tab scroll", () => {
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("lead_guitar")]) });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("lead_guitar");
+
+    expect(tabInstances.length).toBe(0);
+    expect(guitarInstances.map((g) => g.view)).toEqual(["tab"]);
+    expect(guitarInstances[0].setTrack).toHaveBeenCalled();
+    // The guitar views are offered, piano/sheet for keys is not.
+    expect(fretToggle().hidden).toBe(false);
+    expect(keysToggle().hidden).toBe(true);
+    expect(viewBtn("tab").classList.contains("isActive")).toBe(true);
+  });
+
+  it("remembers each role's view on its own", () => {
+    window.localStorage.setItem("auralprimer.fretView.bass", "coach");
+    const deps = makeDeps({
+      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass"), track("rhythm_guitar")]),
+    });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("bass");
+    expect(guitarInstances.at(-1)!.view).toBe("coach");
+
+    ctl.selectInstrumentTrack("rhythm_guitar");
+    viewBtn("highway").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(guitarInstances.at(-1)!.view).toBe("highway");
+    expect(window.localStorage.getItem("auralprimer.fretView.rhythm_guitar")).toBe("highway");
+    expect(window.localStorage.getItem("auralprimer.fretView.bass")).toBe("coach");
+    expect(ctl.getFrettedView("bass")).toBe("coach");
+  });
+
+  it("switching view rebuilds the surface with the same part", () => {
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]) });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("bass");
+    viewBtn("lanes").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(guitarInstances[0].dispose).toHaveBeenCalled();
+    expect(guitarInstances[1].view).toBe("lanes");
+    expect(guitarInstances[1].setTrack).toHaveBeenCalled();
+    expect(viewBtn("lanes").classList.contains("isActive")).toBe(true);
+    expect(viewBtn("tab").classList.contains("isActive")).toBe(false);
+    expect(ctl.getActiveTabInstrument()).toBe("bass");
+  });
+
+  it("offers sheet music for a fretted part too", () => {
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass")]) });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("bass");
+    ctl.setFrettedView("bass", "sheet");
+    expect(sheetInstances.length).toBe(1);
+    expect(guitarInstances[0].dispose).toHaveBeenCalled();
+  });
+
+  it("swaps renderer when the part on screen changes kind, and the keys toggle comes back", () => {
+    const deps = makeDeps({ getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass"), track("keys")]) });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("keys");
+    ctl.selectInstrumentTrack("bass");
+    expect(tabInstances[0].dispose).toHaveBeenCalled();
+    expect(guitarInstances.length).toBe(1);
+    ctl.selectInstrumentTrack("keys");
+    expect(guitarInstances[0].dispose).toHaveBeenCalled();
+    expect(tabInstances.length).toBe(2);
+    expect(keysToggle().hidden).toBe(false);
+    expect(fretToggle().hidden).toBe(true);
+  });
+
+  it("gives a guitar player's whole-surface view the stage, and keeps tab as the strip", () => {
+    const deps = makeDeps({
+      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("lead_guitar")]),
+      playersPanel: makePlayersPanel({ primary: "lead_guitar", preferred: "lead_guitar", playerCount: 1 }),
+    });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.selectInstrumentTrack("lead_guitar");
+    expect(deps.playSurfaceEl.classList.contains("isPianoPrimary")).toBe(false);
+
+    ctl.setFrettedView("lead_guitar", "highway");
+    expect(deps.playSurfaceEl.classList.contains("isPianoPrimary")).toBe(true);
+    expect(deps.appMainEl.classList.contains("isWideSoloKeys")).toBe(true);
+
+    ctl.setFrettedView("lead_guitar", "tab");
+    expect(deps.playSurfaceEl.classList.contains("isPianoPrimary")).toBe(false);
+  });
+
+  it("does not hand the stage to someone else's part", () => {
+    const deps = makeDeps({
+      getSelectedMelodicTracks: vi.fn().mockReturnValue([track("bass"), track("lead_guitar")]),
+      playersPanel: makePlayersPanel({ primary: "bass", preferred: "bass" }),
+    });
+    const ctl = initPlaySurfaceController(deps);
+    ctl.setFrettedView("lead_guitar", "coach");
+    ctl.selectInstrumentTrack("lead_guitar");
+    expect(deps.playSurfaceEl.classList.contains("isPianoPrimary")).toBe(false);
   });
 });

@@ -1,12 +1,13 @@
 /**
  * tabRenderer.ts - Scrolling melodic note renderer for the game app.
  *
- * Supports two display modes:
- * 1) Tab view for fretted instruments (bass, guitar)
- * 2) Piano-roll view for keys and generic melodic tracks
+ * TabRenderer is the piano roll for keys and generic melodic tracks. The
+ * fretted parts (bass, guitar) have their own four views in guitarViews.ts,
+ * the tab lane among them; this package exports both.
  */
 
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
+import type { FretAnchor, FretHandshape, GridBeat, GridSection } from "./fretted";
 // Type aliases local to this package — structurally compatible with the
 // host's chartLoader types. The host's setTrack() callsite supplies a
 // MelodicTrackSelection from chartLoader; TypeScript's structural typing
@@ -33,8 +34,25 @@ export type MelodicNote = {
    * being practised", so unsplit parts render exactly as they always did.
    */
   hand?: "L" | "R";
+  /** Techniques the tab marks on this note (feedpak keys: pm, ho, po, sl, bn, vb, hm, ...). */
+  tech?: Record<string, number | boolean>;
+  /** Name of the chord the tab says this note belongs to. */
+  chord?: string;
+  /** Fretting finger from the tab's chord template: 1 index .. 4 pinky. */
+  finger?: number;
 };
-export type MelodicTrackSelection = { role: InstrumentRole; trackName: string; channel: number; notes: MelodicNote[] };
+export type MelodicTrackSelection = {
+  role: InstrumentRole;
+  trackName: string;
+  channel: number;
+  notes: MelodicNote[];
+  /** Open strings as MIDI, lowest first, from the fingering sidecar. */
+  tuning?: number[];
+  /** Hand positions from the tab. */
+  anchors?: FretAnchor[];
+  /** Chord shapes from the tab, arpeggios included. */
+  handshapes?: FretHandshape[];
+};
 export type FretPosition = { string: number; fret: number };
 
 export type Tuning = {
@@ -99,6 +117,10 @@ export type PianoRenderOptions = {
    * to play it is not, so it is drawn but never cued.
    */
   showOtherHand?: boolean;
+  /** The song's beats, from its timeline; the guitar views draw bar lines from them. */
+  beats?: GridBeat[];
+  /** The song's sections, from its timeline. */
+  sections?: GridSection[];
 };
 
 export type PianoLiveInputNote = {
@@ -144,18 +166,9 @@ const FLAT_NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "
 const BLACK_PITCH_CLASSES = new Set([1, 3, 6, 8, 10]);
 const BG_COLOR = "#111721";
 const PANEL_COLOR = "#141d2b";
-//: Pixels of travel per second of song, before the user's speed multiplier.
-//:
-//: Matched to the Nashville chord lane deliberately. Two lanes scrolling the
-//: same material at different rates is the thing that made this view hard to
-//: read next to it -- the eye calibrates on one and is wrong about the other.
-const TAB_BASE_PX_PER_SEC = 140;
-
-const STRING_COLOR = "rgba(255,255,255,0.18)";
-const HIT_LINE_COLOR = "rgba(255,255,255,0.76)";
 const TEXT_COLOR = "#ecf2ff";
 
-const ROLE_COLORS: Record<InstrumentRole, string> = {
+export const ROLE_COLORS: Record<InstrumentRole, string> = {
   bass: "#ff8a3d",
   rhythm_guitar: "#20c997",
   lead_guitar: "#ff5f7a",
@@ -605,12 +618,9 @@ export class TabRenderer {
   private ctx: CanvasRenderingContext2D;
   private resizeObserver: ResizeObserver;
   private track: MelodicTrackSelection | null = null;
-  private tuning: Tuning | null = null;
   private role: InstrumentRole = "melodic";
   private keySignature: KeySignatureAnalysis | null = null;
 
-  /** Fraction of canvas width where the hit line sits (from left). */
-  private hitLineFrac = 0.15;
   private pianoLookAheadSec = 7.0;
   private pianoLookBehindSec = 0.35;
 
@@ -635,15 +645,7 @@ export class TabRenderer {
     this.track = track;
     this.role = track?.role ?? "melodic";
 
-    if (track?.role === "bass") {
-      this.tuning = TUNING_BASS_STANDARD;
-    } else if (track?.role === "rhythm_guitar" || track?.role === "lead_guitar") {
-      this.tuning = TUNING_GUITAR_STANDARD;
-    } else {
-      this.tuning = null;
-    }
-
-    const pianoMode = !this.tuning && Boolean(track);
+    const pianoMode = Boolean(track);
     this.container.classList.toggle("isPianoMode", pianoMode);
     this.canvas.classList.toggle("isPianoMode", pianoMode);
     this.keySignature = pianoMode && track ? inferKeySignature(track.notes) : null;
@@ -666,126 +668,7 @@ export class TabRenderer {
       return;
     }
 
-    if (this.tuning) {
-      this.renderTab(timeSec, opts);
-      return;
-    }
-
     this.renderPianoRoll(timeSec, opts);
-  }
-
-  private renderTab(t: number, opts: PianoRenderOptions = {}): void {
-    const { ctx, canvas, tuning, track } = this;
-    if (!tuning || !track) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-    const scrollMul = clampScrollSpeedMultiplier(opts.scrollSpeedMultiplier);
-    const numStrings = tuning.strings.length;
-
-    // Right to left, at a fixed pixel rate — the Nashville model.
-    //
-    // The perspective highway was an answer to the wrong question. What made
-    // the sideways version unreadable was never the direction, it was that the
-    // window was a fixed number of SECONDS: four seconds spread across
-    // whatever width the canvas happened to be, so a wide window made the
-    // notes fly and a narrow one crawled. The chord lane above it has always
-    // felt right because it fixes the opposite quantity — 140 px per second,
-    // with the visible span falling out of the width — so the speed is the
-    // same on any monitor and reading one lane teaches you the other.
-    const pxPerSec = TAB_BASE_PX_PER_SEC * scrollMul;
-    const hitX = Math.round(w * this.hitLineFrac);
-    const windowSec = Math.max(0.5, (w - hitX) / pxPerSec);
-
-    const topPad = 18;
-    const botPad = 14;
-    const laneGap = numStrings > 1 ? (h - topPad - botPad) / (numStrings - 1) : 0;
-    // String 0 is the highest-pitched: it belongs at the top, the way tab is
-    // written and the way the fretboard looks to the player holding it.
-    const laneY = (s: number): number => Math.round(topPad + s * laneGap);
-
-    // Lanes: the strings, full width, dimmer behind the hit line where the
-    // notes have already been played.
-    for (let s = 0; s < numStrings; s += 1) {
-      const y = laneY(s) + 0.5;
-      ctx.strokeStyle = STRING_COLOR;
-      ctx.globalAlpha = 0.28;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(hitX, y);
-      ctx.stroke();
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(hitX, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-
-    // The hit line runs across the strings, because it is a moment in time and
-    // they are pitches.
-    ctx.strokeStyle = HIT_LINE_COLOR;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(hitX + 0.5, topPad - 10);
-    ctx.lineTo(hitX + 0.5, h - botPad + 10);
-    ctx.stroke();
-
-    const tStart = t - hitX / pxPerSec;
-    const tEnd = t + windowSec;
-    const color = ROLE_COLORS[this.role];
-    const glow = ROLE_GLOW_COLORS[this.role];
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    const pillH = Math.round(Math.min(22, Math.max(11, laneGap * 0.72)));
-    const fontPx = Math.max(9, Math.min(15, Math.round(pillH * 0.68)));
-
-    for (const note of track.notes) {
-      if (note.t_on > tEnd || note.t_off < tStart) continue;
-      const fretInfo = noteToFretPosition(note, tuning);
-      if (!fretInfo) continue;
-
-      // Whole pixels: a glyph landing on a different sub-pixel offset each
-      // frame is anti-aliased differently each frame, which reads as shimmer.
-      const x = Math.round(hitX + (note.t_on - t) * pxPerSec);
-      const y = laneY(fretInfo.string);
-      // Sustain drawn as the note's real length, so a held note is visibly
-      // held rather than being a dot that lingers.
-      const held = Math.round(Math.max(0, (note.t_off - note.t_on)) * pxPerSec);
-      const pillW = Math.max(pillH, Math.min(held, w));
-
-      const playing = note.t_on <= t && note.t_off >= t;
-      ctx.globalAlpha = playing ? 1 : x < hitX ? 0.45 : 0.92;
-
-      ctx.save();
-      ctx.globalAlpha *= 0.5;
-      ctx.fillStyle = glow;
-      roundRectPath(ctx, x - pillH * 0.5 - 2, y - pillH * 0.5 - 2, pillW + 4, pillH + 4, 6);
-      ctx.fill();
-      ctx.restore();
-
-      ctx.fillStyle = color;
-      roundRectPath(ctx, x - pillH * 0.5, y - pillH * 0.5, pillW, pillH, 5);
-      ctx.fill();
-
-      if (fontPx >= 9) {
-        ctx.fillStyle = "#051018";
-        ctx.font = `800 ${fontPx}px ui-monospace, SFMono-Regular, Consolas, monospace`;
-        ctx.fillText(String(fretInfo.fret), x, y + 1);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.font = "700 11px system-ui, sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    ctx.fillText(track.trackName.toUpperCase(), 8, 4);
-    ctx.restore();
   }
 
   private renderPianoRoll(t: number, opts: PianoRenderOptions): void {
@@ -1367,3 +1250,5 @@ export class TabRenderer {
 }
 
 export { SheetMusicRenderer } from "./sheetMusic";
+export * from "./fretted";
+export { GuitarRenderer, FRET_VIEWS, STRING_COLORS, TAB_BASE_PX_PER_SEC, type FretView, type GuitarRendererOptions } from "./guitarViews";

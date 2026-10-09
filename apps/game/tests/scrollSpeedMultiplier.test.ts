@@ -59,20 +59,28 @@ describe("scroll-speed multiplier contract (TransportState.scrollSpeedMultiplier
     expect(src).toMatch(/pxPerSecond\s*=\s*[^;]*\*\s*scrollMul/);
   });
 
-  it("tabRenderer (keys/bass/guitar piano-roll + tab) scales its window by the multiplier", () => {
+  it("tabRenderer (keys piano-roll) scales its window by the multiplier", () => {
     // Phase 2.G moved the TabRenderer implementation into the viz-tab package.
     const src = read("visualizers/viz-tab/src/index.ts");
-    // Reads the clamped multiplier in BOTH render paths.
     expect(src).toMatch(/clampScrollSpeedMultiplier\(opts\.scrollSpeedMultiplier\)/);
-    // Tab path scales its PIXEL RATE, the way viz-nashville and viz-beats do:
+    // Piano-roll path shrinks look-ahead/behind.
+    expect(src).toMatch(/const\s+lookAheadSec\s*=\s*this\.pianoLookAheadSec\s*\/\s*scrollMul/);
+    expect(src).toMatch(/const\s+lookBehindSec\s*=\s*this\.pianoLookBehindSec\s*\/\s*scrollMul/);
+  });
+
+  it("every guitar view scales with the multiplier", () => {
+    const src = read("visualizers/viz-tab/src/guitarViews.ts");
+    expect(src).toMatch(/scrollMul:\s*clampScrollSpeedMultiplier\(opts\.scrollSpeedMultiplier\)/);
+    // Tab scroll scales its PIXEL RATE, the way viz-nashville and viz-beats do:
     // the visible span then falls out of the canvas width instead of being a
     // fixed number of seconds. That is what keeps the apparent speed the same
     // on any window, and what makes this lane and the chord lane above it
     // scroll together rather than at two different rates.
-    expect(src).toMatch(/pxPerSec\s*=\s*[^;]*\*\s*scrollMul/);
-    // Piano-roll path shrinks look-ahead/behind the same way.
-    expect(src).toMatch(/const\s+lookAheadSec\s*=\s*this\.pianoLookAheadSec\s*\/\s*scrollMul/);
-    expect(src).toMatch(/const\s+lookBehindSec\s*=\s*this\.pianoLookBehindSec\s*\/\s*scrollMul/);
+    expect(src).toMatch(/pxPerSec\s*=\s*TAB_BASE_PX_PER_SEC\s*\*\s*f\.scrollMul/);
+    // The other three divide their look-ahead by it (lookAheadSec, tested in viz-tab).
+    for (const base of ["LANES_LOOK_SEC", "HIGHWAY_LOOK_SEC", "COACH_LEAD_SEC", "STRIP_LOOK_SEC"]) {
+      expect(src).toMatch(new RegExp(`lookAheadSec\\(${base},\\s*f\\.scrollMul\\)`));
+    }
   });
 
   it("game passes transport.scrollSpeedMultiplier into the tab frame", () => {

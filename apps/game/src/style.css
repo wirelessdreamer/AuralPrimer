@@ -1394,6 +1394,13 @@ li {
   transition: background 120ms ease, color 120ms ease;
 }
 
+/* Only one view choice shows at a time -- piano/sheet for keys, the guitar
+   views for bass and guitar -- and the inline-flex above would override the
+   hidden attribute's own display:none. */
+.displayModeToggle[hidden] {
+  display: none;
+}
+
 .displayModeBtn:hover {
   color: rgba(245, 247, 255, 0.92);
 }
@@ -1432,6 +1439,13 @@ li {
 }
 
 .tabContainer.isPianoMode {
+  min-height: clamp(290px, 44vw, 390px);
+  height: clamp(290px, 44vw, 390px);
+}
+
+/* String lanes, neck highway and neck coach are play surfaces, not a strip:
+   the room a keyboard gets. (Tab scroll keeps the strip above.) */
+.tabContainer.isGuitarStage {
   min-height: clamp(290px, 44vw, 390px);
   height: clamp(290px, 44vw, 390px);
 }
