@@ -493,13 +493,31 @@ export type MelodicNote = {
    * non-piano instrument needs no special case.
    */
   hand?: "L" | "R";
+  /** Techniques the tab marks on this note (feedpak keys: pm, ho, po, sl, bn, vb, hm, ...). */
+  tech?: Record<string, number | boolean>;
+  /** Name of the chord the tab says this note belongs to. */
+  chord?: string;
+  /** Fretting finger from the tab's chord template: 1 index .. 4 pinky. */
+  finger?: number;
 };
+
+/** A hand position from a tab: index finger at `fret`, spanning `width` frets, from `t`. */
+export type FretAnchor = { t: number; fret: number; width: number };
+
+/** A chord shape held from `t` to `t_end`; frets/fingers lowest string first, -1 = unused. */
+export type FretHandshape = { t: number; t_end: number; name: string; frets: number[]; fingers: number[] };
 
 export type MelodicTrackSelection = {
   role: InstrumentRole;
   trackName: string;
   channel: number;
   notes: MelodicNote[];
+  /** Open strings as MIDI, lowest first, when the fingering sidecar declares them. */
+  tuning?: number[];
+  /** Hand positions from the tab, when it has them. */
+  anchors?: FretAnchor[];
+  /** Chord shapes from the tab, arpeggios included, when it has them. */
+  handshapes?: FretHandshape[];
 };
 
 import {

@@ -235,6 +235,73 @@ describe("fingeringLoader", () => {
     });
   });
 
+  it("carries the tab's techniques, chord names, fingers, tuning, hand positions and shapes", () => {
+    const result = validateFingering({
+      instrument: "lead_guitar",
+      tuning: [38, 45, 50, 55, 59, 64],
+      notes: [
+        { t_on: 1, pitch: 50, string: 0, fret: 12, tech: { pm: true, sl: 14, bogus: "x" }, chord: " D5 ", finger: 1 },
+        { t_on: 1, pitch: 57, string: 1, fret: 12, finger: 0 },
+      ],
+      anchors: [
+        { t: 2, fret: 5 },
+        { t: 0.5, fret: 12, width: 5 },
+        { t: "nope", fret: 3 },
+      ],
+      handshapes: [
+        { t: 1, t_end: 3, name: "D5", frets: [12, 12, -1, -1, -1, -1], fingers: [1, 3, -1, -1, -1, -1] },
+        { t: 4, frets: [99] },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("validation failed");
+    const file = result.value;
+    expect(file.tuning).toEqual([38, 45, 50, 55, 59, 64]);
+    expect(file.notes[0]).toMatchObject({ tech: { pm: true, sl: 14 }, chord: "D5", finger: 1 });
+    expect(file.notes[0]!.tech).not.toHaveProperty("bogus");
+    expect(file.notes[1]).not.toHaveProperty("finger");
+    // Sorted, width defaulted to 4, the malformed one dropped rather than the file.
+    expect(file.anchors).toEqual([
+      { t: 0.5, fret: 12, width: 5 },
+      { t: 2, fret: 5, width: 4 },
+    ]);
+    expect(file.handshapes).toEqual([
+      { t: 1, t_end: 3, name: "D5", frets: [12, 12, -1, -1, -1, -1], fingers: [1, 3, -1, -1, -1, -1] },
+    ]);
+
+    const merged = applyFingeringToMelodicTracks(
+      [
+        {
+          role: "lead_guitar",
+          trackName: "Lead Guitar",
+          channel: 2,
+          notes: [
+            { t_on: 1, t_off: 1.5, pitch: 50, velocity: 0.8 },
+            { t_on: 1, t_off: 1.5, pitch: 57, velocity: 0.8 },
+          ],
+        },
+      ],
+      [file],
+    );
+    expect(merged[0]).toMatchObject({ tuning: file.tuning, anchors: file.anchors, handshapes: file.handshapes });
+    expect(merged[0]!.notes[0]).toMatchObject({ string: 0, fret: 12, tech: { pm: true, sl: 14 }, chord: "D5", finger: 1 });
+
+    const standalone = fingeringFilesToMelodicTracks([file]);
+    expect(standalone[0]).toMatchObject({ tuning: file.tuning, anchors: file.anchors });
+    expect(standalone[0]!.notes[0]).toMatchObject({ chord: "D5", finger: 1 });
+  });
+
+  it("leaves a plain sidecar's tracks without the extras", () => {
+    const out = applyFingeringToMelodicTracks(
+      [{ role: "bass", trackName: "Bass", channel: 0, notes: [{ t_on: 0, t_off: 1, pitch: 40, velocity: 1 }] }],
+      [{ instrument: "bass", notes: [{ t_on: 0, pitch: 40, string: 0, fret: 12 }] }],
+    );
+    expect(out[0]).not.toHaveProperty("tuning");
+    expect(out[0]).not.toHaveProperty("anchors");
+    expect(out[0]!.notes[0]).not.toHaveProperty("tech");
+  });
+
   it("warns and skips invalid sidecars", async () => {
     invokeMock.mockResolvedValue({
       version: "1.0.0",

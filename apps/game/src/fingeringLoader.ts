@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { InstrumentRole, MelodicTrackSelection } from "./chartLoader";
+import type { FretAnchor, FretHandshape, InstrumentRole, MelodicNote, MelodicTrackSelection } from "./chartLoader";
 
 type FingeringInstrument = InstrumentRole | "guitar";
 
@@ -23,12 +23,18 @@ export type FingeringNote = {
   velocity?: number;
   string: number;
   fret: number;
+  tech?: Record<string, number | boolean>;
+  chord?: string;
+  finger?: number;
 };
 
 export type FingeringFile = {
   version?: string;
   instrument: FingeringInstrument;
   notes: FingeringNote[];
+  tuning?: number[];
+  anchors?: FretAnchor[];
+  handshapes?: FretHandshape[];
 };
 
 export type FingeringLoaderDeps = {
@@ -51,6 +57,64 @@ function intInRange(value: unknown, min: number, max: number): number | null {
   const n = numberOrNull(value);
   if (n === null || !Number.isInteger(n) || n < min || n > max) return null;
   return n;
+}
+
+// The tab's extras -- techniques, chord names, fingers, tuning, hand positions,
+// chord shapes -- are read leniently: a malformed one is dropped, never the
+// file. They decorate notes the game can already play without them, so a pack
+// whose strings and frets were fine must not start failing over a bad extra.
+
+function techOrNull(value: unknown): Record<string, number | boolean> | null {
+  if (!isObject(value)) return null;
+  const out: Record<string, number | boolean> = {};
+  for (const [key, v] of Object.entries(value)) {
+    if (typeof v === "boolean" || numberOrNull(v) !== null) out[key] = v as number | boolean;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function intList(value: unknown, min: number, max: number): number[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: number[] = [];
+  for (const v of value) {
+    const n = intInRange(v, min, max);
+    if (n === null) return null;
+    out.push(n);
+  }
+  return out;
+}
+
+function parseAnchors(value: unknown): FretAnchor[] {
+  if (!Array.isArray(value)) return [];
+  const out: FretAnchor[] = [];
+  for (const item of value) {
+    if (!isObject(item)) continue;
+    const t = numberOrNull(item.t);
+    const fret = intInRange(item.fret, 0, 36);
+    if (t === null || fret === null) continue;
+    out.push({ t, fret, width: intInRange(item.width, 1, 36) ?? 4 });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+function parseHandshapes(value: unknown): FretHandshape[] {
+  if (!Array.isArray(value)) return [];
+  const out: FretHandshape[] = [];
+  for (const item of value) {
+    if (!isObject(item)) continue;
+    const t = numberOrNull(item.t);
+    const frets = intList(item.frets, -1, 36);
+    if (t === null || frets === null) continue;
+    const tEnd = numberOrNull(item.t_end);
+    out.push({
+      t,
+      t_end: tEnd !== null && tEnd >= t ? tEnd : t,
+      name: typeof item.name === "string" ? item.name.trim() : "",
+      frets,
+      fingers: intList(item.fingers, -1, 4) ?? [],
+    });
+  }
+  return out.sort((a, b) => a.t - b.t);
 }
 
 function noteKey(tOn: number, pitch: number): string {
@@ -155,27 +219,55 @@ export function validateFingering(raw: unknown, expectedRole?: FingeringInstrume
     if (fret === null) errors.push({ path: `${path}.fret`, message: "expected integer 0..36" });
 
     if (tOn !== null && pitch !== null && stringIdx !== null && fret !== null) {
-      notes.push({
+      const note: FingeringNote = {
         t_on: tOn,
         t_off: typeof tOff === "number" ? tOff : undefined,
         pitch,
         velocity: velocity ?? undefined,
         string: stringIdx,
         fret,
-      });
+      };
+      const tech = techOrNull(item.tech);
+      if (tech) note.tech = tech;
+      if (typeof item.chord === "string" && item.chord.trim()) note.chord = item.chord.trim();
+      const finger = intInRange(item.finger, 1, 4);
+      if (finger !== null) note.finger = finger;
+      notes.push(note);
     }
   }
 
   if (errors.length > 0) return { ok: false, errors };
   notes.sort((a, b) => a.t_on - b.t_on || a.pitch - b.pitch || a.string - b.string || a.fret - b.fret);
-  return {
-    ok: true,
-    value: {
-      version: typeof raw.version === "string" ? raw.version : undefined,
-      instrument: raw.instrument as FingeringInstrument,
-      notes,
-    },
+  const value: FingeringFile = {
+    version: typeof raw.version === "string" ? raw.version : undefined,
+    instrument: raw.instrument as FingeringInstrument,
+    notes,
   };
+  const tuning = intList(raw.tuning, 0, 127);
+  if (tuning && tuning.length > 0) value.tuning = tuning;
+  const anchors = parseAnchors(raw.anchors);
+  if (anchors.length > 0) value.anchors = anchors;
+  const handshapes = parseHandshapes(raw.handshapes);
+  if (handshapes.length > 0) value.handshapes = handshapes;
+  return { ok: true, value };
+}
+
+/** The tab's per-note extras, for copying onto a melodic note. */
+function noteExtras(note: FingeringNote): Pick<MelodicNote, "tech" | "chord" | "finger"> {
+  const out: Pick<MelodicNote, "tech" | "chord" | "finger"> = {};
+  if (note.tech) out.tech = note.tech;
+  if (note.chord) out.chord = note.chord;
+  if (note.finger) out.finger = note.finger;
+  return out;
+}
+
+/** The tab's track-level extras, for copying onto a melodic track. */
+function trackExtras(file: FingeringFile): Pick<MelodicTrackSelection, "tuning" | "anchors" | "handshapes"> {
+  const out: Pick<MelodicTrackSelection, "tuning" | "anchors" | "handshapes"> = {};
+  if (file.tuning) out.tuning = file.tuning;
+  if (file.anchors) out.anchors = file.anchors;
+  if (file.handshapes) out.handshapes = file.handshapes;
+  return out;
 }
 
 export async function loadFingeringForRoles(
@@ -254,13 +346,14 @@ export function fingeringFilesToMelodicTracks(files: ReadonlyArray<FingeringFile
   for (const file of files) {
     const role = concreteTrackRole(file.instrument);
     const existing = byRole.get(role);
-    const track =
+    const track: MelodicTrackSelection =
       existing ??
       {
         role,
         trackName: roleTrackName(file.instrument),
         channel: roleChannel(file.instrument),
         notes: [],
+        ...trackExtras(file),
       };
 
     for (const note of file.notes) {
@@ -273,6 +366,7 @@ export function fingeringFilesToMelodicTracks(files: ReadonlyArray<FingeringFile
         fret: note.fret,
         s: note.string,
         f: note.fret,
+        ...noteExtras(note),
       });
     }
 
@@ -319,10 +413,11 @@ export function applyFingeringToMelodicTracks(
 
     return {
       ...track,
+      ...trackExtras(file),
       notes: track.notes.map((note) => {
         const match = byNote.get(noteKey(note.t_on, note.pitch))?.shift();
         if (!match) return { ...note };
-        return { ...note, string: match.string, fret: match.fret };
+        return { ...note, string: match.string, fret: match.fret, ...noteExtras(match) };
       }),
     };
   });
