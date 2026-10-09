@@ -51,6 +51,18 @@ namespace AuralPrimer.Calibration
             LearnPieceNote,
             /// <summary>Play round the kit and check each cue lands on its pad.</summary>
             VerifyKit,
+
+            // --- Guitar / bass (SetupWizard.Guitar.cs) ---------------------
+            /// <summary>Which controller is in the guitar's mount.</summary>
+            GuitarHand,
+            /// <summary>Touch the nut on the lowest string.</summary>
+            GuitarNutLowest,
+            /// <summary>Touch the nut on the highest string, or keep the mount's roll.</summary>
+            GuitarNutHighest,
+            /// <summary>Touch the 12th fret wire.</summary>
+            GuitarTwelfth,
+            /// <summary>The span check, fine nudges, and save.</summary>
+            GuitarCheck,
         }
 
         /// <summary>
@@ -185,6 +197,7 @@ namespace AuralPrimer.Calibration
             PumpKeyboard();
             PumpListening();
             PumpKeyboardLayout();
+            PumpGuitar();
 
             // A rising edge on a pitch is "the player just pressed a key". The
             // host sends the full held set, so this is a set difference rather
@@ -202,19 +215,33 @@ namespace AuralPrimer.Calibration
                         // then knowing, not guessing.
                         if (_busy) break;
 
-                        if (_profile is { IsCalibrated: true } && _profile.version != CalibrationProfile.CurrentVersion)
+                        // A guitar needs no re-localising: it is measured
+                        // against the controller strapped to it, not the room.
+                        if (IsGuitar && _profile.IsFretboardChecked)
+                        {
+                            StartGuitar(_profile.fretboard.isBass);
+                        }
+                        else if (_profile is { IsCalibrated: true } && _profile.version != CalibrationProfile.CurrentVersion)
                         {
                             Debug.Log($"[wizard] calibration v{_profile.version} predates the current "
                                     + $"scheme (v{CalibrationProfile.CurrentVersion}); re-calibrating");
-                            _profile = new CalibrationProfile { profileName = profileName };
+                            _profile = NewKeyboardProfile();
                             ClearPinchMarkers();
                             EnterStep(Step.LowestKey);
                         }
                         else if (_profile is { IsAnchored: true }) RestoreAsync();
+                        else if (_profile is { IsCalibrated: true })
+                        {
+                            // Measured, but its anchor was never saved.
+                            _profile = NewKeyboardProfile();
+                            EnterStep(Step.LowestKey);
+                        }
                         else
                         {
-                            _profile = new CalibrationProfile { profileName = profileName };
-                            EnterStep(Step.LowestKey);
+                            // Nothing set up yet: ask what is being played
+                            // before measuring anything.
+                            _profile = NewKeyboardProfile();
+                            EnterStep(Step.PickInstrument);
                         }
                     }
                     break;
@@ -385,6 +412,14 @@ namespace AuralPrimer.Calibration
                     EnterStep(Step.LearnPieceNote);
                     break;
 
+                case Step.GuitarNutLowest:
+                case Step.GuitarNutHighest:
+                case Step.GuitarTwelfth:
+                    // A pinch is one way to touch a point on the neck; the free
+                    // controller's trigger is the other, and lands in the same place.
+                    OnGuitarTouch(position);
+                    break;
+
                 // Step.Menu deliberately does not act on a pinch. Dismissing
                 // used to be pinch-driven, but a pinch aimed at a button is a
                 // click, so dismissing and pressing were the same gesture: the
@@ -399,7 +434,9 @@ namespace AuralPrimer.Calibration
             // home, so send it back there rather than into the user's face —
             // otherwise the gesture that recovers a lost menu is also the gesture
             // that knocks it out of the place it belongs.
-            if (_profile is { IsCalibrated: true }) DockBesideKeyboard();
+            // A guitar moves with the player, so its menu has no fixed home to
+            // go back to: it comes to them.
+            if (_profile is { IsCalibrated: true } && !IsGuitar) DockBesideKeyboard();
             else panel?.PlaceInFrontOfUser();
         }
 
@@ -455,6 +492,8 @@ namespace AuralPrimer.Calibration
             // previous step still points at the previous step's action.
             panel?.SetButtons();
 
+            if (RenderGuitarStep()) return;
+
             switch (_step)
             {
                 case Step.Connecting:
@@ -501,9 +540,30 @@ namespace AuralPrimer.Calibration
                 case Step.PickInstrument:
                     panel?.SetTitle("Which instrument?");
                     panel?.SetBody(
-                        "Set up a <b>keyboard</b> or a <b>drum kit</b>.\n\n"
+                        "Set up a <b>keyboard</b>, a <b>drum kit</b>, or a <b>guitar</b> or "
+                        + "<b>bass</b>.\n\n"
                         + "A kit is placed pad by pad, so the cues land on the "
-                        + "drums themselves.");
+                        + "drums themselves. A guitar is found through the controller "
+                        + "in its mount, so its notes land on the real frets.");
+                    // Back only to a menu that has an instrument behind it.
+                    var canGoBack = IsGuitar ? IsGuitarReady : _profile is { IsCalibrated: true };
+                    if (canGoBack)
+                    {
+                        panel?.SetButtons(
+                            ("Keyboard", ChooseKeyboard),
+                            ("Drum kit", ChooseDrums),
+                            ("Guitar", () => StartGuitar(bass: false)),
+                            ("Bass", () => StartGuitar(bass: true)),
+                            ("Back", () => EnterStep(Step.Menu)));
+                    }
+                    else
+                    {
+                        panel?.SetButtons(
+                            ("Keyboard", ChooseKeyboard),
+                            ("Drum kit", ChooseDrums),
+                            ("Guitar", () => StartGuitar(bass: false)),
+                            ("Bass", () => StartGuitar(bass: true)));
+                    }
                     break;
 
                 case Step.PlacePieceCentre:
@@ -552,6 +612,13 @@ namespace AuralPrimer.Calibration
                     break;
 
                 case Step.Menu:
+                    // One standing menu, per instrument: every "Back" that leads
+                    // here lands on the right one without knowing which it is.
+                    if (IsGuitar)
+                    {
+                        RenderGuitarMenu();
+                        break;
+                    }
                     panel?.SetTitle("AuralPrimer");
                     panel?.SetBody(
                         $"<b>{_profile.profileName}</b> — {KeyCountLabel()}, "
@@ -573,7 +640,8 @@ namespace AuralPrimer.Calibration
                         ("Flip side", FlipMenuSide),
                         (_profile.ignoreOutOfRangeNotes ? "Fold notes in" : "Drop off-range",
                          ToggleOutOfRange),
-                        (HandVisualLabel(_profile.handVisual), CycleHandVisual));
+                        (HandVisualLabel(_profile.handVisual), CycleHandVisual),
+                        ("Instrument", () => EnterStep(Step.PickInstrument)));
                     break;
 
                 case Step.FineTune:
@@ -998,14 +1066,14 @@ namespace AuralPrimer.Calibration
                 {
                     // Not a failure worth alarming anyone about: a room can
                     // change, and re-marking two edges is quick.
-                    _profile = new CalibrationProfile { profileName = profileName };
+                    _profile = NewKeyboardProfile();
                     EnterStep(Step.LowestKey);
                 }
             }
             catch (Exception e)
             {
                 Debug.LogError($"[wizard] restoring the anchor failed: {e.Message}");
-                _profile = new CalibrationProfile { profileName = profileName };
+                _profile = NewKeyboardProfile();
                 EnterStep(Step.LowestKey);
             }
             finally
@@ -1348,7 +1416,9 @@ namespace AuralPrimer.Calibration
             }
             else if (link.IsConnected)
             {
-                panel.SetStatus($"connected to {link.HostName}", new Color(0.4f, 0.95f, 0.55f));
+                var guitar = GuitarStatus();
+                if (guitar != null) panel.SetStatus(guitar, new Color(1f, 0.71f, 0.28f));
+                else panel.SetStatus($"connected to {link.HostName}", new Color(0.4f, 0.95f, 0.55f));
             }
             else if (link.IsReconnecting)
             {

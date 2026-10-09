@@ -454,6 +454,118 @@ consumes them yet.
 
 ---
 
+## 6a. Guitar and bass on a real neck (added 2026-10-09)
+
+Phase 4 of `docs/guitar-nashville-fretboard-plan-2026-09-30.md`, built against a
+**Jamstik Studio** (headless, 24 frets, 648 mm scale) with a **Touch Plus**
+strapped to its head end in the printed mount (`hardware/quest-guitar-mount/`).
+A bass is the same path with a four-string, 34" profile. Nothing here has been
+run on a headset yet; the list at the end says what is unverified.
+
+**The anchor — `GuitarAnchor`.** Reads the mounted controller's grip pose every
+frame and puts its own transform on the **neck frame**: origin at the nut,
+centred across the board, on its surface; +X toward the bridge; +Y out of the
+fretboard; +Z = `Cross(X, Y)`, from the lowest string to the highest. The same
+frame as the mount's CAD. The neck is a fixed offset from the grip pose, so it
+needs no spatial anchor and nothing is re-measured when the player moves. The
+first guess is the CAD's offset, copied from
+`hardware/quest-guitar-mount/mount_offset.json` into `MountOffset.Cad`
+(`Scripts/Calibration/MountOffset.cs`); a rebuilt mount's file can also be
+handed to the anchor as a TextAsset. Which hand's controller is on the guitar
+is chosen in setup.
+
+**Tracking a controller nobody holds.** Two things Horizon OS does by default
+work against a strapped-on controller:
+
+- It switches between controllers and hands, and may drop a controller it sees
+  as set down while the hands are tracked. The anchor asks for **simultaneous
+  hands and controllers** (`XR_META_simultaneous_hands_and_controllers`, via
+  `OVRPlugin`) while the guitar is in use, and reads the controller through the
+  **detached-controller** profiles (`XR_META_detached_controllers`,
+  `/user/detached_controller_meta/left|right`) as well as the ordinary one. The
+  project's `DetachedOculusTouchControllerProfile Android` feature is now
+  enabled. Meta's body tracking cannot run alongside simultaneous mode, so it is
+  switched off again when the guitar is put away, and the recorder has no body
+  channel while a guitar is in use. If the controller still goes missing, setup
+  says so and names the Movement-tracking auto-switch setting to turn off.
+- Its LEDs face the headset only while the player looks toward the neck. A
+  lost pose is **held for 0.5 s, then faded over 0.75 s** — never snapped and
+  never frozen in place — with a small "guitar not tracked" label at the nut and
+  in the status line.
+
+**The check — once per mount.** Three touches, as the fretboard plan specifies:
+the nut on the lowest string, the nut on the highest, and the 12th fret wire,
+each made with the free controller's tip and trigger or with a pinch. Each point
+is converted into the grip frame at the moment it is taken, so the guitar may
+move between touches. The nut pair gives the origin and the roll, and the 12th
+fret the neck's direction over a 324 mm baseline. "Keep mount roll" skips the
+second touch and keeps the CAD's roll instead. The nut-to-12th span is checked
+against half the scale: more than **10 %** off means a touch missed, and the
+panel says so and offers Retry, as the keyboard's span check does. Then come
+1 mm and 1° nudges, judged against faint drawn frets and strings, and Save. The
+result is a `FretboardProfile` stored as an additive field on
+`CalibrationProfile` beside the keyboard and kit, with no version bump: older
+profiles load with an unchecked neck and their keyboard still anchored. It
+holds the scale length, fret and string counts, the nut and bridge string
+spreads (34 / 52 mm by default), the controller hand, and the corrected offset.
+
+**The highway — `GuitarHighway`.** Parented to the anchor, so it is drawn in
+the neck frame:
+
+- Frets sit at `x = L·(1 − 2^(−f/12))`. Strings spread linearly from the nut
+  spread to the bridge spread across Z.
+- Notes travel along a time axis hinged at the neck: out of the fretboard face,
+  leaning toward the player's side by an adjustable tilt (35° default, menu ±5°,
+  capped at 75° so one string's future never stacks on another's present). They
+  arrive exactly on their string and fret.
+- The lane is `laneLengthMetres` long and shows `lookAhead / spacing` seconds,
+  the desktop's note spacing in metres.
+- Gems are coloured by string, lowest first (#ff5c7a #f5d547 #38bdf8 #fb923c
+  #34d399 #a78bfa) and labelled with the fret. The label is a pluggable
+  function, so the plan's Nashville degree can replace the fret number later.
+- Notes struck together get a chord frame with the chord's name. Long notes get
+  a sustain ribbon. A hand-position band runs along the neck from the tab's
+  anchors, derived from the notes when a pack has none. A flash marks the
+  landing at the real position. An open string is drawn across the current hand
+  window.
+- Near the neck everything is faint: gems fade toward 30 % opacity in the last
+  5 cm. Passthrough has no depth here, so anything at the strings is drawn over
+  the fretting hand.
+- Built for the 3S/Pro floor: pooled primitives and labels, at most 48 gems, one
+  unlit transparent material, no per-frame allocation.
+
+**Gestures.** The keyboard's rules hold. The menu floats in the air; palm-up
+brings it in front of the player, since a guitar has no fixed place to dock it
+beside. Play needs no gesture at all. The check is the one time a hand goes to
+the strings on purpose, and the free controller's trigger does it without one.
+
+**On the link.** The headset asks for its part with `INSTRUMENT`, and the host
+answers with that part's `CHART`, carrying tuning, string and fret per note,
+fingers, chord names, techniques and hand positions. It follows the desktop's
+spacing and playback rate through `SETTINGS`. See `docs/mr-link-protocol.md` §4,
+§7b and §7c.
+
+**Jamstik string order.** Charts index string 0 as the lowest string, which is
+what the neck draws. Nothing here reads strings from MIDI channels. When live
+Jamstik input lands (the plan's phase 2), its string 1 = high E inversion
+belongs in one place with a test.
+
+**Unverified on a headset:**
+
+- that simultaneous mode is accepted and that the strapped controller arrives
+  through a detached profile (the Touch Plus detached profile has no Android
+  entry in the project yet; the Oculus Touch one is enabled);
+- how often tracking drops at playing angles, and whether the hold and fade
+  timings suit it;
+- the free controller's tip position (the aim pose's origin is used, offset 0);
+- the CAD offset against a printed mount;
+- the 10 % threshold against real touches;
+- label size and facing;
+- the default tilt and lane length;
+- frame time on Quest 3S/Pro.
+
+---
+
 ## 7. Repo and licensing concerns (flagging early — cheap now, expensive later)
 
 1. **Ignores — done.** The parent `.gitignore` now covers Unity's generated
