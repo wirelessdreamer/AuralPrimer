@@ -106,7 +106,8 @@ export function appShellHtml(): string {
                 </div>
 
                 <div class="meta" style="margin: 4px 0 0 6px; opacity: 0.7; font-size: 11px">
-                  In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live.<br />
+                  In-game: press <kbd>[</kbd> / <kbd>]</kbd> to spread / compress notes live,
+                  <kbd>-</kbd> / <kbd>=</kbd> to slow down / speed up.<br />
                   <kbd>Space</kbd> start / pause / resume &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> jog 5s
                   (hold <kbd>Shift</kbd> for 1s).<br />
                   MIDI transport buttons (start over / rewind / fast fwd / stop / play) are
@@ -246,6 +247,23 @@ export function appShellHtml(): string {
                     />
                     <span id="scrollSpeedValue" class="stageSpacingValue">1.00x</span>
                     <button id="scrollSpeedReset" class="stageSpacingReset" title="Reset to 1.00x">Reset</button>
+                  </div>
+                  <div
+                    class="stageSpacing"
+                    id="speedRow"
+                    title="Plays the song slower without changing its pitch, so a fast part can be learned at a speed you can keep up with and brought back to 100%. - and = adjust it live."
+                  >
+                    <label class="stageSpacingLabel" for="speedSlider">Speed</label>
+                    <input
+                      id="speedSlider"
+                      type="range"
+                      min="25"
+                      max="100"
+                      step="5"
+                      value="100"
+                      aria-label="Playback speed, percent of the song's tempo"
+                    />
+                    <span id="speedValue" class="stageSpeedValue">100%</span>
                   </div>
 
                   <label

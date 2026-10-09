@@ -1599,6 +1599,17 @@ li {
   opacity: 0.8;
 }
 
+/* Speed beside spacing: both change how the song meets the player, and the
+   readout carries the BPM that speed works out to. Sized for its longest
+   form so the strip does not shuffle as the tempo map moves under it. */
+.stageSpeedValue {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  min-width: 23ch;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
 .stageSpacingReset {
   padding: 2px 8px;
   font-size: 11px;

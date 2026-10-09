@@ -82,7 +82,7 @@ import type { AuralSongDetails } from "./auralsong";
 import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
 import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
-import { readSongTimeline, type SongTimeline } from "./songTimeline";
+import { readSongTimeline, tempoAt, type SongTimeline } from "./songTimeline";
 
 function haveTauri(): boolean {
   // Tauri v2 does **not** necessarily expose `window.__TAURI__` unless
@@ -1428,14 +1428,19 @@ vizStopBtn.addEventListener("click", () => stopVisualizer());
 // Playback rate + metronome panel — listeners wired internally; the host
 // hands it the metronome instance + a callback to refresh the cached
 // transport state after every playback-rate change.
-initPlaybackRateAndMetronomePanel({
-  transportController,
+const playbackRatePanel = initPlaybackRateAndMetronomePanel({
+  // A getter, not the controller: resetTransportController() replaces it on
+  // an audio-backend fallback, and the speed has to reach the live one.
+  getTransportController: () => transportController,
   metronome,
   setAudioStatus,
   onPlaybackRateApplied: (r) => {
     currentPlaybackRate = r;
     transport = transportController.getState();
   },
+  // The song's own tempo where the playhead is, so the readout follows the
+  // tempo map through its changes.
+  getSongBpm: () => tempoAt(songTimeline.tempos, transportController.getState().t),
 });
 
 // Scroll-speed (Note spacing) controller — DOM + persistence + transport
@@ -2633,6 +2638,7 @@ renderSongScrub();
 window.setInterval(() => {
   renderPlayheadHud();
   renderSongScrub();
+  playbackRatePanel.refresh();
 }, LIVE_INPUT_HUD_INTERVAL_MS);
 
 // --- Play-mode transport hotkeys ---------------------------------------
