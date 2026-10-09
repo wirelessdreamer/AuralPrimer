@@ -18,7 +18,9 @@ from aural_ingest.feedpak_tab import (
     CHORD_MAX_SUS_SEC,
     MIN_NOTE_SEC,
     STANDARD,
+    chord_shapes,
     full_difficulty_events,
+    hand_positions,
     is_bass,
     open_strings_midi,
     read_pack,
@@ -292,3 +294,57 @@ def test_tab_truth_cli_dumps_every_arrangement(tmp_path: Path):
     assert lead["open_strings_midi"] == STANDARD
     assert len(lead["notes"]) == 7
     assert (bass["role"], bass["open_strings_midi"]) == ("bass", [27, 32, 37, 42, 46, 51])
+
+
+def _shaped() -> dict:
+    """A laddered chart with hand positions, a held chord shape and fingers."""
+    return {
+        "templates": [
+            {"name": "Am", "frets": [-1, 0, 2, 2, 1, 0], "fingers": [-1, -1, 2, 3, 1, -1]},
+        ],
+        "anchors": [{"time": 9.0, "fret": 9, "width": 4}],  # top-level: ignored
+        "phrases": [
+            {
+                "start_time": 0.0,
+                "end_time": 4.0,
+                "max_difficulty": 1,
+                "levels": [
+                    {"difficulty": 0, "anchors": [{"time": 0.0, "fret": 5}]},
+                    {
+                        "difficulty": 1,
+                        "notes": [{"t": 2.0, "s": 3, "f": 2}],
+                        "chords": [{"t": 1.0, "id": 0}],
+                        "anchors": [{"time": 1.5, "fret": 3, "width": 5}, {"time": 0.0, "fret": 1}],
+                        "handshapes": [
+                            {"chord_id": 0, "start_time": 1.0, "end_time": 3.0},
+                            {"chord_id": 7, "start_time": 3.0, "end_time": 3.5},  # no template
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+
+def test_hand_positions_come_from_the_hardest_levels():
+    assert hand_positions(_shaped()) == [
+        {"t": 0.0, "fret": 1, "width": 4},
+        {"t": 1.5, "fret": 3, "width": 5},
+    ]
+
+
+def test_chord_shapes_carry_template_frets_and_fingers():
+    assert chord_shapes(_shaped()) == [
+        {
+            "t": 1.0,
+            "t_end": 3.0,
+            "name": "Am",
+            "frets": [-1, 0, 2, 2, 1, 0],
+            "fingers": [-1, -1, 2, 3, 1, -1],
+        }
+    ]
+
+
+def test_chord_notes_get_the_template_finger():
+    fingers = {(n["s"], n["f"]): n.get("finger") for n in tab_notes(_shaped()) if n["t"] == 1.0}
+    assert fingers == {(1, 0): None, (2, 2): 2, (3, 2): 3, (4, 1): 1, (5, 0): None}

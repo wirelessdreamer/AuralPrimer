@@ -120,15 +120,9 @@ def open_strings_midi(arr: dict[str, Any], entry: dict[str, Any] | None = None) 
 # ---------------------------------------------------------------------------
 
 
-def full_difficulty_events(
-    arr: dict[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """``(notes, chords)`` of the full chart (each phrase's hardest level).
-
-    Falls back to the top-level ``notes``/``chords`` when there is no ladder.
-    """
-    notes: list[dict[str, Any]] = []
-    chords: list[dict[str, Any]] = []
+def _hardest_levels(arr: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Each phrase's hardest level, or ``None`` when there is no ladder."""
+    hardest: list[dict[str, Any]] = []
     has_ladder = False
     for phrase in _dicts(arr.get("phrases")):
         levels = _dicts(phrase.get("levels"))
@@ -139,11 +133,83 @@ def full_difficulty_events(
         level = next((lv for lv in levels if lv.get("difficulty") == want), None)
         if level is None:
             level = max(levels, key=lambda lv: _num(lv.get("difficulty")) or 0.0)
-        notes.extend(_dicts(level.get("notes")))
-        chords.extend(_dicts(level.get("chords")))
-    if not has_ladder:
-        return _dicts(arr.get("notes")), _dicts(arr.get("chords"))
-    return notes, chords
+        hardest.append(level)
+    return hardest if has_ladder else None
+
+
+def _full_difficulty_list(arr: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """``arr[key]`` of the full chart: from the hardest levels, else top-level."""
+    levels = _hardest_levels(arr)
+    if levels is None:
+        return _dicts(arr.get(key))
+    return [item for level in levels for item in _dicts(level.get(key))]
+
+
+def full_difficulty_events(
+    arr: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """``(notes, chords)`` of the full chart (each phrase's hardest level).
+
+    Falls back to the top-level ``notes``/``chords`` when there is no ladder.
+    """
+    return _full_difficulty_list(arr, "notes"), _full_difficulty_list(arr, "chords")
+
+
+def _template_name(template: dict[str, Any]) -> str:
+    name = template.get("name") or template.get("displayName")
+    return name.strip() if isinstance(name, str) else ""
+
+
+def _int_list(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    return [n if (n := _int(x)) is not None else -1 for x in value]
+
+
+def hand_positions(arr: dict[str, Any]) -> list[dict[str, Any]]:
+    """Authored hand positions (anchors) of the full chart, sorted by time.
+
+    Each is ``{t, fret, width}``: the index finger sits at ``fret`` and the hand
+    spans ``width`` frets (4 when the chart leaves it out).
+    """
+    out: list[dict[str, Any]] = []
+    for anchor in _full_difficulty_list(arr, "anchors"):
+        t = _num(anchor.get("time"))
+        fret = _int(anchor.get("fret"))
+        if t is None or fret is None:
+            continue
+        out.append({"t": t, "fret": fret, "width": _int(anchor.get("width")) or 4})
+    out.sort(key=lambda a: a["t"])
+    return out
+
+
+def chord_shapes(arr: dict[str, Any]) -> list[dict[str, Any]]:
+    """Authored chord shapes held over time (handshapes), sorted by time.
+
+    Each is ``{t, t_end, name, frets, fingers}`` with ``frets``/``fingers``
+    lowest string first (``-1`` = string not used / no finger), from the
+    handshape's template. Covers arpeggios too, where the notes are singles.
+    """
+    templates = _dicts(arr.get("templates"))
+    out: list[dict[str, Any]] = []
+    for shape in _full_difficulty_list(arr, "handshapes"):
+        t = _num(shape.get("start_time"))
+        tid = _int(shape.get("chord_id"))
+        if t is None or tid is None or not 0 <= tid < len(templates):
+            continue
+        template = templates[tid]
+        t_end = _num(shape.get("end_time"))
+        out.append(
+            {
+                "t": t,
+                "t_end": t_end if t_end is not None and t_end >= t else t,
+                "name": _template_name(template),
+                "frets": _int_list(template.get("frets")),
+                "fingers": _int_list(template.get("fingers")),
+            }
+        )
+    out.sort(key=lambda h: h["t"])
+    return out
 
 
 def _techniques(note: dict[str, Any]) -> dict[str, Any]:
@@ -172,7 +238,8 @@ def tab_notes(arr: dict[str, Any], entry: dict[str, Any] | None = None) -> list[
     """Normalized tab notes of an arrangement's full chart, sorted by (t, s).
 
     Each note: ``{t, t_off, s, f, midi}`` plus ``chord_id`` / ``chord_name``
-    when part of a chord, plus its present technique keys. Notes on a string
+    (and ``finger``, from the template, when it names one) when part of a
+    chord, plus its present technique keys. Notes on a string
     the tuning doesn't cover, or with a negative fret, are dropped.
     """
     open_midi = open_strings_midi(arr, entry)
@@ -198,8 +265,8 @@ def tab_notes(arr: dict[str, Any], entry: dict[str, Any] | None = None) -> list[
             continue
         tid = _int(chord.get("id"))
         template = templates[tid] if tid is not None and 0 <= tid < len(templates) else {}
-        name = template.get("name") or template.get("displayName")
-        name = name.strip() if isinstance(name, str) else ""
+        name = _template_name(template)
+        fingers = _int_list(template.get("fingers"))
         members = _dicts(chord.get("notes"))
         if not members:
             frets = template.get("frets") if isinstance(template.get("frets"), list) else []
@@ -216,6 +283,8 @@ def tab_notes(arr: dict[str, Any], entry: dict[str, Any] | None = None) -> list[
                 note["chord_id"] = tid
             if name:
                 note["chord_name"] = name
+            if note["s"] < len(fingers) and fingers[note["s"]] > 0:
+                note["finger"] = fingers[note["s"]]
             note.update(_techniques(raw))
             out.append(note)
 

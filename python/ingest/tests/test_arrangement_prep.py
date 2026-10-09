@@ -498,3 +498,35 @@ def test_prep_fingering_skips_existing_without_force(tmp_path: Path):
 
     status = prep_arrangements(pack, force=True)
     assert status["fingering"] == {"lead_guitar": "written", "bass": "written"}
+
+
+def test_prep_fingering_carries_what_the_tab_says(tmp_path: Path):
+    jsonschema = pytest.importorskip("jsonschema")
+    lead = {
+        "templates": [{"name": "Am", "frets": [-1, 0, 2, 2, 1, 0], "fingers": [-1, -1, 2, 3, 1, -1]}],
+        "notes": [{"t": 0.5, "s": 3, "f": 7, "sus": 0.5, "bn": 2, "vb": True, "sl": -1}],
+        "chords": [{"t": 1.0, "id": 0}],
+        "anchors": [{"time": 0.0, "fret": 5, "width": 4}],
+        "handshapes": [{"chord_id": 0, "start_time": 1.0, "end_time": 2.0}],
+    }
+    pack = tmp_path / "shaped.feedpak"
+    (pack / "arrangements").mkdir(parents=True)
+    (pack / "arrangements" / "lead.json").write_text(json.dumps(lead), encoding="utf-8")
+    (pack / "manifest.yaml").write_text(
+        "title: S\narrangements:\n- id: lead\n  type: guitar\n  file: arrangements/lead.json\n",
+        encoding="utf-8",
+    )
+    prep_arrangements(pack)
+    doc = json.loads((pack / "aural" / "fingering.lead_guitar.json").read_text(encoding="utf-8"))
+    schema = json.loads(FINGERING_SCHEMA.read_text(encoding="utf-8"))
+    jsonschema.Draft202012Validator(schema).validate(doc)
+
+    bent = doc["notes"][0]
+    assert bent["tech"] == {"bn": 2, "vb": True}
+    assert "chord" not in bent and "finger" not in bent
+    chord = {n["string"]: (n.get("chord"), n.get("finger")) for n in doc["notes"][1:]}
+    assert chord == {1: ("Am", None), 2: ("Am", 2), 3: ("Am", 3), 4: ("Am", 1), 5: ("Am", None)}
+    assert doc["anchors"] == [{"t": 0.0, "fret": 5, "width": 4}]
+    assert doc["handshapes"] == [
+        {"t": 1.0, "t_end": 2.0, "name": "Am", "frets": [-1, 0, 2, 2, 1, 0], "fingers": [-1, -1, 2, 3, 1, -1]}
+    ]

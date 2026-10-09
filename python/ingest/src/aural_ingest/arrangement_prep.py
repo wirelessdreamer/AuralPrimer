@@ -70,7 +70,14 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .feedpak_tab import MIN_NOTE_SEC, open_strings_midi, tab_notes
+from .feedpak_tab import (
+    MIN_NOTE_SEC,
+    TECHNIQUE_KEYS,
+    chord_shapes,
+    hand_positions,
+    open_strings_midi,
+    tab_notes,
+)
 from .pack_paths import load_pack_manifest, pack_feature_dirname, update_manifest_keys
 
 if TYPE_CHECKING:  # pragma: no cover — type-only; avoids a hard runtime dep.
@@ -265,6 +272,11 @@ def build_fingering_doc(
     (pitch outside 0..127, string > 8, fret > 36, negative time) are left out.
     ``tuning`` is the absolute MIDI open strings (capo excluded). Returns
     ``None`` when no note survives.
+
+    The rest of what the tab says rides along for the guitar views: per note
+    ``tech`` (technique keys), ``chord`` (chord name) and ``finger`` (from the
+    chord template); top-level ``anchors`` (hand positions) and
+    ``handshapes`` (chord shapes held over time, arpeggios included).
     """
     kept = [
         n
@@ -275,8 +287,9 @@ def build_fingering_doc(
         return None
     t_on = _snap_to_midi_grid([n["t"] for n in kept])
     t_off = _snap_to_midi_grid([n["t_off"] for n in kept])
-    notes = [
-        {
+    notes = []
+    for n, on, off in zip(kept, t_on, t_off):
+        note: dict[str, Any] = {
             "t_on": on,
             "t_off": off,
             "pitch": n["midi"],
@@ -284,15 +297,28 @@ def build_fingering_doc(
             "string": n["s"],
             "fret": n["f"],
         }
-        for n, on, off in zip(kept, t_on, t_off)
-    ]
+        tech = {k: n[k] for k in TECHNIQUE_KEYS if k in n}
+        if tech:
+            note["tech"] = tech
+        if n.get("chord_name"):
+            note["chord"] = n["chord_name"]
+        if n.get("finger"):
+            note["finger"] = n["finger"]
+        notes.append(note)
     notes.sort(key=lambda x: (x["t_on"], x["pitch"], x["string"]))
-    return {
+    doc: dict[str, Any] = {
         "version": "1.0.0",
         "instrument": role,
         "tuning": open_strings_midi(arr, manifest_entry),
         "notes": notes,
     }
+    anchors = hand_positions(arr)
+    if anchors:
+        doc["anchors"] = anchors
+    shapes = chord_shapes(arr)
+    if shapes:
+        doc["handshapes"] = shapes
+    return doc
 
 
 # ---------------------------------------------------------------------------

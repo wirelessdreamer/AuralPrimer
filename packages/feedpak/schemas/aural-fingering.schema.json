@@ -17,6 +17,36 @@
     "notes": {
       "type": "array",
       "items": { "$ref": "#/$defs/note" }
+    },
+    "anchors": {
+      "$comment": "Hand positions from an authored tab: index finger at `fret`, hand spanning `width` frets, from time `t`.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["t", "fret"],
+        "additionalProperties": true,
+        "properties": {
+          "t": { "type": "number" },
+          "fret": { "type": "integer", "minimum": 0, "maximum": 36 },
+          "width": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "handshapes": {
+      "$comment": "Chord shapes held from `t` to `t_end` (arpeggios included), lowest string first; -1 = string unused / no finger.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["t", "frets"],
+        "additionalProperties": true,
+        "properties": {
+          "t": { "type": "number" },
+          "t_end": { "type": "number" },
+          "name": { "type": "string" },
+          "frets": { "type": "array", "items": { "type": "integer", "minimum": -1, "maximum": 36 } },
+          "fingers": { "type": "array", "items": { "type": "integer", "minimum": -1, "maximum": 4 } }
+        }
+      }
     }
   },
   "$defs": {
@@ -40,7 +70,10 @@
         "string": { "type": "integer", "minimum": 0, "maximum": 8 },
         "fret": { "type": "integer", "minimum": 0, "maximum": 36 },
         "s": { "type": "integer", "minimum": 0, "maximum": 8 },
-        "f": { "type": "integer", "minimum": 0, "maximum": 36 }
+        "f": { "type": "integer", "minimum": 0, "maximum": 36 },
+        "tech": { "$comment": "feedpak technique keys present on the note (pm, ho, po, sl, bn, vb, hm, ...).", "type": "object" },
+        "chord": { "$comment": "Name of the chord the note belongs to.", "type": "string" },
+        "finger": { "$comment": "Fretting finger from the chord template: 1 index .. 4 pinky.", "type": "integer", "minimum": 0, "maximum": 4 }
       },
       "anyOf": [
         { "required": ["string", "fret"] },
