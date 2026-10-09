@@ -90,7 +90,7 @@
   <header>
     <div class="eyebrow">AuralPrimer · guitar mock-ups</div>
     <h1>Nashville numbers on the fretboard</h1>
-    <p><b>Positions are geometry; numbers come from the key.</b> The five pentatonic boxes are places on the neck. Inside a box every dot gets its number in the song's key, in three tiers: the box's five notes, the two that complete the scale, and notes outside the key, drawn only when the song plays them. Switch <b>Count from</b> to see the same box read from the major tonic (the box root is 6) or from its relative minor (the box root is 1).</p>
+    <p><b>Positions are geometry; numbers come from the key.</b> The five pentatonic boxes are places on the neck, and every dot gets its number in the song's key, in three tiers: the box's five notes, the two that complete the scale, and notes outside the key, drawn only when the song plays them. <b>A position is a focus, not a fence.</b> The box you are in is brightest, the boxes either side stay readable, and the numbers carry on across the whole neck, so position 1 runs straight into 5 below it and 2 above it. Switch <b>Count from</b> to read the same box from the major tonic (its root is 6) or from its relative minor (its root is 1).</p>
   </header>
 
   <div class="controls" role="group" aria-label="Key and position">
@@ -113,7 +113,7 @@
   <section aria-labelledby="h-positions">
     <div class="section-head">
       <h2 id="h-positions">The five positions</h2>
-      <p>All five boxes across the neck, numbered with the blues/rock convention: position 1 is the minor box with its root on the low E string. The selected one shows every tier. Click a box to select it.</p>
+      <p>Every number on the neck, numbered with the blues/rock convention: position 1 is the minor box with its root on the low E string. The selected box is brightest, its two neighbours are dashed, and the numbers fade with distance rather than stopping at a box edge. Click a box to select it.</p>
     </div>
     <div class="wide"><canvas id="cv-positions" role="img" aria-label="The five pentatonic positions on a guitar neck, labelled with Nashville numbers"></canvas></div>
     <div class="legend">
@@ -121,13 +121,14 @@
       <span><i style="background: var(--box)"></i>Box note (pentatonic)</span>
       <span><i style="border: 2px solid var(--muted)"></i>Completes the scale (2 more numbers)</span>
       <span><i style="border: 2px dashed var(--chromatic)"></i>Outside the key, only when played</span>
+      <span><i style="border: 2px dashed var(--accent); border-radius: 4px"></i>A neighbouring position</span>
     </div>
   </section>
 
   <section aria-labelledby="h-melody">
     <div class="section-head">
       <h2 id="h-melody">Melody inside a position</h2>
-      <p>A four-bar phrase in position 1 that moves to position 2 in bar 3 and bends into a blue note. Three ways to read it.</p>
+      <p>A four-bar phrase in position 1 that moves to position 2 in bar 3 and bends into a blue note. The next box is already on screen before the phrase gets there. Three ways to read it.</p>
     </div>
     <div class="variants">
       <div class="card"><canvas id="cv-mel-box" role="img" aria-label="Melody lighting numbers inside the current box"></canvas>
@@ -142,7 +143,7 @@
   <section aria-labelledby="h-triads">
     <div class="section-head">
       <h2 id="h-triads">Triads inside the position</h2>
-      <p>A 1 5 6m 4 progression as three-string triads, voiced inside whichever position is selected. Pick another position and they re-voice. The box stays faint behind.</p>
+      <p>A 1 5 6m 4 progression as three-string triads, voiced in or just beside whichever position is selected: a chord may sit over the box edge when that grip is tighter. Pick another position and they re-voice.</p>
     </div>
     <div class="variants">
       <div class="card"><canvas id="cv-tri-deg" role="img" aria-label="Triads labelled with scale numbers"></canvas>
@@ -175,6 +176,7 @@
       <li><b>Default count in a major-key song.</b> Count from the major 1 (position 1's root reads 6) or from the relative minor? This page defaults to the major 1, since charts are written that way.</li>
       <li><b>Spelling notes outside a major key.</b> This page writes a blue note as ♭3 and ♭7. The app's current table writes the same notes as #2 and #6 in sharp keys, which reads wrong to most players.</li>
       <li><b>What moves the box.</b> The chart's hand positions, the player's live position from the Jamstik, or the chord? Here the melody carries its own position, and triads and barres follow the selected position.</li>
+      <li><b>How far the bleed reaches.</b> Here the numbers fade over the neighbouring boxes and never quite vanish. One box either side, or the whole neck?</li>
       <li><b>Barre labels.</b> Shape and number for rhythm parts, with numbers on the dots only in a practice view?</li>
     </ol>
   </div>
@@ -241,6 +243,43 @@ function positionInstance(k, oct) {
 function instancesOf(k) {
   return [-1, 0, 1].map((o) => positionInstance(k, o)).filter((i) => i.lo >= 0 && i.hi <= MAX_FRET);
 }
+/** The positions either side of k on the neck: 1 sits between 5 (below) and 2 (above). */
+function neighbours(inst) {
+  const below = inst.k === 1 ? 5 : inst.k - 1, above = inst.k === 5 ? 1 : inst.k + 1;
+  return [instanceNear(below, inst.lo - 2), instanceNear(above, inst.hi + 2)];
+}
+/** Every in-key note between two frets: the box notes and the two that complete the scale. */
+function keyNotes(f0, f1) {
+  const pent = PENT(), comp = COMPLETERS(), out = [];
+  for (let s = 0; s < N_STRINGS; s++) for (let f = Math.max(0, Math.floor(f0)); f <= f1; f++) {
+    const pc = mod(STD[s] + f, 12);
+    if (pent.has(pc) || comp.has(pc)) out.push({ s, f, pc });
+  }
+  return out;
+}
+/**
+ * How strongly a fret reads: 1 inside a focused box, easing off across the
+ * neighbouring boxes to a floor that never reaches zero. A position is a
+ * focus, not a fence; the numbers carry on across the whole neck.
+ */
+function focusWeight(f, windows) {
+  let best = 0;
+  for (const { lo, hi } of windows) {
+    const d = f < lo ? lo - f : f > hi ? f - hi : 0;
+    best = Math.max(best, 1 - d * 0.12);
+  }
+  return Math.max(0.2, best);
+}
+/** All the key's numbers across frets f0..f1, sized and faded by distance from the focused box(es). */
+function drawKeyNotes(ctx, m, f0, f1, windows, alpha = 1) {
+  for (const n of keyNotes(f0, f1)) {
+    const w = focusWeight(n.f, windows);
+    ctx.save(); ctx.globalAlpha = alpha * (0.25 + 0.75 * w);
+    const r = m.r * (tierOf(n.pc) === "mode" ? 0.78 : 1) * (0.72 + 0.28 * w);
+    dot(ctx, m.fx(n.f), m.sy(n.s), r, kindOf(n.pc), degreeLabel(n.pc));
+    ctx.restore();
+  }
+}
 /** The copy of position k nearest a fret. */
 function instanceNear(k, fret) {
   const all = [-1, 0, 1, 2].map((o) => positionInstance(k, o)).filter((i) => i.lo >= 0 && i.hi <= 20);
@@ -288,9 +327,13 @@ function toneOf(chord, pc) {
   return d === 0 ? "R" : d === 7 ? "5" : chord.minor ? "♭3" : "3";
 }
 
-/** A three-string voicing of `chord` inside the box: top strings first, the tightest grip nearest the box's middle. */
+/**
+ * A three-string voicing of `chord` around the box: top strings first, the
+ * tightest grip nearest the box's middle. The search reaches into the boxes
+ * either side, so a chord can sit just over the edge when that grip is tighter.
+ */
 function triadIn(chord, inst) {
-  const lo = Math.max(0, inst.lo - 1), hi = inst.hi + 1, centre = (inst.lo + inst.hi) / 2;
+  const lo = Math.max(0, inst.lo - 3), hi = inst.hi + 3, centre = (inst.lo + inst.hi) / 2;
   for (const strings of [[3, 4, 5], [2, 3, 4], [1, 2, 3]]) {
     const options = strings.map((s) => {
       const out = [];
@@ -402,7 +445,7 @@ function dot(ctx, x, y, r, kind, label, o = {}) {
 function kindOf(pc) { return mod(pc - tonic(), 12) === 0 ? "root" : tierOf(pc); }
 
 /** The box's outline: around the lowest and highest dot on each string. */
-function boxOutline(ctx, inst, m, alpha = 1, label = true) {
+function boxOutline(ctx, inst, m, alpha = 1, label = true, dashed = false) {
   const pad = m.r + 5;
   const left = [], right = [];
   for (let s = N_STRINGS - 1; s >= 0; s--) left.push([m.fx(inst.perString[s][0]) - pad, m.sy(s)]);
@@ -411,19 +454,14 @@ function boxOutline(ctx, inst, m, alpha = 1, label = true) {
     [right[0][0], right[0][1] + pad], ...right, [right[right.length - 1][0], right[right.length - 1][1] - pad]];
   ctx.save(); ctx.globalAlpha = alpha;
   ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
-  ctx.lineJoin = "round"; ctx.fillStyle = rgba(C.accent, 0.08); ctx.fill();
-  ctx.strokeStyle = rgba(C.accent, 0.55); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.lineJoin = "round";
+  if (!dashed) { ctx.fillStyle = rgba(C.accent, 0.08); ctx.fill(); }
+  if (dashed) ctx.setLineDash([6, 5]);
+  ctx.strokeStyle = rgba(C.accent, 0.55); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
   if (label) {
     ctx.fillStyle = C.accent; ctx.font = `800 11px ${C.ui}`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     ctx.fillText(`POSITION ${inst.k}`, (pts[0][0] + pts[pts.length - 1][0]) / 2, pts[0][1] - 4);
   }
-  ctx.restore();
-}
-/** Every note in a box, by tier; `dim` fades it behind other content. */
-function drawBox(ctx, inst, m, dim = 1) {
-  ctx.save(); ctx.globalAlpha = dim;
-  for (const n of inst.mode) dot(ctx, m.fx(n.f), m.sy(n.s), m.r * 0.78, "mode", degreeLabel(n.pc));
-  for (const n of inst.notes) dot(ctx, m.fx(n.f), m.sy(n.s), m.r, kindOf(n.pc), degreeLabel(n.pc));
   ctx.restore();
 }
 function caption(ctx, text, x, y, color, size = 13, align = "left") {
@@ -460,11 +498,15 @@ const positionsPanel = panel("cv-positions", (p) => {
   const { ctx, w, h } = p; clear(p);
   const m = neck(ctx, { x: 18, y: 34, w: w - 30, h: h - 66 }, 0, MAX_FRET);
   p.map = m;
-  for (let k = 1; k <= 5; k++) for (const inst of instancesOf(k)) if (k !== S.pos) {
-    boxOutline(ctx, inst, m, 0.35);
-    for (const n of inst.notes) dot(ctx, m.fx(n.f), m.sy(n.s), m.r * 0.55, kindOf(n.pc), "", {});
+  const focused = instancesOf(S.pos);
+  const near = new Set(focused.flatMap((i) => neighbours(i)).map((i) => `${i.k}:${i.lo}`));
+  for (let k = 1; k <= 5; k++) for (const inst of instancesOf(k)) {
+    if (k === S.pos) continue;
+    const isNeighbour = near.has(`${inst.k}:${inst.lo}`);
+    boxOutline(ctx, inst, m, isNeighbour ? 0.8 : 0.25, true, true);
   }
-  for (const inst of instancesOf(S.pos)) { boxOutline(ctx, inst, m, 1); drawBox(ctx, inst, m); }
+  for (const inst of focused) boxOutline(ctx, inst, m, 1);
+  drawKeyNotes(ctx, m, 0, MAX_FRET, focused);
 });
 positionsPanel.canvas.addEventListener("click", (e) => {
   const m = positionsPanel.map; if (!m) return;
@@ -486,12 +528,14 @@ function melodyState(t) {
   if (i < 0) i = 0;
   return { mel, tt, i, cur: mel.notes[i], next: mel.notes[(i + 1) % mel.notes.length] };
 }
-// The zoomed views ease toward the current position instead of jumping.
-const view = { lo: null };
-function easedWindow(target, dt) {
-  if (view.lo === null) view.lo = target;
-  view.lo += (target - view.lo) * Math.min(1, dt * 5);
-  return view.lo;
+// The zoomed views ease toward the current position instead of jumping, so the
+// brightest stretch of the neck slides into the next box as the phrase moves.
+const view = { lo: null, hi: null };
+function easedFocus(inst, dt) {
+  if (view.lo === null) { view.lo = inst.lo; view.hi = inst.hi; }
+  const k = Math.min(1, dt * 5);
+  view.lo += (inst.lo - view.lo) * k; view.hi += (inst.hi - view.hi) * k;
+  return { lo: view.lo, hi: view.hi };
 }
 let lastDt = 0;
 
@@ -499,11 +543,12 @@ panel("cv-mel-box", (p) => {
   const { ctx, w, h } = p; clear(p);
   const st = melodyState(S.t);
   const inst = instanceNear(st.cur.pos, st.cur.f);
-  const lo = easedWindow(inst.lo - 1, lastDt);
-  const f0 = Math.max(0, Math.floor(lo)), f1 = Math.min(MAX_FRET + 2, f0 + 7);
+  const focus = easedFocus(inst, lastDt);
+  const f0 = Math.max(0, Math.floor(focus.lo) - 3), f1 = Math.min(MAX_FRET + 2, f0 + 11);
   const m = neck(ctx, { x: 14, y: 40, w: w - 28, h: h - 76 }, f0, f1, { allNumbers: true });
+  for (const nb of neighbours(inst)) if (nb.hi >= f0 && nb.lo <= f1) boxOutline(ctx, nb, m, 0.7, false, true);
   boxOutline(ctx, inst, m, 1, false);
-  drawBox(ctx, inst, m, 0.45);
+  drawKeyNotes(ctx, m, f0, f1, [focus], 0.75);
   // Upcoming: a ring that closes as the note arrives.
   const tt = st.tt, next = st.next;
   const until = next.t >= tt ? next.t - tt : next.t + st.mel.length - tt;
@@ -581,8 +626,10 @@ panel("cv-mel-lanes", (p) => {
   ["E", "A", "D", "G", "B", "e"].forEach((n, s) => ctx.fillText(n, lx(s), hitY + 4));
   // The box strip below, zoomed on the current position.
   const inst = instanceNear(st.cur.pos, st.cur.f);
-  const m = neck(ctx, { x: 14, y: h - stripH - 6, w: w - 28, h: stripH - 14 }, Math.max(0, inst.lo - 1), inst.hi + 1, { numbers: false });
-  drawBox(ctx, inst, { ...m, r: m.r * 0.85 }, 0.5);
+  const s0 = Math.max(0, inst.lo - 4), s1 = inst.hi + 4;
+  const m = neck(ctx, { x: 14, y: h - stripH - 6, w: w - 28, h: stripH - 14 }, s0, s1, { numbers: false });
+  boxOutline(ctx, inst, { ...m, r: m.r * 0.6 }, 0.9, false);
+  drawKeyNotes(ctx, { ...m, r: m.r * 0.85 }, s0, s1, [inst], 0.6);
   dot(ctx, m.fx(st.cur.f), m.sy(st.cur.s), m.r, kindOf(st.cur.pc), degreeLabel(st.cur.pc), { glow: C.accent });
   caption(ctx, `POSITION ${st.cur.pos}`, 14, 10, C.accent, 11);
 });
@@ -595,10 +642,11 @@ function triadPanel(id, labelMode) {
     const i = Math.floor((S.t % (BAR * PROGRESSION.length)) / BAR);
     const chord = chordOf(i);
     const notes = triadIn(chord, inst);
-    const f0 = Math.max(0, Math.min(inst.lo, ...notes.map((n) => n.f)) - 1), f1 = Math.max(inst.hi, ...notes.map((n) => n.f)) + 1;
+    const f0 = Math.max(0, Math.min(inst.lo - 3, ...notes.map((n) => n.f - 1))), f1 = Math.max(inst.hi + 3, ...notes.map((n) => n.f + 1));
     const m = neck(ctx, { x: 14, y: 70, w: w - 28, h: h - 104 }, f0, f1, { allNumbers: true });
+    for (const nb of neighbours(inst)) if (nb.hi >= f0 && nb.lo <= f1) boxOutline(ctx, nb, m, 0.45, false, true);
     boxOutline(ctx, inst, m, 0.6, false);
-    drawBox(ctx, inst, m, 0.22);
+    drawKeyNotes(ctx, m, f0, f1, [inst], 0.3);
     if (notes.length === 3) {
       ctx.beginPath(); notes.forEach((n, j) => (j ? ctx.lineTo(m.fx(n.f), m.sy(n.s)) : ctx.moveTo(m.fx(n.f), m.sy(n.s)))); ctx.closePath();
       ctx.fillStyle = rgba(C.accent, 0.12); ctx.fill(); ctx.strokeStyle = rgba(C.accent, 0.7); ctx.lineWidth = 2; ctx.stroke();
@@ -635,10 +683,10 @@ function barrePanel(id, labelMode) {
     const chord = chordOf(i);
     const barre = barreFor(chord, inst);
     const frets = barre.notes.map((n) => n.f);
-    const f0 = Math.max(0, Math.min(inst.lo, ...frets) - 1), f1 = Math.max(inst.hi, ...frets) + 1;
+    const f0 = Math.max(0, Math.min(inst.lo - 2, ...frets) - 1), f1 = Math.max(inst.hi + 2, ...frets) + 1;
     const m = neck(ctx, { x: 14, y: 70, w: w - 28, h: h - 104 }, f0, f1, { allNumbers: true });
     boxOutline(ctx, inst, m, 0.45, false);
-    drawBox(ctx, inst, m, 0.15);
+    drawKeyNotes(ctx, m, f0, f1, [inst], 0.2);
     // The barre itself: one bar across every string fretted at the barre fret.
     const onBarre = barre.notes.filter((n) => n.f === barre.fret).map((n) => n.s);
     const yA = m.sy(Math.max(...onBarre)), yB = m.sy(Math.min(...onBarre));
