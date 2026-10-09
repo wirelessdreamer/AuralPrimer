@@ -1,0 +1,1489 @@
+<title>Guitar Play Surfaces</title>
+<meta name="description" content="Four mock-ups of AuralPrimer's guitar play surface, driven by real tab data (string + fret) from a feedpak or the built-in demo riff.">
+<style>
+  :root {
+    /* Layout: a game-surface mock-up. Song source on top, concept switcher, one dark stage with the transport under it,
+       concept notes beside it (stacked on phones). One dark look on purpose: it is the game's own palette. */
+    color-scheme: dark;
+    --bg: #05060a;
+    --bg-2: #0b0f18;
+    --panel: #0f1522;
+    --panel-2: #151d2e;
+    --line: rgba(140, 170, 255, 0.16);
+    --line-2: rgba(140, 170, 255, 0.30);
+    --ink: rgba(245, 247, 255, 0.93);
+    --muted: rgba(220, 228, 250, 0.68);
+    --faint: rgba(220, 228, 250, 0.44);
+    --accent: #22d3ee;
+    --accent-ink: #031418;
+    --good: #a3ff12;
+    --warn: #ffb547;
+    --bad: #ff4d5e;
+    /* String colours, lowest string first. Order follows the red/yellow/blue/orange/green/purple convention
+       tab-highway players already know. */
+    --s0: #ff5c7a;
+    --s1: #f5d547;
+    --s2: #38bdf8;
+    --s3: #fb923c;
+    --s4: #34d399;
+    --s5: #a78bfa;
+    --s6: #f472b6;
+    --s7: #a3e635;
+    --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-num: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font-ui); }
+  .app {
+    max-width: 1480px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 28px;
+    display: grid; gap: 14px;
+    background: radial-gradient(1200px 500px at 20% -10%, rgba(124, 58, 237, 0.16), transparent 60%),
+                radial-gradient(900px 400px at 100% 0%, rgba(34, 211, 238, 0.08), transparent 60%);
+  }
+
+  .top { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; justify-content: space-between; }
+  .eyebrow { font: 700 11px/1 var(--font-ui); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 6px 0 0; font: 800 26px/1.1 var(--font-ui); letter-spacing: -0.01em; text-wrap: balance; }
+  .source { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .btn {
+    position: relative; display: inline-flex; align-items: center; gap: 8px;
+    min-height: 36px; padding: 0 14px; border-radius: 9px;
+    background: var(--panel); border: 1px solid var(--line-2); color: var(--ink);
+    font: 600 13px/1 var(--font-ui); cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn:focus-visible, .btn:focus-within, select:focus-visible, input[type="range"]:focus-visible, .tab:focus-visible, .toggle:focus-within {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+
+  .songbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+    padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  }
+  .songmeta { display: grid; min-width: 0; }
+  .songmeta strong { font-size: 15px; }
+  .songmeta span { color: var(--muted); font-size: 12px; }
+  select {
+    min-height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line-2);
+    background: var(--panel-2); color: var(--ink); font: 600 13px var(--font-ui);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); font: 600 11.5px/1.2 var(--font-ui);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip b { color: var(--ink); font-weight: 700; }
+  .status { margin: 0; color: var(--muted); font-size: 13px; min-height: 1.45em; }
+  .status.err { color: var(--bad); }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tab {
+    display: inline-flex; align-items: baseline; gap: 8px; padding: 9px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer;
+    font: 700 12.5px/1 var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .tab kbd { font: 600 10px var(--font-num); color: var(--faint); }
+  .tab[aria-selected="true"] { background: var(--panel-2); color: var(--ink); border-color: var(--accent); box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.25) inset; }
+
+  .work { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 14px; align-items: start; }
+  .left { display: grid; gap: 10px; min-width: 0; }
+  .stagewrap {
+    position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: 74vh; max-width: 100%;
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg-2);
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .transport {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  }
+  .time { font: 600 13px var(--font-num); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 92px; }
+  #scrub { flex: 1 1 180px; min-width: 120px; accent-color: var(--accent); }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font: 600 12.5px var(--font-ui); cursor: pointer; border-radius: 6px; }
+  .toggle input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .keys { width: 100%; margin: 0; color: var(--faint); font-size: 12px; }
+
+  .notes {
+    display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+    min-width: 0;
+  }
+  .notes h2 { margin: 0; font: 800 18px/1.2 var(--font-ui); text-wrap: balance; }
+  .notes p { margin: 0; color: var(--muted); }
+  .facts { display: grid; gap: 10px; margin: 0; }
+  .facts dt { font: 700 10.5px/1 var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+  .facts dd { margin: 4px 0 0; color: var(--ink); }
+  .uses { display: flex; flex-wrap: wrap; gap: 5px; }
+  .uses code { font: 600 11.5px var(--font-num); padding: 2px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); }
+  .truth { border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 8px; }
+  .truth h3 { margin: 0; font: 800 13px/1.2 var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; font: 700 12px var(--font-num); color: var(--ink); }
+  .legend i { width: 18px; height: 6px; border-radius: 3px; display: inline-block; }
+
+  @media (max-width: 960px) {
+    .work { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .stagewrap { aspect-ratio: 3 / 4; max-height: none; }
+    h1 { font-size: 22px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn, .tab { transition: none; }
+  }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <div class="eyebrow">AuralPrimer · guitar mock-ups</div>
+      <h1>Guitar play surfaces</h1>
+    </div>
+    <div class="source">
+      <button class="btn" id="useDemo" type="button">Demo riff</button>
+      <label class="btn file" for="pickFile">Open .feedpak file<input id="pickFile" type="file" accept=".feedpak,.sloppak,.zip"></label>
+      <label class="btn file" for="pickDir">Open pack folder<input id="pickDir" type="file" webkitdirectory></label>
+    </div>
+  </header>
+
+  <section class="songbar" aria-label="Song">
+    <div class="songmeta"><strong id="songTitle">Demo riff</strong><span id="songArtist"></span></div>
+    <label class="toggle" for="arrSel">Part
+      <select id="arrSel"></select>
+    </label>
+    <div class="chips" id="chips"></div>
+  </section>
+  <p class="status" id="status" role="status"></p>
+
+  <nav class="tabs" role="tablist" aria-label="Concept">
+    <button class="tab" role="tab" id="tab-lanes" data-view="lanes" type="button">String lanes <kbd>1</kbd></button>
+    <button class="tab" role="tab" id="tab-highway" data-view="highway" type="button">Neck highway <kbd>2</kbd></button>
+    <button class="tab" role="tab" id="tab-tab" data-view="tab" type="button">Tab scroll <kbd>3</kbd></button>
+    <button class="tab" role="tab" id="tab-coach" data-view="coach" type="button">Neck coach <kbd>4</kbd></button>
+  </nav>
+
+  <main class="work">
+    <div class="left">
+      <div class="stagewrap" id="stagewrap">
+        <canvas id="stage" role="img" aria-label="Guitar play surface preview"></canvas>
+      </div>
+      <div class="transport" aria-label="Transport">
+        <button class="btn primary" id="playBtn" type="button">Play</button>
+        <button class="btn" id="restartBtn" type="button">Restart</button>
+        <span class="time" id="time">0:00 / 0:00</span>
+        <input id="scrub" type="range" min="0" max="1" step="0.01" value="0" aria-label="Song position">
+        <label class="toggle" for="speedSel">Speed
+          <select id="speedSel">
+            <option value="0.5">50%</option>
+            <option value="0.75">75%</option>
+            <option value="1" selected>100%</option>
+          </select>
+        </label>
+        <label class="toggle" for="mirrorChk"><input id="mirrorChk" type="checkbox">Flip strings</label>
+        <label class="toggle" for="simChk"><input id="simChk" type="checkbox" checked>Simulate a player</label>
+        <label class="toggle" for="soundChk"><input id="soundChk" type="checkbox" checked>Sound</label>
+        <p class="keys">Space plays and pauses. Left and right arrows jump 5 seconds. Keys 1 to 4 switch concepts.</p>
+      </div>
+    </div>
+
+    <aside class="notes" aria-live="polite">
+      <h2 id="vTitle">String lanes</h2>
+      <p id="vBlurb"></p>
+      <dl class="facts">
+        <div><dt>Best for</dt><dd id="vBest"></dd></div>
+        <div><dt>Reads from the tab</dt><dd class="uses" id="vUses"></dd></div>
+        <div><dt>Trade-off</dt><dd id="vTrade"></dd></div>
+      </dl>
+      <div class="truth">
+        <h3>Why tab truth matters</h3>
+        <p>Audio and MIDI only tell us pitch. A tab also says which string and fret, so the game can show where the hand goes, grade where a note was played, and stop guessing fingerings. Leave <b>Simulate a player</b> on to see position feedback: amber marks a right note played in another spot.</p>
+        <div class="legend" id="legend"></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+const GUITAR_STD = [40, 45, 50, 55, 59, 64]; // E2 A2 D3 G3 B3 E4, lowest string first
+const NOTE = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const TECH_KEYS = ["pm", "mt", "fhm", "ho", "po", "tp", "sl", "slu", "bn", "vb", "tr", "ac", "hm", "hp", "ig"];
+const TECH_LABEL = { pm: "Palm mute", ho: "Hammer-on", po: "Pull-off", sl: "Slide", slu: "Slide out", bn: "Bend",
+  vb: "Vibrato", mt: "Mute", fhm: "Fret-hand mute", hm: "Harmonic", hp: "Pinch harmonic", tp: "Tap", ac: "Accent", tr: "Tremolo", ig: "Unscored" };
+
+const VIEWS = {
+  lanes: {
+    title: "String lanes",
+    blurb: "Six lanes fall onto a hit line, the same motion as the keys and drum highways. In band mode every player reads the screen in one direction.",
+    best: "Band mode and split screen, where guitar sits beside keys and drums.",
+    uses: ["s → lane", "f → gem label", "sus", "chords + templates", "anchors", "techniques"],
+    trade: "The fret is a number, not a place. The strip under the hit line carries the hand position.",
+    draw: drawLanes,
+  },
+  highway: {
+    title: "Neck highway",
+    blurb: "The fretboard recedes into the screen and notes ride toward the strings. Fret is left to right, string is height and colour, time is depth.",
+    best: "Players coming from Rocksmith or feedBack, and fast position shifts.",
+    uses: ["f → x", "s → height", "anchors → camera", "chords", "sus", "techniques"],
+    trade: "Needs hand positions to aim the camera. We derive them when a tab has none. Too heavy for a quarter-screen split.",
+    draw: drawHighway,
+  },
+  tab: {
+    title: "Tab scroll",
+    blurb: "Real tablature that scrolls past a playhead, with bar lines from the beat map and standard marks for hammer-ons, slides, bends and palm muting.",
+    best: "Players who already read tab, and as the editor preview when we correct a transcription.",
+    uses: ["s → staff line", "f", "beats → bars", "sections", "chord names", "techniques"],
+    trade: "No spatial hand guidance. Dense riffs need the zoom we already have on the tab lane.",
+    draw: drawTab,
+  },
+  coach: {
+    title: "Neck coach",
+    blurb: "A still, full-length neck. Notes light up where they are played, the next ones count down in place, and chord cards show the shapes coming up.",
+    best: "Wait mode and slow practice, and the clearest place to show position feedback.",
+    uses: ["s + f → dot", "templates → fingers", "handshapes", "anchors", "chord changes"],
+    trade: "The eye has to jump between neck and cards. Fast single-note runs are hard to follow.",
+    draw: drawCoach,
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+const $ = (s) => document.querySelector(s);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+let C = {};
+function readColors() {
+  C = {
+    s: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => css(`--s${i}`)),
+    bg: css("--bg"), bg2: css("--bg-2"), panel: css("--panel"), panel2: css("--panel-2"),
+    ink: css("--ink"), muted: css("--muted"), faint: css("--faint"), line: css("--line"), line2: css("--line-2"),
+    accent: css("--accent"), good: css("--good"), warn: css("--warn"), bad: css("--bad"),
+    num: css("--font-num"), ui: css("--font-ui"),
+  };
+}
+function rgba(hex, a) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const v = parseInt(h, 16);
+  return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+}
+const noteName = (m) => NOTE[((m % 12) + 12) % 12];
+const fmtTime = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60); return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`; };
+function lowerBound(arr, t) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].t < t) lo = m + 1; else hi = m; } return lo; }
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
+function lastAtOrBefore(list, t, key = "t") { let best = null; for (const e of list) { if (e[key] <= t) best = e; else break; } return best; }
+
+// ---------------------------------------------------------------------------
+// Tab normalisation: one shape for the demo and for real feedpak arrangements
+// ---------------------------------------------------------------------------
+
+// The full chart lives in phrases[].levels; the hardest level of each phrase is the real tab.
+function flattenLevels(raw) {
+  const phrases = Array.isArray(raw.phrases) ? raw.phrases : [];
+  if (phrases.length) {
+    const out = { notes: [], chords: [], anchors: [], handshapes: [] };
+    for (const p of phrases) {
+      let best = null;
+      for (const lv of p.levels || []) if (!best || (lv.difficulty ?? 0) > (best.difficulty ?? 0)) best = lv;
+      if (!best) continue;
+      for (const k of Object.keys(out)) if (Array.isArray(best[k])) out[k].push(...best[k]);
+    }
+    if (out.notes.length || out.chords.length) return out;
+  }
+  return { notes: raw.notes || [], chords: raw.chords || [], anchors: raw.anchors || [], handshapes: raw.handshapes || [] };
+}
+
+function techOf(x) {
+  const t = {};
+  for (const k of TECH_KEYS) {
+    const v = x[k];
+    if (v === true) t[k] = true;
+    else if (typeof v === "number" && (k === "sl" || k === "slu" || k === "bn" ? v > 0 : v !== 0)) t[k] = v;
+  }
+  return t;
+}
+
+const CHORD_QUALITY = [
+  ["0,4,7", ""], ["0,3,7", "m"], ["0,7", "5"], ["0,4,7,10", "7"], ["0,3,7,10", "m7"], ["0,4,7,11", "maj7"],
+  ["0,2,7", "sus2"], ["0,5,7", "sus4"], ["0,3,6", "dim"], ["0,4,8", "aug"], ["0,4,7,9", "6"], ["0,2,4,7", "add9"],
+];
+function nameChord(midis) {
+  if (!midis.length) return "";
+  const root = Math.min(...midis);
+  const set = [...new Set(midis.map((m) => (m - root) % 12))].sort((a, b) => a - b).join(",");
+  const q = CHORD_QUALITY.find(([k]) => k === set);
+  return noteName(root) + (q ? q[1] : "");
+}
+
+function openStrings(entry, raw, isBass, nStrings) {
+  const src = (Array.isArray(entry.tuning) && entry.tuning.length) ? entry.tuning
+    : (Array.isArray(raw.tuning) && raw.tuning.length ? raw.tuning : [0, 0, 0, 0, 0, 0]);
+  // feedpak tuning is semitone offsets; AuralPrimer's own writer stores absolute MIDI. Accept both.
+  const absolute = src.some((v) => Math.abs(v) > 24);
+  let base = isBass ? GUITAR_STD.map((m) => m - 12) : GUITAR_STD.slice();
+  if (!isBass && nStrings >= 7) base = [35, ...base];
+  if (!isBass && nStrings >= 8) base = [30, ...base];
+  if (isBass && nStrings === 5) base = [23, ...base];
+  const out = [];
+  for (let i = 0; i < nStrings; i++) {
+    const b = base[i] ?? base[base.length - 1] + 5 * (i - base.length + 1);
+    out.push(absolute ? (Number(src[i]) || b) : b + (Number(src[i]) || 0));
+  }
+  return out;
+}
+
+function tuningName(open, isBass) {
+  const base = isBass ? GUITAR_STD.map((m) => m - 12) : GUITAR_STD;
+  const off = open.slice(0, base.length).map((m, i) => m - base[i]);
+  if (open.length === base.length || (isBass && open.length === 4)) {
+    const head = off.slice(0, isBass ? 4 : 6);
+    const same = head.every((v) => v === head[0]);
+    if (same && head[0] === 0) return "E standard";
+    if (same && head[0] === -1) return "E♭ standard";
+    if (same && head[0] === -2) return "D standard";
+    if (head[0] === -2 && head.slice(1).every((v) => v === 0)) return "Drop D";
+  }
+  return open.map(noteName).join(" ");
+}
+
+function normalizeArrangement(entry, raw) {
+  const flat = flattenLevels(raw);
+  const label = `${entry.type || ""} ${entry.id || ""} ${entry.name || raw.name || ""}`;
+  const isBass = /bass/i.test(label);
+  const capo = Number.isFinite(+entry.capo) ? +entry.capo : (Number.isFinite(+raw.capo) ? +raw.capo : 0);
+  const templates = Array.isArray(raw.templates) ? raw.templates : [];
+  const notes = [];
+  for (const x of flat.notes) {
+    if (!Number.isFinite(+x.t) || !Number.isInteger(x.s) || !Number.isFinite(+x.f)) continue;
+    notes.push({ t: +x.t, s: x.s, f: Math.round(+x.f), susRaw: +x.sus || 0, tech: techOf(x), chord: null });
+  }
+  for (const c of flat.chords) {
+    if (!Number.isFinite(+c.t)) continue;
+    const tp = templates[c.id];
+    let cn = Array.isArray(c.notes) && c.notes.length ? c.notes : [];
+    if (!cn.length && tp && Array.isArray(tp.frets)) cn = tp.frets.map((f, s) => (f >= 0 ? { s, f } : null)).filter(Boolean);
+    if (!cn.length) continue;
+    const ref = { id: c.id, t: +c.t, name: ((tp && (tp.displayName || tp.name)) || "").trim(), fingers: tp && tp.fingers, size: cn.length };
+    for (const x of cn) {
+      if (!Number.isInteger(x.s) || !Number.isFinite(+x.f)) continue;
+      notes.push({ t: +c.t, s: x.s, f: Math.round(+x.f), susRaw: +x.sus || 0, tech: { ...techOf(c), ...techOf(x) }, chord: ref });
+    }
+  }
+  notes.sort((a, b) => a.t - b.t || a.s - b.s);
+
+  const maxS = notes.reduce((m, n) => Math.max(m, n.s), -1);
+  const n = isBass ? Math.max(4, maxS + 1) : Math.max(6, maxS + 1);
+  const open = openStrings(entry, raw, isBass, n);
+
+  // Pitch + sustain. Chord notes without their own sustain ring until the next onset (max 0.25 s).
+  const onsets = [...new Set(notes.map((x) => x.t))].sort((a, b) => a - b).map((t) => ({ t }));
+  const members = new Map();
+  for (const x of notes) {
+    x.midi = open[x.s] + (x.f === 0 ? capo : x.f);
+    if (x.susRaw > 0) x.sus = x.susRaw;
+    else if (x.chord) {
+      const nxt = onsets[lowerBound(onsets, x.t + 1e-6)];
+      x.sus = Math.min(0.25, nxt ? nxt.t - x.t : 0.25);
+    } else x.sus = 0;
+    if (x.chord) { if (!members.has(x.chord)) members.set(x.chord, []); members.get(x.chord).push(x); }
+  }
+  for (const [ref, group] of members) {
+    ref.minS = Math.min(...group.map((y) => y.s));
+    if (!ref.name) ref.name = nameChord(group.map((y) => y.midi));
+  }
+
+  // Hand positions: authored anchors, or a simple running window when the tab has none.
+  let anchors = (flat.anchors || []).filter((a) => Number.isFinite(+a.time)).map((a) => ({ t: +a.time, fret: Math.max(1, +a.fret || 1), width: Math.max(2, +a.width || 4) }));
+  anchors.sort((a, b) => a.t - b.t);
+  if (!anchors.length) anchors = deriveAnchors(notes);
+
+  // Chord changes, from chords and handshapes, for the coach cards.
+  const shapeOf = (id, fallbackNotes) => {
+    const tp = templates[id];
+    if (tp && Array.isArray(tp.frets)) return { frets: tp.frets.slice(0, n), fingers: (tp.fingers || []).slice(0, n) };
+    const frets = Array(n).fill(-1); for (const y of fallbackNotes) frets[y.s] = y.f;
+    return { frets, fingers: [] };
+  };
+  const events = [];
+  for (const [ref, group] of members) if (ref.size >= 2) {
+    events.push({ t: ref.t, id: ref.id, name: ref.name, ...shapeOf(ref.id, group) });
+  }
+  for (const h of flat.handshapes || []) {
+    const id = h.chord_id; const tp = templates[id];
+    if (!tp || !Number.isFinite(+h.start_time)) continue;
+    const frets = (tp.frets || []).slice(0, n);
+    const name = ((tp.displayName || tp.name) || "").trim() || nameChord(frets.map((f, s) => (f >= 0 ? open[s] + (f === 0 ? capo : f) : null)).filter((v) => v !== null));
+    events.push({ t: +h.start_time, end: +h.end_time, id, name, ...shapeOf(id, []) });
+  }
+  events.sort((a, b) => a.t - b.t);
+  const changes = [];
+  for (const e of events) {
+    const prev = changes[changes.length - 1];
+    if (prev && prev.name === e.name && prev.frets.join() === e.frets.join()) { prev.end = Math.max(prev.end || 0, e.end || e.t); continue; }
+    changes.push({ t: e.t, end: e.end || e.t, name: e.name || "?", frets: e.frets, fingers: e.fingers });
+  }
+
+  const techCount = {};
+  for (const x of notes) for (const k of Object.keys(x.tech)) techCount[k] = (techCount[k] || 0) + 1;
+
+  const a = {
+    id: entry.id || raw.name || "part", name: entry.name || raw.name || entry.id || "Part", type: entry.type || (isBass ? "bass" : "guitar"),
+    isBass, n, open, capo, notes, anchors, changes, techCount,
+    chordCount: new Set(notes.filter((x) => x.chord && x.chord.size >= 2).map((x) => x.chord)).size,
+    maxFret: notes.reduce((m, x) => Math.max(m, x.f), 0),
+    tuningName: tuningName(open, isBass),
+  };
+  notes.forEach((x, i) => judge(a, x, i));
+  return a;
+}
+
+function deriveAnchors(notes) {
+  const out = []; let cur = 1;
+  for (const x of notes) {
+    if (x.f <= 0) continue;
+    let next = cur;
+    if (x.f < cur) next = x.f;
+    else if (x.f > cur + 3) next = x.f - 3;
+    if (next !== cur || !out.length) { cur = next; out.push({ t: x.t - 0.25, fret: cur, width: 4 }); }
+  }
+  return out.length ? out : [{ t: 0, fret: 1, width: 4 }];
+}
+
+// A deterministic stand-in for a real player, so the feedback states can be designed now.
+function judge(a, x, i) {
+  const h = (Math.imul(i + 7, 2654435761) >>> 0) % 100;
+  x.alt = null;
+  if (h < 9) {
+    for (const d of [1, -1, 2, -2]) {
+      const s2 = x.s + d;
+      if (s2 < 0 || s2 >= a.n) continue;
+      const f2 = x.midi - a.open[s2];
+      if (f2 >= 1 && f2 <= 22) { x.alt = { s: s2, f: f2 }; break; }
+    }
+  }
+  x.j = x.alt ? "alt" : (h >= 9 && h < 13 ? "miss" : "hit");
+}
+
+// ---------------------------------------------------------------------------
+// The built-in demo: an original 16-bar exercise, so the page works without a pack
+// ---------------------------------------------------------------------------
+function buildDemo() {
+  const bpm = 100, spb = 60 / bpm;
+  const at = (bar, beat) => ((bar - 1) * 4 + beat) * spb;
+  const templates = [];
+  const tpl = (name, frets, fingers) => (templates.push({ name, frets, fingers }), templates.length - 1);
+  const E5 = tpl("E5", [0, 2, -1, -1, -1, -1], [-1, 1, -1, -1, -1, -1]);
+  const G5 = tpl("G5", [3, 5, -1, -1, -1, -1], [1, 3, -1, -1, -1, -1]);
+  const A5 = tpl("A5", [5, 7, -1, -1, -1, -1], [1, 3, -1, -1, -1, -1]);
+  const Em = tpl("Em", [0, 2, 2, 0, 0, 0], [-1, 2, 3, -1, -1, -1]);
+  const Cmaj = tpl("C", [-1, 3, 2, 0, 1, 0], [-1, 3, 2, -1, 1, -1]);
+  const Gmaj = tpl("G", [3, 2, 0, 0, 0, 3], [2, 1, -1, -1, -1, 3]);
+  const Dmaj = tpl("D", [-1, -1, 0, 2, 3, 2], [-1, -1, -1, 1, 3, 2]);
+  const Am = tpl("Am", [-1, 0, 2, 2, 1, 0], [-1, -1, 2, 3, 1, -1]);
+  const Fmaj7 = tpl("Fmaj7", [-1, -1, 3, 2, 1, 0], [-1, -1, 3, 2, 1, -1]);
+  const Emaj = tpl("E", [0, 2, 2, 1, 0, 0], [-1, 2, 3, 1, -1, -1]);
+
+  const notes = [], chords = [], anchors = [], handshapes = [];
+  const note = (bar, beat, s, f, beats, tech = {}) => notes.push({ t: at(bar, beat), s, f, sus: beats > 0.5 ? beats * spb * 0.92 : 0, ...tech });
+  const chord = (bar, beat, id, beats, tech = {}) => chords.push({
+    t: at(bar, beat), id,
+    notes: templates[id].frets.map((f, s) => (f >= 0 ? { s, f, sus: beats * spb * 0.9, ...tech } : null)).filter(Boolean),
+  });
+  const shape = (id, bar0, bar1) => handshapes.push({ chord_id: id, start_time: at(bar0, 0), end_time: at(bar1, 0) - 0.05 });
+  const anchor = (bar, beat, fret, width) => anchors.push({ time: at(bar, beat), fret, width });
+
+  // Riff, bars 1-4: palm-muted chugs, a hammer-on, a slide, then power chords up the neck.
+  anchor(1, 0, 1, 4);
+  for (const bar of [1, 2, 3]) {
+    for (const b of [0, 0.5, 1, 1.5]) chord(bar, b, E5, 0.5, { pm: true });
+    note(bar, 2, 0, 3, 0.5); note(bar, 2.5, 0, 5, 0.5, { ho: true });
+    if (bar === 2) note(bar, 3, 1, 2, 1, { sl: 5 });
+    else { note(bar, 3, 1, 2, 0.5); note(bar, 3.5, 1, 3, 0.5, { ho: true }); }
+  }
+  chord(4, 0, E5, 0.5, { pm: true }); chord(4, 0.5, E5, 0.5, { pm: true });
+  anchor(4, 0.9, 3, 5);
+  chord(4, 1, G5, 1); chord(4, 2, A5, 2, { vb: true });
+
+  // Open chords, bars 5-8, with a muted strum on the "and" of 3.
+  anchor(5, 0, 1, 4);
+  [Em, Cmaj, Gmaj, Dmaj].forEach((id, i) => {
+    const bar = 5 + i; shape(id, bar, bar + 1);
+    for (const [b, d] of [[0, 1], [1, 0.5], [1.5, 1], [2.5, 0.5], [3, 1]]) chord(bar, b, id, d, b === 2.5 ? { mt: true } : {});
+  });
+
+  // Lead, bars 9-12: E minor pentatonic box at the 12th fret.
+  anchor(9, 0, 12, 4);
+  note(9, 0, 3, 12, 0.5); note(9, 0.5, 3, 14, 0.5, { ho: true }); note(9, 1, 4, 12, 0.5); note(9, 1.5, 4, 15, 0.5, { ho: true });
+  note(9, 2, 4, 12, 0.5, { po: true }); note(9, 2.5, 3, 14, 0.5); note(9, 3, 5, 12, 1, { vb: true });
+  note(10, 0, 3, 14, 1.5, { bn: 2 }); note(10, 1.5, 4, 12, 0.5); note(10, 2, 3, 14, 0.5); note(10, 2.5, 3, 12, 0.5, { po: true }); note(10, 3, 2, 14, 1, { vb: true });
+  [[5, 15], [5, 12], [4, 15], [4, 12], [3, 14], [3, 12], [2, 14], [2, 12]].forEach(([s, f], i) => note(11, i * 0.5, s, f, 0.5, i % 2 ? { po: true } : {}));
+  note(12, 0, 2, 12, 1, { sl: 14 }); note(12, 1, 3, 14, 3, { bn: 1, vb: true });
+
+  // Arpeggios, bars 13-16, then natural harmonics at the 12th fret.
+  anchor(13, 0, 1, 4);
+  const arp = (bar, id, seq) => { shape(id, bar, bar + 1); seq.forEach(([s, f], i) => note(bar, i * 0.5, s, f, 0.5)); };
+  arp(13, Am, [[1, 0], [2, 2], [3, 2], [4, 1], [5, 0], [4, 1], [3, 2], [2, 2]]);
+  arp(14, Fmaj7, [[2, 3], [3, 2], [4, 1], [5, 0], [4, 1], [3, 2], [2, 3], [3, 2]]);
+  arp(15, Cmaj, [[1, 3], [2, 2], [3, 0], [4, 1], [5, 0], [4, 1], [3, 0], [2, 2]]);
+  chord(16, 0, Emaj, 2);
+  anchor(16, 1.8, 11, 4);
+  note(16, 2, 3, 12, 0.5, { hm: true }); note(16, 2.5, 4, 12, 0.5, { hm: true }); note(16, 3, 5, 12, 1, { hm: true });
+
+  const beats = [];
+  for (let bar = 1; bar <= 17; bar++) for (let b = 0; b < 4; b++) beats.push({ time: at(bar, b), measure: b === 0 ? bar : -1 });
+  const raw = { name: "Guitar", tuning: [0, 0, 0, 0, 0, 0], capo: 0, notes, chords, templates, anchors, handshapes };
+  return {
+    title: "Demo riff", artist: "Original 16-bar exercise · 100 BPM · E standard", duration: at(17, 0), loop: true,
+    beats: normBeats(beats),
+    sections: [["Riff", 1], ["Open chords", 5], ["Pentatonic lead", 9], ["Arpeggios", 13]].map(([name, bar]) => ({ t: at(bar, 0), name })),
+    arrangements: [normalizeArrangement({ id: "guitar", name: "Guitar", type: "guitar" }, raw)],
+    audioUrl: null,
+  };
+}
+
+function normBeats(list) {
+  const out = []; let prev = null;
+  for (const b of list || []) {
+    const t = +b.time; if (!Number.isFinite(t)) continue;
+    const m = Number.isInteger(b.measure) ? b.measure : -1;
+    const down = m !== -1 && m !== prev;
+    if (m !== -1) prev = m;
+    out.push({ t, down, m: prev ?? 0 });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+function normSections(list) {
+  return (list || []).filter((s) => Number.isFinite(+s.time)).map((s) => {
+    const name = String(s.name || "section").replace(/[_-]+/g, " ");
+    return { t: +s.time, name: name.charAt(0).toUpperCase() + name.slice(1) };
+  }).sort((a, b) => a.t - b.t);
+}
+
+// ---------------------------------------------------------------------------
+// Pack loading: zip-style .feedpak/.sloppak, or an unpacked pack folder
+// ---------------------------------------------------------------------------
+async function zipSource(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error(`${file.name} is not a zip-style pack. Try "Open pack folder" for an unpacked .feedpak.`);
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const entries = new Map(); const dec = new TextDecoder();
+  for (let i = 0; i < count && dv.getUint32(p, true) === 0x02014b50; i++) {
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), lho = dv.getUint32(p + 42, true);
+    entries.set(dec.decode(buf.subarray(p + 46, p + 46 + nlen)), { method, csize, lho });
+    p += 46 + nlen + xlen + clen;
+  }
+  return {
+    names: [...entries.keys()],
+    async bytes(name) {
+      const e = entries.get(name); if (!e) return null;
+      const start = e.lho + 30 + dv.getUint16(e.lho + 26, true) + dv.getUint16(e.lho + 28, true);
+      const data = buf.subarray(start, start + e.csize);
+      if (e.method === 0) return data;
+      if (e.method !== 8) throw new Error(`${name} uses a zip compression this page can't read.`);
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    },
+    async blob(name, type) { const b = await this.bytes(name); return b ? new Blob([b], { type }) : null; },
+  };
+}
+
+function dirSource(fileList) {
+  const files = [...fileList];
+  const man = files.filter((f) => /(^|\/)manifest\.yaml$/i.test(f.webkitRelativePath)).sort((a, b) => a.webkitRelativePath.length - b.webkitRelativePath.length)[0];
+  if (!man) throw new Error("That folder has no manifest.yaml. Pick a single .feedpak folder.");
+  const prefix = man.webkitRelativePath.slice(0, -"manifest.yaml".length);
+  const map = new Map();
+  for (const f of files) if (f.webkitRelativePath.startsWith(prefix)) map.set(f.webkitRelativePath.slice(prefix.length), f);
+  return {
+    names: [...map.keys()],
+    async bytes(name) { const f = map.get(name); return f ? new Uint8Array(await f.arrayBuffer()) : null; },
+    async blob(name) { return map.get(name) || null; },
+    label: prefix.replace(/\/$/, ""),
+  };
+}
+
+async function readJson(src, name) {
+  const b = await src.bytes(name); if (!b) return null;
+  return JSON.parse(new TextDecoder().decode(b).replace(/^﻿/, ""));
+}
+
+async function loadPack(src, label) {
+  setStatus(`Opening ${label}…`);
+  if (!window.jsyaml) throw new Error("The YAML reader did not load, so the pack manifest can't be read. Check the connection and reload the page.");
+  const manBytes = await src.bytes("manifest.yaml");
+  if (!manBytes) throw new Error(`${label} has no manifest.yaml at its root.`);
+  const man = window.jsyaml.load(new TextDecoder().decode(manBytes).replace(/^﻿/, "")) || {};
+  const timeline = man.song_timeline ? await readJson(src, man.song_timeline).catch(() => null) : null;
+
+  const arrangements = []; let firstRaw = null;
+  for (const entry of man.arrangements || []) {
+    if (!entry || !entry.file) continue;
+    const raw = await readJson(src, entry.file).catch(() => null);
+    if (!raw) continue;
+    firstRaw = firstRaw || raw;
+    const a = normalizeArrangement(entry, raw);
+    if (a.notes.length) arrangements.push(a);
+  }
+  if (!arrangements.length) throw new Error(`${label} has no tab arrangements. Tabs live in arrangements[].file; this pack only has notation.`);
+
+  const beats = normBeats((firstRaw && firstRaw.beats && firstRaw.beats.length ? firstRaw.beats : timeline && timeline.beats) || []);
+  const sections = normSections((firstRaw && firstRaw.sections && firstRaw.sections.length ? firstRaw.sections : timeline && timeline.sections) || []);
+
+  // Audio: a full mix if the pack has one, else the default stem.
+  const mixName = src.names.find((n) => /(^|\/)(full|mix|song)\.(ogg|opus|wav|mp3|flac)$/i.test(n));
+  const stems = Array.isArray(man.stems) ? man.stems : [];
+  const stem = mixName || ((stems.find((s) => /^(full|mix|song)$/i.test(s.id)) || stems.find((s) => s.default) || stems[0] || {}).file);
+  let audioUrl = null;
+  if (stem) {
+    const ext = stem.split(".").pop().toLowerCase();
+    const type = { ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", mp3: "audio/mpeg", flac: "audio/flac" }[ext] || "";
+    const blob = await src.blob(stem, type);
+    if (blob) audioUrl = URL.createObjectURL(blob);
+  }
+  const lastEnd = Math.max(...arrangements.map((a) => { const n = a.notes[a.notes.length - 1]; return n ? n.t + n.sus : 0; }));
+  return {
+    title: man.title || label, artist: [man.artist, man.album, man.year].filter(Boolean).join(" · "),
+    duration: Math.max(+man.duration || 0, lastEnd + 1), loop: false, beats, sections, arrangements, audioUrl,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// App state + transport
+// ---------------------------------------------------------------------------
+const S = { song: null, a: null, view: "lanes", now: 0, prevNow: 0, playing: false, speed: 1, mirror: false, simulate: true, sound: true,
+  audio: null, lastTs: 0, cam: { x: null, w: null }, scrubbing: false };
+const canvas = $("#stage");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0;
+
+function setStatus(msg, err = false) { const el = $("#status"); el.textContent = msg; el.classList.toggle("err", err); }
+
+function setSong(song) {
+  pause();
+  if (S.audio) { S.audio.pause(); S.audio = null; }
+  if (S.song && S.song.audioUrl) URL.revokeObjectURL(S.song.audioUrl);
+  S.song = song; S.now = 0; S.prevNow = 0;
+  if (song.audioUrl) {
+    S.audio = new Audio(song.audioUrl);
+    S.audio.preservesPitch = true;
+    S.audio.muted = !S.sound;
+    S.audio.addEventListener("ended", () => pause());
+    S.audio.addEventListener("loadedmetadata", () => { if (S.audio && Number.isFinite(S.audio.duration)) song.duration = Math.max(song.duration, S.audio.duration); });
+  }
+  $("#songTitle").textContent = song.title;
+  $("#songArtist").textContent = song.artist || "";
+  const sel = $("#arrSel");
+  sel.innerHTML = "";
+  song.arrangements.forEach((a, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = `${a.name} (${a.isBass ? "bass" : "guitar"})`; sel.appendChild(o); });
+  const lead = song.arrangements.findIndex((a) => /lead/i.test(a.id + a.name));
+  setArrangement(lead >= 0 ? lead : 0);
+  $("#scrub").max = String(song.duration);
+}
+
+function setArrangement(i) {
+  S.a = S.song.arrangements[i]; S.cam = { x: null, w: null };
+  $("#arrSel").value = String(i);
+  const a = S.a;
+  const tech = Object.entries(a.techCount).filter(([k]) => k !== "ig").sort((x, y) => y[1] - x[1]).slice(0, 3)
+    .map(([k, v]) => `<span class="chip">${TECH_LABEL[k] || k} <b>${v.toLocaleString()}</b></span>`).join("");
+  $("#chips").innerHTML =
+    `<span class="chip">Tuning <b>${a.tuningName}</b></span>` +
+    (a.capo ? `<span class="chip">Capo <b>${a.capo}</b></span>` : "") +
+    `<span class="chip">Notes <b>${a.notes.length.toLocaleString()}</b></span>` +
+    `<span class="chip">Chords <b>${a.chordCount.toLocaleString()}</b></span>` + tech;
+  $("#legend").innerHTML = a.open.map((m, s) => `<span><i style="background:${C.s[s % 8]}"></i>${stringLabel(a, s)}</span>`).join("");
+}
+
+function stringLabel(a, s) {
+  const name = noteName(a.open[s]);
+  return s === a.n - 1 && name === noteName(a.open[0]) ? name.toLowerCase() : name;
+}
+
+function play() {
+  ensureAudio();
+  if (S.audio) {
+    S.audio.currentTime = S.now; S.audio.playbackRate = S.speed;
+    S.audio.play().catch(() => setStatus("The browser blocked audio playback. Press Play again.", true));
+  }
+  S.playing = true; $("#playBtn").textContent = "Pause";
+}
+function pause() {
+  if (S.audio) S.audio.pause();
+  S.playing = false; $("#playBtn").textContent = "Play";
+}
+function seek(t) {
+  S.now = clamp(t, 0, S.song.duration); S.prevNow = S.now;
+  if (S.audio) S.audio.currentTime = S.now;
+}
+
+// Tiny pluck synth so the demo is audible. Packs play their own audio instead.
+let AC = null, master = null;
+function ensureAudio() {
+  if (!AC) { try { AC = new AudioContext(); master = AC.createGain(); master.gain.value = 0.7; master.connect(AC.destination); } catch { AC = null; } }
+  if (AC && AC.state === "suspended") AC.resume();
+}
+function pluck(a, x) {
+  if (!AC) return;
+  const t0 = AC.currentTime, hz = 440 * 2 ** ((x.midi - 69) / 12), sp = S.speed;
+  const o1 = AC.createOscillator(), o2 = AC.createOscillator(), g = AC.createGain(), g2 = AC.createGain(), lp = AC.createBiquadFilter();
+  o1.type = x.tech.hm ? "sine" : "triangle"; o2.type = "sawtooth";
+  o1.frequency.value = hz; o2.frequency.value = hz * 1.004; g2.gain.value = x.tech.hm ? 0 : 0.22;
+  lp.type = "lowpass";
+  lp.frequency.setValueAtTime(x.tech.pm ? 900 : 3400, t0); lp.frequency.exponentialRampToValueAtTime(x.tech.pm ? 280 : 900, t0 + 0.5);
+  const dur = x.tech.pm || x.tech.mt ? 0.12 : Math.min(2.4, Math.max(0.3, x.sus / sp + 0.25));
+  const vol = (x.tech.mt ? 0.05 : x.tech.hm ? 0.14 : 0.16) * (x.chord && x.chord.size > 1 ? 0.6 : 1);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  const target = x.tech.bn ? hz * 2 ** (x.tech.bn / 12) : x.tech.sl ? 440 * 2 ** ((a.open[x.s] + x.tech.sl - 69) / 12) : null;
+  if (target) for (const o of [o1, o2]) {
+    const mul = o === o2 ? 1.004 : 1;
+    o.frequency.setValueAtTime(hz * mul, t0 + 0.04);
+    o.frequency.linearRampToValueAtTime(target * mul, t0 + Math.max(0.08, Math.min(0.35, (x.sus / sp) * 0.5)));
+  }
+  o1.connect(g); o2.connect(g2).connect(g); g.connect(lp).connect(master);
+  o1.start(t0); o2.start(t0); o1.stop(t0 + dur + 0.05); o2.stop(t0 + dur + 0.05);
+}
+function triggerNotes(t0, t1) {
+  if (t1 <= t0 || t1 - t0 > 0.3) return;
+  const ns = S.a.notes;
+  for (let i = lowerBound(ns, t0 + 1e-6); i < ns.length && ns[i].t <= t1; i++) pluck(S.a, ns[i]);
+}
+
+// ---------------------------------------------------------------------------
+// Shared drawing pieces
+// ---------------------------------------------------------------------------
+const row = (a, s, lowOnTop) => ((lowOnTop !== S.mirror) ? s : a.n - 1 - s); // y-order of strings on horizontal views
+const gauge = (a, s) => 1 + (a.n - 1 - s) * 0.42;
+const sounding = (x, now) => now >= x.t && now <= x.t + Math.max(x.sus, 0.14);
+function visible(a, t0, t1) {
+  const out = [];
+  for (let i = lowerBound(a.notes, t0 - 6); i < a.notes.length && a.notes[i].t <= t1; i++) {
+    const x = a.notes[i]; if (x.t >= t0 || x.t + x.sus >= t0) out.push(x);
+  }
+  return out;
+}
+function anchorAt(a, t) { return lastAtOrBefore(a.anchors, t) || a.anchors[0]; }
+function sectionAt(t) { const s = lastAtOrBefore(S.song.sections, t + 0.05); return s ? s.name : ""; }
+
+function paintBg(top, bottom) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, top || "#0d1322"); g.addColorStop(1, bottom || C.bg);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function hud(a, now, extra) {
+  ctx.textBaseline = "top";
+  ctx.font = `800 12px ${C.ui}`; ctx.fillStyle = C.ink; ctx.textAlign = "left";
+  ctx.fillText(`${a.name.toUpperCase()}`, 16, 14);
+  ctx.font = `600 11.5px ${C.ui}`; ctx.fillStyle = C.muted;
+  const sec = sectionAt(now);
+  ctx.fillText([a.tuningName, a.capo ? `capo ${a.capo}` : "", sec].filter(Boolean).join("  ·  "), 16, 31);
+  if (extra) { ctx.fillStyle = C.accent; ctx.font = `700 11.5px ${C.ui}`; ctx.fillText(extra, 16, 48); }
+  ctx.textAlign = "right"; ctx.font = `700 12px ${C.num}`; ctx.fillStyle = C.muted;
+  ctx.fillText(`${fmtTime(now)} / ${fmtTime(S.song.duration)}`, W - 16, 14);
+}
+// Right note, other spot: the message only a tab can produce.
+function positionCallout(a, now, y = 64) {
+  if (!S.simulate) return;
+  let last = null;
+  for (const x of visible(a, now - 1.6, now)) if (x.j === "alt" && x.t <= now && now - x.t < 1.6) last = x;
+  if (!last) return;
+  const p = (now - last.t) / 1.6;
+  const msg = `Right note, other spot · you played ${stringLabel(a, last.alt.s)} ${last.alt.f} · tab says ${stringLabel(a, last.s)} ${last.f}`;
+  ctx.font = `700 12.5px ${C.ui}`;
+  const w = Math.min(W - 32, ctx.measureText(msg).width + 28);
+  ctx.globalAlpha = p > 0.8 ? (1 - p) / 0.2 : 1;
+  ctx.fillStyle = "rgba(10,14,22,0.92)"; rr(ctx, (W - w) / 2, y, w, 30, 15); ctx.fill();
+  ctx.fillStyle = rgba(C.warn, 0.14); ctx.fill();
+  ctx.strokeStyle = rgba(C.warn, 0.7); ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = C.warn; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(msg, W / 2, y + 15.5, w - 20);
+  ctx.globalAlpha = 1;
+}
+
+// Gem: fret number plus small technique tags. Used by lanes and highway.
+function techTags(x) {
+  const left = x.tech.ho ? "H" : x.tech.po ? "P" : x.tech.tp ? "T" : x.tech.hp ? "PH" : x.tech.pm ? "PM" : "";
+  const right = x.tech.bn ? (x.tech.bn >= 2 ? "↑1" : "↑½") : x.tech.sl ? (x.tech.sl > x.f ? "↗" : "↘") : x.tech.slu ? "⤳" : x.tech.vb ? "~" : x.tech.ac ? ">" : "";
+  return [left, right];
+}
+function drawGem(x, cx, cy, w, h, color, alpha) {
+  ctx.globalAlpha = alpha;
+  const label = x.tech.mt ? "×" : String(x.f);
+  if (x.tech.hm) {
+    ctx.beginPath(); ctx.moveTo(cx, cy - h / 2 - 3); ctx.lineTo(cx + w / 2, cy); ctx.lineTo(cx, cy + h / 2 + 3); ctx.lineTo(cx - w / 2, cy); ctx.closePath();
+    ctx.fillStyle = rgba(color, 0.22); ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = C.ink;
+  } else if (x.f === 0 && !x.tech.mt) {
+    rr(ctx, cx - w / 2, cy - h / 2, w, h, h / 2.6); ctx.fillStyle = rgba(color, 0.16); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = color;
+  } else {
+    rr(ctx, cx - w / 2, cy - h / 2, w, h, h / 2.6);
+    ctx.fillStyle = x.tech.mt ? rgba(color, 0.45) : color; ctx.fill();
+    if (x.tech.pm) {
+      ctx.save(); ctx.clip(); ctx.strokeStyle = "rgba(0,0,0,0.28)"; ctx.lineWidth = 2;
+      for (let k = -h; k < w; k += 6) { ctx.beginPath(); ctx.moveTo(cx - w / 2 + k, cy + h / 2); ctx.lineTo(cx - w / 2 + k + h, cy - h / 2); ctx.stroke(); }
+      ctx.restore();
+    }
+    ctx.fillStyle = "#061018";
+  }
+  if (h >= 11) {
+    ctx.font = `800 ${Math.round(clamp(h * 0.62, 9, 16))}px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, cx, cy + 0.5);
+    if (w >= 40) {
+      const [l, r] = techTags(x);
+      ctx.font = `800 ${Math.round(clamp(h * 0.38, 8, 10))}px ${C.ui}`;
+      if (l) { ctx.textAlign = "left"; ctx.fillText(l, cx - w / 2 + 5, cy + 0.5); }
+      if (r) { ctx.textAlign = "right"; ctx.fillText(r, cx + w / 2 - 5, cy + 0.5); }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+function judgementMark(x, cx, cy, now, color) {
+  if (!S.simulate || now < x.t || now - x.t > 0.4) return;
+  const p = (now - x.t) / 0.4;
+  ctx.globalAlpha = 1 - p;
+  if (x.j === "hit") {
+    ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, 12 + p * 22, 0, Math.PI * 2); ctx.stroke();
+  } else if (x.j === "alt") {
+    ctx.strokeStyle = C.warn; ctx.lineWidth = 3; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(cx, cy, 14 + p * 14, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  } else {
+    ctx.strokeStyle = C.bad; ctx.lineWidth = 3; const r = 9;
+    ctx.beginPath(); ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r); ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A compact neck: uniform frets, used under the lanes as the hand-position strip.
+function miniNeck(a, now, x0, y0, w, h) {
+  const F = clamp(a.maxFret + 1, 12, 24);
+  const fx = (b) => x0 + 16 + (b / F) * (w - 16);
+  const sy = (s) => y0 + 6 + (row(a, s, false) / (a.n - 1)) * (h - 12);
+  ctx.fillStyle = rgba("#1a2133", 0.9); rr(ctx, x0, y0 - 4, w, h + 8, 8); ctx.fill();
+  const an = anchorAt(a, now + 0.15);
+  if (an) {
+    const ax = fx(an.fret - 1), aw = fx(an.fret - 1 + an.width) - ax;
+    ctx.fillStyle = rgba(C.accent, 0.14); ctx.fillRect(ax, y0 - 4, aw, h + 8);
+    ctx.strokeStyle = rgba(C.accent, 0.6); ctx.lineWidth = 1; ctx.strokeRect(ax + 0.5, y0 - 3.5, aw - 1, h + 7);
+  }
+  ctx.strokeStyle = "rgba(220,228,250,0.16)"; ctx.lineWidth = 1;
+  for (let b = 1; b <= F; b++) { ctx.beginPath(); ctx.moveTo(fx(b), y0 - 2); ctx.lineTo(fx(b), y0 + h + 2); ctx.stroke(); }
+  ctx.strokeStyle = "rgba(240,236,220,0.7)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(fx(0), y0 - 3); ctx.lineTo(fx(0), y0 + h + 3); ctx.stroke();
+  ctx.fillStyle = C.faint; ctx.font = `700 9.5px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const b of [3, 5, 7, 9, 12, 15, 17, 19, 21, 24]) if (b <= F) ctx.fillText(String(b), (fx(b - 1) + fx(b)) / 2, y0 + h + 6);
+  for (let s = 0; s < a.n; s++) { ctx.strokeStyle = rgba(C.s[s % 8], 0.45); ctx.lineWidth = gauge(a, s) * 0.8; ctx.beginPath(); ctx.moveTo(fx(0), sy(s)); ctx.lineTo(x0 + w, sy(s)); ctx.stroke(); }
+  for (const x of visible(a, now, now + 0.9)) {
+    const cx = x.f === 0 ? fx(0) - 7 : (fx(x.f - 1) + fx(x.f)) / 2, cy = sy(x.s), col = C.s[x.s % 8];
+    if (sounding(x, now)) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, 5.5, 0, Math.PI * 2); ctx.fill(); }
+    else if (x.t > now) { ctx.strokeStyle = rgba(col, 0.75); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.stroke(); }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Concept 1: String lanes
+// ---------------------------------------------------------------------------
+function drawLanes(a, now) {
+  paintBg();
+  const n = a.n;
+  const laneW = Math.min(80, (W * 0.6) / n);
+  const left = (W - laneW * n) / 2;
+  const hitY = Math.round(H * (W < 520 ? 0.72 : 0.7));
+  const look = 2.4, pps = (hitY - 30) / look;
+  const lane = (s) => (S.mirror ? n - 1 - s : s);
+  const lx = (s) => left + lane(s) * laneW + laneW / 2;
+  const yOf = (t) => hitY - (t - now) * pps;
+
+  // Bed + lanes
+  ctx.fillStyle = "rgba(18,25,40,0.72)"; rr(ctx, left - 8, 0, laneW * n + 16, hitY + 22, 12); ctx.fill();
+  for (let s = 0; s < n; s++) {
+    const x0 = left + lane(s) * laneW;
+    if (lane(s) % 2) { ctx.fillStyle = "rgba(140,170,255,0.035)"; ctx.fillRect(x0, 0, laneW, hitY + 14); }
+    ctx.strokeStyle = rgba(C.s[s % 8], 0.32); ctx.lineWidth = gauge(a, s); ctx.beginPath(); ctx.moveTo(lx(s), 0); ctx.lineTo(lx(s), hitY); ctx.stroke();
+  }
+  // Beat lines + bar numbers
+  ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.font = `700 10px ${C.num}`;
+  for (let i = lowerBound(S.song.beats, now - 0.3); i < S.song.beats.length && S.song.beats[i].t <= now + look; i++) {
+    const b = S.song.beats[i], y = yOf(b.t);
+    ctx.strokeStyle = b.down ? "rgba(220,228,250,0.26)" : "rgba(220,228,250,0.08)"; ctx.lineWidth = b.down ? 1.5 : 1;
+    ctx.beginPath(); ctx.moveTo(left - 8, y); ctx.lineTo(left + laneW * n + 8, y); ctx.stroke();
+    if (b.down) { ctx.fillStyle = C.faint; ctx.fillText(String(b.m), left - 14, y); }
+  }
+  // Section flags
+  ctx.textAlign = "left";
+  for (const sec of S.song.sections) {
+    const y = yOf(sec.t); if (y < 16 || y > hitY) continue;
+    ctx.font = `800 10.5px ${C.ui}`; const tw = ctx.measureText(sec.name.toUpperCase()).width;
+    const x = left + laneW * n + 18;
+    ctx.fillStyle = rgba(C.accent, 0.14); rr(ctx, x, y - 10, tw + 16, 20, 10); ctx.fill();
+    ctx.fillStyle = C.accent; ctx.fillText(sec.name.toUpperCase(), x + 8, y);
+  }
+
+  const vis = visible(a, now - 0.3, now + look);
+  // Sustain tails
+  for (const x of vis) {
+    if (x.sus < 0.12) continue;
+    const yt = Math.max(yOf(x.t + x.sus), 0), yb = Math.min(yOf(x.t), hitY);
+    if (yb <= yt) continue;
+    const cx = lx(x.s), col = C.s[x.s % 8];
+    ctx.strokeStyle = rgba(col, 0.55); ctx.lineWidth = 7; ctx.lineCap = "round";
+    ctx.beginPath();
+    if (x.tech.vb) { for (let y = yb; y >= yt; y -= 3) ctx.lineTo(cx + Math.sin(y * 0.45) * 4, y); }
+    else if (x.tech.sl || x.tech.slu) { ctx.moveTo(cx, yb); ctx.lineTo(cx + (((x.tech.sl || x.tech.slu) > x.f) ? 1 : -1) * laneW * 0.32, yt); }
+    else { ctx.moveTo(cx, yb); ctx.lineTo(cx, yt); }
+    ctx.stroke(); ctx.lineCap = "butt";
+    if (x.tech.sl && yt > 8) { ctx.fillStyle = col; ctx.font = `800 10px ${C.num}`; ctx.textAlign = "center"; ctx.fillText(`→${x.tech.sl}`, cx + (x.tech.sl > x.f ? 1 : -1) * laneW * 0.32, yt - 8); }
+  }
+  // Chord bars + names
+  const seen = new Set();
+  for (const x of vis) {
+    if (!x.chord || x.chord.size < 2 || seen.has(x.chord) || x.t < now - 0.05) continue;
+    seen.add(x.chord);
+    const group = vis.filter((y) => y.chord === x.chord);
+    const xs = group.map((y) => lx(y.s));
+    const y = yOf(x.t);
+    ctx.fillStyle = "rgba(235,240,255,0.10)"; rr(ctx, Math.min(...xs) - laneW / 2 + 2, y - 17, Math.max(...xs) - Math.min(...xs) + laneW - 4, 34, 10); ctx.fill();
+    if (x.chord.name) { ctx.fillStyle = C.ink; ctx.font = `800 12px ${C.ui}`; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText(x.chord.name, left - 34, y); }
+  }
+  // Gems
+  for (const x of vis) {
+    if (x.t < now - 0.12) continue;
+    const y = yOf(x.t); if (y < -20) continue;
+    drawGem(x, lx(x.s), Math.min(y, hitY + 6), laneW * 0.78, 24, C.s[x.s % 8], x.t < now ? 1 - (now - x.t) / 0.12 : 1);
+  }
+  // Hit line + receivers
+  const glow = ctx.createLinearGradient(0, hitY - 18, 0, hitY + 18);
+  glow.addColorStop(0, "rgba(34,211,238,0)"); glow.addColorStop(0.5, "rgba(34,211,238,0.22)"); glow.addColorStop(1, "rgba(34,211,238,0)");
+  ctx.fillStyle = glow; ctx.fillRect(left - 8, hitY - 18, laneW * n + 16, 36);
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(left - 8, hitY); ctx.lineTo(left + laneW * n + 8, hitY); ctx.stroke();
+  for (let s = 0; s < n; s++) {
+    const cx = lx(s), col = C.s[s % 8];
+    const on = vis.find((x) => x.s === s && sounding(x, now));
+    rr(ctx, cx - laneW * 0.4, hitY - 15, laneW * 0.8, 30, 10);
+    ctx.fillStyle = on ? rgba(col, 0.35) : "rgba(8,12,20,0.7)"; ctx.fill();
+    ctx.strokeStyle = rgba(col, on ? 1 : 0.55); ctx.lineWidth = on ? 2.5 : 1.5; ctx.stroke();
+    ctx.fillStyle = on ? C.ink : rgba(col, 0.9); ctx.font = `800 12px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(on ? String(on.f) : stringLabel(a, s), cx, hitY + 0.5);
+  }
+  for (const x of vis) judgementMark(x, lx(x.s), hitY, now, C.s[x.s % 8]);
+
+  // Hand-position strip
+  const an = anchorAt(a, now + 0.15);
+  miniNeck(a, now, 24, hitY + 44, W - 48, Math.max(30, H - hitY - 76));
+  ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.font = `800 10.5px ${C.ui}`; ctx.fillStyle = C.accent;
+  if (an) ctx.fillText(`HAND · FRETS ${an.fret}–${an.fret + an.width - 1}`, 24, hitY + 36);
+  hud(a, now);
+  positionCallout(a, now);
+}
+
+// ---------------------------------------------------------------------------
+// Concept 2: Neck highway (perspective)
+// ---------------------------------------------------------------------------
+function drawHighway(a, now, dt) {
+  paintBg("#0a0f1c", "#05070c");
+  const n = a.n, look = 2.6;
+  const horizonY = H * 0.08, groundY = H * 0.86;
+  const vpX = W / 2, zMax = 4.2, zs = zMax / look;
+  const k = (z) => 1 / (1 + Math.max(0, z));
+  const P = (x0, y0, z) => [vpX + (x0 - vpX) * k(z), horizonY + (y0 - horizonY) * k(z)];
+  const gap = Math.min((groundY - H * 0.36) / n, 44);
+  const sy = (s) => groundY - 26 - row(a, s, false) * gap;
+
+  // Camera follows the hand position slightly ahead of time.
+  const an = anchorAt(a, now + 0.35);
+  const camT = an.fret - 1 + an.width / 2, visT = Math.max(an.width + 4, 8);
+  if (S.cam.x === null) { S.cam.x = camT; S.cam.w = visT; }
+  const ease = Math.min(1, (dt || 0) * 3.2);
+  S.cam.x += (camT - S.cam.x) * ease; S.cam.w += (visT - S.cam.w) * ease;
+  const fretW = (W * 0.94) / S.cam.w;
+  const fx = (b) => W / 2 + (b - S.cam.x) * fretW;
+
+  // Ground: fret columns radiating to the vanishing point; the hand window is lit.
+  const F = 24;
+  for (let f = 1; f <= F; f++) {
+    const [ax, ay] = P(fx(f - 1), groundY, 0), [bx] = P(fx(f), groundY, 0);
+    const [cx, cy] = P(fx(f), groundY, zMax), [dx] = P(fx(f - 1), groundY, zMax);
+    const inHand = f >= an.fret && f < an.fret + an.width;
+    ctx.fillStyle = inHand ? rgba(C.accent, 0.10) : (f % 2 ? "rgba(140,170,255,0.03)" : "rgba(140,170,255,0.055)");
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, ay); ctx.lineTo(cx, cy); ctx.lineTo(dx, cy); ctx.closePath(); ctx.fill();
+  }
+  ctx.strokeStyle = "rgba(220,228,250,0.10)"; ctx.lineWidth = 1;
+  for (let b = 0; b <= F; b++) { const [x1, y1] = P(fx(b), groundY, 0), [x2, y2] = P(fx(b), groundY, zMax); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+  for (let i = lowerBound(S.song.beats, now); i < S.song.beats.length && S.song.beats[i].t <= now + look; i++) {
+    const b = S.song.beats[i], z = (b.t - now) * zs;
+    const [x1, y1] = P(fx(0), groundY, z), [x2] = P(fx(F), groundY, z);
+    ctx.strokeStyle = b.down ? "rgba(220,228,250,0.22)" : "rgba(220,228,250,0.07)"; ctx.lineWidth = b.down ? 1.5 : 1;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y1); ctx.stroke();
+  }
+  // Fret numbers on the near edge
+  ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.font = `800 12px ${C.num}`;
+  for (let f = 1; f <= F; f++) {
+    const x = fx(f - 0.5); if (x < -20 || x > W + 20) continue;
+    const inHand = f >= an.fret && f < an.fret + an.width;
+    ctx.fillStyle = inHand ? C.accent : C.faint; ctx.fillText(String(f), x, groundY + 10);
+  }
+  // Fret wires at the hit plane, then the strings
+  ctx.strokeStyle = "rgba(220,228,250,0.12)"; ctx.lineWidth = 1;
+  const topString = Math.min(sy(0), sy(a.n - 1));
+  for (let b = 0; b <= F; b++) { const x = fx(b); if (x < 0 || x > W) continue; ctx.beginPath(); ctx.moveTo(x, topString - 14); ctx.lineTo(x, groundY); ctx.stroke(); }
+  for (let s = 0; s < n; s++) {
+    ctx.strokeStyle = rgba(C.s[s % 8], 0.85); ctx.lineWidth = gauge(a, s) + 0.5;
+    ctx.beginPath(); ctx.moveTo(0, sy(s)); ctx.lineTo(W, sy(s)); ctx.stroke();
+    ctx.fillStyle = C.s[s % 8]; ctx.font = `800 11px ${C.num}`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillText(stringLabel(a, s), 8, sy(s) - 3);
+  }
+
+  // Notes, far to near
+  const vis = visible(a, now - 0.1, now + look).sort((p, q) => q.t - p.t || p.s - q.s);
+  const handLeft = fx(an.fret - 1), handRight = fx(an.fret - 1 + an.width);
+  for (const x of vis) {
+    const col = C.s[x.s % 8];
+    const x0 = x.f === 0 ? (handLeft + handRight) / 2 : fx(x.f - 0.5), y0 = sy(x.s);
+    // Sustain ribbon along the string
+    if (x.sus > 0.12 && x.t + x.sus > now) {
+      const z1 = Math.max(0, (x.t - now) * zs), z2 = Math.min(zMax, (x.t + x.sus - now) * zs);
+      const [p1x, p1y] = P(x0, y0, z1), [p2x, p2y] = P(x0, y0, z2);
+      ctx.strokeStyle = rgba(col, 0.5); ctx.lineWidth = 7 * k(z1); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(p1x, p1y); ctx.lineTo(p2x, p2y); ctx.stroke(); ctx.lineCap = "butt";
+    }
+    if (x.t < now - 0.08) continue;
+    const z = Math.max(0, (x.t - now) * zs), kk = k(z);
+    const [px, py] = P(x0, y0, z);
+    const [, gy] = P(x0, groundY, z);
+    ctx.strokeStyle = rgba(col, 0.35); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, gy); ctx.stroke();
+    ctx.fillStyle = rgba(col, 0.35); ctx.beginPath(); ctx.ellipse(px, gy, 10 * kk, 3 * kk, 0, 0, Math.PI * 2); ctx.fill();
+    const w = x.f === 0 ? (handRight - handLeft) * kk * 0.94 : fretW * 0.7 * kk;
+    drawGem(x, px, py, w, Math.max(5, 26 * kk), col, x.t < now ? 1 - (now - x.t) / 0.08 : 0.35 + 0.65 * kk ** 0.6);
+  }
+  // Chord frames
+  const seen = new Set();
+  for (const x of vis) {
+    if (!x.chord || x.chord.size < 2 || seen.has(x.chord) || x.t < now - 0.05) continue;
+    seen.add(x.chord);
+    const z = Math.max(0, (x.t - now) * zs), kk = k(z);
+    const pts = vis.filter((y) => y.chord === x.chord).map((y) => P(y.f === 0 ? (handLeft + handRight) / 2 : fx(y.f - 0.5), sy(y.s), z));
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const pad = 16 * kk + 4;
+    ctx.strokeStyle = `rgba(235,240,255,${0.25 + 0.4 * kk})`; ctx.lineWidth = 1.5;
+    rr(ctx, Math.min(...xs) - fretW * 0.4 * kk - 2, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + fretW * 0.8 * kk + 4, Math.max(...ys) - Math.min(...ys) + pad * 2, 6 * kk + 2);
+    ctx.stroke();
+    if (x.chord.name && kk > 0.3) { ctx.fillStyle = C.ink; ctx.font = `800 ${Math.round(10 + 6 * kk)}px ${C.ui}`; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(x.chord.name, (Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys) - pad - 3); }
+  }
+  // Hits at the strings
+  for (const x of vis) {
+    const cx = x.f === 0 ? (handLeft + handRight) / 2 : fx(x.f - 0.5), cy = sy(x.s), col = C.s[x.s % 8];
+    if (sounding(x, now)) {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 34); g.addColorStop(0, rgba(col, 0.55)); g.addColorStop(1, rgba(col, 0));
+      ctx.fillStyle = g; ctx.fillRect(cx - 34, cy - 34, 68, 68);
+    }
+    judgementMark(x, cx, cy, now, col);
+  }
+  hud(a, now, `HAND · FRETS ${an.fret}–${an.fret + an.width - 1}`);
+  positionCallout(a, now);
+}
+
+// ---------------------------------------------------------------------------
+// Concept 3: Tab scroll
+// ---------------------------------------------------------------------------
+function drawTab(a, now) {
+  paintBg("#0b101c", "#070a12");
+  const n = a.n;
+  const gap = clamp(H * 0.075, 18, 30);
+  const top = H * 0.5 - (gap * (n - 1)) / 2 + 10;
+  const ry = (s) => top + row(a, s, false) * gap;
+  const px = Math.max(70, W * 0.2);
+  const pps = clamp(W / 6.5, 110, 230);
+  const xOf = (t) => px + (t - now) * pps;
+  const t0 = now - (px - 40) / pps, t1 = now + (W - px) / pps;
+  const left = 40, right = W - 12;
+
+  // Staff
+  for (let s = 0; s < n; s++) {
+    ctx.strokeStyle = "rgba(220,228,250,0.28)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(left, ry(s)); ctx.lineTo(right, ry(s)); ctx.stroke();
+    ctx.fillStyle = C.s[s % 8]; ctx.font = `800 12px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(stringLabel(a, s), 20, ry(s));
+  }
+  const yTop = Math.min(ry(0), ry(n - 1)), yBot = Math.max(ry(0), ry(n - 1));
+  // Bars from the beat map
+  ctx.font = `700 10px ${C.num}`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  for (let i = lowerBound(S.song.beats, t0); i < S.song.beats.length && S.song.beats[i].t <= t1; i++) {
+    const b = S.song.beats[i], x = xOf(b.t);
+    if (b.down) {
+      ctx.strokeStyle = "rgba(220,228,250,0.42)"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+      ctx.fillStyle = C.faint; ctx.fillText(String(b.m), x + 3, yTop - 6);
+    } else {
+      ctx.strokeStyle = "rgba(220,228,250,0.10)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, yBot + 6); ctx.lineTo(x, yBot + 12); ctx.stroke();
+    }
+  }
+  // Sections
+  for (const sec of S.song.sections) {
+    const x = xOf(sec.t); if (x < left - 200 || x > right) continue;
+    ctx.font = `800 11px ${C.ui}`; const label = sec.name.toUpperCase(); const tw = ctx.measureText(label).width;
+    ctx.strokeStyle = rgba(C.accent, 0.7); ctx.lineWidth = 1; rr(ctx, x, yTop - 62, tw + 14, 20, 4); ctx.stroke();
+    ctx.fillStyle = C.accent; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(label, x + 7, yTop - 52);
+  }
+
+  const vis = visible(a, t0, t1);
+  // Chord names when they change
+  let lastName = null, lastX = -1e9, lastEnd = -1e9;
+  ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.font = `800 13px ${C.ui}`;
+  for (const x of vis) {
+    if (!x.chord || x.chord.size < 2 || x.chord.t !== x.t || !x.chord.name) continue;
+    const cx = xOf(x.t);
+    if (x.chord.name === lastName && cx - lastX < pps * 2) continue;
+    if (cx - 6 < lastEnd + 6) continue; // no room before the next label
+    lastName = x.chord.name; lastX = cx; lastEnd = cx - 6 + ctx.measureText(x.chord.name).width;
+    ctx.fillStyle = C.ink; ctx.fillText(x.chord.name, cx - 6, yTop - 24);
+  }
+  // Palm-mute brackets
+  ctx.font = `800 10px ${C.ui}`; ctx.textBaseline = "middle";
+  let pmStart = null, pmEnd = null;
+  const flushPm = () => {
+    if (pmStart === null) return;
+    const xa = xOf(pmStart) - 6, xb = xOf(pmEnd) + 8, y = yBot + 24;
+    ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.fillText("P.M.", xa, y);
+    ctx.strokeStyle = C.faint; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xa + 26, y); ctx.lineTo(Math.max(xa + 30, xb), y); ctx.lineTo(Math.max(xa + 30, xb), y - 5); ctx.stroke(); ctx.setLineDash([]);
+    pmStart = null;
+  };
+  for (const x of vis) {
+    if (!x.tech.pm) continue;
+    if (pmStart !== null && x.t - pmEnd > 0.45) flushPm();
+    if (pmStart === null) pmStart = x.t;
+    pmEnd = x.t;
+  }
+  flushPm();
+
+  // Notes
+  const prevOnString = new Map();
+  for (const x of vis) {
+    const cx = xOf(x.t), cy = ry(x.s), col = C.s[x.s % 8];
+    const label = x.tech.mt ? "x" : x.tech.hm ? `<${x.f}>` : String(x.f);
+    // Sustain / vibrato line
+    if (x.sus > 0.15) {
+      const xe = xOf(x.t + x.sus);
+      ctx.strokeStyle = rgba(col, x.tech.vb ? 0.9 : 0.35); ctx.lineWidth = x.tech.vb ? 1.6 : 2;
+      ctx.beginPath();
+      if (x.tech.vb) { for (let xx = cx + 10; xx <= Math.max(cx + 24, xe); xx += 2) ctx.lineTo(xx, cy - gap * 0.55 + Math.sin(xx * 0.55) * 2.5); }
+      else { ctx.moveTo(cx + 10, cy); ctx.lineTo(xe, cy); }
+      ctx.stroke();
+    }
+    // Hammer-on / pull-off arc from the previous note on this string
+    const prev = prevOnString.get(x.s);
+    if ((x.tech.ho || x.tech.po) && prev && x.t - prev.t < 1.2) {
+      const xa = xOf(prev.t), xm = (xa + cx) / 2;
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(xa + 4, cy - 9); ctx.quadraticCurveTo(xm, cy - gap * 0.95, cx - 4, cy - 9); ctx.stroke();
+      ctx.fillStyle = C.muted; ctx.font = `700 10px ${C.ui}`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText(x.tech.ho ? "h" : "p", xm, cy - gap * 0.6);
+    }
+    prevOnString.set(x.s, x);
+    // Fret number, knocked out of the line
+    ctx.font = `800 14px ${C.num}`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = "#0a0f1a"; ctx.fillRect(cx - tw / 2 - 3, cy - 9, tw + 6, 18);
+    let ink = rgba(col, 0.95);
+    if (S.simulate && x.t <= now) ink = x.j === "hit" ? C.good : x.j === "alt" ? C.warn : rgba(C.bad, 0.85);
+    if (sounding(x, now)) { ctx.shadowColor = col; ctx.shadowBlur = 14; }
+    ctx.fillStyle = ink; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(label, cx, cy + 0.5);
+    ctx.shadowBlur = 0;
+    // Slides, bends, taps, accents
+    if (x.tech.sl || x.tech.slu) {
+      const up = (x.tech.sl || x.tech.slu) > x.f;
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 1.4; ctx.beginPath();
+      ctx.moveTo(cx + tw / 2 + 4, cy + (up ? 5 : -5)); ctx.lineTo(cx + tw / 2 + 16, cy + (up ? -5 : 5)); ctx.stroke();
+      if (x.tech.sl) { ctx.fillStyle = C.muted; ctx.font = `700 10px ${C.num}`; ctx.textAlign = "left"; ctx.fillText(String(x.tech.sl), cx + tw / 2 + 18, cy); }
+    }
+    if (x.tech.bn) {
+      const bx = cx + tw / 2 + 3;
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(bx, cy); ctx.quadraticCurveTo(bx + 12, cy, bx + 12, cy - gap * 1.1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx + 8, cy - gap * 1.1 + 5); ctx.lineTo(bx + 12, cy - gap * 1.1); ctx.lineTo(bx + 16, cy - gap * 1.1 + 5); ctx.stroke();
+      ctx.fillStyle = C.ink; ctx.font = `700 10px ${C.ui}`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText(x.tech.bn === 1 ? "½" : x.tech.bn === 2 ? "full" : `${x.tech.bn / 2}`, bx + 12, cy - gap * 1.1 - 2);
+    }
+    if (x.tech.tp || x.tech.ac) {
+      ctx.fillStyle = C.muted; ctx.font = `800 10px ${C.ui}`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText(x.tech.tp ? "T" : ">", cx, yTop - 8);
+    }
+  }
+
+  // Playhead
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.shadowColor = C.accent; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.moveTo(px, yTop - 34); ctx.lineTo(px, yBot + 34); ctx.stroke(); ctx.shadowBlur = 0;
+  hud(a, now);
+  positionCallout(a, now, H - 46);
+}
+
+// ---------------------------------------------------------------------------
+// Concept 4: Neck coach
+// ---------------------------------------------------------------------------
+function drawCoach(a, now) {
+  paintBg("#0c1120", "#06080e");
+  const n = a.n;
+  const F = clamp(a.maxFret + 1, 12, 24);
+  const nx0 = 52, nx1 = W - 20;
+  const neckTop = Math.max(70, H * 0.13), neckH = clamp(H * 0.38, 120, 30 * n + 20);
+  const fretX = (b) => nx0 + ((1 - 2 ** (-b / 12)) / (1 - 2 ** (-F / 12))) * (nx1 - nx0);
+  const cxOf = (f) => (f === 0 ? nx0 - 16 : (fretX(f - 1) + fretX(f)) / 2);
+  const sy = (s) => neckTop + 14 + (row(a, s, false) / (n - 1)) * (neckH - 28);
+
+  // Neck
+  const wood = ctx.createLinearGradient(0, neckTop, 0, neckTop + neckH);
+  wood.addColorStop(0, "#1d1712"); wood.addColorStop(1, "#140f0c");
+  ctx.fillStyle = wood; rr(ctx, nx0, neckTop, nx1 - nx0, neckH, 6); ctx.fill();
+  for (const b of [3, 5, 7, 9, 15, 17, 19, 21]) if (b <= F) { ctx.fillStyle = "rgba(240,232,215,0.18)"; ctx.beginPath(); ctx.arc(cxOf(b), neckTop + neckH / 2, 6, 0, Math.PI * 2); ctx.fill(); }
+  for (const b of [12, 24]) if (b <= F) for (const d of [-1, 1]) { ctx.fillStyle = "rgba(240,232,215,0.18)"; ctx.beginPath(); ctx.arc(cxOf(b), neckTop + neckH / 2 + d * neckH * 0.22, 6, 0, Math.PI * 2); ctx.fill(); }
+  // Hand window
+  const an = anchorAt(a, now + 0.2);
+  if (an) {
+    const ax = fretX(an.fret - 1), bx = fretX(Math.min(F, an.fret - 1 + an.width));
+    ctx.fillStyle = rgba(C.accent, 0.13); ctx.fillRect(ax, neckTop - 6, bx - ax, neckH + 12);
+    ctx.strokeStyle = rgba(C.accent, 0.7); ctx.lineWidth = 1.5; ctx.strokeRect(ax, neckTop - 6, bx - ax, neckH + 12);
+    ctx.fillStyle = C.accent; ctx.font = `800 10.5px ${C.ui}`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillText(`HAND · FRETS ${an.fret}–${an.fret + an.width - 1}`, ax, neckTop - 10);
+  }
+  ctx.strokeStyle = "#b9b2a4"; ctx.lineWidth = 2;
+  for (let b = 1; b <= F; b++) { ctx.beginPath(); ctx.moveTo(fretX(b), neckTop); ctx.lineTo(fretX(b), neckTop + neckH); ctx.stroke(); }
+  ctx.strokeStyle = "#efe9da"; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(nx0, neckTop); ctx.lineTo(nx0, neckTop + neckH); ctx.stroke();
+  ctx.fillStyle = C.faint; ctx.font = `700 10.5px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const b of [1, 3, 5, 7, 9, 12, 15, 17, 19, 21, 24]) if (b <= F) ctx.fillText(String(b), cxOf(b), neckTop + neckH + 8);
+  for (let s = 0; s < n; s++) {
+    ctx.strokeStyle = rgba(C.s[s % 8], 0.7); ctx.lineWidth = gauge(a, s);
+    ctx.beginPath(); ctx.moveTo(nx0, sy(s)); ctx.lineTo(nx1, sy(s)); ctx.stroke();
+    ctx.fillStyle = C.s[s % 8]; ctx.font = `800 12px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(stringLabel(a, s), 16, sy(s));
+  }
+
+  // Current chord shape outline (handshape or strummed chord)
+  const shape = lastAtOrBefore(a.changes, now + 0.25);
+  if (shape && now <= (shape.end || shape.t) + 0.6) {
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = "rgba(240,236,220,0.55)"; ctx.lineWidth = 1.5;
+    shape.frets.forEach((f, s) => { if (f > 0 && s < n) { ctx.beginPath(); ctx.arc(cxOf(f), sy(s), 13, 0, Math.PI * 2); ctx.stroke(); } });
+    ctx.setLineDash([]);
+  }
+
+  // Upcoming notes with countdown rings, then sounding notes
+  const LEAD = 1.6;
+  const vis = visible(a, now - 0.2, now + LEAD);
+  const drawn = new Set();
+  for (const x of vis) {
+    if (x.t <= now) continue;
+    const key = `${x.s}:${x.f}`; if (drawn.has(key)) continue; drawn.add(key);
+    const cx = cxOf(x.f), cy = sy(x.s), col = C.s[x.s % 8], p = 1 - (x.t - now) / LEAD;
+    ctx.fillStyle = rgba(col, 0.12 + 0.2 * p); ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, 13, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2); ctx.stroke();
+  }
+  for (const x of vis) {
+    if (!sounding(x, now)) continue;
+    const cx = cxOf(x.f), cy = sy(x.s), col = C.s[x.s % 8];
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 30); g.addColorStop(0, rgba(col, 0.5)); g.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = g; ctx.fillRect(cx - 30, cy - 30, 60, 60);
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#061018"; ctx.font = `800 12px ${C.num}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(x.tech.mt ? "×" : String(x.f), cx, cy + 0.5);
+    const finger = x.chord && Array.isArray(x.chord.fingers) ? x.chord.fingers[x.s] : (shape && shape.fingers && shape.frets[x.s] === x.f ? shape.fingers[x.s] : -1);
+    if (finger > 0) {
+      ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(cx + 11, cy - 11, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#061018"; ctx.font = `800 9px ${C.ui}`; ctx.fillText(String(finger), cx + 11, cy - 10.5);
+    }
+  }
+  // Position feedback: where the simulated player was, and where the tab says to be
+  if (S.simulate) for (const x of vis) {
+    if (x.j !== "alt" || now < x.t || now - x.t > 1.2) continue;
+    const al = 1 - (now - x.t) / 1.2;
+    const ax = cxOf(x.alt.f), ay = sy(x.alt.s), tx = cxOf(x.f), ty = sy(x.s);
+    ctx.globalAlpha = al; ctx.strokeStyle = C.warn; ctx.lineWidth = 2.5; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.arc(ax, ay, 14, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + tx) / 2, Math.min(ay, ty) - 40, tx, ty - 14); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Lower deck: chord cards on the left, feedback or the note stream on the right
+  const deckTop = neckTop + neckH + 40;
+  const deckH = H - deckTop - 14;
+  if (deckH > 90) {
+    const cardW = clamp(W * 0.1, 78, 104), cardH = Math.min(deckH, cardW * 1.3);
+    let i = Math.max(0, lowerBound(a.changes, now + 0.001) - 1);
+    const showCards = a.changes.length > 0;
+    let cx = 20;
+    ctx.fillStyle = C.faint; ctx.font = `800 10.5px ${C.ui}`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    if (showCards) ctx.fillText("CHORD SHAPES", 20, deckTop - 6);
+    const maxCards = Math.max(1, Math.floor((W * (W > 640 ? 0.62 : 0.96)) / (cardW + 10)));
+    for (let c = 0; showCards && c < maxCards && i < a.changes.length; c++, i++) {
+      chordCard(a, a.changes[i], cx, deckTop, cardW, cardH, now);
+      cx += cardW + 10;
+    }
+    if (W > 640) {
+      const fx0 = W * 0.66, fw = W - fx0 - 20;
+      ctx.fillStyle = C.faint; ctx.font = `800 10.5px ${C.ui}`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      ctx.fillText(S.simulate ? "POSITION FEEDBACK" : "COMING UP", fx0, deckTop - 6);
+      ctx.fillStyle = "rgba(15,21,34,0.8)"; rr(ctx, fx0, deckTop, fw, cardH, 10); ctx.fill();
+      ctx.font = `700 12px ${C.num}`; ctx.textBaseline = "top";
+      const lines = S.simulate ? feedbackLines(a, now) : upcomingLines(a, now);
+      lines.slice(0, Math.floor((cardH - 16) / 19)).forEach((ln, k) => { ctx.fillStyle = ln.color; ctx.fillText(ln.text, fx0 + 12, deckTop + 10 + k * 19, fw - 24); });
+    }
+  }
+  hud(a, now);
+  if (W <= 640) positionCallout(a, now, H - 44); // the feedback panel is hidden at this width
+}
+
+function chordCard(a, ch, x, y, w, h, now) {
+  const active = now >= ch.t - 0.05 && now <= (ch.end || ch.t) + 0.6;
+  ctx.fillStyle = active ? "rgba(34,211,238,0.10)" : "rgba(15,21,34,0.8)"; rr(ctx, x, y, w, h, 10); ctx.fill();
+  ctx.strokeStyle = active ? C.accent : C.line; ctx.lineWidth = active ? 1.5 : 1; ctx.stroke();
+  ctx.fillStyle = C.ink; ctx.font = `800 14px ${C.ui}`; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText(ch.name, x + 10, y + 8, w - 20);
+  ctx.fillStyle = C.faint; ctx.font = `700 10px ${C.num}`; ctx.textAlign = "right";
+  const dtS = ch.t - now; ctx.fillText(dtS > 0.05 ? `in ${dtS.toFixed(1)}s` : "now", x + w - 8, y + 10);
+  const n = a.n, frets = ch.frets.slice(0, n);
+  const fretted = frets.filter((f) => f > 0);
+  const lo = fretted.length ? Math.min(...fretted) : 1, base = lo > 3 ? lo : 1;
+  const gx = x + 16, gw = w - 32, gy = y + 44, gh = h - 58, rows = 4;
+  for (let s = 0; s < n; s++) { const sx = gx + (s / (n - 1)) * gw; ctx.strokeStyle = "rgba(220,228,250,0.4)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx, gy); ctx.lineTo(sx, gy + gh); ctx.stroke(); }
+  for (let r = 0; r <= rows; r++) { const ry = gy + (r / rows) * gh; ctx.strokeStyle = r === 0 && base === 1 ? "rgba(240,236,220,0.9)" : "rgba(220,228,250,0.3)"; ctx.lineWidth = r === 0 && base === 1 ? 3 : 1; ctx.beginPath(); ctx.moveTo(gx, ry); ctx.lineTo(gx + gw, ry); ctx.stroke(); }
+  if (base > 1) { ctx.fillStyle = C.faint; ctx.font = `700 9.5px ${C.num}`; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText(`${base}fr`, gx - 3, gy + gh / rows / 2); }
+  frets.forEach((f, s) => {
+    const sx = gx + (s / (n - 1)) * gw;
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = `700 9.5px ${C.ui}`; ctx.fillStyle = C.muted;
+    if (f < 0) ctx.fillText("×", sx, gy - 2);
+    else if (f === 0) ctx.fillText("○", sx, gy - 2);
+    else {
+      const r = f - base; if (r < 0 || r >= rows) return;
+      const cy = gy + ((r + 0.5) / rows) * gh;
+      ctx.fillStyle = C.s[s % 8]; ctx.beginPath(); ctx.arc(sx, cy, Math.min(7, gw / n / 1.6), 0, Math.PI * 2); ctx.fill();
+      const fing = ch.fingers && ch.fingers[s];
+      if (fing > 0) { ctx.fillStyle = "#061018"; ctx.font = `800 8.5px ${C.ui}`; ctx.textBaseline = "middle"; ctx.fillText(String(fing), sx, cy + 0.5); }
+    }
+  });
+}
+function feedbackLines(a, now) {
+  const out = [];
+  const ns = a.notes;
+  for (let i = lowerBound(ns, now + 1e-6) - 1; i >= 0 && out.length < 8 && now - ns[i].t < 12; i--) {
+    const x = ns[i]; if (x.chord && x.chord.size > 1 && x.s !== x.chord.minS) continue;
+    const pos = `${stringLabel(a, x.s)} ${x.f}`.padEnd(5);
+    if (x.j === "hit") out.push({ text: `✓  ${pos} ${x.chord && x.chord.size > 1 ? x.chord.name : ""}`, color: C.good });
+    else if (x.j === "alt") out.push({ text: `↷  ${pos} played at ${stringLabel(a, x.alt.s)} ${x.alt.f}`, color: C.warn });
+    else out.push({ text: `✕  ${pos} missed`, color: C.bad });
+  }
+  return out.length ? out : [{ text: "Press Play. Judgements land here.", color: C.faint }];
+}
+function upcomingLines(a, now) {
+  const out = []; const ns = a.notes;
+  for (let i = lowerBound(ns, now + 1e-6); i < ns.length && out.length < 8; i++) {
+    const x = ns[i];
+    const tech = Object.keys(x.tech).filter((k) => k !== "ig").map((k) => TECH_LABEL[k]).join(", ");
+    out.push({ text: `${(x.t - now).toFixed(2).padStart(5)}s  ${stringLabel(a, x.s)} ${String(x.f).padEnd(3)} ${tech}`, color: C.s[x.s % 8] });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Frame loop, layout, input
+// ---------------------------------------------------------------------------
+function resize() {
+  const r = canvas.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function frame(ts) {
+  const dt = S.lastTs ? Math.min(0.1, (ts - S.lastTs) / 1000) : 0; S.lastTs = ts;
+  if (S.playing) {
+    if (S.audio) S.now = S.audio.currentTime;
+    else S.now += dt * S.speed;
+    if (S.now >= S.song.duration) {
+      if (S.song.loop) { S.now = 0; S.prevNow = 0; } else { pause(); S.now = S.song.duration; }
+    }
+    if (S.sound && !S.audio) triggerNotes(S.prevNow, S.now);
+  }
+  S.prevNow = S.now;
+  ctx.clearRect(0, 0, W, H);
+  VIEWS[S.view].draw(S.a, S.now, dt);
+  $("#time").textContent = `${fmtTime(S.now)} / ${fmtTime(S.song.duration)}`;
+  if (!S.scrubbing) $("#scrub").value = String(S.now);
+  requestAnimationFrame(frame);
+}
+
+function setView(v) {
+  if (!VIEWS[v]) return;
+  S.view = v; S.cam = { x: null, w: null };
+  for (const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.view === v));
+  const d = VIEWS[v];
+  $("#vTitle").textContent = d.title; $("#vBlurb").textContent = d.blurb; $("#vBest").textContent = d.best; $("#vTrade").textContent = d.trade;
+  $("#vUses").innerHTML = d.uses.map((u) => `<code>${u}</code>`).join("");
+  canvas.setAttribute("aria-label", `${d.title} preview of ${S.song ? S.song.title : "the demo"}`);
+  try { localStorage.setItem("guitar-surfaces-view", v); } catch { /* storage unavailable */ }
+  if (location.hash !== `#${v}`) history.replaceState(null, "", `#${v}`);
+}
+
+async function openSource(make, label) {
+  try {
+    const src = await make();
+    const song = await loadPack(src, label);
+    setSong(song);
+    const a = S.a;
+    setStatus(`Loaded ${song.title}: ${song.arrangements.length} tab part${song.arrangements.length > 1 ? "s" : ""}. Showing ${a.name}, ${a.notes.length.toLocaleString()} notes from the hardest difficulty.`);
+  } catch (e) {
+    setStatus(e && e.message ? e.message : String(e), true);
+  }
+}
+
+function init() {
+  readColors();
+  setSong(buildDemo());
+  setStatus("Showing the built-in demo riff. Open a .feedpak to see a real tab with its audio.");
+  let v = (location.hash || "").slice(1);
+  if (!VIEWS[v]) { try { v = localStorage.getItem("guitar-surfaces-view") || "lanes"; } catch { v = "lanes"; } }
+  setView(VIEWS[v] ? v : "lanes");
+
+  new ResizeObserver(resize).observe($("#stagewrap"));
+  resize();
+
+  for (const b of document.querySelectorAll(".tab")) b.addEventListener("click", () => setView(b.dataset.view));
+  $("#playBtn").addEventListener("click", () => (S.playing ? pause() : play()));
+  $("#restartBtn").addEventListener("click", () => seek(0));
+  $("#useDemo").addEventListener("click", () => { setSong(buildDemo()); setStatus("Showing the built-in demo riff."); });
+  $("#arrSel").addEventListener("change", (e) => setArrangement(+e.target.value));
+  $("#speedSel").addEventListener("change", (e) => { S.speed = +e.target.value; if (S.audio) S.audio.playbackRate = S.speed; });
+  $("#mirrorChk").addEventListener("change", (e) => { S.mirror = e.target.checked; });
+  $("#simChk").addEventListener("change", (e) => { S.simulate = e.target.checked; });
+  $("#soundChk").addEventListener("change", (e) => { S.sound = e.target.checked; if (S.audio) S.audio.muted = !S.sound; });
+  const scrub = $("#scrub");
+  scrub.addEventListener("pointerdown", () => { S.scrubbing = true; });
+  scrub.addEventListener("pointerup", () => { S.scrubbing = false; });
+  scrub.addEventListener("input", () => seek(+scrub.value));
+  $("#pickFile").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) openSource(() => zipSource(f), f.name); e.target.value = ""; });
+  $("#pickDir").addEventListener("change", (e) => { const fl = e.target.files; if (fl && fl.length) openSource(async () => dirSource(fl), "the pack folder"); e.target.value = ""; });
+  window.addEventListener("hashchange", () => setView(location.hash.slice(1)));
+  document.addEventListener("keydown", (e) => {
+    const t = e.target;
+    const isRange = t instanceof HTMLInputElement && t.type === "range";
+    if (t instanceof HTMLSelectElement || (t instanceof HTMLInputElement && !isRange && t.type !== "checkbox")) return;
+    // Buttons and checkboxes keep their own Space behaviour; the seek bar keeps its own arrows.
+    const ownsSpace = t instanceof HTMLButtonElement || (t instanceof HTMLInputElement && t.type === "checkbox");
+    if (e.code === "Space" && !ownsSpace) { e.preventDefault(); S.playing ? pause() : play(); }
+    else if (e.key === "ArrowRight" && !isRange) { e.preventDefault(); seek(S.now + 5); }
+    else if (e.key === "ArrowLeft" && !isRange) { e.preventDefault(); seek(S.now - 5); }
+    else if (["1", "2", "3", "4"].includes(e.key)) setView(Object.keys(VIEWS)[+e.key - 1]);
+  });
+  requestAnimationFrame(frame);
+}
+init();
+</script>
