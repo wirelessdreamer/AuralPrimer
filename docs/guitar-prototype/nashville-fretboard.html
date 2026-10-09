@@ -92,6 +92,18 @@
   .questions ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--muted); }
   .questions b { color: var(--ink); }
   @media (max-width: 640px) { h1 { font-size: 23px; } .card canvas { aspect-ratio: 4 / 3; } }
+  /* #embed-<section>: one section's canvases only, playing, for framing in a slide. */
+  body.embed .app { max-width: none; padding: 0; gap: 0; background: none; }
+  body.embed header, body.embed .controls, body.embed .questions, body.embed .section-head, body.embed .legend, body.embed .card p { display: none; }
+  body.embed section { display: none; }
+  body.embed[data-embed="positions"] #sec-positions, body.embed[data-embed="melody"] #sec-melody,
+  body.embed[data-embed="triads"] #sec-triads, body.embed[data-embed="barres"] #sec-barres { display: grid; }
+  body.embed { overflow: hidden; }
+  body.embed .card { padding: 4px; gap: 0; border: 0; background: none; }
+  body.embed .card h3 { display: none; }
+  body.embed .card canvas { aspect-ratio: auto; height: calc(100vh - 8px); }
+  body.embed .wide { padding: 0; border: 0; overflow: hidden; }
+  body.embed .wide canvas { min-width: 0; aspect-ratio: auto; height: 100vh; }
 </style>
 
 <div class="app">
@@ -118,7 +130,7 @@
     <span class="readout" id="keyReadout"></span>
   </div>
 
-  <section aria-labelledby="h-positions">
+  <section id="sec-positions" aria-labelledby="h-positions">
     <div class="section-head">
       <h2 id="h-positions">The five positions</h2>
       <p>Every number on the neck, numbered with the blues/rock convention: position 1 is the minor box with its root on the low E string. The selected box is brightest, its two neighbours are dashed, and the numbers fade with distance rather than stopping at a box edge. Click a box to select it.</p>
@@ -135,7 +147,7 @@
     </div>
   </section>
 
-  <section aria-labelledby="h-melody">
+  <section id="sec-melody" aria-labelledby="h-melody">
     <div class="section-head">
       <h2 id="h-melody">Melody inside a position</h2>
       <p>A four-bar phrase in position 1 that moves to position 2 in bar 3 and bends into a blue note. The next box is already on screen before the phrase gets there, and every other octave of the sounding number is ringed, because any of them counts. Three ways to read it.</p>
@@ -150,7 +162,7 @@
     </div>
   </section>
 
-  <section aria-labelledby="h-triads">
+  <section id="sec-triads" aria-labelledby="h-triads">
     <div class="section-head">
       <h2 id="h-triads">Triads inside the position</h2>
       <p>A 1 5 6m 4 progression as three-string triads, voiced in or just beside whichever position is selected: a chord may sit over the box edge when that grip is tighter. Pick another position and they re-voice.</p>
@@ -165,7 +177,7 @@
     </div>
   </section>
 
-  <section aria-labelledby="h-barres">
+  <section id="sec-barres" aria-labelledby="h-barres">
     <div class="section-head">
       <h2 id="h-barres">Barre chords as they are</h2>
       <p>The same progression as full barre chords, each taking the E or A shape nearest the selected position. Each card says which box the barre overlaps most. The 6m barre is position 1's own root shape.</p>
@@ -764,6 +776,8 @@ function refreshReadout() {
 }
 function init() {
   readColors();
+  const embed = /^embed-(positions|melody|triads|barres)$/.exec((location.hash || "").slice(1));
+  if (embed) { document.body.classList.add("embed"); document.body.dataset.embed = embed[1]; }
   const sel = document.getElementById("keySel");
   KEYS.forEach(([name], i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = `${name} major / ${(KEYS[i][2] ? FLAT : SHARP)[mod(KEYS[i][1] + 9, 12)]} minor`; sel.appendChild(o); });
   sel.addEventListener("change", () => { S.keyIdx = +sel.value; view.lo = null; refreshReadout(); });

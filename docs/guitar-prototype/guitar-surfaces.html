@@ -135,6 +135,12 @@
   @media (prefers-reduced-motion: reduce) {
     .btn, .tab { transition: none; }
   }
+  /* #embed-<view>: only the stage, playing the demo, for framing in a slide. */
+  body.embed { overflow: hidden; }
+  body.embed .app { max-width: none; padding: 0; gap: 0; background: none; }
+  body.embed .top, body.embed .songbar, body.embed .status, body.embed .tabs, body.embed .notes, body.embed .transport { display: none; }
+  body.embed .work, body.embed .left { display: block; }
+  body.embed .stagewrap { aspect-ratio: auto; height: 100vh; max-height: none; border: 0; border-radius: 0; }
 </style>
 
 <div class="app">
@@ -1429,6 +1435,7 @@ function setView(v) {
   $("#vTitle").textContent = d.title; $("#vBlurb").textContent = d.blurb; $("#vBest").textContent = d.best; $("#vTrade").textContent = d.trade;
   $("#vUses").innerHTML = d.uses.map((u) => `<code>${u}</code>`).join("");
   canvas.setAttribute("aria-label", `${d.title} preview of ${S.song ? S.song.title : "the demo"}`);
+  if (document.body.classList.contains("embed")) return; // a framed stage keeps its own hash and settings
   try { localStorage.setItem("guitar-surfaces-view", v); } catch { /* storage unavailable */ }
   if (location.hash !== `#${v}`) history.replaceState(null, "", `#${v}`);
 }
@@ -1450,6 +1457,12 @@ function init() {
   setSong(buildDemo());
   setStatus("Showing the built-in demo riff. Open a .feedpak to see a real tab with its audio.");
   let v = (location.hash || "").slice(1);
+  const embed = /^embed-(\w+)$/.exec(v);
+  if (embed && VIEWS[embed[1]]) {
+    // Framed in a slide: just the stage, the demo playing silently with the simulated player on.
+    document.body.classList.add("embed");
+    v = embed[1]; S.sound = false; S.simulate = true; S.playing = true;
+  }
   if (!VIEWS[v]) { try { v = localStorage.getItem("guitar-surfaces-view") || "lanes"; } catch { v = "lanes"; } }
   setView(VIEWS[v] ? v : "lanes");
 
