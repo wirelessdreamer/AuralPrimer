@@ -134,6 +134,44 @@ namespace AuralPrimer.Link.Tests
         }
 
         [Test]
+        public void ReadsTheSettingsTheHostSends()
+        {
+            // Exactly what serde_json writes for mr_link_set_settings.
+            Assert.IsTrue(MrProtocol.TryParseSettings(
+                "{\"noteSpacing\":1.25,\"playbackRate\":0.5}", out var spacing, out var rate));
+            Assert.AreEqual(1.25, spacing, 1e-9);
+            Assert.AreEqual(0.5, rate, 1e-9);
+        }
+
+        [Test]
+        public void TakesAMissingOrUnusableSettingAsOne()
+        {
+            // Zero spacing would collapse the lane and zero rate would stop the
+            // clock; the default is better than either.
+            Assert.IsTrue(MrProtocol.TryParseSettings(
+                "{\"noteSpacing\":0,\"playbackRate\":0.75}", out var spacing, out var rate));
+            Assert.AreEqual(1.0, spacing, 1e-9);
+            Assert.AreEqual(0.75, rate, 1e-9);
+
+            Assert.IsTrue(MrProtocol.TryParseSettings("{\"noteSpacing\":2}", out spacing, out rate));
+            Assert.AreEqual(2.0, spacing, 1e-9);
+            Assert.AreEqual(1.0, rate, 1e-9);
+
+            Assert.IsFalse(MrProtocol.TryParseSettings("{}", out _, out _));
+            Assert.IsFalse(MrProtocol.TryParseSettings(null, out _, out _));
+        }
+
+        [Test]
+        public void EmitsTheInstrumentTheHostExpects()
+        {
+            Assert.AreEqual("{\"role\":\"guitar\"}",
+                System.Text.Encoding.UTF8.GetString(MrProtocol.EncodeInstrument("guitar")));
+            // A quote could only come from a bug, but must not break the object.
+            Assert.AreEqual("{\"role\":\"bass\"}",
+                System.Text.Encoding.UTF8.GetString(MrProtocol.EncodeInstrument("ba\"ss")));
+        }
+
+        [Test]
         public void RejectsACountThatDisagreesWithThePayload()
         {
             var bytes = new byte[] { 0x41, 0x2A, 0, 0, 0, 0, 0, 0, 0, 0x09, 60, 100 };

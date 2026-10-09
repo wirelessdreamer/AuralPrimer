@@ -44,6 +44,23 @@ namespace AuralPrimer.Link
 
         public double AudioOffsetSec { get; set; }
 
+        /// <summary>
+        /// How fast song time advances against the host clock: 1 normal, 0.5
+        /// half speed. From the host's SETTINGS frame (protocol §7c).
+        /// </summary>
+        /// <remarks>
+        /// A slowed song extrapolated at 1x runs ahead of its audio between
+        /// samples and is pulled back at each one, which reads as the notes
+        /// jittering. Anything not a positive number is taken as 1.
+        /// </remarks>
+        public double PlaybackRate
+        {
+            get => _playbackRate;
+            set => _playbackRate = value > 0 && !double.IsNaN(value) && !double.IsInfinity(value) ? value : 1.0;
+        }
+
+        double _playbackRate = 1.0;
+
         public bool HasOffset => _haveOffset;
         public bool HasPosition => _havePosition;
         public bool Playing => _playing;
@@ -135,7 +152,9 @@ namespace AuralPrimer.Link
 
             double hostClockAtPhotons = predictedDisplayTimeUs + _offsetUs;
             double elapsedUs = hostClockAtPhotons - _lastPositionHostClockUs;
-            return _lastSongTimeSec + elapsedUs / 1_000_000.0 + AudioOffsetSec;
+            // Only the elapsed term is scaled: the audio offset is a latency
+            // in wall-clock time, and the desktop leaves it unscaled too.
+            return _lastSongTimeSec + elapsedUs / 1_000_000.0 * _playbackRate + AudioOffsetSec;
         }
 
         /// <summary>
@@ -161,7 +180,7 @@ namespace AuralPrimer.Link
         {
             if (!_havePosition) return 0.0;
             double elapsedUs = (double)hostClockUs - _lastPositionHostClockUs;
-            return _lastSongTimeSec + elapsedUs / 1_000_000.0 + AudioOffsetSec;
+            return _lastSongTimeSec + elapsedUs / 1_000_000.0 * _playbackRate + AudioOffsetSec;
         }
 
         /// <summary>
@@ -186,6 +205,9 @@ namespace AuralPrimer.Link
         {
             ClearPosition();
             ForgetOffset();
+            // The rate belongs to the host too. The next one re-sends it on
+            // connect, and a host too old to send it means 1x.
+            _playbackRate = 1.0;
         }
 
         void ForgetOffset()

@@ -392,7 +392,11 @@ namespace AuralPrimer.Calibration
             }
 
             var now = (float)link.SongTimeSec;
-            var horizon = now + lookAheadSeconds;
+            // The desktop's semantics, in metres: the lane keeps its length and
+            // shows lookAhead / spacing seconds of music, so a larger spacing
+            // spreads the same notes further apart.
+            var spacing = Spacing();
+            var horizon = now + lookAheadSeconds / spacing;
 
             // The chart is sorted by onset, so a cursor walks forward with the
             // song instead of scanning thousands of notes every frame. Rewind it
@@ -409,7 +413,7 @@ namespace AuralPrimer.Calibration
             var playLineOffset = PlayLineOffset();
 
             var metresPerSecond = _profile.laneHeightMetres
-                                * Mathf.Max(0.01f, _profile.spacingMultiplier)
+                                * spacing
                                 / Mathf.Max(0.05f, lookAheadSeconds);
 
             var used = 0;
@@ -552,8 +556,7 @@ namespace AuralPrimer.Calibration
             var head = Camera.main;
             var eye = head != null ? head.transform.position : Vector3.zero;
             var laneTopLocal = Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f)
-                             + laneUp * (_profile.laneHeightMetres
-                                       * Mathf.Max(0.01f, _profile.spacingMultiplier));
+                             + laneUp * _profile.laneHeightMetres;
             var laneTop = transform.TransformPoint(laneTopLocal);
             var keyMid = transform.TransformPoint(
                 Vector3.Lerp(_profile.leftEdge, _profile.rightEdge, 0.5f));
@@ -561,6 +564,16 @@ namespace AuralPrimer.Calibration
             Report($"t={now:F2}s drew={used} | eye={eye} | keyMid={keyMid} "
                  + $"(dHead={(keyMid - eye)}) | laneTop={laneTop} (dHead={(laneTop - eye)}) "
                  + $"| firstSlab={(used > 0 ? _pool[0].position.ToString() : "n/a")}");
+        }
+
+        /// <summary>
+        /// The note-spacing multiplier: the desktop's when the host sends it
+        /// (protocol §7c), else the profile's own.
+        /// </summary>
+        float Spacing()
+        {
+            var fromHost = link != null ? link.NoteSpacing : null;
+            return Mathf.Max(0.01f, fromHost.HasValue ? (float)fromHost.Value : _profile.spacingMultiplier);
         }
 
         /// <summary>Once a second, so the log stays readable at 72 fps.</summary>
@@ -595,7 +608,9 @@ namespace AuralPrimer.Calibration
             var (laneUp, laneNormal, laneRotation) = LaneBasis();
 
             var width = _profile.WidthMetres;
-            var height = _profile.laneHeightMetres * Mathf.Max(0.01f, _profile.spacingMultiplier);
+            // Spacing changes how many seconds the lane shows, not how tall it
+            // is -- the desktop canvas does not grow when notes spread out.
+            var height = _profile.laneHeightMetres;
             // Same lift the notes get, so the hit line stays the place they land.
             // The lane, the line and the notes all take the same setback: they
             // are three views of one place, and moving them separately is how

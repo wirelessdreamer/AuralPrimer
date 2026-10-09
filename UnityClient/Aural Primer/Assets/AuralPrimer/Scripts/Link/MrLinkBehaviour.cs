@@ -111,6 +111,34 @@ namespace AuralPrimer.Link
         public void SendKeyboardLayout(int lowestPitch, int highestPitch, bool dropOutOfRange) =>
             _session?.SendKeyboardLayout(lowestPitch, highestPitch, dropOutOfRange);
 
+        /// <summary>
+        /// The desktop's note-spacing multiplier, or null when the host does
+        /// not send one (protocol §7c) and the headset's own setting stands.
+        /// </summary>
+        public double? NoteSpacing =>
+            _session != null && _session.HostSupports(MrProtocol.FeatureSettings)
+                ? _session.NoteSpacing
+                : (double?)null;
+
+        /// <summary>Whether this host sends the part the headset asks for (§7b).</summary>
+        /// <remarks>
+        /// An older host always sends keys first and ignores the request, so a
+        /// guitar setup checks this and says the host is too old, rather than
+        /// drawing a keys part on a neck.
+        /// </remarks>
+        public bool CanChooseInstrument =>
+            _session != null && _session.HostSupports(MrProtocol.FeatureInstrument);
+
+        string _instrumentRole;
+
+        /// <summary>Which part this headset plays: keys, guitar or bass.</summary>
+        /// <remarks>Remembered, and re-sent whenever a session opens.</remarks>
+        public void SetInstrument(string role)
+        {
+            _instrumentRole = role;
+            _session?.SetInstrument(role);
+        }
+
         /// <summary>Tell the host which note each placed pad sends.</summary>
         public void SendKitLayout(IReadOnlyList<(string id, int midiNote)> pieces) =>
             _session?.SendKitLayout(pieces);
@@ -121,6 +149,8 @@ namespace AuralPrimer.Link
         void Start()
         {
             _session = new MrSessionClient(clientName);
+            // A choice made before the session existed still has to reach it.
+            if (_instrumentRole != null) _session.SetInstrument(_instrumentRole);
             if (autoConnect) BeginDiscovery();
         }
 
