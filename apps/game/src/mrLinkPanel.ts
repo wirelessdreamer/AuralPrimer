@@ -92,6 +92,17 @@ export function pickMrTrack(
   return tracks.find((t) => t.role === "keys") ?? tracks[0] ?? null;
 }
 
+/**
+ * What a fretted chart carries beyond its notes (protocol §4), for the
+ * headset's numbered views and its tab.
+ */
+export type MrFretExtras = {
+  /** The song's key, as the desktop resolved it; `inferred` when it is a guess from the notes. */
+  key?: { pitchClass: number; mode: "major" | "minor"; inferred?: boolean } | null;
+  /** Downbeat times in seconds, for bar lines. */
+  bars?: number[];
+};
+
 function readEnabled(): boolean {
   try {
     // Absent means first run: default on.
@@ -118,7 +129,7 @@ export function buildChart(
   nashville?: boolean,
   handMode?: "both" | "left" | "right",
   showOtherHand?: boolean,
-  fretted?: boolean,
+  fretted?: boolean | MrFretExtras,
 ): unknown | null {
   if (!track || track.notes.length === 0) return null;
 
@@ -126,6 +137,8 @@ export function buildChart(
   // (protocol §7b): one that never asks predates them, and is sent exactly
   // what it always was.
   const withFrets = Boolean(fretted) && FRETTED_ROLES.has(track.role);
+  const extras: MrFretExtras = typeof fretted === "object" && fretted !== null ? fretted : {};
+  const key = withFrets ? extras.key : null;
 
   const notes = [...track.notes]
     .sort((a, b) => a.t_on - b.t_on)
@@ -166,6 +179,20 @@ export function buildChart(
     role: track.role,
     ...(withFrets && track.tuning ? { tuning: track.tuning } : {}),
     ...(withFrets && track.anchors?.length ? { anchors: track.anchors } : {}),
+    // The rest of a fretted chart's extras, each omitted when unknown. The key
+    // is the one the desktop's guitar views count from (songKey.ts), which is
+    // not `keySignature` above: that one is inferred from the keys part.
+    ...(key
+      ? {
+          key: {
+            pitchClass: ((key.pitchClass % 12) + 12) % 12,
+            mode: key.mode,
+            inferred: Boolean(key.inferred),
+          },
+        }
+      : {}),
+    ...(withFrets && track.handshapes?.length ? { handshapes: track.handshapes } : {}),
+    ...(withFrets && extras.bars?.length ? { bars: extras.bars } : {}),
     notes,
   };
 }

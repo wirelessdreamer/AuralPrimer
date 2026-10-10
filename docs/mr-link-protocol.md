@@ -270,6 +270,30 @@ the neck each note is played:
   `width` frets, from time `t`. Optional; the headset derives positions from
   the notes when a pack has none.
 
+Three more optional fields serve the headset's numbered and tab views. Each is
+omitted when the desktop does not know it:
+
+```json
+{
+  "key": { "pitchClass": 9, "mode": "minor", "inferred": false },
+  "handshapes": [ { "t": 12.0, "t_end": 13.5, "name": "A5",
+                    "frets": [-1, 0, 2, 2, -1, -1], "fingers": [-1, -1, 1, 3, -1, -1] } ],
+  "bars": [ 0.0, 1.98, 3.96 ]
+}
+```
+
+- `key` — the song's key, as the desktop's guitar views count Nashville
+  numbers from it (`apps/game/src/songKey.ts`): the pack's `harmony.json`,
+  then `keys.json`, and only then a guess from the notes, which sets
+  `inferred`. `pitchClass` 0 = C. It is not `keySignature` above, which
+  is inferred from the keys part. With no `key`, the headset numbers nothing:
+  it shows frets and says why.
+- `handshapes` — the tab's chord shapes held from `t` to `t_end`, arpeggios
+  included. `frets` and `fingers` are lowest string first, with -1 meaning
+  the string is unused or has no finger.
+- `bars` — downbeat times in seconds, from the song's timeline, for bar lines.
+  Without them the headset draws a constant grid from `tempoMap`.
+
 These fields are sent **only to a headset that sent `INSTRUMENT`**. One that
 never does predates them, and keeps receiving exactly the chart it always did.
 

@@ -20,6 +20,8 @@ describe("songKeyFor", () => {
     const key = songKeyFor({ harmony: null, keys: null }, notes);
     expect(key?.pitchClass).toBe(7);
     expect(key?.label).toMatch(/from the notes/);
+    // Flagged, so the headset can say it is a guess too.
+    expect(key?.inferred).toBe(true);
   });
 
   it("is null when nothing says, so no numbers are invented", () => {

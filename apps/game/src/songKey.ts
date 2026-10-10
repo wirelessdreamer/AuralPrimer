@@ -11,10 +11,20 @@
 import { keySignatureFromSongArtifacts } from "@auralprimer/viz-nashville";
 import { inferKeySignature, type MelodicNote, type SongKey } from "@auralprimer/viz-tab";
 
-export function songKeyFor(artifacts: { harmony?: unknown; keys?: unknown }, notes: MelodicNote[]): SongKey | null {
+/** A resolved key. `inferred` marks a guess from the notes, for anything that must say so. */
+export type ResolvedSongKey = SongKey & { inferred?: boolean };
+
+export function songKeyFor(artifacts: { harmony?: unknown; keys?: unknown }, notes: MelodicNote[]): ResolvedSongKey | null {
   const authored = keySignatureFromSongArtifacts({ harmony: artifacts.harmony, keys: artifacts.keys });
   if (authored) return { pitchClass: authored.pitchClass, mode: authored.mode, label: authored.label };
   const inferred = notes.length > 0 ? inferKeySignature(notes) : null;
-  if (inferred) return { pitchClass: inferred.pitchClass, mode: inferred.mode, label: `${inferred.label} (from the notes)` };
+  if (inferred) {
+    return {
+      pitchClass: inferred.pitchClass,
+      mode: inferred.mode,
+      label: `${inferred.label} (from the notes)`,
+      inferred: true,
+    };
+  }
   return null;
 }

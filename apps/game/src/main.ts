@@ -34,7 +34,7 @@ import type { DrumChartSelection, MelodicTrackSelection, InstrumentRole } from "
 import { initScrollSpeedController } from "./scrollSpeedController";
 import { initTransportHotkeys } from "./transportHotkeys";
 import { initMidiTransportControl } from "./midiTransportControl";
-import { initMrLinkPanel, buildChart, buildDrumChart, pickMrTrack } from "./mrLinkPanel";
+import { initMrLinkPanel, buildChart, buildDrumChart, pickMrTrack, type MrFretExtras } from "./mrLinkPanel";
 import type { MrKitLayout } from "./mrLinkPanel";
 import type { MrKeyboardLayout } from "./mrLinkPanel";
 import { nameChord, chordLabels } from "@auralprimer/core-music";
@@ -83,7 +83,7 @@ import { loadAuralSongAudioIntoTransport } from "./auralSongAudioLoader";
 import { initStemMixerPanel } from "./stemMixerPanel";
 import { startSelectedSongSessionFlow } from "./sessionStart";
 import { readSongTimeline, tempoAt, type SongTimeline } from "./songTimeline";
-import { songKeyFor } from "./songKey";
+import { songKeyFor, type ResolvedSongKey } from "./songKey";
 import type { SongKey } from "@auralprimer/viz-tab";
 
 function haveTauri(): boolean {
@@ -404,6 +404,8 @@ let mrChartSource:
       bpm: number;
       beatsPerBar: number;
       keySignature: Parameters<typeof buildChart>[5];
+      /** What a fretted chart adds: the guitar views' key and the bar lines. */
+      fretExtras: MrFretExtras;
     }
   | null = null;
 
@@ -432,7 +434,7 @@ function resendMrChart(): void {
       nashvilleMode,
       handMode,
       showOtherHand,
-      mrInstrumentRole !== null,
+      mrInstrumentRole !== null && mrChartSource.fretExtras,
     ),
   );
 }
@@ -475,7 +477,7 @@ let currentSongTimeline: unknown | null = null;
 /** The timeline read once per song: beats and sections for the guitar views, tempos for the speed readout. */
 let songTimeline: SongTimeline = readSongTimeline(null);
 /** The song's key for the guitar views' numbers; null when the pack has none and the notes say nothing. */
-let songKey: SongKey | null = null;
+let songKey: ResolvedSongKey | null = null;
 
 // Desktop default: use Rust native audio engine.
 let currentTimebase: TransportTimebase = new NativeAudioTimebase({ sampleRateHz: 48_000, channels: 2 });
@@ -1101,6 +1103,10 @@ async function selectAuralSong(containerPath: string) {
       bpm: transport.bpm,
       beatsPerBar: transport.timeSignature?.[0] ?? 4,
       keySignature: chordKey,
+      fretExtras: {
+        key: songKey,
+        bars: songTimeline.beats.filter((b) => b.down).map((b) => b.t),
+      },
     };
     // The headset gets the drum chart too. Sent from the tab rather than from
     // `chartSelection.drumSelection`, which has already been folded into the

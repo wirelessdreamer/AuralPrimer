@@ -92,6 +92,34 @@ describe("buildChart for a fretted part", () => {
     expect(chart.notes[2]).not.toHaveProperty("s");
   });
 
+  it("adds the key, chord shapes and bar lines the headset's numbered views need", () => {
+    const withShapes: MelodicTrackSelection = {
+      ...lead,
+      handshapes: [{ t: 1, t_end: 1.5, name: "A5", frets: [-1, 0, 2, 2, -1, -1], fingers: [-1, -1, 1, 3, -1, -1] }],
+    };
+    const chart = buildChart("id", "Song", withShapes, 120, 4, null, false, "both", true, {
+      key: { pitchClass: -3, mode: "minor", inferred: true },
+      bars: [0, 2, 4],
+    }) as Chart & { key?: unknown; handshapes?: unknown[]; bars?: number[] };
+
+    expect(chart.key).toEqual({ pitchClass: 9, mode: "minor", inferred: true });
+    expect(chart.handshapes).toHaveLength(1);
+    expect(chart.bars).toEqual([0, 2, 4]);
+    expect(chart.notes[0]).toMatchObject({ s: 1, f: 0 });
+  });
+
+  it("leaves the key out when the desktop has none, rather than guessing one", () => {
+    const chart = buildChart("id", "Song", lead, 120, 4, null, false, "both", true, { key: null }) as Chart;
+    expect(chart).not.toHaveProperty("key");
+    // A keys part never carries them, asked or not.
+    const keysChart = buildChart("id", "Song", keys, 120, 4, null, false, "both", true, {
+      key: { pitchClass: 0, mode: "major" },
+      bars: [0],
+    }) as Chart;
+    expect(keysChart).not.toHaveProperty("key");
+    expect(keysChart).not.toHaveProperty("bars");
+  });
+
   it("sends exactly the old chart to a headset that never asked", () => {
     const chart = buildChart("id", "Song", lead, 120, 4, null, false, "both", true) as Chart;
 
