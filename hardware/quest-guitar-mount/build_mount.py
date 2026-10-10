@@ -21,9 +21,11 @@ Run (Blender 4.2+; Manifold booleans need 4.5+, EXACT is the fallback)::
 
 Writes ``<out>/head_clamp.stl``, ``cradle.stl`` (already turned so its
 mating face is down on the bed), ``pressure_pad.stl``, ``assembly.stl``
-(everything in place, for checking), ``preview_*.png`` and
-``mount_offset.json`` (where the neck sits relative to the controller's
-grip pose, for the headset's first guess before its alignment check).
+(everything in place, for checking), ``mount.blend`` (the same assembly,
+with stand-ins for the guitar and controller, shown in millimetres),
+``preview_*.png`` and ``mount_offset.json`` (where the neck sits relative to
+the controller's grip pose, for the headset's first guess before its
+alignment check).
 
 Units are millimetres and degrees. The CAD frame is the guitar's neck frame:
 origin at the nut, centred across the fretboard, on the fretboard surface;
@@ -505,6 +507,20 @@ def main() -> None:
         for i, s in enumerate(g[4:]):
             colours[f"string{i}"] = (s, (0.9, 0.9, 0.85, 1))
         render(colours, args.out, f, p)
+
+    # For inspecting in Blender: everything in place (with the stand-ins when the
+    # previews were rendered), measured in millimetres and shown in object colours.
+    scene = bpy.context.scene
+    scene.unit_settings.system = "METRIC"
+    scene.unit_settings.scale_length = 0.001
+    scene.unit_settings.length_unit = "MILLIMETERS"
+    for screen in bpy.data.screens:
+        for area in screen.areas:
+            for space in area.spaces:
+                if space.type == "VIEW_3D":
+                    space.shading.color_type = "OBJECT"
+                    space.clip_end = 10000
+    bpy.ops.wm.save_as_mainfile(filepath=str((args.out / "mount.blend").resolve()))
 
     for n in notes:
         print(f"[mount] WARNING: {n}")

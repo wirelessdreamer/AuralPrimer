@@ -80,7 +80,8 @@ This writes `out/`:
 
 - `head_clamp.stl`, `cradle.stl` and `pressure_pad.stl`, each already turned for printing;
 - `assembly.stl`, everything in place for a visual check;
-- three preview renders;
+- `mount.blend`, the same assembly with stand-ins for the guitar and controller, shown in millimetres: open it in Blender to inspect the fit;
+- four preview renders;
 - `mount_offset.json`.
 
 The build also reports each part's volume, and it warns if a part is not
