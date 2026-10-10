@@ -200,6 +200,36 @@ namespace AuralPrimer.Calibration
         public bool IsFretboardChecked => fretboard is { isChecked: true };
 
         /// <summary>
+        /// The view picked for each part, kept apart so a guitarist and a bassist
+        /// sharing the headset each come back to their own.
+        /// </summary>
+        /// <remarks>
+        /// On the profile rather than the fretboard, which is replaced when the
+        /// player switches between guitar and bass. Additive like the rest: a
+        /// profile without them loads as the neck highway, with frets.
+        /// </remarks>
+        public GuitarView guitarView = GuitarView.Highway;
+        public GuitarView bassView = GuitarView.Highway;
+
+        /// <summary>Frets or Nashville numbers, on every guitar view.</summary>
+        public FretLabelMode fretLabels = FretLabelMode.Frets;
+        /// <summary>What a chord's notes show when labels are numbers.</summary>
+        public ChordLabelMode chordLabels = ChordLabelMode.Numbers;
+        /// <summary>Count numbers from the song's key or from its relative.</summary>
+        public CountFrom countFrom = CountFrom.Song;
+
+        /// <summary>The view picked for whichever part is set up.</summary>
+        public GuitarView ViewForPart
+        {
+            get => fretboard is { isBass: true } ? bassView : guitarView;
+            set
+            {
+                if (fretboard is { isBass: true }) bassView = value;
+                else guitarView = value;
+            }
+        }
+
+        /// <summary>
         /// Persistent spatial anchor this calibration is expressed against.
         /// </summary>
         /// <remarks>

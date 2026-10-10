@@ -509,8 +509,39 @@ profiles load with an unchecked neck and their keyboard still anchored. It
 holds the scale length, fret and string counts, the nut and bridge string
 spreads (34 / 52 mm by default), the controller hand, and the corrected offset.
 
-**The highway — `GuitarHighway`.** Parented to the anchor, so it is drawn in
-the neck frame:
+**The views — `GuitarViews`.** Five views from the desktop mock-ups
+(`docs/guitar-prototype/guitar-surfaces.html`, `nashville-fretboard.html`),
+picked in the headset under **Views** in the guitar menu. The choice is kept
+for guitar and bass separately:
+
+- **Neck highway** — described below.
+- **Neck coach** — small dots just over the real strings at the real frets.
+  Sounding notes are lit with their label; the next ones are ghosted with a
+  ring that closes as they arrive. The hand-window band runs along the neck,
+  and the chord shape being held is outlined. Sparse on purpose.
+- **Nashville neck** — the headline. The 2D model is ported line for line as
+  `FretNumbers` (`Scripts/Calibration/FretNumbers.cs`, with `fretNumbers.ts`'s
+  vitest cases ported as EditMode tests):
+  - five pentatonic positions, position 1 being the minor box rooted on the
+    lowest string;
+  - box notes filled, scale-completers hollow, out-of-key notes dashed and only
+    when played;
+  - a new octave colour at each 1, every 1 ringed;
+  - the bleed: brightest in the hand's box, fading across its neighbours to a
+    floor;
+  - the sounding note lit and its other octaves ringed.
+- **String lanes** and **Tab scroll** — drawn on a board floating beyond the
+  nut and above the neck, eased after the guitar and turned to the player. The
+  real neck takes the place of the desktop's mini-neck strip: it keeps lighting
+  the notes being played.
+
+**Labels** (Frets / Numbers), **Chords** (numbers / tones / both) and **Count
+from** (song key / relative) apply to every view and are kept on the profile.
+Numbers need the song's key, which the host now sends in the CHART. Without
+one, the views show frets and say why; the Nashville neck falls back to the
+coach. Both the label and the whole look of a note are pluggable functions.
+
+**The neck highway.** Parented to the anchor, so it is drawn in the neck frame:
 
 - Frets sit at `x = L·(1 − 2^(−f/12))`. Strings spread linearly from the nut
   spread to the bridge spread across Z.
@@ -521,8 +552,8 @@ the neck frame:
 - The lane is `laneLengthMetres` long and shows `lookAhead / spacing` seconds,
   the desktop's note spacing in metres.
 - Gems are coloured by string, lowest first (#ff5c7a #f5d547 #38bdf8 #fb923c
-  #34d399 #a78bfa) and labelled with the fret. The label is a pluggable
-  function, so the plan's Nashville degree can replace the fret number later.
+  #34d399 #a78bfa) and labelled with the fret. With numbers on, they take the
+  octave colour and the number instead.
 - Notes struck together get a chord frame with the chord's name. Long notes get
   a sustain ribbon. A hand-position band runs along the neck from the tab's
   anchors, derived from the notes when a pack has none. A flash marks the
@@ -560,7 +591,11 @@ belongs in one place with a test.
 - the free controller's tip position (the aim pose's origin is used, offset 0);
 - the CAD offset against a printed mount;
 - the 10 % threshold against real touches;
-- label size and facing;
+- label size and facing, and whether the label font has ♭ and ♯ (if it does not,
+  they are drawn as b and #);
+- the dot size on the real neck, and whether the Nashville neck's ~45 dots crowd
+  the fretting hand;
+- where the floating board sits, and how its easing feels;
 - the default tilt and lane length;
 - frame time on Quest 3S/Pro.
 

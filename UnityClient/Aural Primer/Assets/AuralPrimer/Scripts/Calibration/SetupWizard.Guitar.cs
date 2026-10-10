@@ -28,7 +28,7 @@ namespace AuralPrimer.Calibration
         [Tooltip("Built at runtime when unset, like the drum overlay.")]
         [SerializeField] GuitarAnchor guitarAnchor;
         [Tooltip("Built at runtime when unset, under the guitar anchor.")]
-        [SerializeField] GuitarHighway guitarHighway;
+        [SerializeField] GuitarViews guitarViews;
 
         /// <summary>Fine-nudge steps: a millimetre, and a degree of roll.</summary>
         const float GuitarNudgeMetres = 0.001f;
@@ -73,13 +73,13 @@ namespace AuralPrimer.Calibration
         void EnsureGuitar()
         {
             if (guitarAnchor == null) guitarAnchor = new GameObject("Guitar Neck").AddComponent<GuitarAnchor>();
-            if (guitarHighway == null)
+            if (guitarViews == null)
             {
-                var lane = new GameObject("Guitar Highway");
+                var lane = new GameObject("Guitar Views");
                 lane.transform.SetParent(guitarAnchor.transform, false);
-                guitarHighway = lane.AddComponent<GuitarHighway>();
+                guitarViews = lane.AddComponent<GuitarViews>();
             }
-            guitarHighway.Bind(link, guitarAnchor);
+            guitarViews.Bind(link, guitarAnchor);
             guitarAnchor.TipCaptured -= OnGuitarTouch;
             guitarAnchor.TipCaptured += OnGuitarTouch;
         }
@@ -115,7 +115,8 @@ namespace AuralPrimer.Calibration
             SetKeyboardVisualsActive(false);
             guitarAnchor.gameObject.SetActive(true);
             guitarAnchor.Apply(_profile.fretboard);
-            guitarHighway.Apply(_profile.fretboard);
+            guitarViews.Apply(_profile.fretboard);
+            ApplyGuitarDisplay();
             // The host sends this part's chart, frets and all (protocol §7b).
             link?.SetInstrument(_profile.fretboard.Role);
             _guitarModeSince = Time.unscaledTime;
@@ -296,14 +297,116 @@ namespace AuralPrimer.Calibration
 
             var since = guitarAnchor.HasPose ? guitarAnchor.SecondsLost : Time.unscaledTime - _guitarModeSince;
             var unseen = !guitarAnchor.IsTracked && since > GuitarUnseenHelpSeconds;
-            var problem = guitarHighway != null ? guitarHighway.Problem : null;
+            var problem = guitarViews != null ? guitarViews.Problem ?? guitarViews.Notice : null;
 
             var changed = unseen != _guitarHelpShown;
-            if (_step == Step.Menu && problem != _shownGuitarProblem) changed = true;
+            var describesProblem = _step == Step.Menu || _step == Step.GuitarPickView;
+            if (describesProblem && problem != _shownGuitarProblem) changed = true;
             _guitarHelpShown = unseen;
             _shownGuitarProblem = problem;
 
-            if (changed && (_step == Step.Menu || IsGuitarSetup(_step))) RenderStep();
+            if (changed && (describesProblem || IsGuitarSetup(_step))) RenderStep();
+        }
+
+        // ---- Views ----------------------------------------------------------------
+
+        /// <summary>The five views, in the order the picker lists them, with what each is.</summary>
+        static readonly (GuitarView View, string Name, string Detail)[] ViewChoices =
+        {
+            (GuitarView.Highway, "Neck highway", "notes fly in and land on the frets"),
+            (GuitarView.Coach, "Neck coach", "dots on the strings; next notes count down"),
+            (GuitarView.Nashville, "Nashville neck", "numbers by pentatonic position"),
+            (GuitarView.Lanes, "String lanes", "a floating board of falling lanes"),
+            (GuitarView.Tab, "Tab scroll", "a floating tab, high e on top"),
+        };
+
+        /// <summary>Hand the views what the menu chose.</summary>
+        void ApplyGuitarDisplay()
+        {
+            if (guitarViews == null || _profile == null) return;
+            guitarViews.SetDisplay(_profile.ViewForPart, _profile.fretLabels, _profile.chordLabels, _profile.countFrom);
+        }
+
+        void PickGuitarView(GuitarView view)
+        {
+            _profile.ViewForPart = view;
+            _profile.Save();
+            ApplyGuitarDisplay();
+            RenderStep();
+        }
+
+        void CycleFretLabels()
+        {
+            _profile.fretLabels = _profile.fretLabels == FretLabelMode.Frets ? FretLabelMode.Numbers : FretLabelMode.Frets;
+            _profile.Save();
+            ApplyGuitarDisplay();
+            RenderStep();
+        }
+
+        void CycleChordLabels()
+        {
+            _profile.chordLabels = _profile.chordLabels switch
+            {
+                ChordLabelMode.Numbers => ChordLabelMode.Tones,
+                ChordLabelMode.Tones => ChordLabelMode.Both,
+                _ => ChordLabelMode.Numbers,
+            };
+            _profile.Save();
+            ApplyGuitarDisplay();
+            RenderStep();
+        }
+
+        void CycleCountFrom()
+        {
+            _profile.countFrom = _profile.countFrom == CountFrom.Song ? CountFrom.Relative : CountFrom.Song;
+            _profile.Save();
+            ApplyGuitarDisplay();
+            RenderStep();
+        }
+
+        static string FretLabelsText(FretLabelMode mode) => mode == FretLabelMode.Numbers ? "Labels: Numbers" : "Labels: Frets";
+
+        static string ChordLabelsText(ChordLabelMode mode) => mode switch
+        {
+            ChordLabelMode.Tones => "Chords: Tones",
+            ChordLabelMode.Both => "Chords: Both",
+            _ => "Chords: Numbers",
+        };
+
+        static string CountFromText(CountFrom count) => count == CountFrom.Relative ? "Count: Relative" : "Count: Song key";
+
+        static string ViewName(GuitarView view)
+        {
+            foreach (var choice in ViewChoices)
+            {
+                if (choice.View == view) return choice.Name;
+            }
+            return view.ToString();
+        }
+
+        /// <summary>
+        /// The view picker: a list to choose from, up in the air on the menu, and
+        /// the labelling choices beneath it. Poked or ray-pointed like every
+        /// other button -- nothing here asks for a gesture near the strings.
+        /// </summary>
+        void RenderGuitarViews()
+        {
+            panel?.SetTitle("Views");
+            var current = _profile.ViewForPart;
+            var rows = new (string, string, System.Action)[ViewChoices.Length];
+            for (var i = 0; i < ViewChoices.Length; i++)
+            {
+                var choice = ViewChoices[i];
+                rows[i] = ((choice.View == current ? "● " : "") + choice.Name, choice.Detail, () => PickGuitarView(choice.View));
+            }
+            // The list stands in for the body, so a missing key is said on the
+            // neck itself and in the guitar menu, not here.
+            panel?.SetList(rows);
+            panel?.SetButtons(
+                (FretLabelsText(_profile.fretLabels), CycleFretLabels),
+                (ChordLabelsText(_profile.chordLabels), CycleChordLabels),
+                (CountFromText(_profile.countFrom), CycleCountFrom),
+                ("Back", () => EnterStep(Step.Menu)));
         }
 
         /// <summary>The status line while the guitar is out of view, or null.</summary>
@@ -380,6 +483,10 @@ namespace AuralPrimer.Calibration
                 case Step.GuitarCheck:
                     RenderGuitarCheck();
                     return true;
+
+                case Step.GuitarPickView:
+                    RenderGuitarViews();
+                    return true;
             }
             return false;
         }
@@ -423,16 +530,20 @@ namespace AuralPrimer.Calibration
         {
             var neck = _profile.fretboard;
             panel?.SetTitle("AuralPrimer");
-            var problem = guitarHighway != null ? guitarHighway.Problem : null;
+            var problem = guitarViews != null ? guitarViews.Problem ?? guitarViews.Notice : null;
             panel?.SetBody(
                 $"<b>{neck.name}</b> — {neck.stringCount} strings, {neck.fretCount} frets, "
                 + $"{neck.scaleLengthMetres * 1000f:F0} mm scale, {(neck.controllerOnLeft ? "left" : "right")} "
                 + "controller.\n\n"
+                + $"Showing <b>{ViewName(_profile.ViewForPart)}</b>, "
+                + (_profile.fretLabels == FretLabelMode.Numbers ? "with Nashville numbers" : "with frets")
+                + ". Press <b>Views</b> to change it.\n\n"
                 + (problem != null ? $"<color=#FFB020>{problem}</color>\n\n" : "")
                 + $"The note lane leans {neck.laneTiltDegrees:F0}° toward you."
                 + GuitarTrackingHelp());
             panel?.SetButtons(
                 ("Songs", () => EnterStep(Step.Songs)),
+                ("Views", () => EnterStep(Step.GuitarPickView)),
                 ("Re-check", StartGuitarCheck),
                 ("Nudge", () =>
                 {

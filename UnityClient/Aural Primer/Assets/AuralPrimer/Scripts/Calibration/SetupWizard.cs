@@ -63,6 +63,8 @@ namespace AuralPrimer.Calibration
             GuitarTwelfth,
             /// <summary>The span check, fine nudges, and save.</summary>
             GuitarCheck,
+            /// <summary>Pick a guitar view, and how notes are labelled.</summary>
+            GuitarPickView,
         }
 
         /// <summary>
