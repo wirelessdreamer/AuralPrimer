@@ -87,11 +87,11 @@ namespace AuralPrimer.Link.Tests
   ""pose"": ""meta-sdk-model"",
   ""reference_pose"": ""origin and axes of Meta's MetaQuestTouchPlus_Left model as Unity draws it (com.meta.xr.sdk.core; OVRControllerPrefab draws it at the controller anchor)"",
   ""hand"": ""left"",
-  ""neck_origin_in_grip_m"": [-0.01, -0.0889, -0.1467],
-  ""neck_rotation_in_grip_quat"": [0.63318, 0.29008, -0.69843, 0.16469],
+  ""neck_origin_in_grip_m"": [0.0224, -0.0222, -0.1275],
+  ""neck_rotation_in_grip_quat"": [0.33127, 0.69899, -0.28875, 0.56418],
   ""note"": ""First guess from the CAD: the neck frame relative to the Meta SDK controller model's origin (see reference_pose; the *_in_grip_* key names are kept for the Unity reader). The headset's alignment check replaces it."",
-  ""face_to_eyes_deg"": 44.9,
-  ""params"": { ""nut_to_tip"": 40.0, ""d_top_z"": -6.6, ""end_wall"": 6.0, ""plate_height"": 14.0, ""arm_len"": 28.0, ""arm_back"": 35.0, ""grip_rise"": 40.0, ""grip_tilt"": 45.0, ""face_roll"": 60.0 }
+  ""face_to_eyes_deg"": 74.5,
+  ""params"": { ""nut_to_tip"": 40.0, ""d_top_z"": -6.6, ""end_wall"": 6.0, ""block_height"": 14.0, ""arm_len"": 25.0, ""arm_back"": 60.0, ""mount_roll"": 90.0, ""grip_rise"": 40.0, ""grip_tilt"": 45.0, ""face_roll"": 60.0 }
 }";
             Assert.IsTrue(MountOffset.TryParse(file, out var parsed));
             AssertNear(MountOffset.Cad.Position, parsed.Position, 1e-6f, "origin");
@@ -110,14 +110,15 @@ namespace AuralPrimer.Link.Tests
         [Test]
         public void TheCadPutsTheNeckBehindTheControllersHead()
         {
-            // The cradle points the controller's head away from the guitar. At
-            // the mount's angles (raised 40 degrees, tipped back 45, turned so
-            // its top surface faces the player) the model's forward, +Z, where
-            // the controller points, runs nearly straight away from the guitar
+            // The holder points the controller's head away from the guitar. At
+            // the mount's angles (raised 40 degrees, tipped back 45, then
+            // turned 90 about the neck) the model's forward, +Z, where the
+            // controller points, runs nearly straight away from the guitar
             // too -- so the neck, running toward the body, points back along
-            // model -Z, about 11 degrees off it, with the nut 15 cm behind the
-            // model's origin. Read as the inverse rotation, the same numbers
-            // would put the neck about 38 degrees off.
+            // model -Z, about 11 degrees off it, with the nut 13 cm behind the
+            // model's origin. Turning about the neck leaves that angle alone.
+            // Read as the inverse rotation, the same numbers would put the
+            // neck about 127 degrees off.
             var neckAxis = Axis(MountOffset.Cad.Rotation, Vector3.UnitX);
             var dot = Vector3.Dot(neckAxis, -Vector3.UnitZ);
             Assert.That(dot, Is.InRange(0.96f, 0.99f), $"neck axis {neckAxis}");

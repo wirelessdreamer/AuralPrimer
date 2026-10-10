@@ -10,7 +10,7 @@
   "d_tab_w": 2.9,
   "d_tab_len": 1.9,
   "d_cover_t": 1.5,
-  "d_plug_len": 6.0,
+  "d_plug_len": 45.0,
   "d_fit": 0.15,
   "d_rib": 0.2,
   "controller_hand": "left",
@@ -18,5 +18,7 @@
   "grip_rise": 40.0,
   "grip_tilt": 45.0,
   "face_roll": 60.0,
-  "arm_back": 35.0
+  "arm_back": 60.0,
+  "arm_len": 25.0,
+  "mount_roll": 90.0
 }

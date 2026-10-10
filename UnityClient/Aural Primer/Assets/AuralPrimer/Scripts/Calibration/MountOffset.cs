@@ -33,7 +33,7 @@ namespace AuralPrimer.Calibration
         /// </summary>
         /// <remarks>
         /// Copied from that file, which build_mount.py::mount_offset writes with
-        /// Meta's real Touch Plus model seated in the cradle. Its reference is
+        /// Meta's real Touch Plus model clipped in the holder. Its reference is
         /// that model's origin and axes (MetaQuestTouchPlus_Left as Unity draws
         /// it, where the Meta SDK's OVRControllerPrefab puts it). GuitarAnchor
         /// applies it to the controller's tracked grip pose; whether that pose is
@@ -44,8 +44,8 @@ namespace AuralPrimer.Calibration
         /// which reads the same shape (<see cref="TryParse"/>).
         /// </remarks>
         public static MountOffset Cad => new(
-            new Vector3(-0.01f, -0.0889f, -0.1467f),
-            new Quaternion(0.63318f, 0.29008f, -0.69843f, 0.16469f));
+            new Vector3(0.0224f, -0.0222f, -0.1275f),
+            new Quaternion(0.33127f, 0.69899f, -0.28875f, 0.56418f));
 
         /// <summary>
         /// Read the mount's offset file:
