@@ -44,7 +44,7 @@ namespace AuralPrimer.Calibration
         /// which reads the same shape (<see cref="TryParse"/>).
         /// </remarks>
         public static MountOffset Cad => new(
-            new Vector3(-0.0101f, -0.0882f, -0.1405f),
+            new Vector3(-0.01f, -0.0889f, -0.1467f),
             new Quaternion(0.63318f, 0.29008f, -0.69843f, 0.16469f));
 
         /// <summary>

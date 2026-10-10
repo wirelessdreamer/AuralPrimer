@@ -15,12 +15,35 @@ The controller in these renders is Meta's own Touch Plus model, not a stand-in.
 
 | Part | What it does |
 |---|---|
-| `cradle` | Bolts to the guitar's end face with two M4 screws. A plate sits on the D-shaped pocket under the string holes, an arm angles out and back from it, and a seat shaped to the real controller holds the grip from below, with the controller's head up and away like a raised headstock. Reprint it to change the angle. |
-| guitar-side plug | **Not designed yet.** It will replace the Jamstik's black D-shaped end cover, fill that pocket, and take the cradle's two screws. Until it exists, the cradle is aimed at the D face (`iface_*` in `frame()`). |
+| `d_plug` | Replaces the Jamstik's black D-shaped end cover, under the string holes. A copy of the cover's D, with its locating tab, presses into the pocket, and crush ribs give it a tight fit. A block on the end face below the string holes holds two M4 nuts for the cradle. It never touches the strings, the top face, the nut screws or the finish. |
+| `cradle` | Bolts to the plug's block with two M4 screws. An arm angles out and back from its plate, and a seat shaped to the real controller holds the grip from below, with the controller's head up and away like a raised headstock. Reprint it to change the angle. |
 
-`build_head_clamp` and `build_pad` in `build_mount.py` are the earlier end-cap
-clamp. It does not fit a real Jamstik, no longer mates with the cradle, and is
-not built.
+![The plug, seen from inside the guitar: the D, its tab at the bottom of the curve, and the crush ribs](preview-plug.png)
+
+## How the plug fits
+
+The cover measured 37.00 mm across its flat edge and 12.38 mm to the end of its
+tab; the tab stands about 1.9 mm out of the curve and is 2.9 mm wide. The curve
+is an arc through the ends of the flat edge and its lowest point, about 21.6 mm
+in radius, which is half the head end's width: the cover follows the round back
+of the neck.
+
+The plug's D is `d_fit` (0.15 mm) under that size all round, with a 0.5 mm step
+at its tip to lead it in. Six crush ribs stand `d_rib` (0.2 mm) proud of the
+measured D: four round the curve and two on the flat edge. They shave down as
+the plug goes in, which gives a press fit without sanding the whole D. The tab
+is only `d_cover_t` deep, as deep as the cover is thick, so it keys into the
+rim's notch and the plug goes in only one way round.
+
+With the guitar in playing position, the controller's weight presses the D
+against the pocket's walls, so the shape holds it, not friction. Only a pull
+straight out of the pocket (the guitar hung head-down, or a knock) relies on
+the ribs' grip. Until that has been tried, tie a tether from the cradle to the
+neck.
+
+**Print `d_plug_fit_test.stl` first:** just the plug on a 1.2 mm plate. It takes
+minutes and shows whether `d_fit` and `d_rib` suit your printer before you print
+the whole part.
 
 ## How the controller seats
 
@@ -77,11 +100,24 @@ controller is not measured: its shape comes from Meta's model.
 | Parameter | What to measure |
 |---|---|
 | `nut_to_tip` | From the fretboard edge of the nut to the end face. |
-| `d_top_z` | Height of the D pocket's flat top edge (just under the string holes), relative to the fretboard surface at the nut. Below is negative. |
-| `d_width` | The D across its flat edge. The cover measured 37.00 mm. |
-| `d_depth` | The D from its flat edge to the bottom of its curve. The cover measured 12.38 mm. |
-| `head_width`, `head_thickness`, `head_top_z` | The head end's size. Used for the stand-in and for the checks that keep the controller out of the guitar. |
-| `string_spread_at_clamp` | Outer edge of low-E to outer edge of high-e. Used for the stand-in. |
+| `d_top_z` | Height of the D pocket's flat top edge (just under the string holes), relative to the fretboard surface at the nut. Below is negative. The default, -6.6 mm, is read off a photo. It moves only the headset's first guess, not the fit. |
+| `d_width` | The cover across its flat edge. Measured 37.00 mm. |
+| `d_depth` | The cover from its flat edge to the bottom of its curve, without the tab. 10.4 mm: 12.38 mm measured with the tab, less the tab. |
+| `d_tab_w`, `d_tab_len` | The cover's locating tab: its width (2.9 mm) and how far it stands out of the curve (1.9 mm). |
+| `d_cover_t` | The cover's thickness, which sets how deep the plug's tab is. **Guessed at 1.5 mm.** |
+| `d_plug_len` | How far into the pocket the plug reaches. Stop short of the two Phillips screws inside. **Guessed at 6 mm.** |
+| `head_width` | The head end's width at the end face. Measured 43.16 mm; the plug's block is this wide. |
+| `head_thickness`, `head_top_z` | The rest of the head end's size. Used for the stand-in and for the check that keeps the controller out of the guitar. |
+| `string_spread` | Outer edge of low-E to outer edge of high-e. Used for the stand-in. |
+
+**Fit (print choices):**
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `d_fit` | 0.15 mm | How far under the measured D the plug is, all round. |
+| `d_rib` | 0.2 mm | How far the crush ribs stand proud of the measured D. Raise it if the fit test is loose. |
+| `plate_height` | 14 mm | Height of the cradle's plate and the plug's block, from 0.5 mm under the D's flat edge down. |
+| `end_wall` | 6 mm | Thickness of the plug's block on the end face, which holds the nuts. |
 
 **Controller:**
 
@@ -136,15 +172,18 @@ blender --background --factory-startup --python build_mount.py -- --params my_me
 
 This writes `out/`:
 
-- `cradle.stl`, already turned for printing;
-- `assembly.stl`, the cradle in place in the guitar's frame (for lining up the plug);
+- `d_plug.stl` and `cradle.stl`, already turned for printing;
+- `d_plug_fit_test.stl`, the plug alone on a thin plate;
+- `assembly.stl`, both parts in place in the guitar's frame;
 - `mount.blend`, the same with the guitar and Meta's controller in place, in millimetres;
-- six preview renders;
+- seven preview renders;
 - `mount_offset.json`.
 
 `out/` is git-ignored. The build also checks:
 
-- the cradle is watertight and in one piece;
+- every part is watertight and in one piece;
+- the plug's block leaves at least 1.2 mm round each nut, and stays below the string holes;
+- the plug is long enough for its crush ribs behind the tab;
 - the top surface's angle to the eyes;
 - the gaps to every button;
 - the strap stays below the grip button;
@@ -152,29 +191,31 @@ This writes `out/`:
 - a hex key reaches each bolt head straight on;
 - the controller stays out of the guitar.
 
-For the plug, it also prints how close each M4 hole comes to the D's curve.
-
 ## 4. Print
 
 - **PETG.**
 - 0.2 mm layers, 4 walls, 40% gyroid infill.
-- Print the cradle on the face that bolts to the guitar (the STL is turned that way).
-  - It stands 79 mm tall on a 36 × 11 mm plate, so use a brim.
+- Print the fit test first, then the plug on its outside face with the D up (the STL is turned that way), so the D's outline is drawn in single layers. The nut pockets open onto the bed, and their ceilings bridge about 7 mm, so it needs no supports. Press the fit test in; if it is loose, raise `d_rib`, and if it won't go, lower it.
+- Print the cradle on the face that bolts to the plug (the STL is turned that way).
+  - It stands 79 mm tall on a 36 × 14 mm plate, so use a brim.
   - About 2.5 cm² overhangs past 45°: a patch under the cup next to the arm, and a strip inside the seat under one rim. Add small supports there if your printer needs them.
 
 ## 5. Hardware
 
 | Qty | Part |
 |---|---|
-| 2 | M4 socket-head screws (length depends on the plug), heads in the cradle's counterbores |
+| 2 | M4 × 8 socket-head screws, heads in the cradle's counterbores |
+| 2 | M4 hex nuts, pressed into the plug's block |
 | 1 | 20 mm hook-and-loop strap, about 30 cm |
 
 ## 6. Assemble
 
-1. Screw the cradle to the plug's face through the two counterbored holes.
-2. Set the controller in the seat with its grip's end down in the cup and its head up and away from the guitar. The seat takes it only one way round.
-3. Run the strap round the outside of the seat, through both rim notches, and over the grip. It sits below the grip button.
-4. In the headset, run the guitar setup's alignment check once. Remount the same way every time (grip's end in the cup) and the saved alignment stays valid.
+1. Press the two M4 nuts into the hex pockets on the outside of the plug's block.
+2. Take the black D cover off the guitar's head end and keep it. Press the plug into the pocket in its place, tab down into the rim's notch, pushing on the block.
+3. Screw the cradle to the plug through the two counterbored holes.
+4. Set the controller in the seat with its grip's end down in the cup and its head up and away from the guitar. The seat takes it only one way round.
+5. Run the strap round the outside of the seat, through both rim notches, and over the grip. It sits below the grip button.
+6. In the headset, run the guitar setup's alignment check once. Remount the same way every time (grip's end in the cup) and the saved alignment stays valid.
 
 ## `mount_offset.json`
 
@@ -201,10 +242,10 @@ committed previews show the model only as renders.
 ## Not yet verified
 
 - **Fit:** nothing has been printed yet.
-  - The guitar numbers are guesses, apart from the D cover's width and depth.
+  - The guitar numbers are guesses, apart from the D cover's size and the head end's width. The cover's thickness (`d_cover_t`) and the room in the pocket before the screws (`d_plug_len`) matter most for the plug.
   - The seat's fit depends on Meta's model matching a real Touch Plus to within the 0.6 mm clearance.
 - **Battery cover:** which panel it is, and which way it slides, is read from the model's shape, not checked on a controller.
-- **The plug:** at 24 mm spacing and 6.2 mm below the D's flat edge, each M4 hole stays about 1 mm inside the D's curve, if the D is a half-ellipse. An M4 nut there would break out by 0.4 mm. The plug's design has to settle this (inserts, a smaller spacing, or moving the screws up).
+- **The plug's grip:** how the original cover stays in (a snap lip behind the rim, or friction) is unknown, so the plug relies on crush ribs. A lip would allow a snap-in plug. Until a pull straight out has been tried, keep a tether on.
 - **Tracking:** a controller that isn't held may lose tracking when its face turns away. Horizon OS may also switch to hand tracking when it sees the controller as set down.
 - **Reference pose:** the client applies the offset to the controller's tracked pose. Whether that pose is exactly where the Meta SDK draws its model has not been checked on a headset. The alignment check absorbs any difference.
 

@@ -1,36 +1,36 @@
 """Parametric, 3D-printable mount for a Meta Quest 3/3S Touch Plus controller
 on the head end of a headless guitar (defaults: Jamstik Studio).
 
-The printed part is the ``cradle``:
+Two printed parts:
 
-* a plate that bolts (2x M4) to the guitar's end face, centred on the D-shaped
-  pocket under the string holes and kept below them;
-* a straight arm out from the plate, along the neck line;
-* a seat form-fitted to the controller's real grip: a shell minus the convex
-  hull of the grip, grown by a clearance. The grip's end bottoms out in it, so
-  the controller lands in the same place every time, and a hook-and-loop strap
-  in two rim slots holds it down. The seat stops short of the grip button and
-  keeps clear of the trigger and thumbstick; the strap crosses the grip below
-  the grip button.
+* ``d_plug`` -- replaces the guitar's black D-shaped end cover. A copy of the
+  cover's D, with its locating tab, presses into the pocket under the string
+  holes (crush ribs make the grip), and a block on the end face below the
+  string holes holds two M4 nuts for the cradle. It never touches the strings,
+  the top face or the nut screws.
+* ``cradle`` -- a plate that bolts (2x M4) to the plug's block, kept below the
+  string holes; a straight arm out from the plate, angled back from the neck
+  line, away from the string holes; and a seat form-fitted to the controller's
+  real grip: a shell minus the convex hull of the grip, grown by a clearance.
+  The grip's end bottoms out in it, so the controller lands in the same place
+  every time, and a hook-and-loop strap in two rim slots holds it down. The
+  seat stops short of the grip button and keeps clear of the trigger and
+  thumbstick; the strap crosses the grip below the grip button.
 
 The controller's shape comes from Meta's own Touch Plus model, read at build
 time from the Meta XR SDK (``controller_mesh``) -- never copied. Meta's model
 is SDK content: never commit it, or any file holding its geometry. Everything
 written to ``out/`` (git-ignored) may hold it.
 
-The guitar-side part the plate bolts to is being redesigned as a plug for that
-D pocket (it replaces the guitar's black end cover); until it exists the plate
-is aimed at the D face (``iface_*`` in frame()). ``build_head_clamp`` and
-``build_pad`` are the earlier end-cap clamp, which no longer mates and is not
-built.
-
 Run (Blender 4.2+; Manifold booleans need 4.5+, EXACT is the fallback)::
 
     blender --background --factory-startup --python build_mount.py -- \
         [--params my_measurements.json] [--out out] [--no-render]
 
-Writes ``<out>/cradle.stl`` (already turned so its mating face is down on the
-bed), ``assembly.stl`` (the cradle in place, in the CAD frame), ``mount.blend``
+Writes ``<out>/d_plug.stl`` and ``cradle.stl`` (each already turned so its
+outside face is down on the bed), ``d_plug_fit_test.stl`` (just the plug on a
+thin plate, to try in the pocket first), ``assembly.stl`` (both parts in
+place, in the CAD frame), ``mount.blend``
 (the same, with the guitar and Meta's controller in place, shown in
 millimetres), ``preview_*.png`` and ``mount_offset.json`` (where the neck sits
 relative to the controller model's origin, for the headset's first guess
@@ -63,18 +63,22 @@ from mathutils.bvhtree import BVHTree
 # not a parameter: it is read from Meta's model.
 DEFAULTS: dict[str, float] = {
     # --- Guitar head end (measure with calipers) ---------------------------
-    "head_width": 46.0,  # side to side, where the clamp sits
-    "head_thickness": 22.0,  # top face to back, where the clamp sits
+    "head_width": 43.16,  # side to side, at the end face (measured)
+    "head_thickness": 19.0,  # top face to back, at the end face (estimate from a photo)
     "head_top_z": 0.0,  # head top face height vs the fretboard at the nut (+ = higher)
     "nut_to_tip": 40.0,  # nut (fretboard side) to the very end of the head
-    "string_spread_at_clamp": 36.0,  # outer edge of low-E to outer edge of high-e, at the clamp
-    "clamp_len": 20.0,  # how much of the head the clamp covers, from the tip
-    "lip": 3.0,  # how far each top lip reaches over the head's top edge
-    "pad": 1.5,  # felt/EVA lining on every inner face
-    # --- The end face the cradle bolts to (the D pocket's cover) ------------
-    "d_top_z": -6.0,  # the D's flat top edge, just under the row of string holes
-    "d_width": 37.0,  # the D across its flat edge
-    "d_depth": 12.38,  # the D from its flat edge to the bottom of its curve
+    "string_spread": 36.0,  # outer edge of low-E to outer edge of high-e, at the end face
+    # --- The D pocket under the string holes, and its black cover ------------
+    "d_top_z": -6.6,  # the D's flat top edge, just under the row of string holes (estimate from a photo)
+    "d_width": 37.0,  # the cover across its flat edge (measured)
+    "d_depth": 10.4,  # the cover from its flat edge to the bottom of its curve, without the tab
+    # (12.38 measured with it); the curve is an arc through those three points
+    "d_tab_w": 2.9,  # the locating tab at the middle of the curve: its width...
+    "d_tab_len": 1.9,  # ...and how far it stands out of the curve
+    "d_cover_t": 1.5,  # the cover's thickness: the plug's tab is this deep (guess: measure)
+    "d_plug_len": 6.0,  # how far the plug reaches into the pocket; stop short of the screws inside (guess: measure)
+    "d_fit": 0.15,  # the plug's D is this much under size all round...
+    "d_rib": 0.2,  # ...and its crush ribs stand this far proud of the measured D, for a press fit
     "string_clear": 100.0,  # how far out from the end face nothing of the cradle may sit in front of the string holes
     # --- Controller seat (the grip itself comes from Meta's model) ----------
     "cradle_len": 48.0,  # how far up the grip, from its end, the seat reaches
@@ -94,12 +98,9 @@ DEFAULTS: dict[str, float] = {
     "eye_up": 300.0,  # toward the low-E edge
     "eye_back": 250.0,  # behind the fretboard face, toward the player
     # --- Print / hardware -------------------------------------------------
-    "wall": 4.0,
-    "end_wall": 6.0,
-    "base": 6.0,
-    "lip_thk": 2.6,
-    "pad_gap": 4.5,  # room under the head for the pressure pad + its felt
+    "end_wall": 6.0,  # the plug's block on the end face, which holds the nuts
     "plate": 8.0,
+    "plate_height": 14.0,  # the cradle's plate and the plug's block, from just under the string holes down
     "saddle_wall": 3.4,  # the seat's wall
     "strap_w": 21.0,  # 20 mm hook-and-loop strap
     "strap_t": 3.6,  # how deep the strap slots notch the rims
@@ -346,31 +347,21 @@ def controller_frame(ctrl: dict) -> dict:
 def frame(p: dict, cf: dict) -> dict:
     """Derived positions shared by the parts and by mount_offset.json."""
     tip = -p["nut_to_tip"]
-    half_in = p["head_width"] / 2 + p["pad"]
-    top = p["head_top_z"]
-    bottom_in = top - p["head_thickness"] - p["pad"] - p["pad_gap"]
-    f = {
-        "tip": tip,
-        "half_in": half_in,
-        "half_out": half_in + p["wall"],
-        "top": top,
-        "bottom_in": bottom_in,
-        "bottom_out": bottom_in - p["base"],
-        "lip_top": top + p["lip_thk"],
-        "x_open": tip + p["clamp_len"],
-        "x_wall_out": tip - p["end_wall"],
-    }
-    f["z_mid"] = (f["bottom_out"] + f["lip_top"]) / 2
-    f["x_plate_out"] = f["x_wall_out"] - p["plate"]
-    # The face the cradle bolts to, and its axes: re-aim the cradle here. Now the
-    # middle of the D pocket in the end face, below the string holes, where the
-    # plug that will fill the pocket takes the two M4 screws.
-    f["iface_pos"] = Vector((tip, 0.0, p["d_top_z"] - p["d_depth"] / 2))
+    f = {"tip": tip}
+    # The cover's D: an arc through the ends of its flat edge and the bottom of its curve.
+    half, depth = p["d_width"] / 2, p["d_depth"]
+    f["d_r"] = (half * half + depth * depth) / (2 * depth)
+    f["d_zc"] = p["d_top_z"] - depth + f["d_r"]  # the arc's centre, above the flat edge
+    f["d_bottom"] = p["d_top_z"] - depth
+    # The face the cradle bolts to, and its axes: re-aim the cradle here. The
+    # outside of the plug's block, its top edge 0.5 mm under the D's flat edge
+    # (so below the string holes); the plug takes the two M4 screws.
+    f["plate_w"] = p["d_width"] - 1.0
+    f["plate_h"] = p["plate_height"]
+    f["iface_pos"] = Vector((tip - p["end_wall"], 0.0, p["d_top_z"] - 0.5 - f["plate_h"] / 2))
     f["iface_out"] = Vector((-1.0, 0.0, 0.0))  # away from the guitar
     f["iface_up"] = Vector((0.0, 0.0, 1.0))  # toward the string holes
     f["iface_across"] = f["iface_up"].cross(f["iface_out"])  # (across, up, out) is right-handed
-    f["plate_w"] = p["d_width"] - 1.0
-    f["plate_h"] = p["d_depth"] - 1.0  # keeps 0.5 mm below the string holes
     # The arm leaves the plate between the bolt heads and angles back, away from the string holes.
     back = math.radians(p["arm_back"])
     f["arm_dir"] = (f["iface_out"] * math.cos(back) - f["iface_up"] * math.sin(back)).normalized()
@@ -421,23 +412,67 @@ def place(p: dict, f: dict, cf: dict, ctrl: dict) -> list[Vector]:
     return cad
 
 
-def build_head_clamp(p: dict, f: dict) -> bpy.types.Object:
-    body = box("head_clamp", (f["x_wall_out"], -f["half_out"], f["bottom_out"]), (f["x_open"], f["half_out"], f["lip_top"]))
-    cavity = box("cavity", (f["tip"], -f["half_in"], f["bottom_in"]), (f["x_open"] + 1, f["half_in"], f["top"]))
-    opening = box("opening", (f["tip"], -(f["half_in"] - p["lip"]), f["top"] - 1), (f["x_open"] + 1, f["half_in"] - p["lip"], f["lip_top"] + 1))
-    cut(body, cavity, opening)
-    # Pressure screw: M4 up through the base, nut trapped from below.
-    sx = (f["tip"] + f["x_open"]) / 2
-    up = Vector((0, 0, 1))
-    hole = prism("screw", p["m4_clear"] / 2, p["m4_clear"] / 2, p["base"] * 3, at(Vector((sx, 0, f["bottom_out"])), Vector((1, 0, 0)), Vector((0, 1, 0)), up))
-    nut = hex_nut_pocket("nut", p, Vector((sx, 0, f["bottom_out"])), up, p["m4_nut_t"] + 0.3)
-    cut(body, hole, nut)
-    # Cradle bolts: blind holes into the end wall from outside, nuts trapped at the face.
-    out = Vector((1, 0, 0))
+def d_prism(name: str, p: dict, f: dict, grow: float, x0: float, x1: float, n: int = 72) -> bpy.types.Object:
+    """The cover's D (flat edge up), grown by ``grow`` all round (negative shrinks), from x0 to x1."""
+    r, zc, zf = f["d_r"] + grow, f["d_zc"], p["d_top_z"] + grow
+    half = math.sqrt(r * r - (zf - zc) ** 2)
+    a0 = math.atan2(zf - zc, half)  # the flat edge's +Y end; the arc runs down through the bottom to its -Y end
+    a1 = -math.pi - a0
+    ring = [Vector((x0, r * math.cos(a), zc + r * math.sin(a))) for a in (a0 + (a1 - a0) * k / n for k in range(n + 1))]
+    bm = bmesh.new()
+    face = bm.faces.new([bm.verts.new(q) for q in ring])
+    res = bmesh.ops.extrude_face_region(bm, geom=[face])
+    bmesh.ops.translate(bm, vec=(x1 - x0, 0, 0), verts=[g for g in res["geom"] if isinstance(g, bmesh.types.BMVert)])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return _link(name, bm)
+
+
+def _along_neck(x: float, y: float, z: float) -> Matrix:
+    """Placement with local Z along the neck (+X)."""
+    return at(Vector((x, y, z)), Vector((0, 1, 0)), Vector((0, 0, 1)), Vector((1, 0, 0)))
+
+
+def build_d_plug(p: dict, f: dict, fit_test: bool = False) -> bpy.types.Object:
+    """The plug that replaces the black D cover, on a block that takes the cradle's screws.
+
+    ``fit_test``: just the plug on a thin plate, to try in the pocket before
+    printing the whole part.
+    """
+    tip, fit = f["tip"], p["d_fit"]
+    top = p["d_top_z"] - fit  # level with the plug's flat top
+    if fit_test:
+        lo = (tip - 1.2, -p["head_width"] / 2, f["d_bottom"] - p["d_tab_len"] - 2.0)
+    else:
+        lo = (f["iface_pos"].x, -p["head_width"] / 2, f["iface_pos"].z - f["plate_h"] / 2)
+    body = box("d_plug_fit_test" if fit_test else "d_plug", lo, (tip, p["head_width"] / 2, top))
+    # The cover's D, a little under size, with a step at its tip to lead it in.
+    lead = 0.6
+    end = tip + p["d_plug_len"]
+    union(body, d_prism("plug", p, f, -fit, tip - 0.5, end - lead))
+    union(body, d_prism("lead", p, f, -fit - 0.5, end - lead - 0.1, end))
+    # The locating tab, only as deep as the cover is thick.
+    tw = p["d_tab_w"] / 2 - fit
+    union(body, box("tab", (tip - 0.5, -tw, f["d_bottom"] - p["d_tab_len"] + fit), (tip + p["d_cover_t"], tw, f["d_bottom"] + 0.5)))
+    # Crush ribs, d_rib proud of the measured D: they make the grip and shave
+    # down to fit. Four round the curve (clear of the tab), two on the flat.
+    rr = 0.6
+    x0, x1 = tip + p["d_cover_t"] + 0.3, end - lead - 0.4
+    mid, length = (x0 + x1) / 2, x1 - x0
+    ribs = []
+    for deg in (-138, -112, -68, -42):
+        a, d = math.radians(deg), f["d_r"] + p["d_rib"] - rr
+        ribs.append(prism(f"rib{deg}", rr, rr, length, _along_neck(mid, d * math.cos(a), f["d_zc"] + d * math.sin(a)), segments=16))
+    for y in (-9.0, 9.0):
+        ribs.append(prism(f"rib_flat{y:+.0f}", rr, rr, length, _along_neck(mid, y, p["d_top_z"] + p["d_rib"] - rr), segments=16))
+    union(body, *ribs)
+    if fit_test:
+        return body
+    # The cradle's screws: blind holes into the block, nuts trapped at its outside face.
+    into = -f["iface_out"]
     for i, y in enumerate((-p["bolt_spacing"] / 2, p["bolt_spacing"] / 2)):
-        pos = Vector((f["x_wall_out"], y, f["z_mid"]))
-        bolt = prism(f"bolt{i}", p["m4_clear"] / 2, p["m4_clear"] / 2, (p["end_wall"] - 0.8) * 2, at(pos, Vector((0, 1, 0)), Vector((0, 0, 1)), out))
-        pocket = hex_nut_pocket(f"bnut{i}", p, pos, out, p["m4_nut_t"] + 0.3)
+        pos = f["iface_pos"] + f["iface_across"] * y
+        bolt = prism(f"bolt{i}", p["m4_clear"] / 2, p["m4_clear"] / 2, (p["end_wall"] - 0.8) * 2, at(pos, f["iface_up"], f["iface_across"], into))
+        pocket = hex_nut_pocket(f"nut{i}", p, pos, into, p["m4_nut_t"] + 0.3)
         cut(body, bolt, pocket)
     return body
 
@@ -534,14 +569,6 @@ def build_cradle(p: dict, f: dict, ctrl: dict, cad: list[Vector]) -> bpy.types.O
     return seat
 
 
-def build_pad(p: dict, f: dict) -> bpy.types.Object:
-    m = at(Vector((0, 0, 1.6)), Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1)))
-    pad = prism("pressure_pad", 8.0, 8.0, 3.2, m)
-    seat = prism("seat", p["m4_clear"] / 2, p["m4_clear"] / 2, 3.0, at(Vector((0, 0, 0)), Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))))
-    cut(pad, seat)
-    return pad
-
-
 # ---------------------------------------------------------------------------
 # Checks, offset, export, preview.
 # ---------------------------------------------------------------------------
@@ -553,9 +580,6 @@ def check(p: dict, parts: list[bpy.types.Object], f: dict | None = None) -> list
         print(f"[mount] top control surface points {f['face_to_eyes_deg']:.0f} deg from the player's eyes")
         if f["face_to_eyes_deg"] > 70:
             notes.append(f"the controller's top surface points {f['face_to_eyes_deg']:.0f} deg away from the eyes: tracking may drop")
-    clearance = (p["head_width"] - p["string_spread_at_clamp"]) / 2 - p["lip"]
-    if clearance < 1.0:
-        notes.append(f"lips reach within {clearance:.1f} mm of the outer strings: lower 'lip' or measure again")
     for ob in parts:
         bm = bmesh.new()
         bm.from_mesh(ob.data)
@@ -663,12 +687,29 @@ def check_cradle(p: dict, f: dict, cf: dict, cradle: bpy.types.Object, ctrl: dic
                  and p["head_top_z"] - p["head_thickness"] < q.z < p["head_top_z"] + 12)
     if inside:
         notes.append(f"the controller reaches into the guitar's head end ({inside} points)")
-    # For the D plug: how close each bolt hole comes to the D's curve (D taken as a half-ellipse).
-    for name, r in (("M4 hole", p["m4_clear"] / 2), ("M4 nut", p["m4_nut_af"] / 2 + 0.15)):
-        y = p["bolt_spacing"] / 2
-        curve = p["d_top_z"] - p["d_depth"] * math.sqrt(max(0.0, 1 - (y / (p["d_width"] / 2)) ** 2))
-        margin = (f["iface_pos"].z - r) - curve
-        print(f"[mount] {name} at {y:.0f} mm across: {margin:+.1f} mm inside the D's curve (half-ellipse D)")
+    return notes
+
+
+def check_plug(p: dict, f: dict, plug: bpy.types.Object) -> list[str]:
+    """The plug: room round its nuts, room for its ribs, and the string holes."""
+    notes = []
+    corner = (p["m4_nut_af"] + 0.3) / math.cos(math.radians(30)) / 2
+    walls = {
+        "side": p["head_width"] / 2 - p["bolt_spacing"] / 2 - corner,
+        "top": (p["d_top_z"] - p["d_fit"]) - (f["iface_pos"].z + corner),
+        "bottom": f["plate_h"] / 2 - corner,
+        "back": p["end_wall"] - (p["m4_nut_t"] + 0.3),
+    }
+    print("[mount] plug: walls round each nut " + ", ".join(f"{k} {v:.1f} mm" for k, v in walls.items()))
+    for side, wall in walls.items():
+        if wall < 1.2:
+            notes.append(f"the plug's block is only {wall:.1f} mm thick at the {side} of a nut")
+    if p["d_plug_len"] < p["d_cover_t"] + 2.0:
+        notes.append("d_plug_len leaves no room for the crush ribs behind the tab: the plug won't grip")
+    corridor = box("strings", (f["tip"] - p["string_clear"], -p["head_width"] / 2, p["d_top_z"]), (f["tip"] + 0.01, p["head_width"] / 2, p["head_top_z"] + 15))
+    blocked = _shared_volume(plug, corridor)
+    if blocked > 0.5:
+        notes.append(f"the plug's block reaches up in front of the string holes ({blocked:.0f} mm3)")
     return notes
 
 
@@ -706,7 +747,7 @@ def mount_offset(p: dict, f: dict) -> dict:
         "note": "First guess from the CAD: the neck frame relative to the Meta SDK controller model's origin (see "
         "reference_pose; the *_in_grip_* key names are kept for the Unity reader). The headset's alignment check replaces it.",
         "face_to_eyes_deg": round(f["face_to_eyes_deg"], 1),
-        "params": {k: p[k] for k in ("nut_to_tip", "d_top_z", "d_depth", "arm_len", "arm_back", "grip_rise", "grip_tilt", "face_roll")},
+        "params": {k: p[k] for k in ("nut_to_tip", "d_top_z", "end_wall", "plate_height", "arm_len", "arm_back", "grip_rise", "grip_tilt", "face_roll")},
     }
 
 
@@ -734,26 +775,13 @@ def _mesh(name: str, verts: list[Vector], faces: list[list[int]]) -> bpy.types.O
     return _link(name, bm)
 
 
-def _d_cover(name: str, p: dict, x: float, thickness: float) -> bpy.types.Object:
-    """The D outline on the end face (flat edge up), as a thin plate standing out by ``thickness``."""
-    w, depth, top = p["d_width"] / 2, p["d_depth"], p["d_top_z"]
-    ring = [Vector((x, w * math.cos(t), top - depth * math.sin(t))) for t in (math.pi * k / 32 for k in range(33))]
-    bm = bmesh.new()
-    face = bm.faces.new([bm.verts.new(q) for q in ring])
-    res = bmesh.ops.extrude_face_region(bm, geom=[face])
-    bmesh.ops.translate(bm, vec=(-thickness, 0, 0), verts=[g for g in res["geom"] if isinstance(g, bmesh.types.BMVert)])
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return _link(name, bm)
-
-
 def ghosts(p: dict, f: dict, ctrl: dict, cad: list[Vector]) -> dict[str, tuple[bpy.types.Object, tuple]]:
     """Stand-ins for the guitar and Meta's controller, for the previews and mount.blend."""
     tip, top = f["tip"], p["head_top_z"]
     out = {"neck": (box("ghost_neck", (tip, -p["head_width"] / 2, top - p["head_thickness"]), (260, p["head_width"] / 2, top)), (0.36, 0.25, 0.18, 1))}
-    out["d"] = (_d_cover("ghost_d_face", p, tip, 0.4), (0.05, 0.05, 0.05, 1))
     holes_z = (top + p["d_top_z"]) / 2
     for i in range(6):
-        y = -p["string_spread_at_clamp"] / 2 + i * p["string_spread_at_clamp"] / 5
+        y = -p["string_spread"] / 2 + i * p["string_spread"] / 5
         out[f"string{i}"] = (box(f"ghost_string{i}", (tip + 6, y - 0.4, top + 0.5), (260, y + 0.4, top + 1.3)), (0.9, 0.9, 0.85, 1))
         hole = prism(f"ghost_hole{i}", 1.3, 1.3, 0.8, at(Vector((tip, y, holes_z)), Vector((0, 1, 0)), Vector((0, 0, 1)), Vector((1, 0, 0))))
         out[f"hole{i}"] = (hole, (0.02, 0.02, 0.02, 1))
@@ -816,6 +844,9 @@ def render(objects: dict[str, tuple[bpy.types.Object, tuple]], out: Path, f: dic
     controller = ("controller", "buttons", "normal")
     look("seat", seat - f["floor"] * 260 + f["A"] * 40, seat, f["A"], hide=controller)
     look("plate", f["iface_pos"] + f["iface_out"] * 260, f["iface_pos"], f["iface_up"], hide=controller)
+    # The plug on its own, seen from inside the guitar: its D, tab and crush ribs.
+    plug = Vector((f["tip"], 0.0, (p["d_top_z"] + f["iface_pos"].z) / 2))
+    look("plug", plug + Vector((85, -45, -45)), plug, Vector((0, 0, 1)), hide=tuple(k for k in objects if k != "plug"))
     for ob, _ in objects.values():
         ob.hide_render = False
 
@@ -858,17 +889,27 @@ def main() -> None:
           f"{max(deep) - min(deep):.1f} mm floor to opening, {p['cradle_clear']:.1f} mm clearance")
 
     cradle = build_cradle(p, f, ctrl, cad)
-    notes = check(p, [cradle], f) + check_cradle(p, f, cf, cradle, ctrl, cad)
+    plug = build_d_plug(p, f)
+    fit_test = build_d_plug(p, f, fit_test=True)
+    notes = check(p, [cradle, plug, fit_test], f) + check_cradle(p, f, cf, cradle, ctrl, cad) + check_plug(p, f, plug)
 
-    # Print the cradle on its mating face: +X (toward the guitar) -> down.
+    # Print the cradle on its mating face: +X (toward the guitar) -> down; the
+    # plug on its outside face, its D up: -X -> down.
     export_stl(cradle, args.out / "cradle.stl", Matrix.Rotation(math.radians(90), 4, "Y"))
-    export_stl(cradle, args.out / "assembly.stl")
+    export_stl(plug, args.out / "d_plug.stl", Matrix.Rotation(math.radians(-90), 4, "Y"))
+    export_stl(fit_test, args.out / "d_plug_fit_test.stl", Matrix.Rotation(math.radians(-90), 4, "Y"))
+    fit_mesh = fit_test.data
+    bpy.data.objects.remove(fit_test)
+    bpy.data.meshes.remove(fit_mesh)
+    for o in bpy.context.scene.objects:
+        o.select_set(o in (cradle, plug))
+    bpy.ops.wm.stl_export(filepath=str(args.out / "assembly.stl"), export_selected_objects=True, global_scale=1.0)
 
     offset = mount_offset(p, f)
     (args.out / "mount_offset.json").write_text(json.dumps(offset, indent=2) + "\n", encoding="utf-8")
     print("[mount] mount_offset:", json.dumps(offset))
 
-    colours = {"cradle": (cradle, (0.65, 0.55, 0.98, 1))}
+    colours = {"cradle": (cradle, (0.65, 0.55, 0.98, 1)), "plug": (plug, (0.35, 0.85, 0.55, 1))}
     colours.update(ghosts(p, f, ctrl, cad))
     if not args.no_render:
         render(colours, args.out, f, p)
