@@ -51,6 +51,9 @@ namespace AuralPrimer.Link
             /// <summary>Does the tab say where this note is played?</summary>
             public bool IsPlaced => String >= 0 && Fret >= 0;
 
+            /// <summary>A muted note: it has no pitch to number.</summary>
+            public bool IsMuted => Array.IndexOf(Tech, "mt") >= 0;
+
             public Note WithChordGroup(int group) =>
                 new(On, Off, Pitch, String, Fret, Finger, Chord, Tech, group);
         }
@@ -73,8 +76,47 @@ namespace AuralPrimer.Link
             public int LastFret => Fret + Math.Max(1, Width) - 1;
         }
 
+        /// <summary>A chord shape the tab holds from <see cref="T"/> to <see cref="End"/>, arpeggios included.</summary>
+        public readonly struct Handshape
+        {
+            public readonly float T;
+            public readonly float End;
+            public readonly string Name;
+            /// <summary>Lowest string first; -1 for a string the shape does not use.</summary>
+            public readonly int[] Frets;
+            /// <summary>Lowest string first; -1 for no finger.</summary>
+            public readonly int[] Fingers;
+
+            public Handshape(float t, float end, string name, int[] frets, int[] fingers)
+            {
+                T = t;
+                End = end;
+                Name = name ?? "";
+                Frets = frets ?? Array.Empty<int>();
+                Fingers = fingers ?? Array.Empty<int>();
+            }
+        }
+
         /// <summary>Notes struck within this of each other are one chord.</summary>
         const float ChordWindowSeconds = 0.001f;
+
+        /// <summary>The song's key is known (protocol §4): the views can count numbers from it.</summary>
+        public bool HasKey { get; private set; }
+        /// <summary>The key's tonic, 0 = C.</summary>
+        public int KeyPitchClass { get; private set; }
+        public bool KeyMinor { get; private set; }
+        /// <summary>The desktop guessed the key from the notes rather than reading it from the pack.</summary>
+        public bool KeyInferred { get; private set; }
+
+        /// <summary>The tab's chord shapes, sorted by time; empty when it has none.</summary>
+        public List<Handshape> Handshapes { get; } = new();
+
+        /// <summary>Downbeat times, seconds; empty when the song has no timeline.</summary>
+        public List<float> Bars { get; } = new();
+
+        /// <summary>From the chart's tempo map, for a constant grid when there are no bars.</summary>
+        public float Bpm { get; private set; } = 120f;
+        public int BeatsPerBar { get; private set; } = 4;
 
         public string Role { get; private set; } = "";
 
@@ -170,7 +212,67 @@ namespace AuralPrimer.Link
                 chart.AnchorsDerived = true;
             }
 
+            if (obj.TryGetValue("key", out var key) && key is Dictionary<string, object> k
+                && TryNumber(k, "pitchClass", out var pitchClass)
+                && k.TryGetValue("mode", out var mode) && mode is string m && (m == "major" || m == "minor"))
+            {
+                chart.HasKey = true;
+                chart.KeyPitchClass = (((int)Math.Round(pitchClass)) % 12 + 12) % 12;
+                chart.KeyMinor = m == "minor";
+                chart.KeyInferred = k.TryGetValue("inferred", out var inferred) && inferred is true;
+            }
+
+            if (obj.TryGetValue("handshapes", out var shapes) && shapes is List<object> shapeList)
+            {
+                foreach (var item in shapeList)
+                {
+                    if (item is not Dictionary<string, object> h || !TryNumber(h, "t", out var t)) continue;
+                    var end = TryNumber(h, "t_end", out var e) && e >= t ? e : t;
+                    chart.Handshapes.Add(new Handshape((float)t, (float)end,
+                                                       h.TryGetValue("name", out var name) ? name as string : "",
+                                                       ReadInts(h, "frets"), ReadInts(h, "fingers")));
+                }
+                chart.Handshapes.Sort((a, b) => a.T.CompareTo(b.T));
+            }
+
+            if (obj.TryGetValue("bars", out var bars) && bars is List<object> barList)
+            {
+                foreach (var item in barList)
+                {
+                    if (item is double d) chart.Bars.Add((float)d);
+                }
+                chart.Bars.Sort();
+            }
+
+            if (obj.TryGetValue("tempoMap", out var tempo) && tempo is List<object> tempos
+                && tempos.Count > 0 && tempos[0] is Dictionary<string, object> first)
+            {
+                if (TryNumber(first, "bpm", out var bpm) && bpm > 0) chart.Bpm = (float)bpm;
+                if (TryNumber(first, "beatsPerBar", out var beats) && beats >= 1) chart.BeatsPerBar = (int)Math.Round(beats);
+            }
+
             return chart;
+        }
+
+        /// <summary>The chord shape held at <paramref name="t"/>, or null.</summary>
+        /// <remarks>The last one to start at or before t, as the desktop coach picks it.</remarks>
+        public Handshape? HandshapeAt(float t)
+        {
+            Handshape? found = null;
+            foreach (var shape in Handshapes)
+            {
+                if (shape.T > t) break;
+                found = shape;
+            }
+            return found;
+        }
+
+        static int[] ReadInts(Dictionary<string, object> obj, string key)
+        {
+            if (!obj.TryGetValue(key, out var raw) || raw is not List<object> list) return Array.Empty<int>();
+            var output = new int[list.Count];
+            for (var i = 0; i < list.Count; i++) output[i] = list[i] is double d ? (int)Math.Round(d) : -1;
+            return output;
         }
 
         /// <summary>

@@ -127,6 +127,43 @@ namespace AuralPrimer.Link.Tests
         }
 
         [Test]
+        public void ReadsTheKeyChordShapesBarsAndTempo()
+        {
+            var chart = FrettedChart.Parse(
+                "{\"role\":\"lead_guitar\",\"tuning\":[40,45,50,55,59,64],"
+              + "\"tempoMap\":[{\"tSec\":0,\"bpm\":96,\"beatsPerBar\":3}],"
+              + "\"key\":{\"pitchClass\":9,\"mode\":\"minor\",\"inferred\":true},"
+              + "\"handshapes\":[{\"t\":2,\"t_end\":3,\"name\":\"E5\",\"frets\":[0,2,2,-1,-1,-1],\"fingers\":[-1,1,3,-1,-1,-1]},"
+              + "{\"t\":1,\"t_end\":1.5,\"name\":\"A5\",\"frets\":[-1,0,2,2,-1,-1],\"fingers\":[-1,-1,1,3,-1,-1]}],"
+              + "\"bars\":[2.5,0,1.25],"
+              + "\"notes\":[{\"on\":1,\"off\":2,\"pitch\":45,\"s\":1,\"f\":0,\"tech\":[\"mt\"]}]}");
+
+            Assert.IsTrue(chart.HasKey);
+            Assert.AreEqual(9, chart.KeyPitchClass);
+            Assert.IsTrue(chart.KeyMinor);
+            Assert.IsTrue(chart.KeyInferred);
+            Assert.AreEqual(96f, chart.Bpm, 1e-6f);
+            Assert.AreEqual(3, chart.BeatsPerBar);
+            Assert.AreEqual(new[] { 0f, 1.25f, 2.5f }, chart.Bars.ToArray());
+
+            Assert.AreEqual("A5", chart.Handshapes[0].Name, "sorted by time");
+            Assert.AreEqual(new[] { -1, 0, 2, 2, -1, -1 }, chart.Handshapes[0].Frets);
+            Assert.AreEqual("A5", chart.HandshapeAt(1.2f)?.Name);
+            Assert.AreEqual("E5", chart.HandshapeAt(9f)?.Name);
+            Assert.IsNull(chart.HandshapeAt(0.5f));
+            Assert.IsTrue(chart.Notes[0].IsMuted);
+        }
+
+        [Test]
+        public void HasNoKeyWhenTheDesktopSentNone()
+        {
+            var chart = FrettedChart.Parse(LeadChart);
+            Assert.IsFalse(chart.HasKey);
+            Assert.AreEqual(0, chart.Handshapes.Count);
+            Assert.AreEqual(0, chart.Bars.Count);
+        }
+
+        [Test]
         public void RefusesSomethingThatIsNotJson()
         {
             Assert.IsNull(FrettedChart.Parse("{\"notes\":[{\"on\":1,"));
