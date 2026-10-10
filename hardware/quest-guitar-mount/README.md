@@ -5,7 +5,9 @@ the head end of a headless guitar, so the headset always knows where the neck
 is and the mixed-reality neck highway can sit on the real frets. The defaults
 target a **Jamstik Studio** (headless, 24 frets, 25.5" scale, 40 mm at the nut).
 
-![The mount on the head end, seen from the player's side](preview.png)
+![The mount on the head end, seen from the front](preview.png)
+
+![What the headset sees: the controller's top surface (cyan) angled toward the player](preview-eyes.png)
 
 Three printed pieces:
 
@@ -45,11 +47,26 @@ before printing the rest.
 
 ## 2. Tape-test the angle
 
-Before printing the cradle, hold the controller at the head end with painter's
-tape at the angle you want and play for a minute with the headset on. The
-controller is tracked by LEDs on its face, so the face needs to keep a view of
-the headset. When tracking stays steady, set `face_roll` (the turn about the
-neck) and `grip_tilt` (the tip back, like an angled headstock) to match.
+The default angle follows how the controller was held for the first test: past
+the head end, rising up from the line of the neck like a raised headstock, with
+its top control surface angled partly toward the player so the headset keeps
+seeing its tracking LEDs.
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `grip_rise` | 30° | Lifts the controller from the neck line toward the low-E edge (up, when playing). This is the angle a front-on photo shows. |
+| `grip_tilt` | 30° | Tips it back toward the player. Raise it if tracking drops. |
+| `face_roll` | −45° | Turns the cradle about the neck. At the default, the grip's palm side rests in the cradle facing the player, so the top surface leans toward them. |
+| `face_cant` | 50° | How far a Touch Plus top surface leans from its grip. This is an estimate, used only for the tracking check. |
+
+Every build prints how far the top surface points from the player's eyes, and
+warns past 70°; the defaults give about 57°. The eye position is in
+`eye_toward_body`, `eye_up` and `eye_back` (mm from the nut). `preview_eyes.png`
+shows what the headset sees.
+
+Before printing the cradle, tape the controller to the head end at that angle
+and play for a minute with the headset on. When tracking stays steady, set the
+angles to match.
 
 ## 3. Build the STLs
 
@@ -93,7 +110,7 @@ watertight or has come apart into separate pieces. `out/` is git-ignored.
 2. Line the clamp's inner side walls, end wall and the undersides of both lips with felt, and put felt on the pad.
 3. Bolt the cradle to the clamp.
 4. Slide the clamp onto the head end until it touches the tip, set the pad under the head, and turn the screw finger-tight. It holds the head between the lips and the pad, so it only needs to be snug.
-5. Seat the controller's grip in the cradle with its head pointing away from the guitar and its face toward you. Run the straps through both slots and over the grip.
+5. Seat the controller's grip in the cradle with its head pointing away from the guitar, the palm side of the grip against the cradle (it faces you), and the top control surface leaning toward you. Run the straps through both slots and over the grip; they carry the controller, since the cradle opens away from you.
 6. In the headset, run the guitar setup's alignment check once. Remount the same way every time (cap against the tip, controller seated to the end of the cradle) and the saved alignment stays valid.
 
 ## `mount_offset.json`

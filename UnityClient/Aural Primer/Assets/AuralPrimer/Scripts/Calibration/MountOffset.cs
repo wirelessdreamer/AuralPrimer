@@ -42,8 +42,8 @@ namespace AuralPrimer.Calibration
         /// GuitarAnchor, which reads the same shape (<see cref="TryParse"/>).
         /// </remarks>
         public static MountOffset Cad => new(
-            new Vector3(-0.0011f, -0.0007f, -0.1235f),
-            new Quaternion(0.58762f, 0.39332f, -0.65656f, 0.26255f));
+            new Vector3(-0.006f, -0.0462f, -0.1098f),
+            new Quaternion(-0.49851f, 0.6841f, 0.02222f, 0.53198f));
 
         /// <summary>
         /// Read the mount's offset file:

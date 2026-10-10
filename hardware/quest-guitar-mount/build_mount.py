@@ -63,8 +63,15 @@ DEFAULTS: dict[str, float] = {
     "grip_clear": 0.8,  # extra room around the grip
     # --- Layout -----------------------------------------------------------
     "arm_len": 26.0,  # end wall to the start of the cradle, along the neck
-    "grip_tilt": 12.0,  # grip axis tilted back from the neck line (like an angled headstock)
-    "face_roll": 125.0,  # cradle opening, rotated about the neck axis from +Z toward the low-E side
+    "grip_rise": 30.0,  # controller raised from the neck line toward the low-E edge (up, when playing), like a raised headstock
+    "grip_tilt": 30.0,  # ...and tipped back toward the player
+    "face_roll": -45.0,  # cradle opening, rotated about the neck axis from +Z toward the low-E side; the default
+    # opens away from the player, so the grip's palm side rests in the cradle facing the player
+    "face_cant": 50.0,  # how far the controller's top control surface leans from its grip axis toward the palm side (estimate)
+    # --- Where the player's eyes are, from the nut (only for the tracking check) ---
+    "eye_toward_body": 350.0,
+    "eye_up": 300.0,  # toward the low-E edge
+    "eye_back": 250.0,  # behind the fretboard face, toward the player
     # --- Print / hardware -------------------------------------------------
     "wall": 4.0,
     "end_wall": 6.0,
@@ -195,9 +202,11 @@ def frame(p: dict) -> dict:
     f["z_mid"] = (f["bottom_out"] + f["lip_top"]) / 2
     f["x_plate_out"] = f["x_wall_out"] - p["plate"]
     # Cradle orientation.
+    rise = math.radians(p["grip_rise"])
     tilt = math.radians(p["grip_tilt"])
     roll = math.radians(p["face_roll"])
-    axis = Vector((-math.cos(tilt), 0.0, -math.sin(tilt)))  # away from the guitar, tipped back
+    # Away from the guitar, raised toward the low-E edge, tipped back toward the player.
+    axis = Vector((-math.cos(rise) * math.cos(tilt), -math.sin(rise) * math.cos(tilt), -math.sin(tilt)))
     opening = Vector((0.0, -math.sin(roll), math.cos(roll)))  # about the neck axis, +Z toward low-E
     opening = (opening - axis * opening.dot(axis)).normalized()
     f["axis"], f["opening"] = axis, opening
@@ -211,6 +220,15 @@ def frame(p: dict) -> dict:
     # clear of it: one just past the arm, one near the far end.
     f["s_arm"] = -half_len + 9.0
     f["s_straps"] = (-half_len + 19.0 + p["strap_w"] / 2, half_len - p["strap_w"] / 2 - 1.0)
+    # The controller's top control surface: up the grip, leaning toward the palm
+    # side, which rests in the cradle (so, away from the opening). Its tracking
+    # LEDs need to see the headset, so the build reports how far it points from
+    # the player's eyes.
+    cant = math.radians(p["face_cant"])
+    f["face"] = (axis * math.cos(cant) - opening * math.sin(cant)).normalized()
+    f["head_centre"] = f["saddle_centre"] + axis * (half_len + 20)
+    eye = Vector((p["eye_toward_body"], -p["eye_up"], -p["eye_back"]))
+    f["face_to_eyes_deg"] = math.degrees(f["face"].angle(eye - f["head_centre"]))
     return f
 
 
@@ -292,8 +310,12 @@ def build_pad(p: dict, f: dict) -> bpy.types.Object:
 # ---------------------------------------------------------------------------
 
 
-def check(p: dict, parts: list[bpy.types.Object]) -> list[str]:
+def check(p: dict, parts: list[bpy.types.Object], f: dict | None = None) -> list[str]:
     notes = []
+    if f is not None:
+        print(f"[mount] top control surface points {f['face_to_eyes_deg']:.0f} deg from the player's eyes")
+        if f["face_to_eyes_deg"] > 70:
+            notes.append(f"the controller's top surface points {f['face_to_eyes_deg']:.0f} deg away from the eyes: tracking may drop")
     clearance = (p["head_width"] - p["string_spread_at_clamp"]) / 2 - p["lip"]
     if clearance < 1.0:
         notes.append(f"lips reach within {clearance:.1f} mm of the outer strings: lower 'lip' or measure again")
@@ -357,7 +379,8 @@ def mount_offset(p: dict, f: dict) -> dict:
         "neck_origin_in_grip_m": [round(c / 1000, 4) for c in local],
         "neck_rotation_in_grip_quat": [round(q.x, 5), round(q.y, 5), round(q.z, 5), round(q.w, 5)],
         "note": "First guess from the CAD (approximate grip-pose model); the headset's alignment check replaces it.",
-        "params": {k: p[k] for k in ("nut_to_tip", "head_top_z", "arm_len", "grip_tilt", "face_roll", "grip_len")},
+        "face_to_eyes_deg": round(f["face_to_eyes_deg"], 1),
+        "params": {k: p[k] for k in ("nut_to_tip", "head_top_z", "arm_len", "grip_rise", "grip_tilt", "face_roll", "face_cant", "grip_len")},
     }
 
 
@@ -379,15 +402,18 @@ def ghosts(p: dict, f: dict) -> list[bpy.types.Object]:
     neck = box("ghost_neck", (f["tip"], -p["head_width"] / 2, p["head_top_z"] - p["head_thickness"]), (260, p["head_width"] / 2, p["head_top_z"]))
     m = at(f["saddle_centre"], f["side"], f["opening"], f["axis"])
     grip = prism("ghost_grip", p["grip_width"] / 2, p["grip_depth"] / 2, p["grip_len"] + 10, m)
-    head = prism("ghost_head", 32, 30, 34, at(f["saddle_centre"] + f["axis"] * (p["grip_len"] / 2 + 20) + f["opening"] * 8, f["side"], f["opening"], f["axis"]))
+    head = prism("ghost_head", 32, 30, 34, at(f["head_centre"], f["side"], f["opening"], f["axis"]))
+    fz = f["face"]
+    fx = fz.orthogonal().normalized()
+    face = prism("ghost_face", 24, 24, 3, at(f["head_centre"] + fz * 18, fx, fz.cross(fx), fz))
     strings = []
     for i in range(6):
         y = -p["string_spread_at_clamp"] / 2 + i * p["string_spread_at_clamp"] / 5
         strings.append(box(f"ghost_string{i}", (f["tip"] + 6, y - 0.4, p["head_top_z"] + 0.5), (260, y + 0.4, p["head_top_z"] + 1.3)))
-    return [neck, grip, head, *strings]
+    return [neck, grip, head, face, *strings]
 
 
-def render(objects: dict[str, tuple[bpy.types.Object, tuple]], out: Path, f: dict) -> None:
+def render(objects: dict[str, tuple[bpy.types.Object, tuple]], out: Path, f: dict, p: dict) -> None:
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_WORKBENCH"
     scene.display.shading.light = "STUDIO"
@@ -408,16 +434,23 @@ def render(objects: dict[str, tuple[bpy.types.Object, tuple]], out: Path, f: dic
     scene.collection.objects.link(cam)
     scene.camera = cam
     target = Vector((f["tip"] - 40, 0, -10))
-    views = {
-        "player": Vector((120, -330, 160)),  # from the player's side, above the low-E edge
-        "below": Vector((-60, 160, -260)),
-        "side": Vector((-90, -380, -20)),
-    }
-    for name, offset in views.items():
-        cam.location = target + offset
-        cam.rotation_euler = (target - cam.location).to_track_quat("-Z", "Y").to_euler()
+
+    def look(name: str, position: Vector, aim: Vector, up: Vector) -> None:
+        cam.location = position
+        fwd = (aim - position).normalized()
+        right = fwd.cross(up).normalized()
+        cam.rotation_euler = Matrix((right, right.cross(fwd), -fwd)).transposed().to_euler()
         scene.render.filepath = str(out / f"preview_{name}.png")
         bpy.ops.render.render(write_still=True)
+
+    up_when_playing = Vector((0, -1, 0))  # the low-E edge points at the ceiling
+    # What the headset sees: from the eye position the tracking check uses, so the
+    # controller's top surface (cyan) should face the camera.
+    look("eyes", Vector((p["eye_toward_body"], -p["eye_up"], -p["eye_back"])), f["head_centre"], up_when_playing)
+    # From the audience, as a webcam on the desk sees it: fretboard face on, head end to the right.
+    look("front", target + Vector((60, 0, 520)), target, up_when_playing)
+    look("below", target + Vector((-60, 160, -260)), target, Vector((0, 0, 1)))
+    look("side", target + Vector((-90, -380, -20)), target, Vector((0, 0, 1)))
 
 
 def main() -> None:
@@ -442,7 +475,7 @@ def main() -> None:
     clamp = build_head_clamp(p, f)
     cradle = build_cradle(p, f)
     pad = build_pad(p, f)
-    notes = check(p, [clamp, cradle, pad])
+    notes = check(p, [clamp, cradle, pad], f)
 
     export_stl(clamp, args.out / "head_clamp.stl")
     # Print the cradle on its mating face: +X (toward the clamp) -> down.
@@ -467,10 +500,11 @@ def main() -> None:
             "neck": (g[0], (0.36, 0.25, 0.18, 1)),
             "grip": (g[1], (0.85, 0.86, 0.88, 1)),
             "head": (g[2], (0.85, 0.86, 0.88, 1)),
+            "face": (g[3], (0.13, 0.83, 0.93, 1)),
         }
-        for i, s in enumerate(g[3:]):
+        for i, s in enumerate(g[4:]):
             colours[f"string{i}"] = (s, (0.9, 0.9, 0.85, 1))
-        render(colours, args.out, f)
+        render(colours, args.out, f, p)
 
     for n in notes:
         print(f"[mount] WARNING: {n}")

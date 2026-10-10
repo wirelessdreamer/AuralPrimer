@@ -9,6 +9,8 @@
   "grip_width": 34.0,
   "grip_depth": 40.0,
   "grip_len": 84.0,
-  "face_roll": 125.0,
-  "grip_tilt": 12.0
+  "face_roll": -45.0,
+  "grip_tilt": 30.0,
+  "grip_rise": 30.0,
+  "face_cant": 50.0
 }

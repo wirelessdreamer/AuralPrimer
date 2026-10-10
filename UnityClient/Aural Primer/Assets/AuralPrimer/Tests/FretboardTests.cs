@@ -85,10 +85,11 @@ namespace AuralPrimer.Link.Tests
             const string file = @"{
   ""controller"": ""meta-quest-touch-plus"",
   ""pose"": ""openxr-grip"",
-  ""neck_origin_in_grip_m"": [-0.0011, -0.0007, -0.1235],
-  ""neck_rotation_in_grip_quat"": [0.58762, 0.39332, -0.65656, 0.26255],
+  ""neck_origin_in_grip_m"": [-0.006, -0.0462, -0.1098],
+  ""neck_rotation_in_grip_quat"": [-0.49851, 0.6841, 0.02222, 0.53198],
   ""note"": ""First guess from the CAD (approximate grip-pose model); the headset's alignment check replaces it."",
-  ""params"": { ""nut_to_tip"": 40.0, ""grip_tilt"": 12.0, ""face_roll"": 125.0 }
+  ""face_to_eyes_deg"": 56.9,
+  ""params"": { ""nut_to_tip"": 40.0, ""grip_rise"": 30.0, ""grip_tilt"": 30.0, ""face_roll"": -45.0, ""face_cant"": 50.0 }
 }";
             Assert.IsTrue(MountOffset.TryParse(file, out var parsed));
             AssertNear(MountOffset.Cad.Position, parsed.Position, 1e-6f, "origin");
@@ -109,11 +110,14 @@ namespace AuralPrimer.Link.Tests
         {
             // The cradle points the controller's head away from the guitar, and
             // the grip pose's forward runs up toward that head -- so the neck,
-            // running toward the body, should point mostly along grip -Z, with
-            // the nut a dozen centimetres behind the grip. Read as the inverse
-            // rotation, the same numbers would point it 55 degrees off.
+            // running toward the body, points back along grip -Z, with the nut
+            // a dozen centimetres behind the grip. The mount raises and tips the
+            // controller (30 degrees each) so its top surface leans toward the
+            // player, which puts the neck about 41 degrees off grip -Z. Read as
+            // the inverse rotation, the same numbers would point it elsewhere.
             var neckAxis = Axis(MountOffset.Cad.Rotation, Vector3.UnitX);
-            Assert.That(Vector3.Dot(neckAxis, -Vector3.UnitZ), Is.GreaterThan(0.9f), $"neck axis {neckAxis}");
+            var dot = Vector3.Dot(neckAxis, -Vector3.UnitZ);
+            Assert.That(dot, Is.InRange(0.70f, 0.80f), $"neck axis {neckAxis}");
             Assert.That(MountOffset.Cad.Position.Z, Is.LessThan(-0.1f));
         }
 
