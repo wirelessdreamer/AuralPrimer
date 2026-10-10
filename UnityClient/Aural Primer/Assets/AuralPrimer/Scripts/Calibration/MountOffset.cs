@@ -32,18 +32,20 @@ namespace AuralPrimer.Calibration
         /// The CAD's first guess, from hardware/quest-guitar-mount/mount_offset.json.
         /// </summary>
         /// <remarks>
-        /// Copied from that file, which build_mount.py::mount_offset writes. It
-        /// assumes the OpenXR grip pose's origin is the palm side of the grip at
-        /// mid-grip, with forward running up the grip toward the controller's
-        /// head -- an approximation, documented there and in the mount's README.
-        /// The alignment check replaces it with a measurement, so being
-        /// centimetres out here costs a nudge, not a wrong neck. When the mount
-        /// is rebuilt, either update these numbers or hand the new file to
-        /// GuitarAnchor, which reads the same shape (<see cref="TryParse"/>).
+        /// Copied from that file, which build_mount.py::mount_offset writes with
+        /// Meta's real Touch Plus model seated in the cradle. Its reference is
+        /// that model's origin and axes (MetaQuestTouchPlus_Left as Unity draws
+        /// it, where the Meta SDK's OVRControllerPrefab puts it). GuitarAnchor
+        /// applies it to the controller's tracked grip pose; whether that pose is
+        /// exactly where the SDK draws its model is unchecked on a headset. The
+        /// alignment check replaces it with a measurement, so being centimetres
+        /// out here costs a nudge, not a wrong neck. When the mount is rebuilt,
+        /// either update these numbers or hand the new file to GuitarAnchor,
+        /// which reads the same shape (<see cref="TryParse"/>).
         /// </remarks>
         public static MountOffset Cad => new(
-            new Vector3(-0.006f, -0.0462f, -0.1098f),
-            new Quaternion(-0.49851f, 0.6841f, 0.02222f, 0.53198f));
+            new Vector3(-0.0101f, -0.0882f, -0.1405f),
+            new Quaternion(0.63318f, 0.29008f, -0.69843f, 0.16469f));
 
         /// <summary>
         /// Read the mount's offset file:
