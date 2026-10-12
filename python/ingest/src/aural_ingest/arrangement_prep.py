@@ -75,6 +75,7 @@ from .feedpak_tab import (
     TECHNIQUE_KEYS,
     chord_shapes,
     hand_positions,
+    is_bass,
     open_strings_midi,
     tab_notes,
 )
@@ -306,10 +307,16 @@ def build_fingering_doc(
             note["finger"] = n["finger"]
         notes.append(note)
     notes.sort(key=lambda x: (x["t_on"], x["pitch"], x["string"]))
+    tuning = open_strings_midi(arr, manifest_entry)
+    if is_bass(arr, manifest_entry):
+        # feedBack lists six tuning values for every arrangement, a bass's
+        # too; kept as is, the views drew a bass on a six-string neck. A bass
+        # has four strings unless its tab plays a fifth or sixth.
+        tuning = tuning[: max(4, max(n["string"] for n in notes) + 1)]
     doc: dict[str, Any] = {
         "version": "1.0.0",
         "instrument": role,
-        "tuning": open_strings_midi(arr, manifest_entry),
+        "tuning": tuning,
         "notes": notes,
     }
     anchors = hand_positions(arr)

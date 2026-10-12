@@ -450,7 +450,8 @@ def test_prep_writes_authored_fingering_sidecars(tmp_path: Path):
 
     # Authored positions + absolute open-string tuning (bass an octave down).
     assert docs["lead_guitar"]["tuning"] == [40, 45, 50, 55, 59, 64]
-    assert docs["bass"]["tuning"] == [28, 33, 38, 43, 47, 52]
+    # A bass keeps its four strings, not the six feedBack lists for every part.
+    assert docs["bass"]["tuning"] == [28, 33, 38, 43]
     assert [(n["string"], n["fret"], n["pitch"]) for n in docs["lead_guitar"]["notes"]] == [
         (0, 3, 43),
         (2, 7, 57),
