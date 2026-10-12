@@ -1091,7 +1091,13 @@ async function selectAuralSong(containerPath: string) {
         ? "flat"
         : "sharp";
     songChordLabels = chordTrack ? chordLabels(chordTrack.notes, chordSpelling) : [];
-    songKey = songKeyFor(keyModeArtifacts, selectedMelodicTracks.flatMap((t) => t.notes));
+    songKey = songKeyFor(
+      keyModeArtifacts,
+      selectedMelodicTracks.flatMap((t) => t.notes),
+      selectedMelodicTracks.filter((t) => t.role === "bass").flatMap((t) => t.notes),
+    );
+    // One key for the song: the header says what the numbers count from.
+    if (songKey?.inferred && songKey.label) songDetailsView.setHudKeyLabel(songKey.label.replace(/ \(from the notes\)$/, ""));
 
     // Hand the headset this song's chart, for the part it asked for -- keys
     // first when it has not asked (see pickMrTrack).

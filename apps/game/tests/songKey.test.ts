@@ -24,6 +24,19 @@ describe("songKeyFor", () => {
     expect(key?.inferred).toBe(true);
   });
 
+  it("takes the root from a bass that leans on it, for a modal song", () => {
+    // E dorian funk: the notes are the D major scale's, so they alone say D
+    // major -- but the bass sits on E, and G (not G#) makes it minor.
+    const scale = [64, 66, 67, 69, 71, 73, 74, 62, 64, 67, 71, 74].map((p, i) => note(p, i * 0.5));
+    const bass = [40, 40, 40, 52, 40, 43, 40, 45, 40, 40].map((p, i) => note(p, i * 0.5));
+    const key = songKeyFor({}, [...scale, ...bass], bass);
+    expect(key).toMatchObject({ pitchClass: 4, mode: "minor", inferred: true });
+    expect(key?.label).toBe("E minor (from the notes)");
+    // A bass with no clear home leaves the notes' own guess alone.
+    const wandering = [40, 42, 43, 45, 47, 49, 50].map((p, i) => note(p, i * 0.5));
+    expect(songKeyFor({}, scale, wandering)?.pitchClass).toBe(songKeyFor({}, scale)?.pitchClass);
+  });
+
   it("is null when nothing says, so no numbers are invented", () => {
     expect(songKeyFor({}, [])).toBeNull();
   });

@@ -34,6 +34,8 @@ export type SongDetailsViewHandle = {
     melodicNotes?: MelodicNote[] | null,
     keyModeArtifacts?: KeyModeArtifacts | null,
   ) => void;
+  /** Show a key worked out elsewhere: the song's, which the guitar numbers count from. */
+  setHudKeyLabel: (label: string) => void;
   /** Replace the right-rail details slot with the given AuralSong details. */
   renderDetails: (details: AuralSongDetails) => void;
   /** Update the band-setup widget's title/artist/path + playStart gate. */
@@ -79,6 +81,11 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
     }
     const km = extractKeyModeFromManifest(manifestRaw, keyModeArtifacts);
     hudKeyModeEl!.textContent = `${km.key} ${km.mode}`;
+  }
+
+  /** Show a key worked out elsewhere (the song's, from all its parts). */
+  function setHudKeyLabel(label: string): void {
+    hudKeyModeEl!.textContent = label;
   }
 
   function renderDetails(details: AuralSongDetails): void {
@@ -143,5 +150,5 @@ export function initSongDetailsView(deps: SongDetailsViewDeps): SongDetailsViewH
     });
   }
 
-  return { setHudKeyMode, renderDetails, setSelectedSongSetupLabel };
+  return { setHudKeyMode, setHudKeyLabel, renderDetails, setSelectedSongSetupLabel };
 }
