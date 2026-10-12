@@ -109,6 +109,27 @@ namespace AuralPrimer.Calibration
         }
 
         /// <summary>
+        /// The neck through a nut and a bridge point, both in the grip frame,
+        /// with its roll kept from <paramref name="prior"/>.
+        /// </summary>
+        /// <remarks>
+        /// What the nut and bridge grab handles drive. The nut is the neck's
+        /// origin, so it lands exactly where it was put; the bridge only aims
+        /// the neck, by the least turn that points the prior's length along
+        /// the new line, which leaves the roll about that line as it was. The
+        /// distance between the two is not used: the scale length already says
+        /// where the bridge is, and a hand-placed bridge point is only good for
+        /// direction.
+        /// </remarks>
+        public static MountOffset FromNutAndBridge(MountOffset prior, Vector3 nut, Vector3 bridge)
+        {
+            var line = bridge - nut;
+            if (line.LengthSquared() < 1e-8f) return new MountOffset(nut, prior.Rotation);
+            var along = Vector3.Transform(Vector3.UnitX, prior.Rotation);
+            return new MountOffset(nut, Quaternion.Normalize(FromTo(along, line) * prior.Rotation));
+        }
+
+        /// <summary>
         /// Move the neck by a small amount in its own frame, and roll it about
         /// its own length (positive turns the face toward the highest string).
         /// </summary>

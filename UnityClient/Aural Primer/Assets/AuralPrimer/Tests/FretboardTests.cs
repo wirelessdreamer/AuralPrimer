@@ -211,6 +211,47 @@ namespace AuralPrimer.Link.Tests
         }
 
         [Test]
+        public void TheNutHandlePlacesTheNutAndTheBridgeHandleAimsTheNeck()
+        {
+            var prior = MountOffset.Cad;
+            var x = Axis(prior.Rotation, Vector3.UnitX);
+            var z = Axis(prior.Rotation, Vector3.UnitZ);
+
+            // The nut dragged 2 cm along the face's width, the bridge swung 3 cm
+            // toward the highest string: the nut lands exactly there, and the
+            // neck points from it through the bridge.
+            var nut = prior.Position + 0.02f * z;
+            var bridge = prior.Position + 0.648f * x + 0.03f * z;
+            var moved = FretboardSolver.FromNutAndBridge(prior, nut, bridge);
+            AssertNear(nut, moved.Position, 1e-6f, "nut");
+            AssertNear(Vector3.Normalize(bridge - nut), Axis(moved.Rotation, Vector3.UnitX), 1e-5f, "aims at the bridge");
+
+            // Turning the neck within its own face plane leaves the face where it was.
+            AssertNear(Axis(prior.Rotation, Vector3.UnitY), Axis(moved.Rotation, Vector3.UnitY), 1e-5f, "roll kept");
+        }
+
+        [Test]
+        public void ABridgeOnTheNecksOwnLineChangesNothingButTheNut()
+        {
+            var prior = MountOffset.Cad;
+            var x = Axis(prior.Rotation, Vector3.UnitX);
+
+            // Closer or further along the same line: the distance is not used.
+            var moved = FretboardSolver.FromNutAndBridge(prior, prior.Position, prior.Position + 0.5f * x);
+            AssertNear(prior.Position, moved.Position, 1e-7f, "nut");
+            foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
+            {
+                AssertNear(Axis(prior.Rotation, axis), Axis(moved.Rotation, axis), 1e-5f, $"axis {axis}");
+            }
+
+            // Both handles on one spot: no direction to take, so only the nut moves.
+            var lifted = prior.Position + new Vector3(0f, 0.01f, 0f);
+            var stacked = FretboardSolver.FromNutAndBridge(prior, lifted, lifted);
+            AssertNear(lifted, stacked.Position, 1e-7f, "stacked nut");
+            AssertNear(x, Axis(stacked.Rotation, Vector3.UnitX), 1e-6f, "stacked keeps the direction");
+        }
+
+        [Test]
         public void ConvertsBetweenTheRoomAndTheGrip()
         {
             var gripPosition = new Vector3(0.2f, 1.1f, -0.4f);

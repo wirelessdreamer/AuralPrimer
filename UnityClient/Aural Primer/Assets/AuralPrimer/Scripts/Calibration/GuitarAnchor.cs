@@ -168,6 +168,22 @@ namespace AuralPrimer.Calibration
             return true;
         }
 
+        /// <summary>
+        /// A grip-frame point in the world, at the mounted controller's last pose.
+        /// </summary>
+        /// <remarks>
+        /// The held pose is fine here, unlike in TryWorldToGrip: this places
+        /// something to look at, and while the controller is lost the neck it
+        /// sits on is held at that same pose.
+        /// </remarks>
+        public bool TryGripToWorld(NVector3 inGrip, out Vector3 world)
+        {
+            world = default;
+            if (!HasPose) return false;
+            world = _gripPosition + _gripRotation * ToUnity(inGrip);
+            return true;
+        }
+
         void Update()
         {
             if (_profile == null) return;

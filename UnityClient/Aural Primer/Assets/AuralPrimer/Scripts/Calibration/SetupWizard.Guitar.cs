@@ -44,6 +44,8 @@ namespace AuralPrimer.Calibration
         FretboardSolver.Result _check;
         bool _haveCheck;
         string _guitarCaptureProblem;
+        NeckHandles _neckHandles;
+        string _neckHandleNote;
         float _guitarModeSince;
         bool _guitarHelpShown;
         string _shownGuitarProblem;
@@ -258,10 +260,12 @@ namespace AuralPrimer.Calibration
         {
             guitarAnchor.SetOffset(FretboardSolver.Nudge(
                 guitarAnchor.Offset, GuitarAnchor.ToNumerics(neckLocal), rollDegrees));
+            _neckHandles?.Resync();
             RenderStep();
         }
 
-        void SaveGuitarCheck()
+        /// <summary>Store the offset in force as this guitar's measured one.</summary>
+        void CommitGuitarOffset()
         {
             var offset = guitarAnchor.Offset;
             var neck = _profile.fretboard;
@@ -270,9 +274,52 @@ namespace AuralPrimer.Calibration
             neck.isChecked = true;
             _profile.instrument = Instrument.Guitar;
             _profile.Save();
-            guitarAnchor.Apply(neck);
+        }
+
+        void SaveGuitarCheck()
+        {
+            CommitGuitarOffset();
+            guitarAnchor.Apply(_profile.fretboard);
             ClearPinchMarkers();
             EnterStep(Step.Menu);
+        }
+
+        // ---- Nut and bridge handles ---------------------------------------------
+        //
+        // The keyboard's edge handles, for a neck: a ball on the nut and one on
+        // the bridge, grabbed with a pinch or the ray and put on the real ones.
+        // Up while the neck is being lined up, so the drawn frets can be judged
+        // against the real ones as the handles move.
+
+        void ShowNeckHandles()
+        {
+            if (guitarAnchor == null || _profile?.fretboard == null) return;
+            if (_neckHandles == null)
+            {
+                _neckHandles = gameObject.AddComponent<NeckHandles>();
+                _neckHandles.Released += OnNeckHandleReleased;
+            }
+            _neckHandles.Show(guitarAnchor, _profile.fretboard.scaleLengthMetres,
+                              leftPinchMaterial, rightPinchMaterial);
+        }
+
+        void HideNeckHandles() => _neckHandles?.Hide();
+
+        /// <summary>Saved on release, like the keyboard's edges: not every frame of the drag.</summary>
+        void OnNeckHandleReleased(bool kept)
+        {
+            if (kept)
+            {
+                CommitGuitarOffset();
+                _neckHandleNote = null;
+            }
+            else
+            {
+                // The handles put the neck back where it was before the grab.
+                _neckHandleNote = "That ball ended up too far from where this neck's bridge can be, "
+                                + "so the neck went back. Grab it again and set it on the real one.";
+            }
+            RenderStep();
         }
 
         void TiltGuitarLane(float degrees)
@@ -511,9 +558,11 @@ namespace AuralPrimer.Calibration
                 if (!_check.RollMeasured) body += "\nRoll kept from the mount's design.";
                 body += "\n\n";
             }
-            body += "Compare the drawn frets and strings with the real ones, nudge until they "
-                  + "sit on them, then Save.";
+            body += "Grab the ball on the <b>nut</b> and the one on the <b>bridge</b> and set them "
+                  + "on the real ones: the drawn frets follow. Nudge the rest, then Save.";
+            if (!string.IsNullOrEmpty(_neckHandleNote)) body += $"\n\n<color=#FFB020>{_neckHandleNote}</color>";
             panel?.SetBody(body);
+            ShowNeckHandles();
 
             panel?.SetButtons(
                 ("Retry", StartGuitarCheck),

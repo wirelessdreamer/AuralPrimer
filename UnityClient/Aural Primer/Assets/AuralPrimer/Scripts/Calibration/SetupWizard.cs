@@ -459,6 +459,11 @@ namespace AuralPrimer.Calibration
             if (overlay != null) overlay.Placing = step == Step.FineTune;
 
             if (step != Step.FineTune) HideEdgeHandles();
+            if (step != Step.GuitarCheck)
+            {
+                HideNeckHandles();
+                _neckHandleNote = null;
+            }
 
             // The picker list belongs to the song steps. Left up, it would draw
             // a list of songs under whatever title came next.
