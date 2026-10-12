@@ -161,6 +161,8 @@ export type PlaySurfaceControllerHandle = {
 
 export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): PlaySurfaceControllerHandle {
   const instrumentSelectorEl = document.getElementById("instrumentSelector") as HTMLDivElement | null;
+  /** Where the part buttons go: first in the row, ahead of the view buttons. */
+  const instrumentButtonsEl = document.getElementById("instrumentButtons") as HTMLDivElement | null;
   const tabContainerEl = document.getElementById("tabContainer") as HTMLDivElement | null;
   if (!instrumentSelectorEl || !tabContainerEl) {
     throw new Error("initPlaySurfaceController: required DOM (#instrumentSelector/#tabContainer) missing");
@@ -375,7 +377,7 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
       btn.addEventListener("click", () => {
         selectInstrumentTrack(track.role);
       });
-      instrumentSelectorEl!.appendChild(btn);
+      (instrumentButtonsEl ?? instrumentSelectorEl!).appendChild(btn);
     }
 
     syncMelodicTrackSelectionFromPlayers();

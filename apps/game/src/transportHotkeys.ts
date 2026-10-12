@@ -48,6 +48,8 @@ export type TransportHotkeysDeps = {
 };
 
 export type TransportHotkeys = {
+  /** What Space does: start the session, or pause / resume it. */
+  togglePlayback: () => void;
   /** Remove the window listener (tests + teardown). */
   dispose: () => void;
 };
@@ -104,6 +106,7 @@ export function initTransportHotkeys(deps: TransportHotkeysDeps): TransportHotke
 
   window.addEventListener("keydown", onKeyDown);
   return {
+    togglePlayback,
     dispose: () => window.removeEventListener("keydown", onKeyDown),
   };
 }

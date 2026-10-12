@@ -190,6 +190,11 @@ export function appShellHtml(): string {
 
                 <div id="instrumentSelector" class="instrumentSelector" style="display:none">
                   <span class="meta">Instrument:</span>
+                  <!-- The parts first, so they never move: the view buttons
+                       after them change with the part (two for keys, six and
+                       a labels row for a guitar). -->
+                  <div id="instrumentButtons" class="instrumentButtons" role="group" aria-label="Part"></div>
+                  <span class="meta">View:</span>
                   <div id="displayModeToggle" class="displayModeToggle" role="group" aria-label="Display mode">
                     <button id="displayModePiano" class="displayModeBtn isActive" data-mode="piano" type="button">Piano roll</button>
                     <button id="displayModeSheet" class="displayModeBtn" data-mode="sheet" type="button">Sheet music</button>

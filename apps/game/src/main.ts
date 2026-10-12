@@ -263,7 +263,10 @@ const playSurfaceEl = document.createElement("div");
 playSurfaceEl.id = "playSurface";
 playSurfaceEl.className = "playSurface";
 playerStagesEl.insertAdjacentElement("beforebegin", playSurfaceEl);
-playSurfaceEl.append(playerStagesEl, playLyricsEl, vizStatusEl, instrumentSelectorEl, tabContainerEl);
+// The part and view picker leads the play surface, so it is in the same place
+// in every mode: below a stage it moved whenever the visualizer, piano or
+// guitar view above it came and went.
+playSurfaceEl.append(instrumentSelectorEl, playerStagesEl, playLyricsEl, vizStatusEl, tabContainerEl);
 
 // Audio transport DOM (Load/Play/Pause/Stop/Seek + loop set/clear) and
 // #audioStatus / #vizStatus live in audioTransportPanel.ts (Phase 2.Q).
@@ -2246,8 +2249,10 @@ transportController.setFollowExternalClock(true);
 
 // audioLoadBtn / audioPlayBtn / audioPauseBtn / audioStopBtn / audioSeekGoBtn
 // / loopSetBtn / loopClearBtn click handlers all live inside audioTransportPanel.ts.
+// Start, then Pause / Resume once the song is going: the button does what
+// Space does, and says so (see renderPlayStartLabel).
 playStartBtn.addEventListener("click", () => {
-  void startSelectedSongSession();
+  transportHotkeys.togglePlayback();
 });
 
 // Resume + back buttons inside the pause-menu overlay are wired by pauseMenu.ts internally.
@@ -2709,7 +2714,15 @@ const transportHostDeps = {
   },
 };
 
-initTransportHotkeys(transportHostDeps);
+const transportHotkeys = initTransportHotkeys(transportHostDeps);
+
+/** The big button's word for what a press will do now. */
+function renderPlayStartLabel(): void {
+  const label = !sessionStarted ? "Start" : transportController.getState().isPlaying ? "Pause" : "Resume";
+  if (playStartBtn.textContent !== label) playStartBtn.textContent = label;
+}
+renderPlayStartLabel();
+window.setInterval(renderPlayStartLabel, LIVE_INPUT_HUD_INTERVAL_MS);
 
 // The same transport, driven from the control surface's buttons. Which button
 // does what is learned in Configure -> MIDI -> Transport control, because
