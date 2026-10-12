@@ -12,8 +12,9 @@
  *   tab        tablature scrolling past a fixed playhead: the old tab lane, same
  *              direction and pixel rate, now with the tab's own marks
  *   coach      a still neck at real fret spacing, countdown rings and chord cards
- *   nashville  the neck around the hand's pentatonic position, every number in
- *              the key on it, bleeding out from the box (nashville-fretboard.html)
+ *   nashville  split: the numbers falling in on top, the whole neck below with
+ *              every number in the key on it, bleeding out from the hand's
+ *              pentatonic box (nashville-fretboard.html)
  *
  * With Numbers on (setNumbering) every view labels notes by Nashville number,
  * coloured by octave and shaped by tier (fretNumbers.ts), and chords by number.
@@ -96,6 +97,8 @@ const NASHVILLE_NECK_FRETS = 24;
 /** Frets the Nashville neck shows at once. */
 const NASHVILLE_WINDOW_FRETS = 11;
 const NASHVILLE_LEAD_SEC = 0.9;
+/** How far ahead the numbers falling onto the Nashville neck reach, seconds. */
+const NASHVILLE_LANE_SEC = 3;
 
 /**
  * String colours, lowest string first: the red / yellow / blue / orange /
@@ -1571,10 +1574,11 @@ export class GuitarRenderer {
   }
 
   /**
-   * The neck around the hand's box, with every number in the key on it,
-   * brightest in the box and fading with distance to a floor: a position is a
-   * focus, not a fence. The sounding note lights, every other octave of it is
-   * ringed, and the next note counts down in place.
+   * The whole neck below, with every number in the key on it, brightest in
+   * the hand's box and fading with distance to a floor: a position is a focus,
+   * not a fence. The sounding note lights, every other octave of it is ringed,
+   * and the next note counts down in place. Above it the coming numbers fall
+   * onto their frets, and the key and position are written large.
    */
   private drawNashville(chart: FretChart, now: number, f: Frame): void {
     const frame = this.keyFrame;
@@ -1594,14 +1598,20 @@ export class GuitarRenderer {
     this.nashView.lo += (inst.lo - this.nashView.lo) * ease;
     this.nashView.hi += (inst.hi - this.nashView.hi) * ease;
     const focus = this.nashView;
-    const f0 = Math.max(0, Math.floor(focus.lo) - 3);
-    const f1 = Math.min(NASHVILLE_NECK_FRETS, f0 + NASHVILLE_WINDOW_FRETS);
-    const m = this.drawNeck({ x: 14, y: 76, w: W - 28, h: Math.max(80, H - 76 - 40) }, f0, f1, chart.n);
-    const inView = (fr: number): boolean => fr >= f0 && fr <= f1;
+    // The whole neck, always: the box is lit and the rest fades, so the hand
+    // can see where it is and where the next box is, not a window that slides.
+    const f0 = 0;
+    const f1 = NASHVILLE_NECK_FRETS;
+    // Split view: the numbers coming in on top, falling in their fret's
+    // column onto the neck below, where they are played.
+    const laneTop = 64;
+    const neckH = Math.max(90, Math.min((H - laneTop - 22) * 0.5, chart.n * 34));
+    const neckY = H - 22 - neckH;
+    const neck = this.drawNeck({ x: 14, y: neckY, w: W - 28, h: neckH }, f0, f1, chart.n);
+    // Sized for the narrowest fret in view, so the high frets' dots do not overlap.
+    const m = { ...neck, r: Math.min(neck.r, Math.abs(neck.fx(f1) - neck.fx(f1 - 1)) * 0.46) };
 
-    for (const nb of neighbours(frame, chart.open, inst, NASHVILLE_NECK_FRETS)) {
-      if (nb.hi >= f0 && nb.lo <= f1) this.boxOutline(nb, m, 0.7, true);
-    }
+    for (const nb of neighbours(frame, chart.open, inst, NASHVILLE_NECK_FRETS)) this.boxOutline(nb, m, 0.7, true);
     this.boxOutline(inst, m, 1, false);
     for (const kn of keyNotes(frame, chart.open, f0, f1)) {
       const w = focusWeight(kn.f, [focus]);
@@ -1622,7 +1632,6 @@ export class GuitarRenderer {
       ctx.lineWidth = 3;
       for (let i = nextIdx; i < chart.notes.length && chart.notes[i].t - next.t < 0.03; i += 1) {
         const x = chart.notes[i];
-        if (!inView(x.f)) continue;
         ctx.beginPath();
         ctx.arc(m.fx(x.f), m.sy(x.s), m.r + 5, -Math.PI / 2, -Math.PI / 2 + pr * Math.PI * 2);
         ctx.stroke();
@@ -1630,7 +1639,7 @@ export class GuitarRenderer {
     }
 
     const sounding = visibleNotes(chart.notes, now - 0.2, now).filter((x) => isSounding(x, now) && !x.tech.mt);
-    // Any octave counts: ring every other copy of a sounding number in view.
+    // Any octave counts: ring every other copy of a sounding number on the neck.
     ctx.save();
     ctx.setLineDash([4, 3]);
     ctx.strokeStyle = P.text;
@@ -1647,26 +1656,100 @@ export class GuitarRenderer {
     }
     ctx.restore();
     for (const x of sounding) {
-      if (!inView(x.f)) continue;
       const look = this.neckLook(frame, chart, x.s, x.f);
       if (this.nf && x.chord && x.chord.size >= 2) Object.assign(look, this.pitchLook(frame, x.midi, x.chord.triad));
       this.drawDot(m.fx(x.f), m.sy(x.s), m.r * 1.18, look, look.color);
     }
 
-    // What the last note was, in words.
+    this.drawNashvilleLane(chart, frame, now, f, { x: 14, y: laneTop, w: W - 28, h: neckY - laneTop - 10 }, m);
+
+    // The mode we are in, large: the key, the box the hand is in, and what the
+    // last note was.
     const lastIdx = lowerBound(chart.notes, now + 1e-6) - 1;
     const last = lastIdx >= 0 ? chart.notes[lastIdx] : null;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "top";
+    ctx.font = `800 20px ${FONT_UI}`;
+    ctx.fillStyle = P.text;
+    ctx.fillText(`${this.keyText}  ·  Position ${inst.k}`, W - 16, 10);
+    ctx.font = `700 12px ${FONT_UI}`;
+    ctx.fillStyle = P.muted;
+    let modeLine = `frets ${Math.round(inst.lo)}-${Math.round(inst.hi)}`;
     if (last && now - last.t < 2 && !last.tech.mt) {
       const tier = tierOf(frame, last.midi);
       const what = tier === "chrom" ? "outside the key" : tier === "mode" ? "completes the scale" : "any octave counts";
-      ctx.font = `800 12px ${FONT_UI}`;
-      ctx.textAlign = "right";
-      ctx.textBaseline = "top";
-      ctx.fillStyle = tier === "chrom" ? CHROMATIC_COLOR : P.muted;
-      ctx.fillText(`${degreeLabel(frame, last.midi)} · ${what}`, W - 16, 12);
+      modeLine += `  ·  ${degreeLabel(frame, last.midi)} ${what}`;
+      if (tier === "chrom") ctx.fillStyle = CHROMATIC_COLOR;
     }
-    this.hud(chart, f, now, `POSITION ${inst.k}`);
+    ctx.fillText(modeLine, W - 16, 36);
+    this.hud(chart, f, now);
   }
+
+  /**
+   * The Nashville neck's upper half: each coming note as its number, falling
+   * in its own fret's column (a little apart by string) onto the neck below,
+   * coloured as it will be there, with a tail as long as it rings.
+   */
+  private drawNashvilleLane(
+    chart: FretChart,
+    frame: NumberFrame,
+    now: number,
+    f: Frame,
+    box: { x: number; y: number; w: number; h: number },
+    m: { fx: (fr: number) => number; sy: (s: number) => number; r: number },
+  ): void {
+    if (box.h < 30) return;
+    const { ctx } = this;
+    const P = this.palette;
+    const look = lookAheadSec(NASHVILLE_LANE_SEC, f.scrollMul);
+    const bottom = box.y + box.h;
+    const yAt = (t: number): number => bottom - ((t - now) / look) * box.h;
+    // Faint fret columns, so a falling number can be followed down to its fret.
+    ctx.strokeStyle = "rgba(185,178,164,0.10)";
+    ctx.lineWidth = 1;
+    for (let fr = 0; fr <= NASHVILLE_NECK_FRETS; fr += 1) {
+      const x = fr === 0 ? m.fx(0) + m.r + 2 : (m.fx(fr) + m.fx(Math.min(NASHVILLE_NECK_FRETS, fr + 1))) / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, box.y);
+      ctx.lineTo(x, bottom);
+      ctx.stroke();
+    }
+    // The line they land on.
+    ctx.strokeStyle = rgba(P.accent, 0.6);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(box.x, bottom);
+    ctx.lineTo(box.x + box.w, bottom);
+    ctx.stroke();
+
+    const r = Math.max(7, m.r * 0.8);
+    const spread = Math.min(r * 0.55, 6);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(box.x, box.y, box.w, box.h + r);
+    ctx.clip();
+    for (const x of visibleNotes(chart.notes, now, now + look)) {
+      if (x.tech.mt || x.t < now - 0.05) continue;
+      const cx = m.fx(x.f) + (x.s - (chart.n - 1) / 2) * spread;
+      const cy = yAt(x.t);
+      const nl = this.neckLook(frame, chart, x.s, x.f);
+      if (x.sus > 0.15) {
+        ctx.strokeStyle = rgba(nl.color, 0.35);
+        ctx.lineWidth = Math.max(3, r * 0.45);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx, Math.max(box.y, yAt(x.t + x.sus)));
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.45 + 0.55 * (1 - Math.min(1, (x.t - now) / look));
+      this.drawDot(cx, cy, r, nl);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+
 
   /**
    * A numbered dot (the mock-up's): filled, hollow or dashed by tier, a white
