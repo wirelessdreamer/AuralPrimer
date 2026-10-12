@@ -47,7 +47,8 @@ describe("per-player visualizer stages (Player 2..N)", () => {
     );
     // playSurface must wrap the stages wrapper (not the bare canvas), so
     // adding canvases at runtime keeps them inside the styled play surface.
-    expect(mainSrc).toMatch(/playSurfaceEl\.append\(\s*playerStagesEl\s*,/);
+    // (The part picker leads it, so the stages need not be first.)
+    expect(mainSrc).toMatch(/playSurfaceEl\.append\([^)]*\bplayerStagesEl\b/);
   });
 
   it("secondaryStagesController owns the SecondaryStage type + array", () => {
