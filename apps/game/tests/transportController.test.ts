@@ -181,6 +181,25 @@ describe("TransportController", () => {
     tc.dispose();
   });
 
+  it("adds the song's own audio offset to the device's, beyond the device's clamp", async () => {
+    // A pack whose audio lags its tab by 0.54 s: its notes must land 0.54 s
+    // later, on top of the device calibration, and the +/-0.5 s clamp on the
+    // device offset must not cut it short.
+    const tb = new FakeTimebase();
+    const tc = new TransportController(tb);
+    await tc.loadAudio({ blob: new Blob([]), mime: "audio/ogg" });
+    await tc.play();
+    tc.setAudioVisualOffsetSec(0.1);
+    tc.setSongOffsetSec(0.54);
+    tb.seek(10);
+    tc.tick(0.016);
+    expect(tc.getState().t).toBeCloseTo(10 - 0.1 - 0.54, 6);
+    tc.setSongOffsetSec(Number.NaN);
+    tc.tick(0.016);
+    expect(tc.getState().t).toBeCloseTo(10 - 0.1, 6);
+    tc.dispose();
+  });
+
   it("feeds the live A/V offset into the playhead (not rate-scaled), alongside latency", async () => {
     // Locks the call-site wiring: a regression dropping/negating avOffsetSec, or
     // rate-scaling it, must fail here even though the pure formula is unit-tested.
