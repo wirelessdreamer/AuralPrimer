@@ -1667,6 +1667,34 @@ export class GuitarRenderer {
       ctx.restore();
     }
 
+    // Coming notes off the box, lit where they will be played: outside the
+    // key (♭7, ♯4, ♭2...) or in the key but outside the hand's box. The box
+    // already shows its own numbers; these are the ones the hand has to find,
+    // so they come up to full strength as they arrive and go once played.
+    const ahead = lookAheadSec(NASHVILLE_LANE_SEC, f.scrollMul);
+    const shown = new Set<string>();
+    for (const x of visibleNotes(chart.notes, now, now + ahead)) {
+      if (x.tech.mt || x.t + Math.max(x.sus, 0.14) < now) continue;
+      const span = inst.perString[x.s];
+      const inBox = span !== undefined && x.f >= span[0] && x.f <= span[1];
+      const chromatic = tierOf(frame, x.midi) === "chrom";
+      if (inBox && !chromatic) continue;
+      const key = `${x.s}:${x.f}`;
+      if (shown.has(key)) continue;
+      shown.add(key);
+      const near = 1 - Math.min(1, Math.max(0, x.t - now) / ahead);
+      const r = rAt(x.f);
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.45 * near;
+      ctx.strokeStyle = chromatic ? CHROMATIC_COLOR : "#fbbf24";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(m.fx(x.f), m.sy(x.s), r + 6, 0, Math.PI * 2);
+      ctx.stroke();
+      this.drawDot(m.fx(x.f), m.sy(x.s), r, this.neckLook(frame, chart, x.s, x.f));
+      ctx.restore();
+    }
+
     // The next notes: a ring that closes as they arrive.
     const lead = lookAheadSec(NASHVILLE_LEAD_SEC, f.scrollMul);
     const nextIdx = lowerBound(chart.notes, now + 1e-6);
@@ -1783,7 +1811,9 @@ export class GuitarRenderer {
       ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.restore();
-      // Named where the stretch starts, at its bottom edge.
+      // Named where the stretch starts, at its bottom edge -- unless it is the
+      // one being played, which the neck names, or too short to hold a name.
+      if ((!moving && span.t0 <= now) || yBot - yTop < 22) continue;
       ctx.font = `800 13px ${FONT_UI}`;
       ctx.textAlign = "left";
       ctx.textBaseline = "bottom";
