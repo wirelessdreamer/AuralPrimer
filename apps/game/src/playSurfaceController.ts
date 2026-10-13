@@ -255,9 +255,14 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
         labels === numbering.labels || chords === numbering.chords || count === numbering.count,
       );
     }
-    // Chords and Count from only mean something once notes are numbered.
+    // The Nashville neck always numbers, so it has no Frets/Numbers choice;
+    // Chords and Count from mean something whenever notes are numbered.
+    const numbered = numbering.labels === "numbers" || view === "nashville";
+    for (const el of Array.from(fretNumbersRowEl.querySelectorAll<HTMLElement>(".labelsChoice"))) {
+      el.hidden = view === "nashville";
+    }
     for (const el of Array.from(fretNumbersRowEl.querySelectorAll<HTMLElement>(".numbersOnly"))) {
-      el.hidden = numbering.labels !== "numbers";
+      el.hidden = !numbered;
     }
   }
 

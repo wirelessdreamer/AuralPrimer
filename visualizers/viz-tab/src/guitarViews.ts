@@ -269,7 +269,9 @@ export class GuitarRenderer {
     this.keyText = key
       ? `${key.label ?? ""}${this.numbering.count === "relative" ? ", counted from its relative" : ""}`
       : "";
-    this.nf = this.numbering.labels === "numbers" ? this.keyFrame : null;
+    // The Nashville neck is numbers or nothing: the Frets/Numbers choice is
+    // for the other views. Shown as frets it is just the coach.
+    this.nf = this.numbering.labels === "numbers" || this.view === "nashville" ? this.keyFrame : null;
 
     const chart = this.chart;
     if (!chart || chart.notes.length === 0) {

@@ -208,8 +208,8 @@ export function appShellHtml(): string {
                     <button class="displayModeBtn" data-view="sheet" type="button">Sheet music</button>
                   </div>
                   <div id="fretNumbersRow" class="handModeRow fretNumbersRow" hidden>
-                    <span class="meta">Labels:</span>
-                    <div class="displayModeToggle" role="group" aria-label="Note labels">
+                    <span class="meta labelsChoice">Labels:</span>
+                    <div class="displayModeToggle labelsChoice" role="group" aria-label="Note labels">
                       <button class="displayModeBtn" data-labels="frets" type="button">Frets</button>
                       <button class="displayModeBtn" data-labels="numbers" type="button" title="Label every note by its Nashville number in the song's key, coloured by octave: a new colour starts at each 1.">Numbers</button>
                     </div>
