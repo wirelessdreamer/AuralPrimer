@@ -497,7 +497,7 @@ export class GuitarRenderer {
       ctx.fillStyle = GEM_INK;
     }
     if (h >= 11) {
-      ctx.font = `800 ${Math.round(clamp(h * 0.62, 9, 16))}px ${FONT_NUM}`;
+      ctx.font = `800 ${Math.round(clamp(h * 0.62, 9, 30))}px ${FONT_NUM}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(look.label, cx, cy + 0.5);
@@ -588,7 +588,10 @@ export class GuitarRenderer {
     const P = this.palette;
     this.paintBg();
     const n = chart.n;
-    const laneW = Math.min(80, (W * 0.6) / n);
+    // Wide lanes and tall gems on a big stage: at a fixed 80 px a 2000 px
+    // stage drew a narrow strip in the middle with numbers too small to read.
+    const laneW = Math.min(150, (W * 0.72) / n);
+    const gemH = clamp(laneW * 0.4, 24, 48);
     const left = (W - laneW * n) / 2;
     const hitY = Math.round(H * (W < 520 ? 0.72 : 0.7));
     const look = lookAheadSec(LANES_LOOK_SEC, f.scrollMul);
@@ -701,7 +704,7 @@ export class GuitarRenderer {
       if (x.t < now - 0.12) continue;
       const y = yOf(x.t);
       if (y < -20) continue;
-      this.drawGem(x, lx(x.s), Math.min(y, hitY + 6), laneW * 0.78, 24, this.look(x), x.t < now ? 1 - (now - x.t) / 0.12 : 1);
+      this.drawGem(x, lx(x.s), Math.min(y, hitY + 6), laneW * 0.78, gemH, this.look(x), x.t < now ? 1 - (now - x.t) / 0.12 : 1);
     }
     // Hit line and receivers: a receiver shows its string, or the fret sounding on it.
     const glow = ctx.createLinearGradient(0, hitY - 18, 0, hitY + 18);
@@ -1465,7 +1468,8 @@ export class GuitarRenderer {
     n: number,
   ): { fx: (f: number) => number; sy: (s: number) => number; r: number } {
     const { ctx } = this;
-    const openGap = f0 === 0 ? Math.min(28, box.w * 0.06) : 0;
+    // Wide enough for a whole open-string dot: at 28 px the zeros were cut off at the edge.
+    const openGap = f0 === 0 ? Math.min(64, box.w * 0.05) : 0;
     const x0 = box.x + openGap;
     const x1 = box.x + box.w;
     const wire = (k: number): number => 1 - 2 ** (-k / 12);
@@ -1607,11 +1611,17 @@ export class GuitarRenderer {
     // Split view: the numbers coming in on top, falling in their fret's
     // column onto the neck below, where they are played.
     const laneTop = 64;
-    const neckH = Math.max(90, Math.min((H - laneTop - 22) * 0.5, chart.n * 34));
+    const neckH = Math.max(110, Math.min((H - laneTop - 22) * 0.52, chart.n * 48));
     const neckY = H - 22 - neckH;
-    const neck = this.drawNeck({ x: 14, y: neckY, w: W - 28, h: neckH }, f0, f1, chart.n);
-    // Sized for the narrowest fret in view, so the high frets' dots do not overlap.
-    const m = { ...neck, r: Math.min(neck.r, Math.abs(neck.fx(f1) - neck.fx(f1 - 1)) * 0.46) };
+    const neck = this.drawNeck({ x: 24, y: neckY, w: W - 48, h: neckH }, f0, f1, chart.n);
+    // Each dot as big as its own fret allows: frets narrow up the neck, and
+    // sizing every dot for fret 24 made the low ones -- most of the playing --
+    // too small to read.
+    const rAt = (fr: number): number => {
+      const step = fr <= 0 ? Math.abs(neck.fx(1) - neck.fx(0)) : Math.abs(neck.fx(fr) - neck.fx(fr >= f1 ? fr - 1 : fr + 1));
+      return Math.max(8, Math.min(neck.r, step * 0.46));
+    };
+    const m = { ...neck, r: rAt(f1), rAt };
 
     for (const nb of neighbours(frame, chart.open, inst, NASHVILLE_NECK_FRETS)) this.boxOutline(nb, m, 0.7, true);
     this.boxOutline(inst, m, 1, false);
@@ -1620,7 +1630,7 @@ export class GuitarRenderer {
       const look = this.neckLook(frame, chart, kn.s, kn.f);
       ctx.save();
       ctx.globalAlpha = 0.75 * (0.25 + 0.75 * w);
-      this.drawDot(m.fx(kn.f), m.sy(kn.s), m.r * (look.shape === "hollow" ? 0.78 : 1) * (0.72 + 0.28 * w), look);
+      this.drawDot(m.fx(kn.f), m.sy(kn.s), rAt(kn.f) * (look.shape === "hollow" ? 0.78 : 1) * (0.72 + 0.28 * w), look);
       ctx.restore();
     }
 
@@ -1635,7 +1645,7 @@ export class GuitarRenderer {
       for (let i = nextIdx; i < chart.notes.length && chart.notes[i].t - next.t < 0.03; i += 1) {
         const x = chart.notes[i];
         ctx.beginPath();
-        ctx.arc(m.fx(x.f), m.sy(x.s), m.r + 5, -Math.PI / 2, -Math.PI / 2 + pr * Math.PI * 2);
+        ctx.arc(m.fx(x.f), m.sy(x.s), rAt(x.f) + 5, -Math.PI / 2, -Math.PI / 2 + pr * Math.PI * 2);
         ctx.stroke();
       }
     }
@@ -1651,7 +1661,7 @@ export class GuitarRenderer {
         for (let fr = f0; fr <= f1; fr += 1) {
           if ((chart.open[s] + fr - x.midi) % 12 !== 0 || (s === x.s && fr === x.f)) continue;
           ctx.beginPath();
-          ctx.arc(m.fx(fr), m.sy(s), m.r + 4, 0, Math.PI * 2);
+          ctx.arc(m.fx(fr), m.sy(s), rAt(fr) + 4, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
@@ -1660,7 +1670,7 @@ export class GuitarRenderer {
     for (const x of sounding) {
       const look = this.neckLook(frame, chart, x.s, x.f);
       if (this.nf && x.chord && x.chord.size >= 2) Object.assign(look, this.pitchLook(frame, x.midi, x.chord.triad));
-      this.drawDot(m.fx(x.f), m.sy(x.s), m.r * 1.18, look, look.color);
+      this.drawDot(m.fx(x.f), m.sy(x.s), rAt(x.f) * 1.18, look, look.color);
     }
 
     this.drawNashvilleLane(chart, frame, now, f, { x: 14, y: laneTop, w: W - 28, h: neckY - laneTop - 10 }, m);
@@ -1698,7 +1708,7 @@ export class GuitarRenderer {
     now: number,
     f: Frame,
     box: { x: number; y: number; w: number; h: number },
-    m: { fx: (fr: number) => number; sy: (s: number) => number; r: number },
+    m: { fx: (fr: number) => number; sy: (s: number) => number; r: number; rAt: (fr: number) => number },
   ): void {
     if (box.h < 30) return;
     const { ctx } = this;
@@ -1710,7 +1720,7 @@ export class GuitarRenderer {
     ctx.strokeStyle = "rgba(185,178,164,0.10)";
     ctx.lineWidth = 1;
     for (let fr = 0; fr <= NASHVILLE_NECK_FRETS; fr += 1) {
-      const x = fr === 0 ? m.fx(0) + m.r + 2 : (m.fx(fr) + m.fx(Math.min(NASHVILLE_NECK_FRETS, fr + 1))) / 2;
+      const x = fr === 0 ? m.fx(0) + m.rAt(0) + 2 : (m.fx(fr) + m.fx(Math.min(NASHVILLE_NECK_FRETS, fr + 1))) / 2;
       ctx.beginPath();
       ctx.moveTo(x, box.y);
       ctx.lineTo(x, bottom);
@@ -1724,15 +1734,15 @@ export class GuitarRenderer {
     ctx.lineTo(box.x + box.w, bottom);
     ctx.stroke();
 
-    const r = Math.max(7, m.r * 0.8);
-    const spread = Math.min(r * 0.55, 6);
+    const rFor = (fr: number): number => Math.max(11, Math.min(26, m.rAt(fr) * 1.05));
     ctx.save();
     ctx.beginPath();
-    ctx.rect(box.x, box.y, box.w, box.h + r);
+    ctx.rect(box.x, box.y, box.w, box.h + 26);
     ctx.clip();
     for (const x of visibleNotes(chart.notes, now, now + look)) {
       if (x.tech.mt || x.t < now - 0.05) continue;
-      const cx = m.fx(x.f) + (x.s - (chart.n - 1) / 2) * spread;
+      const r = rFor(x.f);
+      const cx = m.fx(x.f) + (x.s - (chart.n - 1) / 2) * Math.min(r * 0.45, 7);
       const cy = yAt(x.t);
       const nl = this.neckLook(frame, chart, x.s, x.f);
       if (x.sus > 0.15) {
