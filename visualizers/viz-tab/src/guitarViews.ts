@@ -121,6 +121,8 @@ function positionSpans(anchors: ReadonlyArray<FretAnchor>, end: number): { t0: n
   return out;
 }
 
+/** How far past the hand's box the Nashville neck still shows numbers, frets. */
+const NASHVILLE_BLEED_FRETS = 4;
 /** How far ahead the numbers falling onto the Nashville neck reach, seconds. */
 const NASHVILLE_LANE_SEC = 3;
 
@@ -1647,7 +1649,14 @@ export class GuitarRenderer {
     };
     const m = { ...neck, r: rAt(f1), rAt };
 
-    for (const nb of neighbours(frame, chart.open, inst, NASHVILLE_NECK_FRETS)) this.boxOutline(nb, m, 0.7, true);
+    // Only the neck around the hand is written on: the box, and a few frets
+    // either side for the numbers bleeding out of it. Past that, faded
+    // numbers and octave rings nobody is playing only got in the way.
+    const near0 = Math.max(0, Math.floor(focus.lo) - NASHVILLE_BLEED_FRETS);
+    const near1 = Math.min(f1, Math.ceil(focus.hi) + NASHVILLE_BLEED_FRETS);
+    for (const nb of neighbours(frame, chart.open, inst, NASHVILLE_NECK_FRETS)) {
+      if (nb.hi >= near0 && nb.lo <= near1) this.boxOutline(nb, m, 0.7, true);
+    }
     this.boxOutline(inst, m, 1, false);
     // The hand's position, written on the neck: where the tab puts the index finger.
     const hand = chart.anchors.length > 0 ? anchorAt(chart, now + 0.2) : null;
@@ -1658,7 +1667,7 @@ export class GuitarRenderer {
       ctx.fillStyle = P.accent;
       ctx.fillText(`${positionName(hand.fret).toUpperCase()}  ·  BOX ${inst.k}`, m.fx(Math.max(0, hand.fret)) - rAt(hand.fret), neckY - 6);
     }
-    for (const kn of keyNotes(frame, chart.open, f0, f1)) {
+    for (const kn of keyNotes(frame, chart.open, near0, near1)) {
       const w = focusWeight(kn.f, [focus]);
       const look = this.neckLook(frame, chart, kn.s, kn.f);
       ctx.save();
@@ -1719,7 +1728,7 @@ export class GuitarRenderer {
     ctx.lineWidth = 1.6;
     for (const x of sounding) {
       for (let s = 0; s < chart.n; s += 1) {
-        for (let fr = f0; fr <= f1; fr += 1) {
+        for (let fr = near0; fr <= near1; fr += 1) {
           if ((chart.open[s] + fr - x.midi) % 12 !== 0 || (s === x.s && fr === x.f)) continue;
           ctx.beginPath();
           ctx.arc(m.fx(fr), m.sy(s), rAt(fr) + 4, 0, Math.PI * 2);
