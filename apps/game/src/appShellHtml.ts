@@ -289,16 +289,6 @@ export function appShellHtml(): string {
                     />
                     <span id="speedValue" class="stageSpeedValue">100%</span>
                   </div>
-                  <div
-                    class="stageSpacing"
-                    id="songSyncRow"
-                    title="Moves this song's notes earlier or later against its audio, and remembers it for this song. Some packs' tabs sit off their own audio by a different amount each. Alt+[ and Alt+] adjust it live."
-                  >
-                    <span class="stageSpacingLabel">Sync</span>
-                    <button id="songSyncEarlier" class="stageSpacingReset" type="button" title="Notes come earlier (Alt+[)">&minus;</button>
-                    <span id="songSyncValue" class="stageSpacingValue">0 ms</span>
-                    <button id="songSyncLater" class="stageSpacingReset" type="button" title="Notes come later (Alt+])">+</button>
-                  </div>
 
                   <label
                     class="practiceToggle"

@@ -1,5 +1,4 @@
 import "./style.css";
-import { SONG_SYNC_STEP_MS, clampSongSyncMs, formatSongSyncMs, loadSongSyncMs, saveSongSyncMs } from "./songSync";
 import { invoke } from "@tauri-apps/api/core";
 import { isManifestPack } from "@auralprimer/auralsong/packKind";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
@@ -372,38 +371,6 @@ let selectedAuralSongPath: string | null = null;
 // is selected, so it is already non-null while the user is still looking at
 // the Start button. Play/pause needs to know the difference.
 let sessionStarted = false;
-/** The loaded song's chart-to-audio offset (see TransportController.setSongOffsetSec): the pack's, plus the player's nudge. */
-let songAudioOffsetSec = 0;
-let songManifestOffsetSec = 0;
-let songSyncMs = 0;
-const songSyncValueEl = document.getElementById("songSyncValue");
-
-function applySongSync(): void {
-  songAudioOffsetSec = songManifestOffsetSec + songSyncMs / 1000;
-  transportController.setSongOffsetSec(songAudioOffsetSec);
-  if (songSyncValueEl) songSyncValueEl.textContent = formatSongSyncMs(songSyncMs);
-}
-
-function nudgeSongSync(deltaMs: number): void {
-  songSyncMs = clampSongSyncMs(songSyncMs + deltaMs);
-  saveSongSyncMs(selectedAuralSongPath, songSyncMs);
-  applySongSync();
-}
-
-document.getElementById("songSyncEarlier")?.addEventListener("click", () => nudgeSongSync(-SONG_SYNC_STEP_MS));
-document.getElementById("songSyncLater")?.addEventListener("click", () => nudgeSongSync(SONG_SYNC_STEP_MS));
-window.addEventListener("keydown", (ev) => {
-  if (!ev.altKey || ev.ctrlKey || ev.metaKey || (ev.key !== "[" && ev.key !== "]")) return;
-  if (routeController.getCurrentRoute() !== "play") return;
-  ev.preventDefault();
-  nudgeSongSync(ev.key === "[" ? -SONG_SYNC_STEP_MS : SONG_SYNC_STEP_MS);
-});
-
-/** `aural_audio_offset_sec` from a pack's manifest: seconds its audio lags its chart; 0 when absent. */
-function readSongAudioOffsetSec(manifestRaw: unknown): number {
-  const v = (manifestRaw as { aural_audio_offset_sec?: unknown } | null)?.aural_audio_offset_sec;
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
-}
 
 /**
  * Chord names for the loaded melodic track, computed once when the song loads.
@@ -627,7 +594,6 @@ function resetTransportController(timebase: TransportTimebase): void {
   // offset 0, so without this a native->HTML fallback silently drops the
   // user's calibration until they next touch the slider.
   transportController.setAudioVisualOffsetSec(getEffectiveOffsetSec());
-  transportController.setSongOffsetSec(songAudioOffsetSec);
   if (transport.loop) {
     transportController.setLoop(transport.loop);
   }
@@ -1060,10 +1026,6 @@ async function selectAuralSong(containerPath: string) {
       }
     }
     songTimeline = readSongTimeline(currentSongTimeline);
-    // This song's audio-to-chart offset, measured when the pack was prepared.
-    songManifestOffsetSec = readSongAudioOffsetSec(details.manifest_raw);
-    songSyncMs = loadSongSyncMs(containerPath);
-    applySongSync();
     const keyModeArtifacts = { keys: currentKeys, harmony: currentHarmony };
     songDetailsView.setHudKeyMode(details.manifest_raw, null, keyModeArtifacts);
     if (details.charts.length > 0) {

@@ -30,8 +30,6 @@ export class TransportController {
   // Stacks on top of the backend's auto latency estimate. Default 0 = no
   // change to prior behavior. Clamped to +/-500ms.
   private avOffsetSec = 0;
-  /** This song's chart-to-audio offset (manifest `aural_audio_offset_sec`). */
-  private songOffsetSec = 0;
 
   // External clock following (MIDI clock input)
   private followExternalClock = false;
@@ -202,21 +200,6 @@ export class TransportController {
     return this.avOffsetSec;
   }
 
-  /**
-   * How far this song's audio lags its chart, in seconds: a chart note at
-   * time T sounds at T + sec. Some packs' tabs sit hundreds of milliseconds
-   * off their audio, which no device calibration can fix because it differs
-   * per song. Applied with the device offset, so every view moves together.
-   * Clamped to +/-2 s.
-   */
-  setSongOffsetSec(sec: number): void {
-    this.songOffsetSec = Number.isFinite(sec) ? Math.max(-2, Math.min(2, sec)) : 0;
-  }
-
-  getSongOffsetSec(): number {
-    return this.songOffsetSec;
-  }
-
   setLoop(loop?: { t0: number; t1: number }): void {
     if (!loop) {
       this.state = { ...this.state, loop: undefined };
@@ -314,7 +297,7 @@ export class TransportController {
         nativePosSec: audioT,
         outputLatencySec,
         playbackRate,
-        avOffsetSec: this.avOffsetSec + this.songOffsetSec,
+        avOffsetSec: this.avOffsetSec,
       });
 
       let t = clampToLoop(audibleT, this.state.loop);
