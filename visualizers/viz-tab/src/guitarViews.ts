@@ -39,6 +39,7 @@ import {
   tabStaffLayout,
   visibleNotes,
   type ChordChange,
+  type FretAnchor,
   type FretChart,
   type FretNote,
   type GridBeat,
@@ -97,6 +98,29 @@ const NASHVILLE_NECK_FRETS = 24;
 /** Frets the Nashville neck shows at once. */
 const NASHVILLE_WINDOW_FRETS = 11;
 const NASHVILLE_LEAD_SEC = 0.9;
+/** "Open", "1st", "2nd", "3rd", "4th"...: a hand position, by the fret its index finger is at. */
+function positionName(fret: number): string {
+  if (fret <= 0) return "Open position";
+  const tens = fret % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ["th", "st", "nd", "rd"][fret % 10] ?? "th";
+  return `${fret}${suffix} position`;
+}
+
+/** Stretches of a part played in one hand position: the tab's anchors, runs of the same fret merged. */
+function positionSpans(anchors: ReadonlyArray<FretAnchor>, end: number): { t0: number; t1: number; fret: number; width: number }[] {
+  const out: { t0: number; t1: number; fret: number; width: number }[] = [];
+  for (const a of anchors) {
+    const last = out[out.length - 1];
+    if (last && last.fret === a.fret) {
+      last.width = Math.max(last.width, a.width);
+      continue;
+    }
+    if (last) last.t1 = a.t;
+    out.push({ t0: a.t, t1: end, fret: a.fret, width: Math.max(1, a.width) });
+  }
+  return out;
+}
+
 /** How far ahead the numbers falling onto the Nashville neck reach, seconds. */
 const NASHVILLE_LANE_SEC = 3;
 
@@ -1625,6 +1649,15 @@ export class GuitarRenderer {
 
     for (const nb of neighbours(frame, chart.open, inst, NASHVILLE_NECK_FRETS)) this.boxOutline(nb, m, 0.7, true);
     this.boxOutline(inst, m, 1, false);
+    // The hand's position, written on the neck: where the tab puts the index finger.
+    const hand = chart.anchors.length > 0 ? anchorAt(chart, now + 0.2) : null;
+    if (hand) {
+      ctx.font = `800 13px ${FONT_UI}`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = P.accent;
+      ctx.fillText(`${positionName(hand.fret).toUpperCase()}  ·  BOX ${inst.k}`, m.fx(Math.max(0, hand.fret)) - rAt(hand.fret), neckY - 6);
+    }
     for (const kn of keyNotes(frame, chart.open, f0, f1)) {
       const w = focusWeight(kn.f, [focus]);
       const look = this.neckLook(frame, chart, kn.s, kn.f);
@@ -1683,7 +1716,7 @@ export class GuitarRenderer {
     ctx.textBaseline = "top";
     ctx.font = `800 20px ${FONT_UI}`;
     ctx.fillStyle = P.text;
-    ctx.fillText(`${this.keyText}  ·  Position ${inst.k}`, W - 16, 10);
+    ctx.fillText(`${this.keyText}  ·  ${hand ? `${positionName(hand.fret)}  ·  ` : ""}box ${inst.k}`, W - 16, 10);
     ctx.font = `700 12px ${FONT_UI}`;
     ctx.fillStyle = P.muted;
     let modeLine = `frets ${Math.round(inst.lo)}-${Math.round(inst.hi)}`;
@@ -1726,6 +1759,39 @@ export class GuitarRenderer {
       ctx.lineTo(x, bottom);
       ctx.stroke();
     }
+    // Hand positions, from the tab: each stretch played in one position is a
+    // band over its frets, named, so a group coming in somewhere else says
+    // "move" before it lands.
+    const here = chart.anchors.length > 0 ? anchorAt(chart, now) : null;
+    for (const span of positionSpans(chart.anchors, now + look + 1)) {
+      if (span.t1 <= now || span.t0 >= now + look) continue;
+      const lo = Math.max(0, span.fret);
+      const hi = Math.min(NASHVILLE_NECK_FRETS, span.fret + span.width - 1);
+      const x0 = m.fx(lo) - m.rAt(lo) - 4;
+      const x1 = m.fx(hi) + m.rAt(hi) + 4;
+      const yTop = Math.max(box.y, yAt(span.t1));
+      const yBot = Math.min(bottom, yAt(Math.max(span.t0, now)));
+      if (yBot - yTop < 4) continue;
+      const moving = here !== null && span.fret !== here.fret;
+      const col = moving ? "#fbbf24" : P.accent;
+      ctx.fillStyle = rgba(col, moving ? 0.07 : 0.05);
+      this.rr(x0, yTop, x1 - x0, yBot - yTop, 8);
+      ctx.fill();
+      ctx.save();
+      if (moving) ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = rgba(col, 0.45);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+      // Named where the stretch starts, at its bottom edge.
+      ctx.font = `800 13px ${FONT_UI}`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = col;
+      const name = positionName(span.fret);
+      ctx.fillText(moving ? `→ move to ${name}` : name, x0 + 6, yBot - 4);
+    }
+
     // The line they land on.
     ctx.strokeStyle = rgba(P.accent, 0.6);
     ctx.lineWidth = 2;
