@@ -65,7 +65,7 @@ import {
   type PositionInstance,
   type Triad,
 } from "./fretNumbers";
-import { ShapeKey, powerChordsIn, repeatsPrevious, shapeDetail, shapeName, type PowerShape } from "./powerChords";
+import { ShapeKey, chordShapesIn, repeatsPrevious, shapeDetail, shapeName, type ChordShape } from "./chordShapes";
 import { ROLE_COLORS, type InstrumentRole, type MelodicTrackSelection, type PianoRenderOptions } from "./index";
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 
@@ -205,6 +205,15 @@ type Frame = {
   dt: number;
 };
 
+/**
+ * A chord suffix after a Nashville number, its figures raised: B7 in G is
+ * "3⁷", not "37"; Bm7b5 is "3m⁷♭⁵".
+ */
+function raiseSuffix(suffix: string): string {
+  const SUP: Record<string, string> = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", b: "♭" };
+  return suffix.replace(/[0-9]|b(?=[0-9])/g, (c) => SUP[c]);
+}
+
 export class GuitarRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
@@ -231,18 +240,18 @@ export class GuitarRenderer {
   private handBoxes: { majorPc: number; list: { t: number; inst: PositionInstance }[] } | null = null;
   /** The Nashville neck's window, eased toward the focused box. */
   private nashView: { lo: number; hi: number } | null = null;
-  /** The chart's power chords, found once per chart: the lane stamps them as shapes. */
+  /** The chart's chords that make standard forms, found once per chart: the lane stamps them as shapes. */
   private shapes: {
     chart: FretChart;
-    byChord: Map<FretChord, PowerShape>;
-    events: { t: number; code: string; shape: PowerShape }[];
+    byChord: Map<FretChord, ChordShape>;
+    events: { t: number; key: string; shape: ChordShape; chord: FretChord }[];
     /** For a chord that repeats the one before it: that one's onset. */
     repeatOf: Map<FretChord, number>;
   } | null = null;
   /** Which shapes have gone by, and whether the key is pinned (K). */
   private shapeKey = new ShapeKey();
   private shapeKeyAlpha = 0;
-  private shapeKeyRows: { code: string; shape: PowerShape }[] = [];
+  private shapeKeyRows: { key: string; shape: ChordShape; last: number }[] = [];
 
   constructor(
     private readonly container: HTMLElement,
@@ -273,7 +282,7 @@ export class GuitarRenderer {
     this.canvas.height = Math.round(this.H * this.dpr);
   }
 
-  /** Pin or unpin the power-chord shape key (the K key); returns whether it is pinned. */
+  /** Pin or unpin the chord shape key (the K key); returns whether it is pinned. */
   toggleShapeKeyPin(): boolean {
     return this.shapeKey.togglePin();
   }
@@ -1868,11 +1877,11 @@ export class GuitarRenderer {
     ctx.beginPath();
     ctx.rect(box.x, box.y, box.w, box.h + 26);
     ctx.clip();
-    const power = this.powerShapes(chart);
+    const shapes = this.chordShapes(chart);
     for (const x of visibleNotes(chart.notes, now, now + look)) {
       if (x.tech.mt || x.t < now - 0.05) continue;
-      // A power chord falls as one shape stamp at its root, not a pile of numbers.
-      const shape = x.chord ? power.byChord.get(x.chord) : undefined;
+      // A chord falls as one shape stamp at its root, not a pile of numbers.
+      const shape = x.chord ? shapes.byChord.get(x.chord) : undefined;
       if (shape) {
         if (x.s === shape.rootString) {
           const rr = rFor(shape.rootFret);
@@ -1889,10 +1898,11 @@ export class GuitarRenderer {
             ctx.stroke();
           }
           ctx.globalAlpha = 0.45 + 0.55 * (1 - Math.min(1, (x.t - now) / look));
-          const tw = clamp(rr * 2.6, 40, 60);
+          const tw = clamp(rr * 4, 64, 104);
+          const th = this.shapeTileH(chart, shape, tw);
           // A chug: the same shape again, close behind one still on screen.
           // A tick marks the strike; the run's first tile says the shape.
-          const prevT = power.repeatOf.get(x.chord as FretChord);
+          const prevT = shapes.repeatOf.get(x.chord as FretChord);
           if (prevT !== undefined && prevT >= now - 0.05) {
             ctx.fillStyle = rootLook.color;
             this.rr(sx - tw * 0.3, sy - 2.5, tw * 0.6, 5, 2.5);
@@ -1902,12 +1912,16 @@ export class GuitarRenderer {
           }
           // Kept inside the lane: an open-string root sits at the very edge.
           const tx = clamp(sx - tw / 2, box.x + 2, box.x + box.w - tw - 2);
-          this.drawShapeTile(chart, frame, shape, tx, sy - tw * 0.41, tw, tw * 0.82);
+          this.drawShapeTile(chart, frame, shape, tx, sy - th / 2, tw, th);
           ctx.font = `800 ${Math.round(clamp(rr * 0.55, 11, 15))}px ${FONT_UI}`;
           ctx.textAlign = "center";
           ctx.textBaseline = "top";
           ctx.fillStyle = rootLook.color;
-          ctx.fillText(`${degreeLabel(frame, shape.rootMidi)} · ${shape.code}`, tx + tw / 2, sy + tw * 0.41 + 3);
+          // The chord in numbers: "4m", "1/3", "5 · P6".
+          const chordNumber = shape.power
+            ? degreeLabel(frame, shape.rootMidi)
+            : `${degreeLabel(frame, shape.rootMidi)}${raiseSuffix(shape.form)}${shape.bassDegree ? `/${degreeLabel(frame, shape.bassMidi)}` : ""}`;
+          ctx.fillText(`${chordNumber} · ${shape.code}`, tx + tw / 2, sy + th / 2 + 3);
           ctx.globalAlpha = 1;
         }
         continue;
@@ -1930,14 +1944,14 @@ export class GuitarRenderer {
       ctx.globalAlpha = 1;
     }
     ctx.restore();
-    this.drawShapeKey(chart, frame, now, f, box, power.events);
+    this.drawShapeKey(chart, frame, now, f, box, shapes.events);
   }
 
-  /** The chart's power chords, found once per chart. */
-  private powerShapes(chart: FretChart): NonNullable<GuitarRenderer["shapes"]> {
+  /** The chart's chord shapes, found once per chart. */
+  private chordShapes(chart: FretChart): NonNullable<GuitarRenderer["shapes"]> {
     if (!this.shapes || this.shapes.chart !== chart) {
-      const byChord = powerChordsIn(chart);
-      const events = [...byChord].map(([chord, shape]) => ({ t: chord.t, code: shape.code, shape, chord })).sort((a, b) => a.t - b.t);
+      const byChord = chordShapesIn(chart);
+      const events = [...byChord].map(([chord, shape]) => ({ t: chord.t, key: shape.key, shape, chord })).sort((a, b) => a.t - b.t);
       const repeatOf = new Map<FretChord, number>();
       repeatsPrevious(events).forEach((repeat, i) => {
         if (repeat) repeatOf.set(events[i].chord, events[i - 1].t);
@@ -1947,20 +1961,33 @@ export class GuitarRenderer {
     return this.shapes;
   }
 
+  /** The strings a shape's tile shows: at least three, within the neck. */
+  private shapeRows(chart: FretChart, shape: ChordShape): { lo: number; rows: number } {
+    const first = shape.notes[0].s;
+    const rows = Math.min(chart.n, Math.max(3, shape.notes[shape.notes.length - 1].s - first + 1));
+    return { lo: Math.max(0, Math.min(first, chart.n - rows)), rows };
+  }
+
+  /** A tile's height for its width: taller for a shape across more strings. */
+  private shapeTileH(chart: FretChart, shape: ChordShape, w: number): number {
+    return w * (0.5 + 0.1 * this.shapeRows(chart, shape).rows);
+  }
+
   /**
-   * A power chord's shape on a tile: three strings (the root's at the bottom,
-   * as on the neck below) across the frets it spans, the root filled in its
-   * number's colour, the fifth and octave hollow.
+   * A chord's shape on a tile, a chord box turned to match the neck below:
+   * the strings it uses (the lowest at the bottom) across the frets it
+   * spans, the root filled in its number's colour, the other notes hollow.
+   * Open strings sit left of a nut.
    */
-  private drawShapeTile(chart: FretChart, frame: NumberFrame, shape: PowerShape, x: number, y: number, w: number, h: number): void {
+  private drawShapeTile(chart: FretChart, frame: NumberFrame, shape: ChordShape, x: number, y: number, w: number, h: number): void {
     const { ctx } = this;
     const P = this.palette;
-    const members: { s: number; f: number; root: boolean }[] = [{ s: shape.rootString, f: shape.rootFret, root: true }];
-    const fifth = chart.open[shape.rootString + 1];
-    if (fifth !== undefined) members.push({ s: shape.rootString + 1, f: shape.rootMidi + 7 - fifth, root: false });
-    const octave = chart.open[shape.rootString + 2];
-    if (shape.octave && octave !== undefined) members.push({ s: shape.rootString + 2, f: shape.rootMidi + 12 - octave, root: false });
-    const cols = Math.max(3, Math.max(...members.map((mm) => mm.f - shape.rootFret)) + 1);
+    const { lo, rows } = this.shapeRows(chart, shape);
+    const fretted = shape.notes.filter((n) => n.f > 0);
+    const open = fretted.length < shape.notes.length;
+    const fretLo = open || fretted.length === 0 ? 1 : Math.min(...fretted.map((n) => n.f));
+    const fretHi = fretted.length === 0 ? 1 : Math.max(...fretted.map((n) => n.f));
+    const cols = Math.max(3, fretHi - fretLo + 1);
     ctx.save();
     ctx.fillStyle = "rgba(14,20,34,0.92)";
     this.rr(x, y, w, h, 8);
@@ -1968,20 +1995,22 @@ export class GuitarRenderer {
     ctx.strokeStyle = rgba(P.accent, 0.45);
     ctx.lineWidth = 1.2;
     ctx.stroke();
-    const pad = Math.max(6, w * 0.14);
-    const gx = x + pad;
-    const gw = w - pad * 2;
-    const gy = y + pad * 0.8;
-    const gh = h - pad * 1.6;
-    const colX = (c: number): number => gx + ((c + 0.5) / cols) * gw;
-    // Row 0 is the root's string, at the bottom, as on the neck.
-    const rowY = (row: number): number => gy + gh - (row / 2) * gh;
+    const pad = Math.max(5, w * 0.11);
+    // Room left of the nut for open strings.
+    const openW = open ? Math.max(8, w * 0.17) : 0;
+    const gx = x + pad + openW;
+    const gw = x + w - pad - gx;
+    const gy = y + pad;
+    const gh = h - pad * 2;
+    const colX = (fr: number): number => (fr === 0 ? gx - openW / 2 - 1 : gx + ((fr - fretLo + 0.5) / cols) * gw);
+    // The lowest string at the bottom, as on the neck.
+    const rowY = (s: number): number => gy + gh - ((s - lo) / (rows - 1)) * gh;
     ctx.strokeStyle = "rgba(220,228,250,0.28)";
     ctx.lineWidth = 1;
-    for (let row = 0; row < 3; row += 1) {
+    for (let s = lo; s < lo + rows; s += 1) {
       ctx.beginPath();
-      ctx.moveTo(gx, rowY(row));
-      ctx.lineTo(gx + gw, rowY(row));
+      ctx.moveTo(gx, rowY(s));
+      ctx.lineTo(gx + gw, rowY(s));
       ctx.stroke();
     }
     for (let c = 0; c <= cols; c += 1) {
@@ -1991,11 +2020,19 @@ export class GuitarRenderer {
       ctx.lineTo(fx, gy + gh);
       ctx.stroke();
     }
-    const dr = Math.max(3, Math.min(gw / cols, gh / 2) * 0.36);
-    for (const mm of members) {
+    if (open) {
+      ctx.strokeStyle = "rgba(220,228,250,0.7)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx, gy + gh);
+      ctx.stroke();
+    }
+    const dr = Math.max(2.5, Math.min(gw / cols, gh / (rows - 1)) * 0.36);
+    for (const mm of shape.notes) {
       const color = this.neckLook(frame, chart, mm.s, mm.f).color;
       ctx.beginPath();
-      ctx.arc(colX(mm.f - shape.rootFret), rowY(mm.s - shape.rootString), dr, 0, Math.PI * 2);
+      ctx.arc(colX(mm.f), rowY(mm.s), dr, 0, Math.PI * 2);
       if (mm.root) {
         ctx.fillStyle = color;
         ctx.fill();
@@ -2011,9 +2048,10 @@ export class GuitarRenderer {
   }
 
   /**
-   * "Shapes in this section": each power-chord shape the section uses, on a
-   * tile, named. Up while a shape is new to the player, fading once every
-   * one has gone by a few times; K pins it.
+   * "Shapes in this section": each chord shape the section uses, on a tile,
+   * named by its form, with its root's string and its degrees. Up while a
+   * shape is new to the player, fading once every one has gone by a few
+   * times; K pins it.
    */
   private drawShapeKey(
     chart: FretChart,
@@ -2021,20 +2059,24 @@ export class GuitarRenderer {
     now: number,
     f: Frame,
     box: { x: number; y: number; w: number; h: number },
-    events: ReadonlyArray<{ t: number; code: string; shape: PowerShape }>,
+    events: ReadonlyArray<{ t: number; key: string; shape: ChordShape }>,
   ): void {
     this.shapeKey.observe(events, now);
     const section = lastAtOrBefore(f.sections, now + 0.05);
     const start = section?.t ?? Number.NEGATIVE_INFINITY;
     const end = f.sections.find((s) => s.t > start)?.t ?? Number.POSITIVE_INFINITY;
-    const rows: { code: string; shape: PowerShape }[] = [];
+    const rows: { key: string; shape: ChordShape; last: number }[] = [];
     for (const e of events) {
       if (e.t < start || e.t >= end) continue;
-      const row = rows.find((r) => r.code === e.code);
-      if (!row) rows.push({ code: e.code, shape: e.shape });
-      else if (e.shape.octave && !row.shape.octave) row.shape = e.shape;
+      const row = rows.find((r) => r.key === e.key);
+      if (!row) rows.push({ key: e.key, shape: e.shape, last: e.t });
+      else {
+        row.last = e.t;
+        // A power chord with its octave says more than one without.
+        if (e.shape.notes.length > row.shape.notes.length) row.shape = e.shape;
+      }
     }
-    const target = this.shapeKey.shown(rows.map((r) => r.code)) ? 1 : 0;
+    const target = this.shapeKey.shown(rows.map((r) => r.key)) ? 1 : 0;
     this.shapeKeyAlpha += (target - this.shapeKeyAlpha) * Math.min(1, f.dt * 4);
     // Keep the last rows while fading out, so the panel does not empty first.
     if (rows.length > 0) this.shapeKeyRows = rows;
@@ -2042,9 +2084,14 @@ export class GuitarRenderer {
 
     const { ctx } = this;
     const P = this.palette;
-    const pw = 262;
-    const rowH = 50;
-    const ph = 34 + this.shapeKeyRows.length * rowH + 18;
+    const pw = 300;
+    const rowH = 68;
+    // As many rows as the lane has room for, in the order they come; short
+    // of room, a shape the section is done with gives way.
+    const room = Math.max(1, Math.floor((box.h - 70) / rowH));
+    const ahead = this.shapeKeyRows.filter((r) => r.last >= now - 0.05);
+    const shown = (this.shapeKeyRows.length > room && ahead.length > 0 ? ahead : this.shapeKeyRows).slice(0, room);
+    const ph = 34 + shown.length * rowH + 18;
     const px = box.x + box.w - pw - 10;
     const py = box.y + 8;
     ctx.save();
@@ -2060,17 +2107,18 @@ export class GuitarRenderer {
     ctx.font = `800 11px ${FONT_UI}`;
     ctx.fillStyle = P.muted;
     ctx.fillText("SHAPES IN THIS SECTION", px + 12, py + 11);
-    this.shapeKeyRows.forEach((row, i) => {
+    shown.forEach((row, i) => {
       const ry = py + 32 + i * rowH;
-      this.drawShapeTile(chart, frame, row.shape, px + 12, ry, 50, 41);
+      const th = this.shapeTileH(chart, row.shape, 58);
+      this.drawShapeTile(chart, frame, row.shape, px + 12, ry + (rowH - 6 - th) / 2, 58, th);
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
       ctx.font = `800 13px ${FONT_UI}`;
       ctx.fillStyle = P.text;
-      ctx.fillText(shapeName(row.code), px + 72, ry + 4);
+      ctx.fillText(shapeName(row.shape), px + 80, ry + 13);
       ctx.font = `600 11.5px ${FONT_UI}`;
       ctx.fillStyle = P.muted;
-      ctx.fillText(shapeDetail(row.shape, chart.n), px + 72, ry + 22);
+      ctx.fillText(shapeDetail(row.shape, chart.n), px + 80, ry + 31);
     });
     ctx.font = `600 10.5px ${FONT_UI}`;
     ctx.fillStyle = P.faint;

@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 
-import { nameChord, chordLabels, groupNotesIntoChords, pitchClassName } from "../src/chords";
+import { analyzeChord, chordFormName, chordFormDegrees, nameChord, chordLabels, groupNotesIntoChords, pitchClassName } from "../src/chords";
 
 // Middle C is 60.
 const C4 = 60, Cs4 = 61, D4 = 62, Ds4 = 63, E4 = 64, F4 = 65;
@@ -136,5 +136,52 @@ describe("chordLabels", () => {
       { t_on: 2.0, pitch: G4 }, { t_on: 2.01, pitch: B4 }, { t_on: 2.02, pitch: D5 },
     ]);
     expect(labels.map((l) => l.label)).toEqual(["C", "G"]);
+  });
+});
+
+describe("add9 chords", () => {
+  it("names a major or minor triad with an added ninth", () => {
+    expect(nameChord([C4, E4, G4, D5])).toBe("Cadd9");
+    expect(nameChord([C4, Ds4, G4, D5])).toBe("Cmadd9");
+  });
+});
+
+describe("analyzeChord", () => {
+  it("gives the root, the form and the bass, not just the name", () => {
+    expect(analyzeChord([C4, E4, G4])).toEqual({ root: 0, bass: 0, suffix: "", intervals: [0, 4, 7] });
+    expect(analyzeChord([A4, C5, E5])).toMatchObject({ root: 9, bass: 9, suffix: "m" });
+    // First inversion: E in the bass under a C triad.
+    expect(analyzeChord([E4, G4, C5])).toMatchObject({ root: 0, bass: 4, suffix: "" });
+    expect(analyzeChord([C4, Ds4, Fs4, A4])).toMatchObject({ suffix: "dim7" });
+    expect(analyzeChord([C4])).toBeNull();
+    expect(analyzeChord([])).toBeNull();
+  });
+
+  it("agrees with nameChord", () => {
+    for (const chord of [[C4, E4, G4], [E4, G4, C5], [A4, C5, E5, G5], [C4, G4], [D4, Fs4, A4, C5]]) {
+      const a = analyzeChord(chord)!;
+      const name = `${pitchClassName(a.root)}${a.suffix}${a.root === a.bass ? "" : `/${pitchClassName(a.bass)}`}`;
+      expect(name).toBe(nameChord(chord));
+    }
+  });
+});
+
+describe("chord form names", () => {
+  it("says what each form is, and its degrees", () => {
+    expect(chordFormName("")).toBe("major");
+    expect(chordFormName("m")).toBe("minor");
+    expect(chordFormName("dim")).toBe("diminished");
+    expect(chordFormName("aug")).toBe("augmented");
+    expect(chordFormName("5")).toBe("power chord");
+    expect(chordFormName("m7b5")).toBe("half-diminished 7th");
+    expect(chordFormName("add9")).toBe("add 9");
+    expect(chordFormDegrees("")).toBe("1 3 5");
+    expect(chordFormDegrees("m")).toBe("1 ♭3 5");
+    expect(chordFormDegrees("dim")).toBe("1 ♭3 ♭5");
+    expect(chordFormDegrees("aug")).toBe("1 3 ♯5");
+    expect(chordFormDegrees("7")).toBe("1 3 5 ♭7");
+    expect(chordFormDegrees("dim7")).toBe("1 ♭3 ♭5 𝄫7");
+    expect(chordFormDegrees("add9")).toBe("1 3 5 9");
+    expect(chordFormDegrees("5")).toBe("1 5");
   });
 });
