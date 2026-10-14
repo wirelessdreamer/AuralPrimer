@@ -279,6 +279,41 @@ export function anchorAt(chart: FretChart, t: number): FretAnchor {
   return lastAtOrBefore(chart.anchors, t) ?? chart.anchors[0];
 }
 
+/** A highway camera's view of the neck: the fret wire at its centre, and how many frets it shows. */
+export type NeckView = { x: number; w: number };
+
+/**
+ * Where the highway camera should look, given where it looks now and the
+ * frets the coming notes use (fret columns `lo`..`hi`; fret 1's column runs
+ * from wire 0, the nut, to wire 1).
+ *
+ * It holds still while the notes fit inside the view with a margin, and
+ * moves only as far as it must when one does not: chasing every shift of
+ * the hand makes the whole neck swim. It shows `baseW` frets, more only
+ * when the notes cannot fit, and stays out until they fit `baseW` again,
+ * so a passage that straddles the edge does not pump the zoom.
+ */
+export function followFrets(
+  view: NeckView | null,
+  span: { lo: number; hi: number } | null,
+  baseW: number,
+  frets = 24,
+  margin = 0.75,
+): NeckView {
+  if (!span) return view ?? { x: baseW / 2 - 0.5, w: baseW };
+  const left = span.lo - 1 - margin;
+  const right = span.hi + margin;
+  const need = right - left;
+  let w = baseW;
+  if (need > baseW) w = view && view.w >= need ? view.w : need;
+  let x = view ? view.x : (left + right) / 2;
+  if (left < x - w / 2) x = left + w / 2;
+  if (right > x + w / 2) x = right - w / 2;
+  // Not past the nut or the last fret by more than a little.
+  x = Math.max(w / 2 - 0.5, Math.min(frets + 0.5 - w / 2, x));
+  return { x, w };
+}
+
 /** Notes on screen between t0 and t1, including ones still ringing into t0. */
 export function visibleNotes(notes: ReadonlyArray<FretNote>, t0: number, t1: number): FretNote[] {
   const out: FretNote[] = [];

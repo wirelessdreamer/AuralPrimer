@@ -25,6 +25,7 @@
 
 import {
   anchorAt,
+  followFrets,
   bendLabel,
   buildFretChart,
   constantBeats,
@@ -42,6 +43,7 @@ import {
   type FretAnchor,
   type FretChord,
   type FretChart,
+  type NeckView,
   type FretNote,
   type GridBeat,
   type GridSection,
@@ -227,7 +229,9 @@ export class GuitarRenderer {
   private trackName = "";
   private chart: FretChart | null = null;
   /** Highway camera: centre fret and frets in view, eased toward the hand. */
-  private cam: { x: number; w: number } | null = null;
+  private cam: NeckView | null = null;
+  /** Where the highway camera is headed: it moves only when the coming notes would leave the view. */
+  private camGoal: NeckView | null = null;
   private lastWallMs: number | null = null;
   private lastT = 0;
   private numbering: FretNumbering = DEFAULT_FRET_NUMBERING;
@@ -297,6 +301,7 @@ export class GuitarRenderer {
     this.trackName = track?.trackName ?? "";
     this.chart = track ? buildFretChart(track) : null;
     this.cam = null;
+    this.camGoal = null;
     this.handBoxes = null;
     this.nashView = null;
   }
@@ -317,6 +322,7 @@ export class GuitarRenderer {
     // A seek snaps the camera rather than sweeping it across the neck.
     if (Math.abs(timeSec - this.lastT) > 1) {
       this.cam = null;
+      this.camGoal = null;
       this.nashView = null;
     }
     this.lastT = timeSec;
@@ -831,14 +837,27 @@ export class GuitarRenderer {
     // Low string highest, as the neck looks from behind it.
     const sy = (s: number): number => groundY - 26 - this.row(chart, s) * gap;
 
-    // The camera follows the hand, slightly ahead of time.
+    // The camera holds still while the coming notes fit the view, and
+    // glides only as far as it must when one would not.
     const an = anchorAt(chart, now + 0.35);
-    const camT = an.fret - 1 + an.width / 2;
-    const visT = Math.max(an.width + 4, 8);
-    if (!this.cam) this.cam = { x: camT, w: visT };
-    const ease = Math.min(1, f.dt * 3.2);
-    this.cam.x += (camT - this.cam.x) * ease;
-    this.cam.w += (visT - this.cam.w) * ease;
+    const spanTo = (t1: number): { lo: number; hi: number } | null => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const x of visibleNotes(chart.notes, now - 0.05, t1)) {
+        if (x.f <= 0) continue;
+        lo = Math.min(lo, x.f);
+        hi = Math.max(hi, x.f);
+      }
+      return lo <= hi ? { lo, hi } : null;
+    };
+    let span = spanTo(now + Math.min(look, 1.6));
+    // A leap across the neck: frame what comes first, not both ends.
+    if (span && span.hi - span.lo > 10) span = spanTo(now + 0.6) ?? span;
+    this.camGoal = followFrets(this.camGoal, span, 8);
+    if (!this.cam) this.cam = { ...this.camGoal };
+    const ease = Math.min(1, f.dt * 2.5);
+    this.cam.x += (this.camGoal.x - this.cam.x) * ease;
+    this.cam.w += (this.camGoal.w - this.cam.w) * ease;
     const fretW = (W * 0.94) / this.cam.w;
     const fx = (b: number): number => W / 2 + (b - this.cam!.x) * fretW;
 

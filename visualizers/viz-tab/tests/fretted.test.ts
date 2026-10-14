@@ -6,6 +6,7 @@ import {
   constantBeats,
   deriveAnchors,
   fretLabel,
+  followFrets,
   fretWireFraction,
   isFrettedRole,
   isSounding,
@@ -235,5 +236,33 @@ describe("layout maths", () => {
     expect(beats.map((b) => b.t)).toEqual([0, 0.5, 1, 1.5, 2]);
     expect(beats.map((b) => b.down)).toEqual([true, false, false, false, true]);
     expect(beats[4].m).toBe(2);
+  });
+});
+
+describe("followFrets", () => {
+  const view = { x: 6, w: 8 }; // wires 2..10: fret columns 3..10
+
+  it("holds still while the coming notes fit the view", () => {
+    expect(followFrets(view, { lo: 4, hi: 9 }, 8)).toEqual(view);
+    expect(followFrets(view, null, 8)).toEqual(view);
+  });
+
+  it("moves only as far as it must to bring a note in, with a margin", () => {
+    // Fret 12 needs wire 12.75 in view: the right edge moves there, no further.
+    expect(followFrets(view, { lo: 7, hi: 12 }, 8)).toEqual({ x: 8.75, w: 8 });
+    // Fret 2 needs wire 0.25 in view.
+    expect(followFrets(view, { lo: 2, hi: 5 }, 8)).toEqual({ x: 4.25, w: 8 });
+  });
+
+  it("zooms out only when the notes cannot fit, and stays out until they fit again", () => {
+    const wide = followFrets(view, { lo: 3, hi: 12 }, 8);
+    expect(wide.w).toBeCloseTo(11.5, 6);
+    expect(followFrets(wide, { lo: 4, hi: 12 }, 8).w).toBeCloseTo(11.5, 6); // still too wide for 8: no pumping
+    expect(followFrets(wide, { lo: 5, hi: 10 }, 8).w).toBe(8);
+  });
+
+  it("does not look past the nut or the last fret", () => {
+    expect(followFrets(null, { lo: 1, hi: 2 }, 8).x).toBe(3.5);
+    expect(followFrets(null, { lo: 22, hi: 24 }, 8, 24).x).toBe(20.5);
   });
 });
