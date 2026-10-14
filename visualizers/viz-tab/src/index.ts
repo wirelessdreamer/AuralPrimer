@@ -129,6 +129,8 @@ export type PianoRenderOptions = {
 export type PianoLiveInputNote = {
   pitch: number;
   velocity?: number;
+  /** MIDI channel, 0-15: on a MIDI guitar in Multi-Channel mode, the string. */
+  channel?: number;
   velocityUnit?: number;
   isPressed?: boolean;
   heldBySustain?: boolean;
@@ -1256,6 +1258,7 @@ export { SheetMusicRenderer } from "./sheetMusic";
 export * from "./fretted";
 export * from "./fretNumbers";
 export * from "./chordShapes";
+export * from "./liveFrets";
 export {
   GuitarRenderer,
   DEFAULT_FRET_NUMBERING,

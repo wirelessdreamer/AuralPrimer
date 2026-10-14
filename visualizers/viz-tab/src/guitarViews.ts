@@ -67,6 +67,7 @@ import {
   type PositionInstance,
   type Triad,
 } from "./fretNumbers";
+import { judgeLive, liveFrets, sharesChannel, type LiveFret } from "./liveFrets";
 import { ShapeKey, chordShapesIn, repeatsPrevious, shapeDetail, shapeName, type ChordShape } from "./chordShapes";
 import { ROLE_COLORS, type InstrumentRole, type MelodicTrackSelection, type PianoRenderOptions } from "./index";
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
@@ -205,7 +206,18 @@ type Frame = {
   beats: GridBeat[];
   sections: GridSection[];
   dt: number;
+  /** What the player is fretting on a MIDI guitar, placed on the neck. */
+  live: LiveFret[];
+  /** Held notes share a channel: the guitar is not sending its strings. */
+  liveShared: boolean;
 };
+
+/** A live note on the chart's string and fret. */
+const LIVE_HIT_COLOR = "#34d399";
+/** The right pitch, somewhere other than where the chart has it. */
+const LIVE_OTHER_COLOR = "#f59e0b";
+/** Neither: a note the chart does not want now. */
+const LIVE_OFF_COLOR = "#cbd5e1";
 
 /**
  * A chord suffix after a Nashville number, its figures raised: B7 in G is
@@ -356,6 +368,8 @@ export class GuitarRenderer {
       beats: opts.beats ?? [],
       sections: opts.sections ?? [],
       dt,
+      live: liveFrets(opts.liveInputNotes ?? []),
+      liveShared: sharesChannel(opts.liveInputNotes ?? []),
     };
     if (this.view === "lanes") this.drawLanes(chart, timeSec, frame);
     else if (this.view === "highway") this.drawHighway(chart, timeSec, frame);
@@ -409,6 +423,63 @@ export class GuitarRenderer {
   }
 
   /** Part name in its role colour, then tuning and section. */
+  /**
+   * What the player is fretting on a MIDI guitar, on this view's neck: a
+   * glowing ring at each held string and fret. Green on the chart's note;
+   * amber, with a line to where the chart has it, when the pitch is right
+   * but the place is not; grey when the chart does not want it now.
+   */
+  private drawLiveMarks(
+    chart: FretChart,
+    now: number,
+    f: Frame,
+    at: (s: number, fr: number) => [number, number] | null,
+    rAt: (fr: number) => number,
+  ): void {
+    const { ctx } = this;
+    ctx.save();
+    for (const x of judgeLive(chart, f.live, now)) {
+      const p = at(x.s, x.f);
+      if (!p) continue;
+      const color = x.kind === "hit" ? LIVE_HIT_COLOR : x.kind === "other" ? LIVE_OTHER_COLOR : LIVE_OFF_COLOR;
+      const r = rAt(x.f) + 6;
+      const q = x.target ? at(x.target.s, x.target.f) : null;
+      if (q) {
+        ctx.shadowBlur = 0;
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(p[0], p[1]);
+        ctx.lineTo(q[0], q[1]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(q[0], q[1], rAt(x.target!.f) + 6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.shadowColor = color;
+      ctx.shadowBlur = x.kind === "hit" ? 20 : 10;
+      ctx.fillStyle = rgba(color, 0.18);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+    if (f.liveShared) {
+      ctx.save();
+      ctx.font = `700 13px ${FONT_UI}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillStyle = LIVE_OTHER_COLOR;
+      ctx.fillText("Live notes share one MIDI channel, so their strings are unknown. Set the Jamstik to Multi-Channel mode.", this.W / 2, 10);
+      ctx.restore();
+    }
+  }
+
   private hud(chart: FretChart, f: Frame, now: number, extra?: string): void {
     const { ctx } = this;
     ctx.textBaseline = "top";
@@ -978,6 +1049,13 @@ export class GuitarRenderer {
       const w = x.f === 0 ? (handRight - handLeft) * kk * 0.94 : fretW * 0.7 * kk;
       this.drawGem(x, px, py, w, Math.max(5, 26 * kk), this.look(x), x.t < now ? 1 - (now - x.t) / 0.08 : 0.35 + 0.65 * kk ** 0.6);
     }
+    this.drawLiveMarks(
+      chart,
+      now,
+      f,
+      (s, fr) => (s < n ? [fr === 0 ? (handLeft + handRight) / 2 : fx(fr - 0.5), sy(s)] : null),
+      () => Math.min(22, fretW * 0.3),
+    );
     // Chord frames, named above.
     const seen = new Set<object>();
     for (const x of vis) {
@@ -1794,6 +1872,7 @@ export class GuitarRenderer {
       if (this.nf && x.chord && x.chord.size >= 2) Object.assign(look, this.pitchLook(frame, x.midi, x.chord.triad));
       this.drawDot(m.fx(x.f), m.sy(x.s), rAt(x.f) * 1.18, look, look.color);
     }
+    this.drawLiveMarks(chart, now, f, (s, fr) => (s < chart.n && fr <= NASHVILLE_NECK_FRETS ? [m.fx(fr), m.sy(s)] : null), (fr) => rAt(fr) * 1.18);
 
     this.drawNashvilleLane(chart, frame, now, f, { x: 14, y: laneTop, w: W - 28, h: neckY - laneTop - 10 }, m);
 
