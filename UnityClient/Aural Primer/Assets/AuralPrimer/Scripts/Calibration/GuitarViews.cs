@@ -317,6 +317,12 @@ namespace AuralPrimer.Calibration
                 case GuitarView.Tab: DrawTab(now, visibility); break;
             }
 
+            // What the player frets on a MIDI guitar, over the views that draw the real neck.
+            if (View == GuitarView.Highway || View == GuitarView.Coach || View == GuitarView.Nashville)
+            {
+                DrawLive(now, visibility);
+            }
+
             _cubes.End();
             _sprites.End();
             _labels.End();

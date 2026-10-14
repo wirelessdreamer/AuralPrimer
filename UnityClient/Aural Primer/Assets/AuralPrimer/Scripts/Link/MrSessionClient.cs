@@ -33,6 +33,8 @@ namespace AuralPrimer.Link
         readonly Stopwatch _clock = Stopwatch.StartNew();
         readonly object _notesLock = new();
         readonly List<(byte pitch, byte velocity)> _heldNotes = new();
+        readonly object _fretsLock = new();
+        readonly List<MrProtocol.LiveFret> _heldFrets = new();
         readonly ConcurrentQueue<string> _charts = new();
         readonly ConcurrentQueue<string> _drumCharts = new();
         readonly ConcurrentQueue<(byte note, byte velocity, ulong hostClockUs)> _drumHits = new();
@@ -77,6 +79,16 @@ namespace AuralPrimer.Link
             lock (_notesLock)
             {
                 into.AddRange(_heldNotes);
+            }
+        }
+
+        /// <summary>Copy the guitar's current strings into <paramref name="into"/>.</summary>
+        public void CopyHeldFrets(List<MrProtocol.LiveFret> into)
+        {
+            into.Clear();
+            lock (_fretsLock)
+            {
+                into.AddRange(_heldFrets);
             }
         }
 
@@ -205,6 +217,7 @@ namespace AuralPrimer.Link
             // than no offset.
             Clock.Reset();
             lock (_notesLock) _heldNotes.Clear();
+            lock (_fretsLock) _heldFrets.Clear();
         }
 
         void Send(byte frameType, byte[] payload)
@@ -554,6 +567,7 @@ namespace AuralPrimer.Link
             var any = new IPEndPoint(IPAddress.Any, 0);
             var scratch = new List<(byte pitch, byte velocity)>();
             var drumScratch = new List<(byte note, byte velocity, ulong hostClockUs)>();
+            var fretScratch = new List<MrProtocol.LiveFret>();
 
             while (_running)
             {
@@ -571,6 +585,15 @@ namespace AuralPrimer.Link
                         {
                             _heldNotes.Clear();
                             _heldNotes.AddRange(scratch);
+                        }
+                    }
+                    else if (MrProtocol.TryDecodeFrets(data, data.Length, out _, fretScratch))
+                    {
+                        // State, like the held notes: the last snapshot wins.
+                        lock (_fretsLock)
+                        {
+                            _heldFrets.Clear();
+                            _heldFrets.AddRange(fretScratch);
                         }
                     }
                     else if (MrProtocol.TryDecodeDrumHits(data, data.Length, drumScratch))

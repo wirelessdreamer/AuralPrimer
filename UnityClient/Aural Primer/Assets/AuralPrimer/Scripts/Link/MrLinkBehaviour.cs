@@ -36,6 +36,11 @@ namespace AuralPrimer.Link
         /// <summary>Held notes as of this frame, ascending by pitch.</summary>
         public IReadOnlyList<(byte pitch, byte velocity)> HeldNotes => _heldNotes;
 
+        readonly List<MrProtocol.LiveFret> _heldFrets = new();
+
+        /// <summary>A MIDI guitar's strings as of this frame, lowest string first.</summary>
+        public IReadOnlyList<MrProtocol.LiveFret> HeldFrets => _heldFrets;
+
         /// <summary>Song position to render this frame, already compensated for
         /// clock offset, display latency and the host's audio offset.</summary>
         public double SongTimeSec { get; private set; }
@@ -216,6 +221,7 @@ namespace AuralPrimer.Link
             if (_session != null)
             {
                 _session.CopyHeldNotes(_heldNotes);
+                _session.CopyHeldFrets(_heldFrets);
 
                 while (_session.TryDequeueChart(out var chart))
                 {

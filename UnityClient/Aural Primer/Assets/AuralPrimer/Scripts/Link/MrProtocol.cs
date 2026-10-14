@@ -59,6 +59,8 @@ namespace AuralPrimer.Link
         public const string FeatureDrums = "drums";
         public const string FeatureInstrument = "instrument";
         public const string FeatureSettings = "settings";
+        /// <summary>A MIDI guitar's strings, placed on the neck (FRETS datagram).</summary>
+        public const string FeatureFrets = "frets";
         public const byte FramePing = 0x20;
         public const byte FramePong = 0x21;
         public const byte FrameTransport = 0x30;
@@ -68,6 +70,8 @@ namespace AuralPrimer.Link
         public const byte DatagramNotes = 0x41;
         /// <summary>Drum strikes since the previous datagram.</summary>
         public const byte DatagramDrumHits = 0x42;
+        /// <summary>What a MIDI guitar's strings are doing, string and fret included.</summary>
+        public const byte DatagramFrets = 0x43;
 
         /// A larger prefix is a protocol error: refuse rather than allocate on it.
         public const int MaxPayload = 16 * 1024 * 1024;
@@ -231,6 +235,57 @@ namespace AuralPrimer.Link
             {
                 var at = 2 + i * 10;
                 into.Add((data[at], data[at + 1], ReadUInt64LE(data, at + 2)));
+            }
+            return true;
+        }
+
+        /// <summary>One string of a MIDI guitar, as the host placed it on the neck.</summary>
+        public readonly struct LiveFret
+        {
+            /// <summary>0 = the lowest string, as <see cref="FrettedChart"/> counts.</summary>
+            public readonly byte String;
+            public readonly byte Fret;
+            public readonly byte Pitch;
+            public readonly byte Velocity;
+            /// <summary>
+            /// False for a string that is only fretted: a Rock Band 3 Squier
+            /// reports the fretting hand before the pick, which shows where the
+            /// hand is without counting as a note played.
+            /// </summary>
+            public readonly bool Picked;
+
+            public LiveFret(byte @string, byte fret, byte pitch, byte velocity, bool picked)
+            {
+                String = @string;
+                Fret = fret;
+                Pitch = pitch;
+                Velocity = velocity;
+                Picked = picked;
+            }
+        }
+
+        /// <summary>Every string a MIDI guitar is fretting or sounding (protocol §3).</summary>
+        /// <remarks>
+        /// Full state like the held notes, for the same reason: the next
+        /// snapshot heals a dropped one, where a dropped delta would leave a
+        /// marker on the neck.
+        /// </remarks>
+        public static bool TryDecodeFrets(byte[] data, int length, out ulong hostClockUs, List<LiveFret> into)
+        {
+            hostClockUs = 0;
+            if (data == null || length < 10 || data[0] != DatagramFrets) return false;
+
+            hostClockUs = ReadUInt64LE(data, 1);
+            int count = data[9];
+            // Rejected rather than half-read: a partial snapshot would draw
+            // some strings and silently drop the rest.
+            if (length != 10 + count * 5) return false;
+
+            into.Clear();
+            for (var i = 0; i < count; i++)
+            {
+                var at = 10 + i * 5;
+                into.Add(new LiveFret(data[at], data[at + 1], data[at + 2], data[at + 3], (data[at + 4] & 1) == 1));
             }
             return true;
         }

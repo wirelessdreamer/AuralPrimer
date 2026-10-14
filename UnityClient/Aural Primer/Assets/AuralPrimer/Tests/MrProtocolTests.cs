@@ -177,5 +177,51 @@ namespace AuralPrimer.Link.Tests
             var bytes = new byte[] { 0x41, 0x2A, 0, 0, 0, 0, 0, 0, 0, 0x09, 60, 100 };
             Assert.IsFalse(MrProtocol.TryDecodeNotes(bytes, bytes.Length, out _, new List<(byte, byte)>()));
         }
+
+        // The same bytes protocol.rs pins in fret_state_round_trip: low E at
+        // fret 5 picked with velocity 119, A held at fret 5 without a pick.
+        static readonly byte[] FretsFixture =
+        {
+            0x43,
+            0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, // 0x0102030405060708 LE
+            2,
+            0, 5, 45, 119, 1,
+            1, 5, 50, 0, 0,
+        };
+
+        [Test]
+        public void DecodesTheGuitarStrings()
+        {
+            var frets = new List<MrProtocol.LiveFret>();
+            Assert.IsTrue(MrProtocol.TryDecodeFrets(FretsFixture, FretsFixture.Length, out var clock, frets));
+            Assert.AreEqual(0x0102030405060708UL, clock);
+            Assert.AreEqual(2, frets.Count);
+            Assert.AreEqual(0, frets[0].String);
+            Assert.AreEqual(5, frets[0].Fret);
+            Assert.AreEqual(45, frets[0].Pitch);
+            Assert.AreEqual(119, frets[0].Velocity);
+            Assert.IsTrue(frets[0].Picked);
+            Assert.AreEqual(1, frets[1].String);
+            Assert.IsFalse(frets[1].Picked, "only fretted: where the hand is, not a note played");
+        }
+
+        [Test]
+        public void AnEmptyGuitarSnapshotClearsTheStrings()
+        {
+            var bytes = new byte[] { 0x43, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+            var frets = new List<MrProtocol.LiveFret> { new MrProtocol.LiveFret(2, 3, 53, 90, true) };
+            Assert.IsTrue(MrProtocol.TryDecodeFrets(bytes, bytes.Length, out _, frets));
+            Assert.AreEqual(0, frets.Count);
+        }
+
+        [Test]
+        public void RejectsATruncatedOrForeignGuitarSnapshot()
+        {
+            var frets = new List<MrProtocol.LiveFret>();
+            Assert.IsFalse(MrProtocol.TryDecodeFrets(FretsFixture, FretsFixture.Length - 1, out _, frets));
+            var notes = (byte[])FretsFixture.Clone();
+            notes[0] = MrProtocol.DatagramNotes;
+            Assert.IsFalse(MrProtocol.TryDecodeFrets(notes, notes.Length, out _, frets));
+        }
     }
 }
