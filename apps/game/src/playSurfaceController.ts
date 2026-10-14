@@ -157,6 +157,8 @@ export type PlaySurfaceControllerHandle = {
   getFretNumbering: (role: FrettedRole) => FretNumbering;
   /** Change any of a part's numbering settings; the surface picks it up on the next frame. */
   setFretNumbering: (role: FrettedRole, change: Partial<FretNumbering>) => void;
+  /** Pin or unpin the guitar views' power-chord shape key (K); false when no guitar view is up. */
+  toggleShapeKeyPin: () => boolean;
 };
 
 export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): PlaySurfaceControllerHandle {
@@ -470,5 +472,6 @@ export function initPlaySurfaceController(deps: PlaySurfaceControllerDeps): Play
     setFrettedView,
     getFretNumbering,
     setFretNumbering,
+    toggleShapeKeyPin: () => (tabRenderer instanceof GuitarRenderer ? tabRenderer.toggleShapeKeyPin() : false),
   };
 }

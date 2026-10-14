@@ -1255,6 +1255,7 @@ export class TabRenderer {
 export { SheetMusicRenderer } from "./sheetMusic";
 export * from "./fretted";
 export * from "./fretNumbers";
+export * from "./powerChords";
 export {
   GuitarRenderer,
   DEFAULT_FRET_NUMBERING,

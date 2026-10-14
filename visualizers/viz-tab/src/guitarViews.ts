@@ -40,6 +40,7 @@ import {
   visibleNotes,
   type ChordChange,
   type FretAnchor,
+  type FretChord,
   type FretChart,
   type FretNote,
   type GridBeat,
@@ -64,6 +65,7 @@ import {
   type PositionInstance,
   type Triad,
 } from "./fretNumbers";
+import { ShapeKey, powerChordsIn, repeatsPrevious, shapeDetail, shapeName, type PowerShape } from "./powerChords";
 import { ROLE_COLORS, type InstrumentRole, type MelodicTrackSelection, type PianoRenderOptions } from "./index";
 import { clampScrollSpeedMultiplier } from "@auralprimer/viz-sdk";
 
@@ -229,6 +231,18 @@ export class GuitarRenderer {
   private handBoxes: { majorPc: number; list: { t: number; inst: PositionInstance }[] } | null = null;
   /** The Nashville neck's window, eased toward the focused box. */
   private nashView: { lo: number; hi: number } | null = null;
+  /** The chart's power chords, found once per chart: the lane stamps them as shapes. */
+  private shapes: {
+    chart: FretChart;
+    byChord: Map<FretChord, PowerShape>;
+    events: { t: number; code: string; shape: PowerShape }[];
+    /** For a chord that repeats the one before it: that one's onset. */
+    repeatOf: Map<FretChord, number>;
+  } | null = null;
+  /** Which shapes have gone by, and whether the key is pinned (K). */
+  private shapeKey = new ShapeKey();
+  private shapeKeyAlpha = 0;
+  private shapeKeyRows: { code: string; shape: PowerShape }[] = [];
 
   constructor(
     private readonly container: HTMLElement,
@@ -259,7 +273,17 @@ export class GuitarRenderer {
     this.canvas.height = Math.round(this.H * this.dpr);
   }
 
+  /** Pin or unpin the power-chord shape key (the K key); returns whether it is pinned. */
+  toggleShapeKeyPin(): boolean {
+    return this.shapeKey.togglePin();
+  }
+
   setTrack(track: MelodicTrackSelection | null): void {
+    // A new part's shapes start unseen; a pinned key stays pinned.
+    const pinned = this.shapeKey.isPinned();
+    this.shapeKey = new ShapeKey();
+    if (pinned) this.shapeKey.togglePin();
+    this.shapes = null;
     this.role = track?.role ?? "melodic";
     this.trackName = track?.trackName ?? "";
     this.chart = track ? buildFretChart(track) : null;
@@ -1844,8 +1868,50 @@ export class GuitarRenderer {
     ctx.beginPath();
     ctx.rect(box.x, box.y, box.w, box.h + 26);
     ctx.clip();
+    const power = this.powerShapes(chart);
     for (const x of visibleNotes(chart.notes, now, now + look)) {
       if (x.tech.mt || x.t < now - 0.05) continue;
+      // A power chord falls as one shape stamp at its root, not a pile of numbers.
+      const shape = x.chord ? power.byChord.get(x.chord) : undefined;
+      if (shape) {
+        if (x.s === shape.rootString) {
+          const rr = rFor(shape.rootFret);
+          const sx = m.fx(shape.rootFret);
+          const sy = yAt(x.t);
+          const rootLook = this.neckLook(frame, chart, shape.rootString, shape.rootFret);
+          if (x.sus > 0.15) {
+            ctx.strokeStyle = rgba(rootLook.color, 0.35);
+            ctx.lineWidth = Math.max(3, rr * 0.45);
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx, Math.max(box.y, yAt(x.t + x.sus)));
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 0.45 + 0.55 * (1 - Math.min(1, (x.t - now) / look));
+          const tw = clamp(rr * 2.6, 40, 60);
+          // A chug: the same shape again, close behind one still on screen.
+          // A tick marks the strike; the run's first tile says the shape.
+          const prevT = power.repeatOf.get(x.chord as FretChord);
+          if (prevT !== undefined && prevT >= now - 0.05) {
+            ctx.fillStyle = rootLook.color;
+            this.rr(sx - tw * 0.3, sy - 2.5, tw * 0.6, 5, 2.5);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            continue;
+          }
+          // Kept inside the lane: an open-string root sits at the very edge.
+          const tx = clamp(sx - tw / 2, box.x + 2, box.x + box.w - tw - 2);
+          this.drawShapeTile(chart, frame, shape, tx, sy - tw * 0.41, tw, tw * 0.82);
+          ctx.font = `800 ${Math.round(clamp(rr * 0.55, 11, 15))}px ${FONT_UI}`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          ctx.fillStyle = rootLook.color;
+          ctx.fillText(`${degreeLabel(frame, shape.rootMidi)} · ${shape.code}`, tx + tw / 2, sy + tw * 0.41 + 3);
+          ctx.globalAlpha = 1;
+        }
+        continue;
+      }
       const r = rFor(x.f);
       const cx = m.fx(x.f) + (x.s - (chart.n - 1) / 2) * Math.min(r * 0.45, 7);
       const cy = yAt(x.t);
@@ -1863,6 +1929,152 @@ export class GuitarRenderer {
       this.drawDot(cx, cy, r, nl);
       ctx.globalAlpha = 1;
     }
+    ctx.restore();
+    this.drawShapeKey(chart, frame, now, f, box, power.events);
+  }
+
+  /** The chart's power chords, found once per chart. */
+  private powerShapes(chart: FretChart): NonNullable<GuitarRenderer["shapes"]> {
+    if (!this.shapes || this.shapes.chart !== chart) {
+      const byChord = powerChordsIn(chart);
+      const events = [...byChord].map(([chord, shape]) => ({ t: chord.t, code: shape.code, shape, chord })).sort((a, b) => a.t - b.t);
+      const repeatOf = new Map<FretChord, number>();
+      repeatsPrevious(events).forEach((repeat, i) => {
+        if (repeat) repeatOf.set(events[i].chord, events[i - 1].t);
+      });
+      this.shapes = { chart, byChord, events, repeatOf };
+    }
+    return this.shapes;
+  }
+
+  /**
+   * A power chord's shape on a tile: three strings (the root's at the bottom,
+   * as on the neck below) across the frets it spans, the root filled in its
+   * number's colour, the fifth and octave hollow.
+   */
+  private drawShapeTile(chart: FretChart, frame: NumberFrame, shape: PowerShape, x: number, y: number, w: number, h: number): void {
+    const { ctx } = this;
+    const P = this.palette;
+    const members: { s: number; f: number; root: boolean }[] = [{ s: shape.rootString, f: shape.rootFret, root: true }];
+    const fifth = chart.open[shape.rootString + 1];
+    if (fifth !== undefined) members.push({ s: shape.rootString + 1, f: shape.rootMidi + 7 - fifth, root: false });
+    const octave = chart.open[shape.rootString + 2];
+    if (shape.octave && octave !== undefined) members.push({ s: shape.rootString + 2, f: shape.rootMidi + 12 - octave, root: false });
+    const cols = Math.max(3, Math.max(...members.map((mm) => mm.f - shape.rootFret)) + 1);
+    ctx.save();
+    ctx.fillStyle = "rgba(14,20,34,0.92)";
+    this.rr(x, y, w, h, 8);
+    ctx.fill();
+    ctx.strokeStyle = rgba(P.accent, 0.45);
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    const pad = Math.max(6, w * 0.14);
+    const gx = x + pad;
+    const gw = w - pad * 2;
+    const gy = y + pad * 0.8;
+    const gh = h - pad * 1.6;
+    const colX = (c: number): number => gx + ((c + 0.5) / cols) * gw;
+    // Row 0 is the root's string, at the bottom, as on the neck.
+    const rowY = (row: number): number => gy + gh - (row / 2) * gh;
+    ctx.strokeStyle = "rgba(220,228,250,0.28)";
+    ctx.lineWidth = 1;
+    for (let row = 0; row < 3; row += 1) {
+      ctx.beginPath();
+      ctx.moveTo(gx, rowY(row));
+      ctx.lineTo(gx + gw, rowY(row));
+      ctx.stroke();
+    }
+    for (let c = 0; c <= cols; c += 1) {
+      const fx = gx + (c / cols) * gw;
+      ctx.beginPath();
+      ctx.moveTo(fx, gy);
+      ctx.lineTo(fx, gy + gh);
+      ctx.stroke();
+    }
+    const dr = Math.max(3, Math.min(gw / cols, gh / 2) * 0.36);
+    for (const mm of members) {
+      const color = this.neckLook(frame, chart, mm.s, mm.f).color;
+      ctx.beginPath();
+      ctx.arc(colX(mm.f - shape.rootFret), rowY(mm.s - shape.rootString), dr, 0, Math.PI * 2);
+      if (mm.root) {
+        ctx.fillStyle = color;
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "rgba(10,14,22,0.9)";
+        ctx.fill();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * "Shapes in this section": each power-chord shape the section uses, on a
+   * tile, named. Up while a shape is new to the player, fading once every
+   * one has gone by a few times; K pins it.
+   */
+  private drawShapeKey(
+    chart: FretChart,
+    frame: NumberFrame,
+    now: number,
+    f: Frame,
+    box: { x: number; y: number; w: number; h: number },
+    events: ReadonlyArray<{ t: number; code: string; shape: PowerShape }>,
+  ): void {
+    this.shapeKey.observe(events, now);
+    const section = lastAtOrBefore(f.sections, now + 0.05);
+    const start = section?.t ?? Number.NEGATIVE_INFINITY;
+    const end = f.sections.find((s) => s.t > start)?.t ?? Number.POSITIVE_INFINITY;
+    const rows: { code: string; shape: PowerShape }[] = [];
+    for (const e of events) {
+      if (e.t < start || e.t >= end) continue;
+      const row = rows.find((r) => r.code === e.code);
+      if (!row) rows.push({ code: e.code, shape: e.shape });
+      else if (e.shape.octave && !row.shape.octave) row.shape = e.shape;
+    }
+    const target = this.shapeKey.shown(rows.map((r) => r.code)) ? 1 : 0;
+    this.shapeKeyAlpha += (target - this.shapeKeyAlpha) * Math.min(1, f.dt * 4);
+    // Keep the last rows while fading out, so the panel does not empty first.
+    if (rows.length > 0) this.shapeKeyRows = rows;
+    if (this.shapeKeyAlpha < 0.02 || this.shapeKeyRows.length === 0) return;
+
+    const { ctx } = this;
+    const P = this.palette;
+    const pw = 262;
+    const rowH = 50;
+    const ph = 34 + this.shapeKeyRows.length * rowH + 18;
+    const px = box.x + box.w - pw - 10;
+    const py = box.y + 8;
+    ctx.save();
+    ctx.globalAlpha = this.shapeKeyAlpha;
+    ctx.fillStyle = "rgba(12,17,30,0.9)";
+    this.rr(px, py, pw, ph, 10);
+    ctx.fill();
+    ctx.strokeStyle = rgba(P.accent, 0.35);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.font = `800 11px ${FONT_UI}`;
+    ctx.fillStyle = P.muted;
+    ctx.fillText("SHAPES IN THIS SECTION", px + 12, py + 11);
+    this.shapeKeyRows.forEach((row, i) => {
+      const ry = py + 32 + i * rowH;
+      this.drawShapeTile(chart, frame, row.shape, px + 12, ry, 50, 41);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.font = `800 13px ${FONT_UI}`;
+      ctx.fillStyle = P.text;
+      ctx.fillText(shapeName(row.code), px + 72, ry + 4);
+      ctx.font = `600 11.5px ${FONT_UI}`;
+      ctx.fillStyle = P.muted;
+      ctx.fillText(shapeDetail(row.shape, chart.n), px + 72, ry + 22);
+    });
+    ctx.font = `600 10.5px ${FONT_UI}`;
+    ctx.fillStyle = P.faint;
+    ctx.fillText(this.shapeKey.isPinned() ? "Pinned · K to unpin" : "K pins this key", px + 12, py + ph - 16);
     ctx.restore();
   }
 

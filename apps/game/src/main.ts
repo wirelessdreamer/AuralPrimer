@@ -2722,6 +2722,16 @@ const transportHostDeps = {
 
 const transportHotkeys = initTransportHotkeys(transportHostDeps);
 
+// K pins or unpins the guitar views' power-chord shape key while playing.
+window.addEventListener("keydown", (ev) => {
+  if (ev.key !== "k" && ev.key !== "K") return;
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+  const target = ev.target as HTMLElement | null;
+  if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+  if (routeController.getCurrentRoute() !== "play" || pauseMenu.isVisible()) return;
+  playSurfaceController.toggleShapeKeyPin();
+});
+
 /** The big button's word for what a press will do now. */
 function renderPlayStartLabel(): void {
   const label = !sessionStarted ? "Start" : transportController.getState().isPlaying ? "Pause" : "Resume";
