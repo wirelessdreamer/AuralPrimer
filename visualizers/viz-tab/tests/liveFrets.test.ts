@@ -34,6 +34,11 @@ describe("liveFrets", () => {
   it("keeps a note held by the pedal off the neck: only fretted strings count", () => {
     expect(liveFrets([{ ...jam(2, 1), isPressed: false }])).toEqual([]);
   });
+
+  it("carries whether the string was picked: a Squier reports a fretted string before the pick", () => {
+    expect(liveFrets([jam(5, 5)])[0].picked).toBe(true); // a Jamstik note is always a played one
+    expect(liveFrets([{ ...jam(5, 5), picked: false }]).map((x) => [x.s, x.f, x.picked])).toEqual([[1, 5, false]]);
+  });
 });
 
 describe("sharesChannel", () => {
@@ -50,7 +55,7 @@ describe("judgeLive", () => {
   const chart = buildFretChart({ role: "lead_guitar", trackName: "Lead", channel: 1, notes: [note(1, 2, 7), note(3, 0, 5)] });
 
   it("calls the chart's note on its string and fret a hit", () => {
-    expect(judgeLive(chart, liveFrets([jam(4, 7)]), 1.02)).toEqual([{ s: 2, f: 7, midi: 57, velocity: 100, kind: "hit", target: null }]);
+    expect(judgeLive(chart, liveFrets([jam(4, 7)]), 1.02)).toEqual([{ s: 2, f: 7, midi: 57, velocity: 100, picked: true, kind: "hit", target: null }]);
   });
 
   it("calls the right pitch on another string 'other place', pointing at where the chart has it", () => {
@@ -63,6 +68,11 @@ describe("judgeLive", () => {
   it("calls anything else off, and nothing is due between notes", () => {
     expect(judgeLive(chart, liveFrets([jam(4, 8)]), 1.0)[0].kind).toBe("off");
     expect(judgeLive(chart, liveFrets([jam(4, 7)]), 2.0)[0].kind).toBe("off");
+  });
+
+  it("does not judge a string that is only fretted: that is where the hand is, not a note played", () => {
+    // On the chart's own string and fret, but not picked yet.
+    expect(judgeLive(chart, liveFrets([{ ...jam(4, 7), picked: false }]), 1.02)[0].kind).toBe("fretted");
   });
 
   it("allows a little early, and a held note while it rings", () => {

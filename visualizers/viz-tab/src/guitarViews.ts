@@ -218,6 +218,8 @@ const LIVE_HIT_COLOR = "#34d399";
 const LIVE_OTHER_COLOR = "#f59e0b";
 /** Neither: a note the chart does not want now. */
 const LIVE_OFF_COLOR = "#cbd5e1";
+/** A string fretted but not picked: where the hand is. */
+const LIVE_FRETTED_COLOR = "#94a3b8";
 
 /**
  * A chord suffix after a Nashville number, its figures raised: B7 in G is
@@ -441,6 +443,19 @@ export class GuitarRenderer {
     for (const x of judgeLive(chart, f.live, now)) {
       const p = at(x.s, x.f);
       if (!p) continue;
+      if (x.kind === "fretted") {
+        // Only fretted (a Squier reports the hand before the pick): a quiet
+        // dashed ring for where the finger is, with no glow and no verdict.
+        ctx.shadowBlur = 0;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = rgba(LIVE_FRETTED_COLOR, 0.85);
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], rAt(x.f) + 4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        continue;
+      }
       const color = x.kind === "hit" ? LIVE_HIT_COLOR : x.kind === "other" ? LIVE_OTHER_COLOR : LIVE_OFF_COLOR;
       const r = rAt(x.f) + 6;
       const q = x.target ? at(x.target.s, x.target.f) : null;

@@ -213,6 +213,29 @@ forwards channel-10 note-ons without needing to know what kit is attached.
 against whichever datagram carried it; arrival time would measure the network
 instead of the player.
 
+### Guitar strings (`0x43`)
+
+```
+┌──────────┬────────────────┬─────────┬────────────────────────────────────────────────┐
+│ 0x43: u8 │ hostClock u64  │ count u8│ n × { string u8, fret u8, pitch u8, vel u8, flags u8 } │
+└──────────┴────────────────┴─────────┴────────────────────────────────────────────────┘
+```
+
+What a MIDI guitar's strings are doing, placed on the neck: the same state the
+desktop's 2D guitar views draw. `string` counts from the lowest string as 0,
+like the chart (`FrettedChart`). `flags` bit 0 is **picked**: set for a note
+that was played and is still taken to be ringing, clear for a string that is
+only fretted. A Rock Band 3 Squier reports the fretting hand before (and
+between) picks, which is what makes the unpicked case worth sending; a Jamstik
+only ever sends picked strings.
+
+**State, like the held notes, and sent the same way:** on change, and at least
+every 250 ms, so a dropped datagram heals. An empty list is a valid snapshot and
+clears the markers. Separate from `0x41` because the keyboard overlay reads that
+one, and a pitch alone cannot say where on the neck it was played.
+
+Offered as `frets` in `features`. An older headset ignores the unknown tag.
+
 A truncated list is rejected rather than half-read, and the count cannot
 overflow: at most 64 strikes per datagram, beyond any real drummer.
 
@@ -468,7 +491,7 @@ implements:
 
 ```json
 { "host": "STUDIO-PC", "protocol": 1,
-  "features": ["library", "voice", "drums", "instrument", "settings"] }
+  "features": ["library", "voice", "drums", "instrument", "settings", "frets"] }
 ```
 
 New frame types do not break an old peer — both ends already ignore frame types

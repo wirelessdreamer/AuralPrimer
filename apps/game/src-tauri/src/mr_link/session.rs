@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::protocol::{
-    decode_frame_header, encode_frame, frame, host_clock_us, query_library, DrumHits,
-    LibraryQuery, LibrarySong, NoteState, PositionSample, PROTOCOL_VERSION,
+    decode_frame_header, encode_frame, frame, host_clock_us, query_library, DrumHits, Fret,
+    FretState, LibraryQuery, LibrarySong, NoteState, PositionSample, PROTOCOL_VERSION,
 };
 
 /// How often position is streamed. Fast enough that the client's clock
@@ -45,6 +45,10 @@ pub struct HostState {
     pub chart_json: Mutex<Option<String>>,
     pub position: Mutex<Option<PositionSample>>,
     pub notes: Mutex<NoteState>,
+    /// A MIDI guitar's strings, string and fret included (protocol §3). Beside
+    /// `notes` rather than in it: the keyboard overlay reads `notes`, and a
+    /// guitar's place on the neck is what a pitch alone cannot say.
+    pub frets: Mutex<FretState>,
     /// The host's measured audio latency, in seconds. The headset adds its own
     /// predicted display latency on top; see protocol §5.
     pub audio_offset_sec: Mutex<f64>,
@@ -150,6 +154,16 @@ impl HostState {
         };
     }
 
+    /// Replace the guitar's string state. Sorted by string so the encoded
+    /// form is stable and reordering alone is not a change.
+    pub fn set_frets(&self, mut frets: Vec<Fret>) {
+        frets.sort_unstable_by_key(|f| (f.string, f.fret));
+        *self.frets.lock().unwrap() = FretState {
+            host_clock_us: host_clock_us(),
+            frets,
+        };
+    }
+
     pub fn set_audio_offset_sec(&self, offset: f64) {
         *self.audio_offset_sec.lock().unwrap() = offset;
     }
@@ -201,6 +215,9 @@ impl HostState {
         // what they carry is answered per song and per change.
         features.push("instrument");
         features.push("settings");
+        // A MIDI guitar's strings (FRETS datagram). Unconditional like the
+        // rest: no guitar connected is answered by an empty snapshot.
+        features.push("frets");
         features
     }
 }
@@ -643,6 +660,8 @@ fn stream_loop(
     let mut next_position = Instant::now();
     let mut next_notes_keepalive = Instant::now();
     let mut last_notes: Option<NoteState> = None;
+    let mut next_frets_keepalive = Instant::now();
+    let mut last_frets: Option<FretState> = None;
 
     while running.load(Ordering::Relaxed) {
         let now = Instant::now();
@@ -660,6 +679,16 @@ fn stream_loop(
             let _ = udp.send_to(&notes.encode(), to);
             last_notes = Some(notes);
             next_notes_keepalive = now + NOTES_KEEPALIVE;
+        }
+
+        // The guitar's strings: full state like the held notes, so a dropped
+        // datagram heals on the next change or keep-alive.
+        let frets = state.frets.lock().unwrap().clone();
+        let frets_changed = last_frets.as_ref().map(|f| f.frets != frets.frets) != Some(false);
+        if frets_changed || now >= next_frets_keepalive {
+            let _ = udp.send_to(&frets.encode(), to);
+            last_frets = Some(frets);
+            next_frets_keepalive = now + NOTES_KEEPALIVE;
         }
 
         // Strikes go out the moment there are any, with no keepalive and no
@@ -1033,6 +1062,20 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(state.instrument(), None, "kept after the session ended");
+    }
+
+    #[test]
+    fn guitar_strings_are_sorted_so_reordering_alone_is_not_a_change() {
+        let state = HostState::default();
+        let f = |string, fret| Fret { string, fret, pitch: 40 + string * 5 + fret, velocity: 90, picked: true };
+        state.set_frets(vec![f(3, 2), f(0, 5), f(1, 0)]);
+        let strings: Vec<u8> = state.frets.lock().unwrap().frets.iter().map(|x| x.string).collect();
+        assert_eq!(strings, vec![0, 1, 3]);
+    }
+
+    #[test]
+    fn welcome_offers_guitar_strings() {
+        assert!(HostState::default().features().contains(&"frets"));
     }
 
     #[test]

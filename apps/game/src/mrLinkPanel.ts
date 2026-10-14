@@ -54,6 +54,11 @@ export type MrLinkPanelHandle = {
   setDrumChart: (chart: unknown | null) => void;
   /** Report drum strikes as they happen, for the headset to place in time. */
   reportDrumHits: (hits: [number, number][]) => void;
+  /**
+   * A MIDI guitar's strings, placed on the neck (protocol §3, FRETS). Full
+   * state; sent only when it changes, so calling it every frame is cheap.
+   */
+  setFrets: (frets: LiveFretRow[]) => void;
   setAudioOffsetSec: (offsetSec: number) => void;
   /** The desktop's note-spacing multiplier, pushed to the headset on change (protocol §7c). */
   setNoteSpacing: (multiplier: number) => void;
@@ -61,6 +66,16 @@ export type MrLinkPanelHandle = {
   setPlaybackRate: (rate: number) => void;
   isEnabled: () => boolean;
 };
+
+/** One string as the guitar views place it: `s` 0 = the lowest string. */
+export type LiveFretRow = { s: number; f: number; midi: number; velocity: number; picked: boolean };
+
+const byte = (n: number) => Math.max(0, Math.min(127, Math.trunc(Number.isFinite(n) ? n : 0)));
+
+/** Each string as `[string, fret, pitch, velocity, picked 0/1]`, every value a byte. */
+export function fretRows(frets: ReadonlyArray<LiveFretRow>): number[][] {
+  return frets.map((x) => [byte(x.s), byte(x.f), byte(x.midi), byte(x.velocity), x.picked ? 1 : 0]);
+}
 
 /** Parts a fretted chart is built for: these carry strings and frets. */
 const FRETTED_ROLES: ReadonlySet<InstrumentRole> = new Set<InstrumentRole>([
@@ -265,6 +280,8 @@ export function initMrLinkPanel(
   let lastPublish = 0;
   let lastChartJson: string | null = null;
   let lastDrumChartJson: string | null = null;
+  // The last guitar string state sent, so an unchanged frame sends nothing.
+  let lastFretsKey: string | null = null;
   // The headset's copy of the desktop's spacing and speed. Kept here so a link
   // started mid-session, or restarted, sends the current values at once.
   const settings = { noteSpacing: 1, playbackRate: 1 };
@@ -340,6 +357,8 @@ export function initMrLinkPanel(
     try {
       if (enabled) {
         await invoke("mr_link_start");
+        // A fresh link holds no string state; send the next one even if unchanged.
+        lastFretsKey = null;
         // Re-push whatever we already know, so a link started mid-session is
         // not blank until the next song change.
         if (lastChartJson) await invoke("mr_link_set_chart", { chartJson: lastChartJson });
@@ -398,6 +417,19 @@ export function initMrLinkPanel(
       }).catch(() => {
         // Publishing is best-effort and happens continuously; a failed frame is
         // not worth a log line every 33 ms.
+      });
+    },
+
+    setFrets(frets) {
+      if (!enabled) return;
+      const rows = fretRows(frets);
+      const key = JSON.stringify(rows);
+      if (key === lastFretsKey) return;
+      lastFretsKey = key;
+      void invoke("mr_link_set_frets", { frets: rows }).catch(() => {
+        // Best-effort like the rest: the next change, or the host's keep-alive
+        // of the last good state, covers a dropped call.
+        lastFretsKey = null;
       });
     },
 

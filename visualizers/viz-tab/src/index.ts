@@ -134,6 +134,8 @@ export type PianoLiveInputNote = {
   velocityUnit?: number;
   isPressed?: boolean;
   heldBySustain?: boolean;
+  /** False when a MIDI guitar reports a string fretted but not picked (Rock Band 3 Squier). */
+  picked?: boolean;
 };
 
 type KeySignatureKind = "sharp" | "flat" | "natural";

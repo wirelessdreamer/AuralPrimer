@@ -2608,6 +2608,7 @@ pub fn run() {
             mr_link_set_chart,
             mr_link_set_drum_chart,
             mr_link_drum_hits,
+            mr_link_set_frets,
             mr_link_set_audio_offset,
             midi_transport_bindings_get,
             midi_transport_bindings_set,
@@ -3332,6 +3333,34 @@ fn mr_link_drum_hits(state: tauri::State<MrLinkState>, hits: Vec<(u8, u8)>) {
         for (note, velocity) in hits {
             link.state.push_drum_hit(note, velocity);
         }
+    }
+}
+
+/// Report a MIDI guitar's strings to the link, as `[string, fret, pitch,
+/// velocity, picked 0/1]` each, string 0 the lowest. Full state: an empty list
+/// clears the markers on the headset's neck.
+///
+/// Its own command rather than a field on `mr_link_publish`: that one is
+/// rate-limited for position, and the app sends this only when the strings
+/// change, so a pick reaches the headset without waiting for the next tick.
+#[tauri::command]
+fn mr_link_set_frets(state: tauri::State<MrLinkState>, frets: Vec<Vec<u8>>) {
+    if let Some(link) = state.link.lock().unwrap().as_ref() {
+        link.state.set_frets(
+            frets
+                .into_iter()
+                .filter_map(|f| match f.as_slice() {
+                    [string, fret, pitch, velocity, picked] => Some(mr_link::protocol::Fret {
+                        string: *string,
+                        fret: *fret,
+                        pitch: *pitch,
+                        velocity: *velocity,
+                        picked: *picked != 0,
+                    }),
+                    _ => None,
+                })
+                .collect(),
+        );
     }
 }
 

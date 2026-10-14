@@ -11,6 +11,7 @@
  */
 
 import type { MidiInputMessageEvent } from "./midiInput";
+import { rb3ButtonLabel } from "./rb3Guitar";
 
 export type TransportAction =
   | "restart"
@@ -39,9 +40,13 @@ export const TRANSPORT_ACTIONS: TransportActionInfo[] = [
 /**
  * A learned button. `channel` null means "any channel" — used for the
  * defaults, since we cannot know which channel a device will use.
+ *
+ * `rb3` is a button on a Rock Band 3 Squier guitar, which reports buttons in
+ * its SysEx rather than as notes or CCs; `number` is the button id from
+ * rb3Guitar.ts, carried here by the "rb3_button" events the game makes.
  */
 export type MidiBinding = {
-  kind: "cc" | "note";
+  kind: "cc" | "note" | "rb3";
   number: number;
   channel: number | null;
 };
@@ -83,6 +88,10 @@ export function matchBinding(
 ): BindingEdge | null {
   if (!binding) return null;
   if (!isDataByte(msg.data1) || msg.data1 !== binding.number) return null;
+  if (binding.kind === "rb3" || msg.message_type === "rb3_button") {
+    if (binding.kind !== "rb3" || msg.message_type !== "rb3_button") return null;
+    return isDataByte(msg.data2) && msg.data2 > 0 ? "press" : "release";
+  }
   if (binding.channel !== null && msg.channel !== binding.channel) return null;
 
   if (binding.kind === "cc") {
@@ -109,6 +118,9 @@ export function matchBinding(
  */
 export function bindingFromMessage(msg: MidiInputMessageEvent): MidiBinding | null {
   if (!isDataByte(msg.data1)) return null;
+  if (msg.message_type === "rb3_button") {
+    return isDataByte(msg.data2) && msg.data2 > 0 ? { kind: "rb3", number: msg.data1, channel: null } : null;
+  }
   const channel = typeof msg.channel === "number" ? msg.channel : null;
 
   if (msg.message_type === "control_change") {
@@ -137,6 +149,7 @@ export function bindingsConflict(a: MidiBinding | null, b: MidiBinding | null): 
 
 export function describeBinding(binding: MidiBinding | null): string {
   if (!binding) return "unassigned";
+  if (binding.kind === "rb3") return `Squier ${rb3ButtonLabel(binding.number)}`;
   const label = binding.kind === "cc" ? `CC ${binding.number}` : `Note ${binding.number}`;
   return binding.channel === null ? `${label} (any ch)` : `${label} (ch ${binding.channel + 1})`;
 }
@@ -153,6 +166,10 @@ export function describeMessage(msg: MidiInputMessageEvent): string {
       return `Note ${d1} on, vel ${d2}${ch}`;
     case "note_off":
       return `Note ${d1} off${ch}`;
+    case "rb3_button":
+      return isDataByte(msg.data1)
+        ? `Squier ${rb3ButtonLabel(msg.data1)} ${isDataByte(msg.data2) && msg.data2 > 0 ? "pressed" : "released"}`
+        : "Squier button";
     default:
       return `${msg.message_type}${ch}`;
   }
@@ -161,7 +178,7 @@ export function describeMessage(msg: MidiInputMessageEvent): string {
 function isValidBinding(v: unknown): v is MidiBinding {
   if (!v || typeof v !== "object") return false;
   const b = v as Record<string, unknown>;
-  if (b.kind !== "cc" && b.kind !== "note") return false;
+  if (b.kind !== "cc" && b.kind !== "note" && b.kind !== "rb3") return false;
   if (!isDataByte(b.number)) return false;
   if (b.channel !== null && !(typeof b.channel === "number" && b.channel >= 0 && b.channel <= 15)) {
     return false;

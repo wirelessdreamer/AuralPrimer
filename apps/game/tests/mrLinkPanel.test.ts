@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildChart, pickMrTrack } from "../src/mrLinkPanel";
+import { buildChart, fretRows, pickMrTrack } from "../src/mrLinkPanel";
 import type { MelodicTrackSelection } from "../src/chartLoader";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -134,5 +134,23 @@ describe("buildChart for a fretted part", () => {
     const chart = buildChart("id", "Song", keys, 120, 4, null, false, "both", true, true) as Chart;
     expect(chart).not.toHaveProperty("tuning");
     expect(chart.notes[0]).not.toHaveProperty("s");
+  });
+});
+
+describe("fretRows", () => {
+  it("packs each string as [string, fret, pitch, velocity, picked] for the FRETS datagram", () => {
+    expect(
+      fretRows([
+        { s: 0, f: 5, midi: 45, velocity: 119, picked: true },
+        { s: 1, f: 5, midi: 50, velocity: 0, picked: false },
+      ]),
+    ).toEqual([
+      [0, 5, 45, 119, 1],
+      [1, 5, 50, 0, 0],
+    ]);
+  });
+
+  it("keeps every value a byte, so the host never sees NaN or a negative", () => {
+    expect(fretRows([{ s: 2, f: 3, midi: 53.4, velocity: 300, picked: true }])).toEqual([[2, 3, 53, 127, 1]]);
   });
 });

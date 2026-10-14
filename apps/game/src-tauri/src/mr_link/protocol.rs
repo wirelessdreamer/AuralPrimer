@@ -47,6 +47,8 @@ pub mod datagram {
     pub const NOTES: u8 = 0x41;
     /// Drum strikes since the last datagram. See `DrumHits`.
     pub const DRUM_HITS: u8 = 0x42;
+    /// What a MIDI guitar's strings are doing, string and fret included. See `FretState`.
+    pub const FRETS: u8 = 0x43;
 }
 
 /// Payload ceiling. A larger prefix is treated as a protocol error and the
@@ -242,6 +244,68 @@ impl NoteState {
     }
 }
 
+
+/// One string of a MIDI guitar, as the headset draws it on the real neck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fret {
+    /// 0 = the lowest string, as the charts count (FrettedChart.cs, liveFrets.ts).
+    pub string: u8,
+    pub fret: u8,
+    pub pitch: u8,
+    pub velocity: u8,
+    /// False for a string that is only fretted: a Rock Band 3 Squier reports
+    /// the fretting hand before the pick, which shows where the hand is
+    /// without counting as a note played.
+    pub picked: bool,
+}
+
+/// Every string a MIDI guitar is fretting or sounding (protocol §3).
+///
+/// Full state, like `NoteState` and for the same reason: a lost snapshot is
+/// healed by the next one, where a lost delta would leave a marker on the
+/// neck. Separate from `NoteState` because the keyboard overlay reads that
+/// one, and a guitar's notes carry a place on the neck a pitch alone lacks.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FretState {
+    pub host_clock_us: u64,
+    pub frets: Vec<Fret>,
+}
+
+impl FretState {
+    /// A guitar has six strings; this leaves room for odd instruments and
+    /// still bounds a broken caller.
+    pub const MAX_FRETS: usize = 16;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let frets = &self.frets[..self.frets.len().min(Self::MAX_FRETS)];
+        let mut out = Vec::with_capacity(10 + frets.len() * 5);
+        out.push(datagram::FRETS);
+        out.extend_from_slice(&self.host_clock_us.to_le_bytes());
+        out.push(frets.len() as u8);
+        for f in frets {
+            out.extend_from_slice(&[f.string, f.fret, f.pitch, f.velocity, u8::from(f.picked)]);
+        }
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 10 || bytes[0] != datagram::FRETS {
+            return None;
+        }
+        let host_clock_us = u64::from_le_bytes(bytes[1..9].try_into().ok()?);
+        let count = bytes[9] as usize;
+        // A truncated tail is rejected, not half-read: a partial snapshot
+        // would draw some strings and silently drop the rest.
+        if bytes.len() != 10 + count * 5 {
+            return None;
+        }
+        let frets = bytes[10..]
+            .chunks_exact(5)
+            .map(|c| Fret { string: c[0], fret: c[1], pitch: c[2], velocity: c[3], picked: c[4] & 1 == 1 })
+            .collect();
+        Some(Self { host_clock_us, frets })
+    }
+}
 
 // --- Library browsing (protocol §6) ------------------------------------------
 //
@@ -609,6 +673,47 @@ mod tests {
         };
         let decoded = DrumHits::decode(&hits.encode()).expect("still decodable");
         assert_eq!(decoded.hits.len(), DrumHits::MAX_HITS);
+    }
+
+    // Pinned byte for byte, like the strikes above: the C# client reads this
+    // by hand, and a reshaped layout would break the headset with no error.
+    #[test]
+    fn fret_state_round_trip() {
+        let state = FretState {
+            host_clock_us: 0x0102_0304_0506_0708,
+            frets: vec![
+                Fret { string: 0, fret: 5, pitch: 45, velocity: 119, picked: true },
+                Fret { string: 1, fret: 5, pitch: 50, velocity: 0, picked: false },
+            ],
+        };
+        let bytes = state.encode();
+        assert_eq!(bytes[0], datagram::FRETS);
+        assert_eq!(bytes[0], 0x43);
+        assert_eq!(&bytes[1..9], &0x0102_0304_0506_0708u64.to_le_bytes());
+        assert_eq!(bytes[9], 2);
+        assert_eq!(&bytes[10..15], &[0, 5, 45, 119, 1]);
+        assert_eq!(&bytes[15..20], &[1, 5, 50, 0, 0]);
+        assert_eq!(FretState::decode(&bytes), Some(state));
+    }
+
+    #[test]
+    fn no_strings_held_is_a_valid_snapshot() {
+        // What a quiet guitar sends on every keep-alive: it clears the markers.
+        let bytes = FretState::default().encode();
+        assert_eq!(bytes.len(), 10);
+        assert_eq!(FretState::decode(&bytes), Some(FretState::default()));
+    }
+
+    #[test]
+    fn a_truncated_fret_snapshot_is_rejected_not_half_read() {
+        let mut bytes = FretState {
+            host_clock_us: 1,
+            frets: vec![Fret { string: 2, fret: 7, pitch: 57, velocity: 90, picked: true }],
+        }
+        .encode();
+        bytes.pop();
+        assert_eq!(FretState::decode(&bytes), None);
+        assert_eq!(FretState::decode(&[datagram::NOTES, 0, 0, 0, 0, 0, 0, 0, 0, 0]), None);
     }
 
     #[test]

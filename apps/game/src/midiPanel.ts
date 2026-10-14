@@ -20,6 +20,17 @@ import {
   type MidiInputMessageEvent,
 } from "./midiInput";
 import type { TransportController } from "./transportController";
+import { Rb3GuitarTracker, decodeRb3Sysex, describeRb3Message, rb3ButtonEvent } from "./rb3Guitar";
+
+/** A held or fretted note as the guitar and piano views read live input. */
+export type LiveInputNote = {
+  pitch: number;
+  velocity: number;
+  channel: number;
+  isPressed: boolean;
+  /** False for a string a Rock Band 3 Squier reports fretted but not picked. */
+  picked?: boolean;
+};
 
 type MidiPortInfo = {
   id: number;
@@ -63,6 +74,12 @@ export type MidiPanelHandle = {
   outShutdown: () => Promise<void>;
   /** Snapshot of currently-pressed MIDI input notes (for tab renderer overlay). */
   inputActiveNotes: () => ReturnType<MidiInputStateTracker["snapshot"]>;
+  /**
+   * What the guitar and piano views draw as live input. A Rock Band 3 Squier
+   * reports its strings in SysEx, so while one is sending, this is its fretting
+   * hand and recent picks; otherwise it is the held notes, as before.
+   */
+  liveInputNotes: () => LiveInputNote[];
   /** Write a transport-binding diagnostic into the MIDI input monitor. */
   logTransportDiagnostic: (line: string) => void;
   /** True once an input port is connected — lets play mode say "no MIDI device". */
@@ -113,6 +130,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
   let lastMidiOutBpmSentAtMs = 0;
   let inputEventLines: string[] = [];
   const tracker = new MidiInputStateTracker();
+  const rb3 = new Rb3GuitarTracker();
 
   // --- Status setters ---
   function setMidiStatus(msg: string): void { statusEl.textContent = msg; }
@@ -361,6 +379,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     await invoke("midi_clock_input_start_and_persist", { portId, tempoScale, allowSysex });
     midiConnected = true;
     const portName = inPortSelect.selectedOptions[0]?.textContent?.trim() || `port ${portId}`;
+    rb3.clear();
     setInputActiveNotesStatus(formatMidiActiveNotes(tracker.clear()));
     setMidiStatus(`midi input connected: ${portName} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
   }
@@ -368,6 +387,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     await invoke("midi_clock_input_stop");
     midiConnected = false;
     deps.transportController.setExternalClockRunning(false);
+    rb3.clear();
     setInputActiveNotesStatus(formatMidiActiveNotes(tracker.clear()));
     setMidiStatus("midi input disconnected");
   }
@@ -478,14 +498,27 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
       setMidiStatus(`midi clock: SEEK ${ev.payload.t_sec.toFixed(2)}s`);
     });
     void listen<MidiInputMessageEvent>("midi_input_message", (ev) => {
-      if (ev.payload.message_type !== "clock") {
-        const snapshot = tracker.apply(ev.payload);
+      const msg = ev.payload;
+      const rb3Msg = msg.message_type === "sysex" ? decodeRb3Sysex(msg.bytes) : null;
+      if (msg.message_type !== "clock") {
+        const snapshot = tracker.apply(msg);
         setInputActiveNotesStatus(formatMidiActiveNotes(snapshot));
-        appendInputEventLine(formatMidiInputMessage(ev.payload));
+        // The Squier's keep-alive comes every ~2 s and says nothing; its other
+        // messages are read out in words rather than as raw SysEx.
+        if (rb3Msg?.kind !== "keepalive") {
+          appendInputEventLine(rb3Msg ? describeRb3Message(rb3Msg) : formatMidiInputMessage(msg));
+        }
       }
+      const buttonEdges = rb3.apply(msg, performance.now());
       window.dispatchEvent(new CustomEvent<MidiInputMessageEvent>("auralprimer:midi-input", {
-        detail: ev.payload,
+        detail: msg,
       }));
+      // The guitar's buttons, as events the transport bindings can learn.
+      for (const edge of buttonEdges) {
+        window.dispatchEvent(new CustomEvent<MidiInputMessageEvent>("auralprimer:midi-input", {
+          detail: rb3ButtonEvent(edge, msg.timestamp_us),
+        }));
+      }
     });
   }
 
@@ -533,6 +566,10 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     outSeek,
     outShutdown,
     inputActiveNotes: () => tracker.snapshot(),
+    liveInputNotes: () => {
+      const now = performance.now();
+      return rb3.isActive(now) ? rb3.liveNotes(now) : tracker.snapshot().activeNotes;
+    },
     /**
      * Write a transport-binding diagnostic into the same monitor as the raw
      * messages, marked so the two can be told apart at a glance.

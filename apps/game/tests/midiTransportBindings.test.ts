@@ -252,3 +252,33 @@ describe("durable persistence", () => {
     expect(loadBindingsLocal()).toEqual(next);
   });
 });
+
+describe("Rock Band 3 Squier buttons", () => {
+  // The Squier reports buttons as SysEx state; the game turns each change into
+  // an "rb3_button" event (data1 = button id, data2 127 press / 0 release).
+  const rb3 = (button: number, down: boolean) =>
+    msg({ message_type: "rb3_button", status: 0xf0, channel: null, data1: button, data2: down ? 127 : 0 });
+  const face2: MidiBinding = { kind: "rb3", number: 1, channel: null };
+
+  it("learns a guitar button from its press, not its release", () => {
+    expect(bindingFromMessage(rb3(1, true))).toEqual(face2);
+    expect(bindingFromMessage(rb3(1, false))).toBeNull();
+  });
+
+  it("matches the learned button's presses and releases, and nothing else", () => {
+    expect(matchBinding(face2, rb3(1, true))).toBe("press");
+    expect(matchBinding(face2, rb3(1, false))).toBe("release");
+    expect(matchBinding(face2, rb3(2, true))).toBeNull();
+    // The same number as a note or CC is a different button.
+    expect(matchBinding(face2, msg({ message_type: "note_on", channel: 0, data1: 1, data2: 100 }))).toBeNull();
+    expect(matchBinding({ kind: "note", number: 1, channel: null }, rb3(1, true))).toBeNull();
+  });
+
+  it("names the button the way the guitar's monitor does, and survives a save", () => {
+    expect(describeBinding(face2)).toBe("Squier Face 2");
+    expect(describeBinding({ kind: "rb3", number: 19, channel: null })).toBe("Squier D-pad left");
+    expect(describeMessage(rb3(16, true))).toBe("Squier D-pad up pressed");
+    const saved = { ...defaultBindings(), play: face2 };
+    expect(parseBindings(JSON.stringify(saved)).play).toEqual(face2);
+  });
+});

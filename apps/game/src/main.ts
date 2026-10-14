@@ -2,7 +2,7 @@ import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import { isManifestPack } from "@auralprimer/auralsong/packKind";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
-import { inferKeySignature } from "@auralprimer/viz-tab";
+import { inferKeySignature, liveFrets } from "@auralprimer/viz-tab";
 import { TransportController } from "./transportController";
 import { initAvCalibration } from "@auralprimer/av-sync";
 import {
@@ -1406,7 +1406,7 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
       playSurfaceController.renderTabFrame(transport.t, {
         bpm: transport.bpm,
         timeSignature: transport.timeSignature,
-        liveInputNotes: midiPanel.inputActiveNotes().activeNotes,
+        liveInputNotes: midiPanel.liveInputNotes(),
         scrollSpeedMultiplier: transport.scrollSpeedMultiplier,
         nashville: nashvilleMode,
         noteColors: noteColorMode,
@@ -1425,6 +1425,9 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
       transport.isPlaying,
       midiPanel.inputActiveNotes().activeNotes,
     );
+    // A MIDI guitar's strings for the headset's neck: the same placement the
+    // 2D guitar views draw. Sent only when it changes.
+    mrLink.setFrets(liveFrets(midiPanel.liveInputNotes()));
 
     vizRaf = requestAnimationFrame(tick);
   };

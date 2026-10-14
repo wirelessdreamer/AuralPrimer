@@ -20,10 +20,16 @@ export type LiveInputNote = {
   /** 0-15, as on the wire: Jamstik's channel 1 is 0. */
   channel?: number;
   isPressed?: boolean;
+  /**
+   * False when the string is only fretted, not picked: a Rock Band 3 Squier
+   * reports where the fretting hand is before (and between) picks. Absent
+   * means picked, which is all a Jamstik ever sends.
+   */
+  picked?: boolean;
 };
 
 /** A held note placed on the neck. */
-export type LiveFret = { s: number; f: number; midi: number; velocity: number };
+export type LiveFret = { s: number; f: number; midi: number; velocity: number; picked: boolean };
 
 /** A six-string guitar in standard tuning, lowest string first. */
 const STANDARD_GUITAR = [40, 45, 50, 55, 59, 64];
@@ -46,7 +52,7 @@ export function liveFrets(notes: ReadonlyArray<LiveInputNote>, firstChannel = 0)
     const midi = Math.round(x.pitch);
     const f = midi - STANDARD_GUITAR[s];
     if (f < 0 || f > MAX_FRET) continue;
-    out.push({ s, f, midi, velocity: x.velocity ?? 100 });
+    out.push({ s, f, midi, velocity: x.velocity ?? 100, picked: x.picked !== false });
   }
   return out.sort((a, b) => a.s - b.s);
 }
@@ -68,9 +74,10 @@ export function sharesChannel(notes: ReadonlyArray<LiveInputNote>): boolean {
 /**
  * How a held note answers the chart: on the chart's string and fret (hit),
  * the right pitch somewhere else on the neck (other, with where the chart
- * has it), or neither (off).
+ * has it), or neither (off). A string that is only fretted is not judged
+ * (fretted): it shows where the hand is, not a note played.
  */
-export type JudgedFret = LiveFret & { kind: "hit" | "other" | "off"; target: { s: number; f: number } | null };
+export type JudgedFret = LiveFret & { kind: "hit" | "other" | "off" | "fretted"; target: { s: number; f: number } | null };
 
 /** How early a note may be played and still count, and how late after it stops ringing (seconds). */
 const JUDGE_SLACK_SEC = 0.08;
@@ -83,6 +90,7 @@ export function judgeLive(chart: FretChart, live: ReadonlyArray<LiveFret>, now: 
   // A bass part sounds an octave below the guitar's same string and fret.
   const lift = chart.isBass ? 12 : 0;
   return live.map((x) => {
+    if (!x.picked) return { ...x, kind: "fretted", target: null };
     if (due.some((d) => d.s === x.s && d.f === x.f)) return { ...x, kind: "hit", target: null };
     const there = due.find((d) => d.midi + lift === x.midi);
     if (there) return { ...x, kind: "other", target: { s: there.s, f: there.f } };
