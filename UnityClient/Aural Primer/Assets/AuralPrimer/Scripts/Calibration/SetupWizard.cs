@@ -55,12 +55,10 @@ namespace AuralPrimer.Calibration
             // --- Guitar / bass (SetupWizard.Guitar.cs) ---------------------
             /// <summary>Which controller is in the guitar's mount.</summary>
             GuitarHand,
-            /// <summary>Touch the nut on the lowest string.</summary>
-            GuitarNutLowest,
-            /// <summary>Touch the nut on the highest string, or keep the mount's roll.</summary>
-            GuitarNutHighest,
-            /// <summary>Touch the 12th fret wire.</summary>
-            GuitarTwelfth,
+            /// <summary>Touch the middle of the nut.</summary>
+            GuitarNut,
+            /// <summary>Touch the middle of the bridge saddles.</summary>
+            GuitarBridge,
             /// <summary>The span check, fine nudges, and save.</summary>
             GuitarCheck,
             /// <summary>Pick a guitar view, and how notes are labelled.</summary>
@@ -414,9 +412,8 @@ namespace AuralPrimer.Calibration
                     EnterStep(Step.LearnPieceNote);
                     break;
 
-                case Step.GuitarNutLowest:
-                case Step.GuitarNutHighest:
-                case Step.GuitarTwelfth:
+                case Step.GuitarNut:
+                case Step.GuitarBridge:
                     // A pinch is one way to touch a point on the neck; the free
                     // controller's trigger is the other, and lands in the same place.
                     OnGuitarTouch(position);

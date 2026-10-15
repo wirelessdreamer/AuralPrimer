@@ -39,7 +39,8 @@ namespace AuralPrimer.Calibration
         public bool isBass;
         public int stringCount = 6;
         public int fretCount = 24;
-        public float scaleLengthMetres = 0.648f;
+        /// <summary>25.5", the common guitar scale.</summary>
+        public float scaleLengthMetres = 0.6477f;
         public float nutSpreadMetres = 0.034f;
         public float bridgeSpreadMetres = 0.052f;
 

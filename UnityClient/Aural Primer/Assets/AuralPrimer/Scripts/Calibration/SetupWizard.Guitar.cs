@@ -4,10 +4,12 @@
 // alignment check, and the standing menu while playing.
 //
 // The printed mount fixes where the controller sits, so the neck's offset from
-// it starts as the CAD's guess (MountOffset.Cad). The check then measures it:
-// three touches -- the nut beside the lowest string, the nut beside the
-// highest, and the 12th fret -- with the free controller's tip and trigger, or
-// a pinch. The result is stored against the controller's grip pose, so it
+// it starts as the CAD's guess (MountOffset.Cad). The check then measures it
+// the way the keyboard's is: two touches, the middle of the nut and the middle
+// of the bridge, with the free controller's tip and trigger or a pinch, each
+// leaving a dot; then a ball on each to fine-tune. The roll about the neck's
+// length stays the mount's. The result is stored against the controller's
+// grip pose, so it
 // survives the player moving, and saved on the profile beside the keyboard
 // and the kit (docs/guitar-nashville-fretboard-plan-2026-09-30.md).
 //
@@ -38,9 +40,7 @@ namespace AuralPrimer.Calibration
         /// <summary>How long the controller on the guitar may go unseen before the panel says what to change.</summary>
         const float GuitarUnseenHelpSeconds = 4f;
 
-        NVector3 _nutLowest;
-        NVector3 _nutHighest;
-        bool _haveNutHighest;
+        NVector3 _nut;
         FretboardSolver.Result _check;
         bool _haveCheck;
         string _guitarCaptureProblem;
@@ -53,7 +53,7 @@ namespace AuralPrimer.Calibration
         bool IsGuitar => _profile is { instrument: Instrument.Guitar };
 
         static bool IsGuitarCapture(Step step) =>
-            step is Step.GuitarNutLowest or Step.GuitarNutHighest or Step.GuitarTwelfth;
+            step is Step.GuitarNut or Step.GuitarBridge;
 
         static bool IsGuitarSetup(Step step) => step == Step.GuitarHand || IsGuitarCapture(step);
 
@@ -177,17 +177,16 @@ namespace AuralPrimer.Calibration
             StartGuitarCheck();
         }
 
-        /// <summary>Begin the three touches, from the offset already in force.</summary>
+        /// <summary>Begin the two touches, from the offset already in force.</summary>
         void StartGuitarCheck()
         {
             // Back to the saved offset (or the CAD's): a half-finished nudge
             // from before is not what the check should start from.
             guitarAnchor.Apply(_profile.fretboard);
             _haveCheck = false;
-            _haveNutHighest = false;
             _guitarCaptureProblem = null;
             ClearPinchMarkers();
-            EnterStep(Step.GuitarNutLowest);
+            EnterStep(Step.GuitarNut);
         }
 
         /// <summary>
@@ -207,53 +206,40 @@ namespace AuralPrimer.Calibration
             }
 
             _guitarCaptureProblem = null;
-            DropPinchMarker(world, _step == Step.GuitarNutHighest ? rightPinchMaterial : leftPinchMaterial,
-                            _step.ToString());
+            // The keyboard's colours: the first point's dot, then the second's.
+            DropPinchMarker(world, _step == Step.GuitarBridge ? rightPinchMaterial : leftPinchMaterial,
+                            _step == Step.GuitarBridge ? "Bridge" : "Nut");
 
             switch (_step)
             {
-                case Step.GuitarNutLowest:
-                    _nutLowest = inGrip;
-                    EnterStep(Step.GuitarNutHighest);
+                case Step.GuitarNut:
+                    _nut = inGrip;
+                    EnterStep(Step.GuitarBridge);
                     break;
 
-                case Step.GuitarNutHighest:
-                    _nutHighest = inGrip;
-                    _haveNutHighest = true;
-                    EnterStep(Step.GuitarTwelfth);
-                    break;
-
-                case Step.GuitarTwelfth:
+                case Step.GuitarBridge:
                     SolveGuitarCheck(inGrip);
                     EnterStep(Step.GuitarCheck);
                     break;
             }
         }
 
-        /// <summary>Skip the second nut touch and keep the mount's roll.</summary>
-        void KeepMountRoll()
-        {
-            _haveNutHighest = false;
-            EnterStep(Step.GuitarTwelfth);
-        }
-
-        void SolveGuitarCheck(NVector3 twelfth)
+        void SolveGuitarCheck(NVector3 bridge)
         {
             var neck = _profile.fretboard.Geometry;
-            _check = _haveNutHighest
-                ? FretboardSolver.SolveThree(neck, _nutLowest, _nutHighest, twelfth)
-                // Roll from whatever is in force: the CAD's, or a previous check's.
-                : FretboardSolver.SolveTwo(neck, guitarAnchor.Offset,
-                                           new NVector3(0f, 0f, neck.StringZ(0, 0f)), _nutLowest,
-                                           new NVector3(neck.TwelfthX, 0f, 0f), twelfth);
+            // The nut's middle is the neck's origin and the bridge's is a scale
+            // length along it. Roll from whatever is in force -- the CAD's, or a
+            // previous check's: two points on the neck's line cannot say it.
+            _check = FretboardSolver.SolveTwo(neck, guitarAnchor.Offset,
+                                              NVector3.Zero, _nut,
+                                              new NVector3(neck.ScaleLength, 0f, 0f), bridge);
             _haveCheck = true;
 
             // Shown at once, before saving: the player judges it against the
             // real frets, which is what the nudges are for.
             guitarAnchor.SetOffset(_check.Offset);
-            Debug.Log($"[wizard] guitar check: nut-12th {_check.MeasuredMetres * 1000f:F1} mm "
-                    + $"(expected {_check.ExpectedMetres * 1000f:F1}, {_check.ErrorRatio:P1} off), "
-                    + $"roll {(_check.RollMeasured ? "measured" : "from the mount")}");
+            Debug.Log($"[wizard] guitar check: nut-bridge {_check.MeasuredMetres * 1000f:F1} mm "
+                    + $"(expected {_check.ExpectedMetres * 1000f:F1}, {_check.ErrorRatio:P1} off)");
         }
 
         void NudgeGuitar(Vector3 neckLocal, float rollDegrees)
@@ -501,28 +487,18 @@ namespace AuralPrimer.Calibration
                         ("Back", () => EnterStep(Step.PickInstrument)));
                     return true;
 
-                case Step.GuitarNutLowest:
-                    panel?.SetTitle("Line up the neck (1 of 3)");
+                case Step.GuitarNut:
+                    panel?.SetTitle("Line up the neck (1 of 2)");
                     panel?.SetBody(
-                        $"Touch the <b>nut</b>, on the <b>lowest string</b>, {howToTouch}.\n\n"
-                        + "<i>Slowly, hand up and clear of the other strings.</i>"
+                        $"Touch the middle of the <b>nut</b>, {howToTouch}."
                         + problem + GuitarTrackingHelp());
                     panel?.SetButtons(("Back", () => EnterStep(IsGuitarReady ? Step.Menu : Step.GuitarHand)));
                     return true;
 
-                case Step.GuitarNutHighest:
-                    panel?.SetTitle("Line up the neck (2 of 3)");
+                case Step.GuitarBridge:
+                    panel?.SetTitle("Line up the neck (2 of 2)");
                     panel?.SetBody(
-                        $"Now the <b>nut</b> on the <b>highest string</b>. This sets how far the neck "
-                        + "is rolled.\n\n<i>Or keep the roll the mount was designed for.</i>"
-                        + problem + GuitarTrackingHelp());
-                    panel?.SetButtons(("Keep mount roll", KeepMountRoll), ("Restart", StartGuitarCheck));
-                    return true;
-
-                case Step.GuitarTwelfth:
-                    panel?.SetTitle("Line up the neck (3 of 3)");
-                    panel?.SetBody(
-                        $"Touch the <b>12th fret wire</b>, in the middle of the neck, {howToTouch}."
+                        $"Now the middle of the <b>bridge</b>, where the strings cross the saddles, {howToTouch}."
                         + problem + GuitarTrackingHelp());
                     panel?.SetButtons(("Restart", StartGuitarCheck));
                     return true;
@@ -549,13 +525,12 @@ namespace AuralPrimer.Calibration
                 var measured = _check.MeasuredMetres * 1000f;
                 var expected = _check.ExpectedMetres * 1000f;
                 body = _check.Plausible
-                    ? $"Nut to 12th fret: <b>{measured:F0} mm</b> (this neck: {expected:F0} mm)."
+                    ? $"Nut to bridge: <b>{measured:F0} mm</b> (this neck's scale: {expected:F0} mm)."
                     // The keyboard's span check, for a neck: well outside what
                     // hand tracking misses by, a touch landed somewhere else.
-                    : $"<color=#FFB020><b>That looks off.</b> Nut to 12th fret measured {measured:F0} mm; "
-                      + $"this neck's is {expected:F0} mm, {_check.ErrorRatio:P0} out. A touch probably "
+                    : $"<color=#FFB020><b>That looks off.</b> Nut to bridge measured {measured:F0} mm; "
+                      + $"this neck's scale is {expected:F0} mm, {_check.ErrorRatio:P0} out. A touch probably "
                       + "missed -- press Retry.</color>";
-                if (!_check.RollMeasured) body += "\nRoll kept from the mount's design.";
                 body += "\n\n";
             }
             body += "Grab the ball on the <b>nut</b> and the one on the <b>bridge</b> and set them "
