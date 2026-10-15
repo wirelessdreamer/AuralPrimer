@@ -24,6 +24,7 @@ pub mod demo_auralsong;
 pub mod ingest_sidecar;
 mod midi_clock;
 mod midi_clock_input;
+mod metronome;
 mod piano;
 mod mr_link;
 mod midi_clock_service;
@@ -1369,6 +1370,17 @@ fn piano_set_live_gain(state: tauri::State<NativeAudioState>, gain: f32) -> Resu
 }
 
 #[tauri::command]
+fn native_audio_set_metronome(
+    state: tauri::State<NativeAudioState>,
+    enabled: bool,
+    volume: f32,
+    bpm: f64,
+    beats_per_bar: u32,
+) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_metronome(enabled, volume, bpm, beats_per_bar))
+}
+
+#[tauri::command]
 fn native_audio_shutdown(state: tauri::State<NativeAudioState>) -> Result<(), String> {
     // Take ownership so we can join the audio thread.
     let mut lock = state.inner.engine.lock().unwrap();
@@ -2555,6 +2567,7 @@ pub fn run() {
             piano_set_enabled,
             piano_set_gain,
             piano_set_live_gain,
+            native_audio_set_metronome,
             piano_note_on,
             piano_note_off,
             piano_set_grace_ms,

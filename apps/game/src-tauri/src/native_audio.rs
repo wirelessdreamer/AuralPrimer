@@ -75,6 +75,12 @@ enum EngineCommand {
     SetPianoGain(f32),
     /// Live notes' volume, 0..2.
     SetPianoLiveGain(f32),
+    SetMetronome {
+        enabled: bool,
+        volume: f32,
+        bpm: f64,
+        beats_per_bar: u32,
+    },
     /// The song fader, 0..1.5: scales the recording, not the piano.
     SetSongVolume(f32),
     PianoNoteOn { pitch: u8, velocity: u8 },
@@ -118,6 +124,8 @@ struct EngineRuntimeState {
 
     /// Sampled piano, mixed over the song from the chart's own notes.
     piano: crate::piano::PianoEngine,
+    /// Beat clicks, mixed over the song like the piano.
+    metronome: crate::metronome::Metronome,
 
     /// Song gain, ramped rather than switched, so starting and stopping the
     /// transport does not cut the waveform mid-cycle.
@@ -512,6 +520,7 @@ impl NativeAudioHandle {
         let runtime = EngineRuntimeState {
             wav: None,
             piano: crate::piano::PianoEngine::default(),
+            metronome: crate::metronome::Metronome::default(),
             source_frame_cursor: 0.0,
             transport,
             is_playing: false,
@@ -724,6 +733,21 @@ impl NativeAudioHandle {
 
     pub fn set_piano_live_gain(&self, gain: f32) -> Result<(), String> {
         self.enqueue(EngineCommand::SetPianoLiveGain(gain))
+    }
+
+    pub fn set_metronome(
+        &self,
+        enabled: bool,
+        volume: f32,
+        bpm: f64,
+        beats_per_bar: u32,
+    ) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetMetronome {
+            enabled,
+            volume,
+            bpm,
+            beats_per_bar,
+        })
     }
 
     /// The song fader, 0..1.5. The recording only: the piano is the player's.
@@ -1034,6 +1058,14 @@ fn apply_engine_command(
         }
         EngineCommand::SetPianoLiveGain(gain) => {
             runtime.piano.set_live_gain(gain);
+        }
+        EngineCommand::SetMetronome {
+            enabled,
+            volume,
+            bpm,
+            beats_per_bar,
+        } => {
+            runtime.metronome.set(enabled, volume, bpm, beats_per_bar);
         }
         EngineCommand::SetSongVolume(volume) => {
             runtime.song_volume = if volume.is_finite() { volume.clamp(0.0, 1.5) } else { 1.0 };
@@ -1514,6 +1546,14 @@ fn process_audio_callback_f32(
             playing,
             runtime.playback_rate,
         );
+    runtime.metronome.mix(
+        out,
+        engine_channels,
+        block_start_frame,
+        sample_rate_hz,
+        playing,
+        runtime.playback_rate,
+    );
 
     sync_transport_to_source_cursor(runtime);
     snapshot.sync_from_runtime(runtime);
@@ -1953,6 +1993,7 @@ mod tests {
             loop_region: None,
             time_stretcher: None,
             piano: crate::piano::PianoEngine::default(),
+            metronome: crate::metronome::Metronome::default(),
             song_volume: 1.0,
             // Resting at zero, like a freshly built engine. The fade is applied
             // by the block mixer above render_output_block, so this value never

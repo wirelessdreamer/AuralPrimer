@@ -18,6 +18,7 @@ import type { TransportTimebase } from "./audioBackend";
 import { HtmlAudioTimebase } from "./htmlAudioTimebase";
 import { NativeAudioTimebase } from "./nativeAudioTimebase";
 import { Metronome } from "./metronome";
+import { NativeMetronome } from "./nativeMetronome";
 // extractKeyModeFromManifest now consumed inside songDetailsView.ts.
 // Modelpack list/install wiring lives in modelsPanel.ts (Phase 2.K).
 import { initModelsPanel, type ModelsPanelHandle } from "./modelsPanel";
@@ -609,6 +610,8 @@ async function tryFallbackToHtmlPlayback(auralsongPath: string): Promise<boolean
   setAudioStatus("native output stalled; switching to fallback playback...");
 
   resetTransportController(new HtmlAudioTimebase(htmlFallbackAudioEl));
+  // No engine to click now: the webview's metronome takes over.
+  metronome.setEnabled(nativeMetronome.getEnabled());
   // Force blob-path reload on the fallback backend.
   lastLoadedAuralSongPath = null;
   await loadAudioFromSelectedAuralSong();
@@ -879,7 +882,24 @@ const routeController: RouteControllerHandle = initRouteController({
   playLayoutEl,
 });
 
+// The native engine clicks while it plays the song; the WebAudio metronome
+// only after a fallback to HTML playback, where there is no engine to do it.
 const metronome = new Metronome({ enabled: false, volume: 0.25 });
+const nativeMetronome = new NativeMetronome((s) => {
+  void invoke("native_audio_set_metronome", { ...s }).catch(() => {});
+});
+const usingNativeAudio = () => currentTimebase instanceof NativeAudioTimebase;
+const metronomeControls = {
+  setEnabled(v: boolean) {
+    nativeMetronome.setEnabled(v);
+    metronome.setEnabled(v && !usingNativeAudio());
+  },
+  getEnabled: () => nativeMetronome.getEnabled(),
+  setVolume(v: number) {
+    nativeMetronome.setVolume(v);
+    metronome.setVolume(v);
+  },
+};
 
 
 let lastLoadedAudio: { blob: Blob; mime: string } | null = null;
@@ -1256,6 +1276,7 @@ async function loadAudioFromSelectedAuralSong(containerPath?: string) {
     // Populate the per-stem mixer with the loaded stems (empty -> panel hidden).
     stemMixer.setRoles(nativeTimebase?.getLoadedStemRoles() ?? []);
     pushSongVolume();
+    nativeMetronome.resend();
 
     audioTransportPanel.playBtn.disabled = false;
     audioTransportPanel.pauseBtn.disabled = false;
@@ -1396,7 +1417,8 @@ async function startVisualizer(opts?: { preserveTransport?: boolean }) {
     // (Transport bpm will be influenced by external clock if follow is enabled.)
     void midiPanel.outSetBpmIfNeeded(transport.bpm);
 
-    metronome.update(transport);
+    if (usingNativeAudio()) nativeMetronome.update(transport);
+    else metronome.update(transport);
 
     viz.update(dt, transport);
     viz.render({
@@ -1484,7 +1506,7 @@ const playbackRatePanel = initPlaybackRateAndMetronomePanel({
   // A getter, not the controller: resetTransportController() replaces it on
   // an audio-backend fallback, and the speed has to reach the live one.
   getTransportController: () => transportController,
-  metronome,
+  metronome: metronomeControls,
   setAudioStatus,
   onPlaybackRateApplied: (r) => {
     currentPlaybackRate = r;

@@ -15,6 +15,9 @@
 import type { TransportController } from "./transportController";
 import type { Metronome } from "./metronome";
 
+/** What the panel drives: the native engine's metronome or the webview's, whichever is playing. */
+export type MetronomeControls = Pick<Metronome, "setEnabled" | "getEnabled" | "setVolume">;
+
 /** The slider's range and step, as percent of the song's own tempo. */
 export const SPEED_MIN_PERCENT = 25;
 export const SPEED_MAX_PERCENT = 100;
@@ -27,7 +30,7 @@ export type PlaybackRateAndMetronomePanelDeps = {
    * reference would keep setting the speed of the disposed one.
    */
   getTransportController: () => Pick<TransportController, "setPlaybackRate">;
-  metronome: Metronome;
+  metronome: MetronomeControls;
   setAudioStatus: (msg: string) => void;
   /** Called after every playback-rate change so the host cache stays in sync. */
   onPlaybackRateApplied: (rate: number) => void;
