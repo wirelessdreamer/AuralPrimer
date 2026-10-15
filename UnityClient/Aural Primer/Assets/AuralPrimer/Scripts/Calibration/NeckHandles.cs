@@ -13,7 +13,7 @@
 // kept either way: two points on the neck's own line cannot say how far it is
 // turned about that line.
 //
-// Each ball floats a foot out from the neck toward the player's head, square
+// Each ball floats 7.5 cm out from the neck toward the player's head, square
 // to the neck, above the point it sets (straight out of the fretboard face
 // was the far side of the neck: on a guitar in playing position the face
 // points away from the player), with a thin line down to a small dot on that point. Grabbed with the
@@ -45,7 +45,7 @@ namespace AuralPrimer.Calibration
         [SerializeField] float sizeMetres = 0.04f;
 
         [Tooltip("How far out from the neck, toward the player, each ball floats above its point.")]
-        [SerializeField] float hoverMetres = 0.30f;
+        [SerializeField] float hoverMetres = 0.075f;
 
         /// <summary>Raised while a handle is being dragged and the neck has moved.</summary>
         public event Action Moved;
@@ -135,7 +135,7 @@ namespace AuralPrimer.Calibration
         }
 
         /// <summary>
-        /// A foot out from the neck toward the player's head, square to the
+        /// 7.5 cm out from the neck toward the player's head, square to the
         /// neck's length, in the grip frame. Out of the fretboard face (+Y)
         /// when the head cannot be placed.
         /// </summary>
