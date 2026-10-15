@@ -1172,6 +1172,13 @@ fn native_audio_load_stems(
 
 /// Set a track's linear gain (0 = silent, 1 = unity). The UI folds mute/solo
 /// into this single per-track gain.
+/// The song fader, 0..1.5, applied to the recording in the engine. Works for
+/// a song that is one mix as well as for stems, and moves no stem re-mix.
+#[tauri::command]
+fn native_audio_set_song_volume(state: tauri::State<NativeAudioState>, volume: f32) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_song_volume(volume))
+}
+
 #[tauri::command]
 fn native_audio_set_track_gain(
     state: tauri::State<NativeAudioState>,
@@ -2529,6 +2536,7 @@ pub fn run() {
             native_audio_load_auralsong_audio,
             native_audio_load_stems,
             native_audio_set_track_gain,
+            native_audio_set_song_volume,
             native_audio_play,
             native_audio_pause,
             native_audio_stop,

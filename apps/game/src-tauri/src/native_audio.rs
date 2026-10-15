@@ -73,6 +73,8 @@ enum EngineCommand {
     SetPianoNotes(Vec<crate::piano::ScheduledNote>),
     SetPianoEnabled(bool),
     SetPianoGain(f32),
+    /// The song fader, 0..1.5: scales the recording, not the piano.
+    SetSongVolume(f32),
     PianoNoteOn { pitch: u8, velocity: u8 },
     PianoNoteOff { pitch: u8 },
     SetPianoGraceSec(f32),
@@ -124,6 +126,10 @@ struct EngineRuntimeState {
     /// Wait mode that happens at every single note, which is what the
     /// remaining "stutter" turned out to be once the timing was right.
     transport_gain: f32,
+
+    /// The song fader. The transport fade ramps toward this rather than 1.0,
+    /// so a change glides like a start or stop does instead of stepping.
+    song_volume: f32,
 }
 
 #[derive(Default)]
@@ -511,6 +517,7 @@ impl NativeAudioHandle {
             loop_region: None,
             time_stretcher: None,
             transport_gain: 0.0,
+            song_volume: 1.0,
         };
 
         let snapshot = Arc::new(EngineSnapshot::default());
@@ -711,6 +718,11 @@ impl NativeAudioHandle {
 
     pub fn set_piano_gain(&self, gain: f32) -> Result<(), String> {
         self.enqueue(EngineCommand::SetPianoGain(gain))
+    }
+
+    /// The song fader, 0..1.5. The recording only: the piano is the player's.
+    pub fn set_song_volume(&self, volume: f32) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetSongVolume(volume))
     }
 
     pub fn piano_note_on(&self, pitch: u8, velocity: u8) -> Result<(), String> {
@@ -1014,6 +1026,9 @@ fn apply_engine_command(
         EngineCommand::SetPianoGain(gain) => {
             runtime.piano.set_gain(gain);
         }
+        EngineCommand::SetSongVolume(volume) => {
+            runtime.song_volume = if volume.is_finite() { volume.clamp(0.0, 1.5) } else { 1.0 };
+        }
         EngineCommand::PianoNoteOn { pitch, velocity } => {
             runtime.piano.note_on(pitch, velocity);
         }
@@ -1067,7 +1082,7 @@ fn apply_transport_fade(
     channels: usize,
     sample_rate_hz: u32,
 ) {
-    let target: f32 = if runtime.is_playing { 1.0 } else { 0.0 };
+    let target: f32 = if runtime.is_playing { runtime.song_volume } else { 0.0 };
     let frames = out.len() / channels.max(1);
     if frames == 0 {
         return;
@@ -1076,8 +1091,12 @@ fn apply_transport_fade(
     // Already settled: no per-sample work, and no rounding drift from ramping
     // toward a value we are already at.
     if (runtime.transport_gain - target).abs() <= f32::EPSILON {
-        if target < 1.0 {
+        if target <= 0.0 {
             out.fill(0.0);
+        } else if (target - 1.0).abs() > f32::EPSILON {
+            for x in out.iter_mut() {
+                *x *= target;
+            }
         }
         return;
     }
@@ -1925,6 +1944,7 @@ mod tests {
             loop_region: None,
             time_stretcher: None,
             piano: crate::piano::PianoEngine::default(),
+            song_volume: 1.0,
             // Resting at zero, like a freshly built engine. The fade is applied
             // by the block mixer above render_output_block, so this value never
             // scales what these tests measure -- it only decides whether a
@@ -1954,6 +1974,47 @@ mod tests {
         assert!(out[0] < 1.0, "no attenuation applied at all");
         assert!(out[out.len() - 2] < out[0], "gain did not descend");
         assert!(rt.transport_gain < 1.0);
+    }
+
+    // ---- song volume ----------------------------------------------------
+    //
+    // The song fader scales the recording here, between the song and the
+    // piano: one multiply in the block, rather than re-mixing every stem on
+    // each move of the slider, and it works for a song that is one mix with
+    // no stems at all -- which the old per-track route could not reach.
+
+    #[test]
+    fn song_volume_scales_a_settled_song() {
+        let mut rt = mk_runtime(48_000);
+        rt.is_playing = true;
+        rt.song_volume = 0.25;
+        rt.transport_gain = 0.25;
+        let mut out = vec![1.0f32; 64 * 2];
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+        assert!(out.iter().all(|&x| (x - 0.25).abs() < 1e-6), "{:?}", &out[..4]);
+    }
+
+    #[test]
+    fn a_volume_change_glides_rather_than_steps() {
+        let mut rt = mk_runtime(48_000);
+        rt.is_playing = true;
+        rt.transport_gain = 1.0;
+        rt.song_volume = 0.1;
+        let mut out = vec![1.0f32; 480 * 2];
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+        assert!(out[0] < 1.0 && out[0] > 0.9, "first sample stepped: {}", out[0]);
+        assert!((rt.transport_gain - 0.1).abs() < 1e-5, "did not arrive: {}", rt.transport_gain);
+    }
+
+    #[test]
+    fn pausing_still_reaches_silence_at_any_volume() {
+        let mut rt = mk_runtime(48_000);
+        rt.is_playing = false;
+        rt.song_volume = 1.4;
+        rt.transport_gain = 0.0;
+        let mut out = vec![1.0f32; 64 * 2];
+        apply_transport_fade(&mut rt, &mut out, 2, 48_000);
+        assert!(out.iter().all(|&x| x == 0.0));
     }
 
     #[test]

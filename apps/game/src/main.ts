@@ -765,9 +765,21 @@ const SONG_VOLUME_KEY = "auralprimer.songVolume";
 const songVolumeEl = document.getElementById("songVolume") as HTMLInputElement | null;
 const songVolumeValueEl = document.getElementById("songVolumeValue") as HTMLElement | null;
 
+let songVolume = 1;
+
+/**
+ * Hand the engine the song fader. It scales the recording in the audio
+ * callback (not the piano), so it works for a one-mix song as well as stems.
+ * Re-sent after every song load, since loading can rebuild the engine.
+ */
+function pushSongVolume(): void {
+  void invoke("native_audio_set_song_volume", { volume: songVolume }).catch(() => {});
+}
+
 function applySongVolume(percent: number, persist: boolean): void {
   const clamped = Math.max(0, Math.min(150, Math.round(percent)));
-  stemMixer.setMaster(clamped / 100);
+  songVolume = clamped / 100;
+  pushSongVolume();
   if (songVolumeValueEl) songVolumeValueEl.textContent = `${clamped}%`;
   if (!persist) return;
   try {
@@ -1243,6 +1255,7 @@ async function loadAudioFromSelectedAuralSong(containerPath?: string) {
 
     // Populate the per-stem mixer with the loaded stems (empty -> panel hidden).
     stemMixer.setRoles(nativeTimebase?.getLoadedStemRoles() ?? []);
+    pushSongVolume();
 
     audioTransportPanel.playBtn.disabled = false;
     audioTransportPanel.pauseBtn.disabled = false;
