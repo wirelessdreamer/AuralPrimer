@@ -9,7 +9,7 @@
 //
 // Channels are captured only if the hardware provides them, and the header
 // records which ones were present. Quest 3 has no inward-facing cameras, so a
-// recording made there carries body and hands but no face or eyes; the same
+// recording made there carries head and hands but no face or eyes; the same
 // file format describes both cases rather than pretending a Quest 3 produced
 // zeroed face data.
 
@@ -71,9 +71,7 @@ namespace AuralPrimer.Recording
         /// <remarks>
         /// Declaring them in the manifest is only half of it: on Quest these are
         /// runtime permissions, and an ungranted one makes the probe answer
-        /// "unavailable" — indistinguishable from hardware that cannot do it. A
-        /// Quest 3 recording came back with hands and face but no body channel
-        /// for exactly this reason.
+        /// "unavailable" — indistinguishable from hardware that cannot do it.
         ///
         /// Requested in Awake so the dialog is answered long before anyone
         /// presses Record; asking mid-take would interrupt the performance being
@@ -84,7 +82,6 @@ namespace AuralPrimer.Recording
 #if UNITY_ANDROID && !UNITY_EDITOR
             foreach (var permission in new[]
                      {
-                         "com.oculus.permission.BODY_TRACKING",
                          "com.oculus.permission.FACE_TRACKING",
                          "com.oculus.permission.EYE_TRACKING",
                      })

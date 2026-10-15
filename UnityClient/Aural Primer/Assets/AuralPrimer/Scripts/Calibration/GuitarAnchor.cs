@@ -132,9 +132,9 @@ namespace AuralPrimer.Calibration
         /// Ask the runtime to track hands and controllers together, or stop.
         /// </summary>
         /// <remarks>
-        /// Only while the guitar is in use: Meta's body tracking cannot run
-        /// alongside it, and the recorder's body channel needs that. Implemented
-        /// in GuitarAnchor.Meta.cs when the Meta SDK is present.
+        /// Only while the guitar is in use. Meta's body tracking cannot run
+        /// alongside it, so the app no longer uses body tracking at all.
+        /// Implemented in GuitarAnchor.Meta.cs when the Meta SDK is present.
         /// </remarks>
         partial void SetSimultaneousHandsAndControllers(bool enabled);
 

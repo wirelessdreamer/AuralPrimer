@@ -122,13 +122,15 @@ namespace AuralPrimer.EditorTools
             config.anchorSupport = OVRProjectConfig.AnchorSupport.Enabled;
             config.insightPassthroughSupport = OVRProjectConfig.FeatureSupport.Supported;
 
-            config.bodyTrackingSupport = OVRProjectConfig.FeatureSupport.Supported;
+            // None: body tracking cannot run with simultaneous hands and controllers,
+            // which keeps the guitar's set-down controller tracked.
+            config.bodyTrackingSupport = OVRProjectConfig.FeatureSupport.None;
             config.faceTrackingSupport = OVRProjectConfig.FeatureSupport.Supported;
             config.eyeTrackingSupport = OVRProjectConfig.FeatureSupport.Supported;
             OVRProjectConfig.CommitProjectConfig(config);
 
             Debug.Log("[setup] OVRProjectConfig: hands=ControllersAndHands, anchors=Enabled, "
-                    + "passthrough=Supported, body/face/eye=Supported");
+                    + "passthrough=Supported, body=None, face/eye=Supported");
             return true;
         }
 

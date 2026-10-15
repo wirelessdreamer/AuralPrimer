@@ -1,7 +1,11 @@
 // Copyright 2026 Nathanael Anderson. Licensed under the Apache License 2.0.
 //
-// Body, face and eye channels, which come from Meta's Core SDK rather than from
+// Face and eye channels, which come from Meta's Core SDK rather than from
 // OpenXR's cross-vendor surface.
+//
+// No body channel: Meta's body tracking cannot run alongside simultaneous
+// hands and controllers, which the guitar needs -- the controller on its
+// mount is set down, and without that mode Horizon OS stops tracking it.
 //
 // Isolated in its own file behind META_XR_CORE so the client still compiles and
 // runs with the Meta package absent — the asmdef defines that symbol only when
@@ -30,11 +34,9 @@ namespace AuralPrimer.Recording
         /// <summary>Left and right.</summary>
         const int EyeCount = (int)OVRPlugin.Eye.Count;
 
-        int _bodyJointCount;
         bool _faceAvailable;
         bool _eyesAvailable;
 
-        OVRPlugin.BodyState _bodyState;
         OVRPlugin.FaceState _faceState;
         OVRPlugin.EyeGazesState _eyeState;
 
@@ -45,21 +47,11 @@ namespace AuralPrimer.Recording
         /// Probed rather than inferred from the headset model: face and eye
         /// tracking are also a user permission and a system setting, so a Quest
         /// Pro with face tracking switched off must record as "no face channel"
-        /// rather than as a Quest Pro. The joint count is read from the response
-        /// instead of a constant, because it depends on the joint set the runtime
-        /// actually served — asking for full body does not guarantee legs.
+        /// rather than as a Quest Pro.
         /// </remarks>
         IEnumerable<string> MetaChannels()
         {
             var channels = new List<string>();
-
-            _bodyJointCount = 0;
-            if (OVRPlugin.GetBodyState4(OVRPlugin.Step.Render, OVRPlugin.BodyJointSet.FullBody, ref _bodyState)
-                && _bodyState.JointLocations != null)
-            {
-                _bodyJointCount = _bodyState.JointLocations.Length;
-                channels.Add(Channel("body", "pose", _bodyJointCount));
-            }
 
             _faceAvailable = OVRPlugin.GetFaceState2(OVRPlugin.Step.Render, -1, ref _faceState)
                           && _faceState.ExpressionWeights != null;
@@ -69,35 +61,12 @@ namespace AuralPrimer.Recording
                           && _eyeState.EyeGazes != null;
             if (_eyesAvailable) channels.Add(Channel("eyes", "pose", EyeCount));
 
-            Debug.Log($"[capture] meta channels: body={_bodyJointCount} joints, "
-                    + $"face={_faceAvailable}, eyes={_eyesAvailable}");
+            Debug.Log($"[capture] meta channels: face={_faceAvailable}, eyes={_eyesAvailable}");
             return channels;
         }
 
         void WriteMetaChannels(BinaryWriter frame)
         {
-            if (_bodyJointCount > 0)
-            {
-                var got = OVRPlugin.GetBodyState4(
-                              OVRPlugin.Step.Render, OVRPlugin.BodyJointSet.FullBody, ref _bodyState)
-                       && _bodyState.JointLocations != null;
-
-                for (var i = 0; i < _bodyJointCount; i++)
-                {
-                    // Always the count declared in the header, even if the
-                    // runtime returns fewer this frame: the frame layout is fixed
-                    // by that header, and a short channel would desynchronise
-                    // every byte after it.
-                    var pose = default(Pose);
-                    if (got && i < _bodyState.JointLocations.Length)
-                    {
-                        var joint = _bodyState.JointLocations[i];
-                        pose = ToUnity(joint.Pose);
-                    }
-                    WritePose(frame, pose);
-                }
-            }
-
             if (_faceAvailable)
             {
                 var got = OVRPlugin.GetFaceState2(OVRPlugin.Step.Render, -1, ref _faceState)
@@ -145,7 +114,7 @@ namespace AuralPrimer.Recording
 
 #else
 
-        // No Meta package: the recording simply has no body, face or eye
+        // No Meta package: the recording simply has no face or eye
         // channels, and its header says so.
         IEnumerable<string> MetaChannels() => System.Array.Empty<string>();
 
