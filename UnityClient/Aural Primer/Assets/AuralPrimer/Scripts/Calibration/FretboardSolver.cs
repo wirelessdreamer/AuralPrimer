@@ -117,9 +117,8 @@ namespace AuralPrimer.Calibration
         /// origin, so it lands exactly where it was put; the bridge only aims
         /// the neck, by the least turn that points the prior's length along
         /// the new line, which leaves the roll about that line as it was. The
-        /// distance between the two is not used: the scale length already says
-        /// where the bridge is, and a hand-placed bridge point is only good for
-        /// direction.
+        /// distance between the two is the scale length, read separately by
+        /// ScaleFromSpan.
         /// </remarks>
         public static MountOffset FromNutAndBridge(MountOffset prior, Vector3 nut, Vector3 bridge)
         {
@@ -127,6 +126,47 @@ namespace AuralPrimer.Calibration
             if (line.LengthSquared() < 1e-8f) return new MountOffset(nut, prior.Rotation);
             var along = Vector3.Transform(Vector3.UnitX, prior.Rotation);
             return new MountOffset(nut, Quaternion.Normalize(FromTo(along, line) * prior.Rotation));
+        }
+
+        /// <summary>Shortest and longest scale a nut-to-bridge span may set, metres.</summary>
+        public const float MinScaleMetres = 0.50f, MaxScaleMetres = 0.90f;
+
+        /// <summary>A span this close to a standard scale is that scale, metres.</summary>
+        public const float ScaleSnapMetres = 0.004f;
+
+        /// <summary>
+        /// Standard scale lengths, short to long: 24" (Fender Mustang/Jaguar),
+        /// 24.75" (Gibson), 25" (PRS), 25.4" (Ibanez Jem), 25.5" (Fender),
+        /// 26.5" and 27" (extended range), then 30", 32", 34" basses.
+        /// </summary>
+        static readonly float[] StandardScalesInches = { 24f, 24.75f, 25f, 25.4f, 25.5f, 26.5f, 27f, 30f, 32f, 34f };
+
+        /// <summary>
+        /// The scale length a nut-to-bridge span sets: the span itself, or the
+        /// standard scale it is within a few millimetres of. False when the span
+        /// is outside any guitar or bass, which means a handle was flung rather
+        /// than placed.
+        /// </summary>
+        /// <remarks>
+        /// Snapping because a hand-placed point is good to a few millimetres and
+        /// the guitar in the player's lap is almost certainly a standard scale:
+        /// a neck drawn at exactly 24.75" lines up with every fret of a Gibson,
+        /// one drawn at 24.71" drifts by the 12th.
+        /// </remarks>
+        public static bool ScaleFromSpan(float spanMetres, out float scaleMetres)
+        {
+            scaleMetres = spanMetres;
+            if (!(spanMetres >= MinScaleMetres && spanMetres <= MaxScaleMetres)) return false;
+            foreach (var inches in StandardScalesInches)
+            {
+                var standard = inches * 0.0254f;
+                if (MathF.Abs(spanMetres - standard) <= ScaleSnapMetres)
+                {
+                    scaleMetres = standard;
+                    break;
+                }
+            }
+            return true;
         }
 
         /// <summary>

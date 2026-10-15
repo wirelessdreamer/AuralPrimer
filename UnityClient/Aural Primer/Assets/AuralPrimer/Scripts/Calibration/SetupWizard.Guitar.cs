@@ -283,6 +283,7 @@ namespace AuralPrimer.Calibration
             if (_neckHandles == null)
             {
                 _neckHandles = gameObject.AddComponent<NeckHandles>();
+                _neckHandles.Moved += OnNeckHandleMoved;
                 _neckHandles.Released += OnNeckHandleReleased;
             }
             _neckHandles.Show(guitarAnchor, _profile.fretboard.scaleLengthMetres,
@@ -291,9 +292,26 @@ namespace AuralPrimer.Calibration
 
         void HideNeckHandles() => _neckHandles?.Hide();
 
+        /// <summary>
+        /// While a ball is dragged: the bridge's distance is the scale, so the
+        /// drawn frets re-space as it moves. Not saved until it is let go.
+        /// </summary>
+        void OnNeckHandleMoved()
+        {
+            var neck = _profile.fretboard;
+            // Rebuilding the fret marks and the panel every frame of a drag is
+            // wasted work; a millimetre is below what the eye can line up.
+            if (Mathf.Abs(_neckHandles.ScaleLength - neck.scaleLengthMetres) < 0.0005f) return;
+            neck.scaleLengthMetres = _neckHandles.ScaleLength;
+            if (guitarViews != null) guitarViews.Apply(neck);
+            RenderStep();
+        }
+
         /// <summary>Saved on release, like the keyboard's edges: not every frame of the drag.</summary>
         void OnNeckHandleReleased(bool kept)
         {
+            _profile.fretboard.scaleLengthMetres = _neckHandles.ScaleLength;
+            if (guitarViews != null) guitarViews.Apply(_profile.fretboard);
             if (kept)
             {
                 CommitGuitarOffset();
@@ -302,11 +320,14 @@ namespace AuralPrimer.Calibration
             else
             {
                 // The handles put the neck back where it was before the grab.
-                _neckHandleNote = "That ball ended up too far from where this neck's bridge can be, "
-                                + "so the neck went back. Grab it again and set it on the real one.";
+                _neckHandleNote = "The nut and bridge ended up further apart (or closer) than any guitar "
+                                + "or bass, so the neck went back. Grab the ball again and set it over the real one.";
             }
             RenderStep();
         }
+
+        /// <summary>"648 mm (25.5")": the scale, in inches too, since that is how guitars are sold.</summary>
+        static string ScaleText(float metres) => $"{metres * 1000f:F0} mm ({metres / 0.0254f:0.##}\")";
 
         void TiltGuitarLane(float degrees)
         {
@@ -533,8 +554,11 @@ namespace AuralPrimer.Calibration
                       + "missed -- press Retry.</color>";
                 body += "\n\n";
             }
-            body += "Grab the ball on the <b>nut</b> and the one on the <b>bridge</b> and set them "
-                  + "on the real ones: the drawn frets follow. Fine-tune with the buttons, then Save.";
+            body += "Grab the ball above the <b>nut</b> and the one above the <b>bridge</b>: the line under "
+                  + "each ends on the point it sets. Move them until those points sit on the real nut and "
+                  + "bridge -- the frets follow, and the bridge also sets the scale length. "
+                  + "Fine-tune with the buttons, then Save.";
+            body += $"\nScale: <b>{ScaleText(_profile.fretboard.scaleLengthMetres)}</b>";
             if (!string.IsNullOrEmpty(_neckHandleNote)) body += $"\n\n<color=#FFB020>{_neckHandleNote}</color>";
             panel?.SetBody(body);
             ShowNeckHandles();

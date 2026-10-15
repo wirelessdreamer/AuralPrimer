@@ -236,7 +236,7 @@ namespace AuralPrimer.Link.Tests
             var prior = MountOffset.Cad;
             var x = Axis(prior.Rotation, Vector3.UnitX);
 
-            // Closer or further along the same line: the distance is not used.
+            // Closer or further along the same line: only the scale changes (ScaleFromSpan).
             var moved = FretboardSolver.FromNutAndBridge(prior, prior.Position, prior.Position + 0.5f * x);
             AssertNear(prior.Position, moved.Position, 1e-7f, "nut");
             foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
@@ -249,6 +249,22 @@ namespace AuralPrimer.Link.Tests
             var stacked = FretboardSolver.FromNutAndBridge(prior, lifted, lifted);
             AssertNear(lifted, stacked.Position, 1e-7f, "stacked nut");
             AssertNear(x, Axis(stacked.Rotation, Vector3.UnitX), 1e-6f, "stacked keeps the direction");
+        }
+
+        [Test]
+        public void TheNutToBridgeSpanSetsTheScaleSnappedToAStandardOne()
+        {
+            Assert.IsTrue(FretboardSolver.ScaleFromSpan(0.6460f, out var fender));
+            Assert.AreEqual(25.5f * 0.0254f, fender, 1e-6f, "within 4 mm of 25.5\" is 25.5\"");
+            Assert.IsTrue(FretboardSolver.ScaleFromSpan(0.6300f, out var gibson));
+            Assert.AreEqual(24.75f * 0.0254f, gibson, 1e-6f, "Gibson's 24.75\"");
+            Assert.IsTrue(FretboardSolver.ScaleFromSpan(0.6200f, out var odd));
+            Assert.AreEqual(0.6200f, odd, 1e-6f, "between standards: the span itself");
+
+            // Nothing a guitar or bass could have: a flung handle.
+            Assert.IsFalse(FretboardSolver.ScaleFromSpan(0.30f, out _));
+            Assert.IsFalse(FretboardSolver.ScaleFromSpan(1.20f, out _));
+            Assert.IsFalse(FretboardSolver.ScaleFromSpan(float.NaN, out _));
         }
 
         [Test]
