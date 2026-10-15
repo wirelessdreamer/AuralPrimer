@@ -186,6 +186,25 @@ namespace AuralPrimer.Calibration
         }
 
         /// <summary>
+        /// A world point in the grip frame, at the mounted controller's last pose
+        /// even while it is lost.
+        /// </summary>
+        /// <remarks>
+        /// For placing things against the drawn neck, which is held at that same
+        /// pose while the controller is out of view: a handle dragged to the
+        /// bridge is often dragged where the controller, at the head end, cannot
+        /// be seen, and the neck the player lines it up against is the held one.
+        /// Calibration touches use TryWorldToGrip, which will not.
+        /// </remarks>
+        public bool TryWorldToGripAtLastPose(Vector3 world, out NVector3 inGrip)
+        {
+            inGrip = default;
+            if (!HasPose) return false;
+            inGrip = FretboardSolver.ToGrip(ToNumerics(_gripPosition), ToNumerics(_gripRotation), ToNumerics(world));
+            return true;
+        }
+
+        /// <summary>
         /// A grip-frame point in the world, at the mounted controller's last pose.
         /// </summary>
         /// <remarks>

@@ -14,7 +14,13 @@
 // Both points live in the mounted controller's grip frame, like the offset
 // they produce, so the handle not being held stays on the guitar as it moves
 // and stays put while the other one is dragged -- the keyboard's rule that
-// moving one edge never drags the other.
+// moving one edge never drags the other. A dragged handle is read against the
+// controller's last pose even while it is out of view: the bridge is a long way
+// from the head-end mount, and the neck drawn there is the held one too.
+//
+// The bridge handle stays where it is let go: the neck aims through it, and it
+// is not pulled back to one scale length out, which read as the drag being
+// ignored. Only a handle flung far from any bridge is refused.
 
 using System;
 using UnityEngine;
@@ -40,7 +46,7 @@ namespace AuralPrimer.Calibration
         /// but a handle a long way from where any bridge could be was flung,
         /// not placed, and saving the neck it aims would lose a good alignment.
         /// </remarks>
-        public const float MaxSpanError = 0.10f;
+        public const float MaxSpanError = 0.25f;
 
         /// <summary>Raised while a handle is being dragged and the neck has moved.</summary>
         public event Action Moved;
@@ -56,6 +62,8 @@ namespace AuralPrimer.Calibration
         XRGrabInteractable _bridgeGrab;
         NVector3 _nutInGrip;
         NVector3 _bridgeInGrip;
+        /// <summary>Where along the neck the bridge handle sits: where it was let go, else one scale length.</summary>
+        float _bridgeDistance;
         MountOffset _offsetAtGrab;
 
         public bool IsShowing => _nut != null && _bridge != null;
@@ -88,6 +96,7 @@ namespace AuralPrimer.Calibration
             Hide();
             _anchor = anchor;
             _scaleLength = scaleLengthMetres;
+            _bridgeDistance = scaleLengthMetres;
             // Parented under the neck so they go when the guitar does; placed in
             // world space from the grip frame every frame, so the parent's own
             // pose never enters into it.
@@ -122,7 +131,7 @@ namespace AuralPrimer.Calibration
             var offset = _anchor.Offset;
             _nutInGrip = offset.Position;
             _bridgeInGrip = offset.Position
-                          + NVector3.Transform(new NVector3(_scaleLength, 0f, 0f), offset.Rotation);
+                          + NVector3.Transform(new NVector3(_bridgeDistance, 0f, 0f), offset.Rotation);
             Place(_nut, _nutInGrip);
             Place(_bridge, _bridgeInGrip);
         }
@@ -139,12 +148,12 @@ namespace AuralPrimer.Calibration
             // frame -- never its localPosition, which XRI turns into world
             // coordinates by unparenting it while it is held (EdgeHandles found
             // this the hard way).
-            if (nutHeld && _anchor.TryWorldToGrip(_nut.position, out var nut) && nut != _nutInGrip)
+            if (nutHeld && _anchor.TryWorldToGripAtLastPose(_nut.position, out var nut) && nut != _nutInGrip)
             {
                 _nutInGrip = nut;
                 moved = true;
             }
-            if (bridgeHeld && _anchor.TryWorldToGrip(_bridge.position, out var bridge) && bridge != _bridgeInGrip)
+            if (bridgeHeld && _anchor.TryWorldToGripAtLastPose(_bridge.position, out var bridge) && bridge != _bridgeInGrip)
             {
                 _bridgeInGrip = bridge;
                 moved = true;
@@ -188,7 +197,8 @@ namespace AuralPrimer.Calibration
             Debug.Log($"[neck-handles] {name} released: nut={_nutInGrip} bridge={_bridgeInGrip} "
                     + $"span={NVector3.Distance(_nutInGrip, _bridgeInGrip) * 1000f:F0} mm "
                     + $"(scale {_scaleLength * 1000f:F0} mm, {SpanErrorRatio:P0} off) -> {(kept ? "kept" : "refused")}");
-            if (!kept) _anchor.SetOffset(_offsetAtGrab);
+            if (kept) _bridgeDistance = NVector3.Distance(_nutInGrip, _bridgeInGrip);
+            else _anchor.SetOffset(_offsetAtGrab);
             Resync();
             Released?.Invoke(kept);
         }

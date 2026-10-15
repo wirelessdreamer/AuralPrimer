@@ -534,7 +534,7 @@ namespace AuralPrimer.Calibration
                 body += "\n\n";
             }
             body += "Grab the ball on the <b>nut</b> and the one on the <b>bridge</b> and set them "
-                  + "on the real ones: the drawn frets follow. Nudge the rest, then Save.";
+                  + "on the real ones: the drawn frets follow. Fine-tune with the buttons, then Save.";
             if (!string.IsNullOrEmpty(_neckHandleNote)) body += $"\n\n<color=#FFB020>{_neckHandleNote}</color>";
             panel?.SetBody(body);
             ShowNeckHandles();
@@ -569,7 +569,7 @@ namespace AuralPrimer.Calibration
                 ("Songs", () => EnterStep(Step.Songs)),
                 ("Views", () => EnterStep(Step.GuitarPickView)),
                 ("Re-check", StartGuitarCheck),
-                ("Nudge", () =>
+                ("Calibrate", () =>
                 {
                     _haveCheck = false;
                     EnterStep(Step.GuitarCheck);
