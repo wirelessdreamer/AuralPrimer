@@ -24,15 +24,30 @@ namespace AuralPrimer.Calibration
         public bool? SimultaneousModeAccepted { get; private set; }
 
 #if META_XR_CORE
+        /// <summary>When to ask again after a refusal (unscaled seconds).</summary>
+        float _nextSimultaneousAsk;
+
         partial void SetSimultaneousHandsAndControllers(bool enabled)
         {
             // The player's hands are on the strings while the controller is
             // strapped to the head: the runtime has to deliver both at once.
             // This is Meta's documented use for the mode, not a workaround.
             var accepted = OVRPlugin.SetSimultaneousHandsAndControllersEnabled(enabled);
+            var was = SimultaneousModeAccepted;
             if (enabled) SimultaneousModeAccepted = accepted;
-            Debug.Log($"[guitar] simultaneous hands and controllers {(enabled ? "on" : "off")}: "
-                    + (accepted ? "accepted" : "not available on this runtime"));
+            // Logged on a change only: a refusal is retried every second.
+            if (!enabled || was != SimultaneousModeAccepted)
+            {
+                Debug.Log($"[guitar] simultaneous hands and controllers {(enabled ? "on" : "off")}: "
+                        + (accepted ? "accepted" : "refused (retrying)"));
+            }
+        }
+
+        partial void KeepSimultaneousHandsAndControllers()
+        {
+            if (SimultaneousModeAccepted == true || Time.unscaledTime < _nextSimultaneousAsk) return;
+            _nextSimultaneousAsk = Time.unscaledTime + 1f;
+            SetSimultaneousHandsAndControllers(true);
         }
 #endif
     }

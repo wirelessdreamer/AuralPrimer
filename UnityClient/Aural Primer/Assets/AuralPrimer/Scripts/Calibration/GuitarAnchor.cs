@@ -138,6 +138,13 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         partial void SetSimultaneousHandsAndControllers(bool enabled);
 
+        /// <summary>
+        /// Ask again until the runtime accepts. The first ask comes from
+        /// OnEnable, which can run before the OpenXR session exists -- and the
+        /// runtime refuses every ask until it does.
+        /// </summary>
+        partial void KeepSimultaneousHandsAndControllers();
+
         /// <summary>Use this guitar: its hand, and its measured offset if it has one.</summary>
         public void Apply(FretboardProfile profile)
         {
@@ -186,6 +193,7 @@ namespace AuralPrimer.Calibration
 
         void Update()
         {
+            KeepSimultaneousHandsAndControllers();
             if (_profile == null) return;
 
             if (TryReadGrip(_profile.controllerOnLeft, out var position, out var rotation))
