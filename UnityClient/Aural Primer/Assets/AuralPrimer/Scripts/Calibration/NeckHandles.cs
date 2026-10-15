@@ -13,8 +13,10 @@
 // kept either way: two points on the neck's own line cannot say how far it is
 // turned about that line.
 //
-// Each ball floats a foot out from the fretboard face, above the point it
-// sets, with a thin line down to a small dot on that point. Grabbed with the
+// Each ball floats a foot out from the neck toward the player's head, square
+// to the neck, above the point it sets (straight out of the fretboard face
+// was the far side of the neck: on a guitar in playing position the face
+// points away from the player), with a thin line down to a small dot on that point. Grabbed with the
 // hand ray, a ball rides at a fixed distance along a ray from the shoulder,
 // so a point down on the player's lap -- the bridge, especially -- could not
 // be reached at all: the ball went up but would not come down. Up here it is
@@ -42,7 +44,7 @@ namespace AuralPrimer.Calibration
                + "neck it is being lined up against.")]
         [SerializeField] float sizeMetres = 0.04f;
 
-        [Tooltip("How far out from the fretboard face each ball floats above its point.")]
+        [Tooltip("How far out from the neck, toward the player, each ball floats above its point.")]
         [SerializeField] float hoverMetres = 0.30f;
 
         /// <summary>Raised while a handle is being dragged and the neck has moved.</summary>
@@ -132,9 +134,26 @@ namespace AuralPrimer.Calibration
             _liftInGrip = LiftFor(offset);
         }
 
-        /// <summary>A foot out of the fretboard face (the neck's +Y), in the grip frame.</summary>
-        NVector3 LiftFor(MountOffset offset) =>
-            NVector3.Transform(new NVector3(0f, hoverMetres, 0f), offset.Rotation);
+        /// <summary>
+        /// A foot out from the neck toward the player's head, square to the
+        /// neck's length, in the grip frame. Out of the fretboard face (+Y)
+        /// when the head cannot be placed.
+        /// </summary>
+        NVector3 LiftFor(MountOffset offset)
+        {
+            var outward = NVector3.UnitY;
+            var head = Camera.main;
+            if (head != null && _anchor != null
+                && _anchor.TryWorldToGripAtLastPose(head.transform.position, out var headInGrip))
+            {
+                // The head in the neck's own frame, its along-the-neck part dropped.
+                var local = NVector3.Transform(headInGrip - offset.Position,
+                                               System.Numerics.Quaternion.Inverse(offset.Rotation));
+                local.X = 0f;
+                if (local.LengthSquared() > 1e-4f) outward = NVector3.Normalize(local);
+            }
+            return NVector3.Transform(outward * hoverMetres, offset.Rotation);
+        }
 
         void LateUpdate()
         {
