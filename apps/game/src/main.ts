@@ -2313,6 +2313,7 @@ const liveInputChordEl = document.getElementById("liveInputChord");
 const playheadHudEl = document.getElementById("playheadHud");
 const pianoEnabledEl = document.getElementById("pianoEnabled") as HTMLInputElement | null;
 const pianoGainEl = document.getElementById("pianoGain") as HTMLInputElement | null;
+const pianoLiveGainEl = document.getElementById("pianoLiveGain") as HTMLInputElement | null;
 const pianoStatusEl = document.getElementById("pianoStatus");
 const playheadClockEl = document.getElementById("playheadClock");
 const playheadDetailEl = document.getElementById("playheadDetail");
@@ -2531,6 +2532,7 @@ async function loadPianoPack(): Promise<boolean> {
     pianoLiveReady = true;
     // One pitch may only sound once inside this window, whoever played it.
     void invoke("piano_set_grace_ms", { ms: 80 }).catch(() => {});
+    pushPianoGains();
     setPianoStatus(`${info.name} · ${info.samples} samples · ${info.license}`);
     return true;
   } catch (e) {
@@ -2707,10 +2709,16 @@ pianoEnabledEl?.addEventListener("change", () => {
   })();
 });
 
-pianoGainEl?.addEventListener("input", () => {
-  const gain = Number(pianoGainEl.value) / 100;
-  void invoke("piano_set_gain", { gain }).catch(() => {});
-});
+/** Both piano volumes to the engine, which may not have existed when a slider moved. */
+function pushPianoGains(): void {
+  if (pianoGainEl) void invoke("piano_set_gain", { gain: Number(pianoGainEl.value) / 100 }).catch(() => {});
+  if (pianoLiveGainEl) {
+    void invoke("piano_set_live_gain", { gain: Number(pianoLiveGainEl.value) / 100 }).catch(() => {});
+  }
+}
+
+pianoGainEl?.addEventListener("input", pushPianoGains);
+pianoLiveGainEl?.addEventListener("input", pushPianoGains);
 
 renderPlayheadHud();
 renderSongScrub();

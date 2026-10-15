@@ -203,7 +203,10 @@ pub struct PianoEngine {
     cursor: usize,
     /// Where the cursor was last resolved, so a seek can be detected.
     last_frame: u64,
+    /// The chart's part.
     gain: f32,
+    /// What the player plays, separate so their instrument can sit above the chart's.
+    live_gain: f32,
     enabled: bool,
     /// Output rate, remembered so a live note can be started between blocks.
     engine_rate_hz: u32,
@@ -225,6 +228,7 @@ impl Default for PianoEngine {
             cursor: 0,
             last_frame: 0,
             gain: 0.8,
+            live_gain: 1.0,
             enabled: false,
             engine_rate_hz: 48_000,
             rate: 1.0,
@@ -257,6 +261,11 @@ impl PianoEngine {
 
     pub fn set_gain(&mut self, gain: f32) {
         self.gain = gain.clamp(0.0, 2.0);
+    }
+
+    /// Volume of live notes, up to 2 (200%).
+    pub fn set_live_gain(&mut self, gain: f32) {
+        self.live_gain = if gain.is_finite() { gain.clamp(0.0, 2.0) } else { 1.0 };
     }
 
     pub fn set_grace_sec(&mut self, sec: f32) {
@@ -445,6 +454,7 @@ impl PianoEngine {
 
         let pack = self.pack.as_ref().expect("checked above");
         let master = self.gain;
+        let live = self.live_gain;
 
         self.voices.retain_mut(|voice| {
             let sample = &pack.samples[voice.sample_index];
@@ -472,7 +482,9 @@ impl PianoEngine {
                 let frac = (src - i0 as f64) as f32;
                 let i1 = i0 + 1;
 
-                let mut env = voice.gain * master;
+                // A live note is the one with no end frame (see note_on).
+                let part = if voice.off_frame == u64::MAX { live } else { master };
+                let mut env = voice.gain * part;
                 if let Some(left) = voice.release_left {
                     if left == 0 {
                         alive = false;
@@ -649,5 +661,24 @@ mod tests {
         let peaks = run(&mut e, 0, 20, 1.0);
         assert_eq!(peaks[0], 0.0);
         assert!(peaks[1] > 0.0 && peaks[10] > 0.0);
+    }
+
+    #[test]
+    fn live_notes_have_their_own_volume_up_to_double() {
+        let peak = |live: f32| {
+            let mut e = engine();
+            e.set_live_gain(live);
+            e.note_on(60, 100);
+            run(&mut e, 0, 2, 1.0)[1]
+        };
+        let unity = peak(1.0);
+        assert!((peak(2.0) - 2.0 * unity).abs() < 1e-4);
+        assert!((peak(5.0) - 2.0 * unity).abs() < 1e-4, "capped at 200%");
+
+        // The chart's part is untouched by it.
+        let mut e = engine();
+        e.set_live_gain(0.0);
+        e.set_notes(vec![note(0, RATE_HZ as u64)]);
+        assert!(run(&mut e, 0, 2, 1.0)[1] > 0.0);
     }
 }

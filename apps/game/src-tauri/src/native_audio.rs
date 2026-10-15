@@ -73,6 +73,8 @@ enum EngineCommand {
     SetPianoNotes(Vec<crate::piano::ScheduledNote>),
     SetPianoEnabled(bool),
     SetPianoGain(f32),
+    /// Live notes' volume, 0..2.
+    SetPianoLiveGain(f32),
     /// The song fader, 0..1.5: scales the recording, not the piano.
     SetSongVolume(f32),
     PianoNoteOn { pitch: u8, velocity: u8 },
@@ -720,6 +722,10 @@ impl NativeAudioHandle {
         self.enqueue(EngineCommand::SetPianoGain(gain))
     }
 
+    pub fn set_piano_live_gain(&self, gain: f32) -> Result<(), String> {
+        self.enqueue(EngineCommand::SetPianoLiveGain(gain))
+    }
+
     /// The song fader, 0..1.5. The recording only: the piano is the player's.
     pub fn set_song_volume(&self, volume: f32) -> Result<(), String> {
         self.enqueue(EngineCommand::SetSongVolume(volume))
@@ -1025,6 +1031,9 @@ fn apply_engine_command(
         }
         EngineCommand::SetPianoGain(gain) => {
             runtime.piano.set_gain(gain);
+        }
+        EngineCommand::SetPianoLiveGain(gain) => {
+            runtime.piano.set_live_gain(gain);
         }
         EngineCommand::SetSongVolume(volume) => {
             runtime.song_volume = if volume.is_finite() { volume.clamp(0.0, 1.5) } else { 1.0 };

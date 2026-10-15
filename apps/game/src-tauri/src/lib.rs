@@ -1364,6 +1364,11 @@ fn piano_set_gain(state: tauri::State<NativeAudioState>, gain: f32) -> Result<()
 }
 
 #[tauri::command]
+fn piano_set_live_gain(state: tauri::State<NativeAudioState>, gain: f32) -> Result<(), String> {
+    with_native_engine(&state, |e| e.set_piano_live_gain(gain))
+}
+
+#[tauri::command]
 fn native_audio_shutdown(state: tauri::State<NativeAudioState>) -> Result<(), String> {
     // Take ownership so we can join the audio thread.
     let mut lock = state.inner.engine.lock().unwrap();
@@ -2549,6 +2554,7 @@ pub fn run() {
             piano_set_notes,
             piano_set_enabled,
             piano_set_gain,
+            piano_set_live_gain,
             piano_note_on,
             piano_note_off,
             piano_set_grace_ms,

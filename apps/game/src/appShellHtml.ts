@@ -232,7 +232,8 @@ export function appShellHtml(): string {
                   <div id="pianoHud" class="liveInputHud" aria-live="off">
                     <span class="liveInputLabel">PIANO</span>
                     <label class="meta"><input id="pianoEnabled" type="checkbox" /> Play the keys part</label>
-                    <input id="pianoGain" type="range" min="0" max="150" value="80" aria-label="Piano volume" />
+                    <label class="meta" title="Volume of the chart's keys part">Part <input id="pianoGain" type="range" min="0" max="150" value="80" aria-label="Piano part volume" /></label>
+                    <label class="meta" title="Volume of the notes you play, up to 200%">Live <input id="pianoLiveGain" type="range" min="0" max="200" value="100" aria-label="Live instrument volume" /></label>
                     <span id="pianoStatus" class="liveInputChord"></span>
                   </div>
                   <div id="playheadHud" class="liveInputHud" hidden aria-live="off">
