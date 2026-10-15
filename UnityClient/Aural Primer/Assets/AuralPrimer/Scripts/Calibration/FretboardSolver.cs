@@ -136,10 +136,11 @@ namespace AuralPrimer.Calibration
 
         /// <summary>
         /// Standard scale lengths, short to long: 24" (Fender Mustang/Jaguar),
-        /// 24.75" (Gibson), 25" (PRS), 25.4" (Ibanez Jem), 25.5" (Fender),
-        /// 26.5" and 27" (extended range), then 30", 32", 34" basses.
+        /// 24.75" (Gibson), 25" (PRS), 25.5" (Fender), 26.5" and 27" (extended
+        /// range), then 30", 32", 34" basses. No two closer than twice the snap,
+        /// so a span can only ever snap one way.
         /// </summary>
-        static readonly float[] StandardScalesInches = { 24f, 24.75f, 25f, 25.4f, 25.5f, 26.5f, 27f, 30f, 32f, 34f };
+        static readonly float[] StandardScalesInches = { 24f, 24.75f, 25f, 25.5f, 26.5f, 27f, 30f, 32f, 34f };
 
         /// <summary>
         /// The scale length a nut-to-bridge span sets: the span itself, or the
@@ -157,13 +158,15 @@ namespace AuralPrimer.Calibration
         {
             scaleMetres = spanMetres;
             if (!(spanMetres >= MinScaleMetres && spanMetres <= MaxScaleMetres)) return false;
+            var nearest = float.PositiveInfinity;
             foreach (var inches in StandardScalesInches)
             {
                 var standard = inches * 0.0254f;
-                if (MathF.Abs(spanMetres - standard) <= ScaleSnapMetres)
+                var off = MathF.Abs(spanMetres - standard);
+                if (off <= ScaleSnapMetres && off < nearest)
                 {
+                    nearest = off;
                     scaleMetres = standard;
-                    break;
                 }
             }
             return true;
