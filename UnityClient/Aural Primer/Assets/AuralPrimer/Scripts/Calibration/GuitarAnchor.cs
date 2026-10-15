@@ -15,8 +15,11 @@
 //   * Horizon OS switches between controllers and hands, and may drop a
 //     controller it sees as set down while the player's hands are tracked.
 //     The app asks for simultaneous hands and controllers while the guitar is
-//     in use (GuitarAnchor.Meta.cs), and reads the controller through the
-//     detached-controller profiles as well as the ordinary one.
+//     in use, and reads the controller through Meta's own OVRInput, which
+//     keeps reporting a controller nobody holds -- the path OVRCameraRig's
+//     detached anchors use, and the one that holds up in Augmented Defense
+//     (GuitarAnchor.Meta.cs). Without the Meta SDK it falls back to the
+//     Input System's detached-controller profiles and the ordinary one.
 //
 //   * Its LEDs face the headset only while the player looks toward the neck,
 //     so tracking drops whenever they turn away. The last good pose is held
@@ -145,6 +148,13 @@ namespace AuralPrimer.Calibration
         /// </summary>
         partial void KeepSimultaneousHandsAndControllers();
 
+        /// <summary>
+        /// The mounted controller's grip pose through Meta's OVRInput, in world
+        /// space; leaves <paramref name="found"/> false when that is not
+        /// available. Implemented in GuitarAnchor.Meta.cs.
+        /// </summary>
+        partial void ReadMetaGrip(bool left, ref bool found, ref Vector3 position, ref Quaternion rotation);
+
         /// <summary>Use this guitar: its hand, and its measured offset if it has one.</summary>
         public void Apply(FretboardProfile profile)
         {
@@ -230,6 +240,9 @@ namespace AuralPrimer.Calibration
         {
             position = default;
             rotation = Quaternion.identity;
+            var found = false;
+            ReadMetaGrip(left, ref found, ref position, ref rotation);
+            if (found) return true;
             var device = FindTracked(left, MountedLayouts);
             if (device == null) return false;
             if (!TryPose(device, "devicePosition", "deviceRotation", out position, out rotation)) return false;

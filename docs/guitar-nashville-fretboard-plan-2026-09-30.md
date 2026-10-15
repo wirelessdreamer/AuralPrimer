@@ -149,9 +149,11 @@ needs `git log --all` or `git grep` over `git rev-list --all`.
 
 **`XR_META_detached_controllers`** does exactly what is wanted: tracks a
 controller that is not held, via `/user/detached_controller_meta/left|right`.
-It is already present in the project's OpenXR settings as
-`DetachedOculusTouchControllerProfile Android` with `m_enabled: 0` — enabling it
-is a flag, not an integration.
+The project's OpenXR settings enable `DetachedOculusTouchControllerProfile
+Android` (the Touch Plus detached profile is present but off). Since 2026-10-15
+the anchor reads the mounted controller through Meta's `OVRInput` first — the
+path `OVRCameraRig`'s detached anchors use, proven in Augmented Defense — with
+the Input System profiles as the fallback.
 
 It must be paired with `XR_META_simultaneous_hands_and_controllers`: the
 player's hands are on the guitar while the controller is strapped to it, so the

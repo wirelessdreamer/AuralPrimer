@@ -480,11 +480,13 @@ work against a strapped-on controller:
 - It switches between controllers and hands, and may drop a controller it sees
   as set down while the hands are tracked. The anchor asks for **simultaneous
   hands and controllers** (`XR_META_simultaneous_hands_and_controllers`, via
-  `OVRPlugin`) while the guitar is in use, and reads the controller through the
-  **detached-controller** profiles (`XR_META_detached_controllers`,
-  `/user/detached_controller_meta/left|right`) as well as the ordinary one. The
-  project's `DetachedOculusTouchControllerProfile Android` feature is now
-  enabled. Meta's body tracking cannot run alongside simultaneous mode, so it is
+  `OVRPlugin`) while the guitar is in use, and reads the controller through
+  Meta's **`OVRInput`**, which keeps reporting a controller nobody holds — the
+  call `OVRCameraRig` uses for its detached anchors, and the setup that holds up
+  in Augmented Defense. OVRInput gives Meta's legacy controller pose, converted
+  back to the OpenXR grip the mount offset is measured from; the
+  Input System's detached-controller profiles (`XR_META_detached_controllers`)
+  and the ordinary one remain the fallback. Meta's body tracking cannot run alongside simultaneous mode, so it is
   switched off again when the guitar is put away, and the recorder has no body
   channel while a guitar is in use. If the controller still goes missing, setup
   says so and names the Movement-tracking auto-switch setting to turn off.
@@ -583,9 +585,9 @@ belongs in one place with a test.
 
 **Unverified on a headset:**
 
-- that simultaneous mode is accepted and that the strapped controller arrives
-  through a detached profile (the Touch Plus detached profile has no Android
-  entry in the project yet; the Oculus Touch one is enabled);
+- that simultaneous mode is accepted and that `OVRInput` keeps the strapped
+  controller while the hands are tracked, and that Meta's and Unity's tracking
+  spaces agree (the anchor logs the difference every 10 s; it should be ~0);
 - how often tracking drops at playing angles, and whether the hold and fade
   timings suit it;
 - the free controller's tip position (the aim pose's origin is used, offset 0);
