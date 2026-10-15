@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { isManifestPack } from "@auralprimer/auralsong/packKind";
 import type { Visualizer, TransportState } from "@auralprimer/viz-sdk";
 import { inferKeySignature, liveFrets } from "@auralprimer/viz-tab";
+import { singleFlight } from "./singleFlight";
 import { TransportController } from "./transportController";
 import { initAvCalibration } from "@auralprimer/av-sync";
 import {
@@ -2500,7 +2501,13 @@ function setPianoStatus(text: string): void {
   if (pianoStatusEl && pianoStatusEl.textContent !== text) pianoStatusEl.textContent = text;
 }
 
-async function ensurePianoPack(): Promise<boolean> {
+/**
+ * Load the piano pack once, however many notes arrive while it loads; see
+ * singleFlight.ts for the lock-up this prevents.
+ */
+const ensurePianoPack = singleFlight(loadPianoPack, { retryAfterMs: 5000 });
+
+async function loadPianoPack(): Promise<boolean> {
   if (pianoPackLoaded) return true;
   try {
     const info = await invoke<{ name: string; license: string; samples: number }>(
