@@ -227,3 +227,10 @@ UnityClient/Aural Primer/Assets/XR/Temp.meta
 
 # Mount STLs/renders are generated from your own measurements; never commit them.
 hardware/quest-guitar-mount/out/
+
+# Credentials. The Meta App Secret is read from META_APP_SECRET by
+# scripts/upload-quest-build.mjs; if it is ever parked in a dotenv file rather
+# than the shell, that file must not be what carries it into the history.
+.env
+.env.*
+!.env.example
