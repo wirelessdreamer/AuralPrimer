@@ -5,6 +5,7 @@ the fail-safe default (unset -> empty -> per-stem path)."""
 from __future__ import annotations
 
 import argparse
+import pytest
 
 from aural_ingest.cli import _add_transcription_options, _resolve_transcription_options
 
@@ -50,3 +51,66 @@ def test_wholemix_case_insensitive() -> None:
     opts, err = _opts(["--wholemix-transcriber", "MuScriptor"])
     assert err is None
     assert opts["wholemix_transcriber"] == "muscriptor"
+
+
+def test_keyboard_only_forces_muscriptor_and_bypasses_separation() -> None:
+    opts, err = _opts(["--keyboard-only"])
+    assert err is None
+    assert opts["keyboard_only"] is True
+    assert opts["wholemix_transcriber"] == "muscriptor"
+    assert opts["stem_separation_provider"] == "none"
+
+
+def test_keyboard_only_config_and_explicit_opt_out() -> None:
+    opts, err = _opts([], {"keyboard_only": True})
+    assert err is None and opts["keyboard_only"] is True
+    opts, err = _opts(["--no-keyboard-only"], {"keyboard_only": True})
+    assert err is None and opts["keyboard_only"] is False
+
+
+def test_keyboard_only_rejects_ambiguous_config_string() -> None:
+    opts, err = _opts([], {"keyboard_only": "false"})
+    assert opts is None and "boolean" in err
+
+
+def test_keyboard_only_has_a_distinct_song_identity() -> None:
+    from aural_ingest.cli import _stable_song_id
+
+    defaults, _ = _opts([])
+    keyboard = {**defaults, "keyboard_only": True}
+    assert _stable_song_id("same-audio", "full", defaults) != _stable_song_id("same-audio", "full", keyboard)
+
+
+def test_selectable_recognition_options_and_identity() -> None:
+    from aural_ingest.cli import _stable_song_id
+
+    opts, err = _opts(["--recognition-instruments", "organ,acoustic_guitar,organ", "--recognition-stems", "other,keys"])
+    assert err is None
+    assert opts["recognition_instruments"] == ["acoustic_guitar", "organ"]
+    assert opts["recognition_stems"] == ["keys", "other"]
+    assert opts["stem_separation_provider"] == "none"
+    assert opts["wholemix_transcriber"] == "muscriptor"
+    assert not opts["keyboard_only"]
+    changed = {**opts, "recognition_instruments": ["electric_piano"]}
+    assert _stable_song_id("same", "full", opts) != _stable_song_id("same", "full", changed)
+    changed = {**opts, "recognition_stem_hashes": {"keys": "new-audio"}}
+    assert _stable_song_id("same", "full", opts) != _stable_song_id("same", "full", changed)
+
+
+@pytest.mark.parametrize("config", [
+    {"recognition_instruments": []}, {"recognition_instruments": ["banjo"]},
+    {"recognition_instruments": True}, {"recognition_stems": ["mix"]},
+    {"source_stem_role": "mix"},
+    {"source_stem_role": "keys", "recognition_stems": ["guitar"]},
+    {"keyboard_only": True, "recognition_instruments": ["organ"]},
+])
+def test_bad_recognition_selection_is_rejected(config) -> None:
+    opts, err = _opts([], config)
+    assert opts is None and err
+
+
+def test_single_stem_and_config_recognition_selection() -> None:
+    opts, err = _opts(["--source-stem-role", "guitar"], {"recognition_instruments": ["acoustic_guitar"]})
+    assert err is None
+    assert opts["source_stem_role"] == "guitar"
+    assert opts["stem_separation_provider"] == "none"

@@ -13,6 +13,11 @@ export type IngestImportRequest = {
   melodic_method?: string;
   /** Whole-mix transcriber ("muscriptor"); supersedes the two engines above. */
   wholemix_transcriber?: string;
+  /** Treat the supplied audio as a keys stem and constrain recognition to keyboards. */
+  keyboard_only?: boolean;
+  recognition_instruments?: string[];
+  recognition_stems?: string[];
+  source_stem_role?: string;
   shifts?: number;
   multi_filter?: boolean;
   ingest_binary_path?: string;

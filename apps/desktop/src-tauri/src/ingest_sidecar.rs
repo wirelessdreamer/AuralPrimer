@@ -111,6 +111,16 @@ pub struct IngestImportRequest {
     pub wholemix_transcriber: Option<String>,
 
     #[serde(default)]
+    pub keyboard_only: Option<bool>,
+
+    #[serde(default)]
+    pub recognition_instruments: Option<Vec<String>>,
+    #[serde(default)]
+    pub recognition_stems: Option<Vec<String>>,
+    #[serde(default)]
+    pub source_stem_role: Option<String>,
+
+    #[serde(default)]
     pub shifts: Option<i32>,
 
     #[serde(default)]
@@ -275,6 +285,23 @@ pub fn build_ingest_args(req: &IngestImportRequest) -> Result<Vec<String>, Strin
     if let Some(wholemix) = non_empty_opt(&req.wholemix_transcriber) {
         args.push("--wholemix-transcriber".to_string());
         args.push(wholemix);
+    }
+    if req.keyboard_only.unwrap_or(false) {
+        args.push("--keyboard-only".to_string());
+    }
+    for (flag, values) in [
+        ("--recognition-instruments", &req.recognition_instruments),
+        ("--recognition-stems", &req.recognition_stems),
+    ] {
+        if let Some(values) = values {
+            if values.is_empty() { return Err(format!("{flag} requires at least one selection")); }
+            args.push(flag.to_string());
+            args.push(values.join(","));
+        }
+    }
+    if let Some(role) = non_empty_opt(&req.source_stem_role) {
+        args.push("--source-stem-role".to_string());
+        args.push(role);
     }
     if let Some(shifts) = req.shifts {
         args.push("--shifts".to_string());
@@ -1069,6 +1096,31 @@ mod tests {
         assert_eq!(args[0], "import-dir");
         assert!(has_pair(&args, "--profile", "full"));
         assert!(!args.iter().any(|x| x == "--multi-filter"));
+    }
+
+    #[test]
+    fn keyboard_only_reaches_the_sidecar_without_changing_defaults() {
+        let mut req = req_base();
+        assert!(!build_ingest_args(&req).unwrap().iter().any(|a| a == "--keyboard-only"));
+        req.keyboard_only = Some(true);
+        assert!(build_ingest_args(&req).unwrap().iter().any(|a| a == "--keyboard-only"));
+    }
+
+    #[test]
+    fn selected_instruments_and_stems_reach_the_sidecar() {
+        let mut req = req_base();
+        req.recognition_instruments = Some(vec!["organ".into(), "acoustic_guitar".into()]);
+        req.recognition_stems = Some(vec!["keys".into(), "other".into()]);
+        let args = build_ingest_args(&req).expect("args");
+        assert!(args.windows(2).any(|a| a == ["--recognition-instruments", "organ,acoustic_guitar"]));
+        assert!(args.windows(2).any(|a| a == ["--recognition-stems", "keys,other"]));
+        assert!(!args.iter().any(|a| a == "--keyboard-only"));
+        req.recognition_stems = None;
+        req.source_stem_role = Some("guitar".into());
+        let args = build_ingest_args(&req).expect("args");
+        assert!(args.windows(2).any(|a| a == ["--source-stem-role", "guitar"]));
+        req.recognition_instruments = Some(vec![]);
+        assert!(build_ingest_args(&req).is_err());
     }
 
     #[test]

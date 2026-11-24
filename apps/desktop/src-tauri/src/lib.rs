@@ -1564,9 +1564,14 @@ async fn ingest_prep_arrangements(
 #[tauri::command]
 async fn inspect_raw_song_folder(
     folder_path: String,
+    allow_missing_midi: Option<bool>,
 ) -> Result<raw_song::RawSongFolderInspection, String> {
     run_blocking_command("raw song folder inspection", move || {
-        raw_song::inspect_raw_song_folder(Path::new(&folder_path))
+        if allow_missing_midi.unwrap_or(false) {
+            raw_song::inspect_stem_audio_folder(Path::new(&folder_path))
+        } else {
+            raw_song::inspect_raw_song_folder(Path::new(&folder_path))
+        }
     })
     .await
 }

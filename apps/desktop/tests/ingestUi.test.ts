@@ -57,6 +57,33 @@ describe("ingestUi", () => {
     }
   });
 
+  it("passes independently selected instruments and source stems", () => {
+    const req = buildIngestRequestFromForm({
+      sourcePath: "D:/stems", mode: "import-dir",
+      wholemixTranscriber: " muscriptor ", multiFilter: false,
+      recognitionInstruments: ["electric_piano", "acoustic_guitar", "electric_piano"],
+      recognitionStems: ["other", "keys"]
+    });
+    expect(req.keyboard_only).toBeUndefined();
+    expect(req.wholemix_transcriber).toBe("muscriptor");
+    expect(req.recognition_instruments).toEqual(["acoustic_guitar", "electric_piano"]);
+    expect(req.recognition_stems).toEqual(["keys", "other"]);
+  });
+
+  it("supports an isolated non-keyboard stem without forcing keyboard recognition", () => {
+    const req = buildIngestRequestFromForm({sourcePath: "guitar.wav", mode: "import", multiFilter: false,
+      wholemixTranscriber: "muscriptor", sourceStemRole: "guitar", recognitionInstruments: ["acoustic_guitar"]});
+    expect(req.source_stem_role).toBe("guitar");
+    expect(req.recognition_instruments).toEqual(["acoustic_guitar"]);
+  });
+
+  it("rejects empty custom choices, and ignores hidden options outside MuScriptor", () => {
+    const base = {sourcePath: "in.wav", mode: "import" as const, multiFilter: false};
+    expect(() => buildIngestRequestFromForm({...base, wholemixTranscriber: "muscriptor", recognitionInstruments: []})).toThrow("at least one instrument");
+    expect(() => buildIngestRequestFromForm({...base, wholemixTranscriber: "muscriptor", recognitionStems: []})).toThrow("at least one source stem");
+    expect(buildIngestRequestFromForm({...base, recognitionInstruments: [], sourceStemRole: "guitar"}).source_stem_role).toBeUndefined();
+  });
+
   it("passes through piano melodic methods unchanged", () => {
     for (const melodicMethod of [
       " piano_auto ",

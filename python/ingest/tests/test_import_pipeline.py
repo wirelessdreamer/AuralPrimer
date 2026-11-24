@@ -2279,3 +2279,190 @@ def test_decode_to_wav_rejects_ieee_float_wav_without_ffmpeg(
 
     with pytest.raises(RuntimeError, match="ffmpeg"):
         cli._decode_to_wav(src, dst, target_sr=48_000)
+
+
+@pytest.mark.parametrize("folder", [False, True])
+def test_keyboard_only_import_uses_supplied_stem_and_explicit_mask(tmp_path, monkeypatch, folder):
+    from aural_ingest import cli
+    from aural_ingest.algorithms import muscriptor
+    from aural_ingest.transcription import MelodicNote
+    import aural_ingest.spectrogram as spectrogram
+
+    src = tmp_path / "keyboard.wav"
+    _write_clicktrack_wav(src, sr=16000, duration_sec=4, bpm=120)
+    out = tmp_path / "keyboard.auralsong"
+    seen = {}
+
+    def recognize(path, instruments=None):
+        seen["path"] = path
+        seen["instruments"] = instruments
+        assert path.name == "keys.wav"
+        return muscriptor.MuScriptorResult(
+            melodic={"keys": [MelodicNote(t_on=.5, t_off=1, pitch=60, velocity=100, instrument="keys")]},
+            drums=[], meta={"instruments_conditioned": instruments},
+        )
+
+    monkeypatch.setattr(muscriptor, "available", lambda: True)
+    monkeypatch.setattr(muscriptor, "transcribe_mix", recognize)
+    monkeypatch.setattr(muscriptor, "instruments_from_stems", lambda _: pytest.fail("auto-mask replaced keyboard mask"))
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", lambda *a, **k: pytest.fail("per-stem fallback ran"))
+    monkeypatch.setattr(spectrogram, "write_spectrogram_artifact", lambda *a, **k: None)
+    argv = ["import-dir" if folder else "import", str(tmp_path if folder else src),
+            "--out", str(out), "--keyboard-only", "--beat-analysis-mode", "standard"]
+    if folder:
+        # A full mix exists too; the keys source must win, rather than get summed.
+        _write_clicktrack_wav(tmp_path / "mix.wav", sr=16000, duration_sec=2, bpm=90)
+        argv += ["--config", json.dumps({"input_stem_paths": {"keys": str(src)}})]
+    assert cli.main(argv) == 0
+    assert seen["instruments"] == list(muscriptor.KEYBOARD_INSTRUMENTS)
+    assert seen["path"].read_bytes() == (out / "audio/mix.wav").read_bytes()
+    assert not (out / "audio/stems/lead_guitar.wav").exists()
+    manifest = json.loads((out / "manifest.json").read_text())
+    options = manifest["pipeline"]["transcription"]
+    assert options["keyboard_only"]
+    assert options["recognition_source_path"] == "audio/stems/keys.wav"
+    assert options["recognition_source_sha256"] == hashlib.sha256(seen["path"].read_bytes()).hexdigest()
+    assert options["instrument_melodic_methods_used"] == {"keys": "muscriptor_keyboard_only"}
+    raw = json.loads((out / "features/recognition/keyboard_only.json").read_text())
+    assert raw["notes"][0]["pitch"] == 60
+    # Check the final portable format preserves the raw recognition evidence.
+    if not folder:
+        final = cli._convert_auralsong_to_feedpak(out)
+        assert (final / "aural/recognition/keyboard_only.json").is_file()
+
+
+def test_keyboard_only_import_reports_model_failure_without_fallback(tmp_path, monkeypatch):
+    from aural_ingest import cli
+    from aural_ingest.algorithms import muscriptor
+
+    src = tmp_path / "keys.wav"
+    _write_clicktrack_wav(src, sr=16000, duration_sec=3, bpm=120)
+    monkeypatch.setattr(muscriptor, "available", lambda: False)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", lambda *a, **k: pytest.fail("silent fallback"))
+    assert cli.main(["import", str(src), "--out", str(tmp_path / "failed.auralsong"),
+                     "--keyboard-only", "--beat-analysis-mode", "standard"]) == 4
+
+
+def test_keyboard_only_folder_requires_a_keys_source(tmp_path, monkeypatch):
+    from aural_ingest import cli
+
+    _write_clicktrack_wav(tmp_path / "mix.wav", sr=16000, duration_sec=3, bpm=120)
+    monkeypatch.setattr(cli, "cmd_import", lambda _: pytest.fail("full mix used as keys"))
+    assert cli.main(["import-dir", str(tmp_path), "--out", str(tmp_path / "failed.auralsong"),
+                     "--keyboard-only"]) == 2
+
+
+@pytest.mark.parametrize("folder", [False, True])
+def test_selected_instruments_use_only_requested_audio(tmp_path, monkeypatch, folder):
+    from aural_ingest import cli
+    from aural_ingest.algorithms import muscriptor
+    from aural_ingest.transcription import MelodicNote, DrumEvent
+    import aural_ingest.spectrogram as spectrogram
+
+    keys, guitar, mix = (tmp_path / name for name in ("keyboard.wav", "guitar.wav", "mix.wav"))
+    _write_clicktrack_wav(keys, sr=16000, duration_sec=4, bpm=120)
+    _write_clicktrack_wav(guitar, sr=16000, duration_sec=4, bpm=90)
+    _write_clicktrack_wav(mix, sr=16000, duration_sec=2, bpm=60)
+    out = tmp_path / "selected.auralsong"
+    seen = {}
+
+    def recognize(path, instruments=None):
+        seen["path"] = path
+        assert instruments == ["acoustic_guitar", "drums"]
+        assert cli._wav_duration_sec(path)[0] == 4
+        if folder:
+            expected = tmp_path / "expected.wav"
+            cli._synthesize_mix_wav_from_input_stems(expected, {"input_stem_paths": {"guitar": str(guitar), "keys": str(keys)}})
+            assert path.read_bytes() == expected.read_bytes()
+        else:
+            assert path.read_bytes() == guitar.read_bytes()
+        return muscriptor.MuScriptorResult(
+            melodic={"rhythm_guitar": [MelodicNote(t_on=.5, t_off=1, pitch=60, velocity=100, instrument="rhythm_guitar")]},
+            drums=[DrumEvent(time=.5, note=36, velocity=100)],
+            meta={"instruments_conditioned": instruments, "instrument_group_counts": {"acoustic_guitar": 1, "drums": 1}},
+        )
+
+    monkeypatch.setattr(muscriptor, "available", lambda: True)
+    monkeypatch.setattr(muscriptor, "transcribe_mix", recognize)
+    monkeypatch.setattr(muscriptor, "instruments_from_stems", lambda *a, **k: pytest.fail("explicit instruments were replaced"))
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", lambda *a, **k: pytest.fail("per-stem fallback ran"))
+    monkeypatch.setattr(cli, "_split_guitar_stem", lambda *a, **k: pytest.fail("supplied source was split again"), raising=False)
+    monkeypatch.setattr(spectrogram, "write_spectrogram_artifact", lambda *a, **k: None)
+    argv = ["import-dir" if folder else "import", str(tmp_path if folder else guitar),
+            "--out", str(out), "--recognition-instruments", "acoustic_guitar,drums", "--beat-analysis-mode", "standard"]
+    if folder:
+        argv += ["--recognition-stems", "keys,guitar", "--config", json.dumps({"input_stem_paths": {"keys": str(keys), "guitar": str(guitar)}})]
+    else:
+        argv += ["--source-stem-role", "guitar"]
+    assert cli.main(argv) == 0
+    manifest = json.loads((out / "manifest.json").read_text())
+    opts = manifest["pipeline"]["transcription"]
+    assert opts["recognition_instruments"] == ["acoustic_guitar", "drums"]
+    assert not opts["keyboard_only"]
+    assert opts["recognition_source_sha256"] == hashlib.sha256(seen["path"].read_bytes()).hexdigest()
+    raw = json.loads((out / "features/recognition/selected_instruments.json").read_text())
+    assert raw["notes"][0]["instrument"] == "rhythm_guitar"
+    assert raw["drums"][0]["note"] == 36
+    final = cli._convert_auralsong_to_feedpak(out)
+    assert (final / "aural/recognition/selected_instruments.json").is_file()
+
+
+def test_selected_stems_missing_never_substitutes_full_mix(tmp_path, monkeypatch):
+    from aural_ingest import cli
+    _write_clicktrack_wav(tmp_path / "mix.wav", sr=16000, duration_sec=2, bpm=120)
+    monkeypatch.setattr(cli, "cmd_import", lambda _: pytest.fail("unselected full mix was imported"))
+    assert cli.main(["import-dir", str(tmp_path), "--out", str(tmp_path / "failed.auralsong"),
+                     "--recognition-stems", "keys"]) == 2
+
+
+def test_selected_recognition_model_failure_never_substitutes_engine(tmp_path, monkeypatch):
+    from aural_ingest import cli
+    from aural_ingest.algorithms import muscriptor
+    src = tmp_path / "guitar.wav"
+    _write_clicktrack_wav(src, sr=16000, duration_sec=3, bpm=120)
+    monkeypatch.setattr(muscriptor, "available", lambda: False)
+    monkeypatch.setattr(cli, "transcribe_all_melodic_stems", lambda *a, **k: pytest.fail("silent fallback"))
+    assert cli.main(["import", str(src), "--out", str(tmp_path / "failed.auralsong"),
+                     "--source-stem-role", "guitar", "--recognition-instruments", "acoustic_guitar",
+                     "--beat-analysis-mode", "standard"]) == 4
+
+
+def test_selected_stem_combination_supports_float_audio_and_mixed_rates(tmp_path):
+    import numpy as np
+    import soundfile as sf
+    from aural_ingest import cli
+
+    first, second = tmp_path / "float.wav", tmp_path / "pcm24.wav"
+    sf.write(first, np.full(16000, .25, dtype=np.float32), 16000, subtype="FLOAT")
+    sf.write(second, np.full(48000, .5, dtype=np.float32), 48000, subtype="PCM_24")
+    combined = tmp_path / "combined.wav"
+    assert cli._synthesize_mix_wav_from_input_stems(combined, {
+        "input_stem_paths": {"keys": str(first), "other": str(second)},
+    }) == (1.0, 16000)
+    audio, rate = sf.read(combined, always_2d=True)
+    assert rate == 16000 and audio.shape == (16000, 2)
+    assert float(np.median(audio[100:-100])) == pytest.approx(.375, abs=.0001)
+
+
+@pytest.mark.parametrize("have_drums", [True, False])
+def test_selected_drums_only_or_empty_result_does_not_crash_or_add_melody(tmp_path, monkeypatch, have_drums):
+    from aural_ingest import cli
+    from aural_ingest.algorithms import muscriptor
+    from aural_ingest.transcription import DrumEvent
+    import aural_ingest.spectrogram as spectrogram
+    src = tmp_path / "drums.wav"
+    _write_clicktrack_wav(src, sr=16000, duration_sec=3, bpm=120)
+    monkeypatch.setattr(muscriptor, "available", lambda: True)
+    monkeypatch.setattr(muscriptor, "transcribe_mix", lambda *a, **k: muscriptor.MuScriptorResult(
+        melodic={}, drums=[DrumEvent(time=.5, note=36, velocity=100)] if have_drums else [], meta={},
+    ))
+    monkeypatch.setattr(cli, "transcribe_melodic", lambda *a, **k: pytest.fail("unrequested melody recognized"))
+    monkeypatch.setattr(spectrogram, "write_spectrogram_artifact", lambda *a, **k: None)
+    out = tmp_path / "drums.auralsong"
+    assert cli.main(["import", str(src), "--out", str(out), "--source-stem-role", "drums",
+                     "--recognition-instruments", "drums", "--beat-analysis-mode", "standard"]) == 0
+    raw = json.loads((out / "features/recognition/selected_instruments.json").read_text())
+    assert raw["notes"] == []
+    assert len(raw["drums"]) == int(have_drums)
+    events = json.loads((out / "features/events.json").read_text())
+    assert events["notes"] == []

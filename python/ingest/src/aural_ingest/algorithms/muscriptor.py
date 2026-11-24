@@ -32,6 +32,16 @@ from aural_ingest.device import select_device
 from aural_ingest.transcription import DrumEvent, MelodicNote
 
 ENGINE_ID = "muscriptor"
+KEYBOARD_INSTRUMENTS = ("acoustic_piano", "electric_piano", "synth_pad")
+SUPPORTED_INSTRUMENTS = (
+    "acoustic_piano", "electric_piano", "chromatic_percussion", "organ",
+    "acoustic_guitar", "clean_electric_guitar", "distorted_electric_guitar",
+    "acoustic_bass", "electric_bass", "violin", "viola", "cello", "contrabass",
+    "orchestral_harp", "timpani", "string_ensemble", "synth_strings", "voice",
+    "orchestra_hit", "trumpet", "trombone", "tuba", "french_horn", "brass_section",
+    "soprano_and_alto_sax", "tenor_sax", "baritone_sax", "oboe", "english_horn",
+    "bassoon", "clarinet", "flutes", "synth_lead", "synth_pad", "drums",
+)
 
 _SIZE_ENV = "AURAL_MUSCRIPTOR_SIZE"
 _DEVICE_ENV = "AURAL_MUSCRIPTOR_DEVICE"
@@ -232,7 +242,7 @@ _STEM_INSTRUMENTS: dict[str, tuple[str, ...]] = {
 _STEM_PRESENT_DBFS = -50.0
 
 
-def instruments_from_stems(stems_dir: Path) -> list[str] | None:
+def instruments_from_stems(stems_dir: Path, roles: list[str] | None = None) -> list[str] | None:
     """Which instrument groups to ask MuScriptor for, from the separated stems.
 
     Left to itself the model decides what it is hearing, and on a dense mix it
@@ -258,6 +268,8 @@ def instruments_from_stems(stems_dir: Path) -> list[str] | None:
 
     wanted: list[str] = []
     for stem, groups in _STEM_INSTRUMENTS.items():
+        if roles is not None and stem not in roles:
+            continue
         path = stems_dir / f"{stem}.wav"
         if not path.is_file():
             continue

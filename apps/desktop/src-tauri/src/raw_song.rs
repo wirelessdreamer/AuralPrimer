@@ -709,6 +709,24 @@ mod tests {
     }
 
     #[test]
+    fn inspect_stem_audio_folder_accepts_wavs_without_midi() {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("auralprimer_audio_stem_scan_{unique}"));
+        fs::create_dir_all(&root).unwrap();
+        let wav = build_onset_test_wav(16_000, 1, 2.0, 0.4, 0.24, 12_000);
+        write_wav_pcm16(&root.join("keys.wav"), &wav).unwrap();
+        write_wav_pcm16(&root.join("other.wav"), &wav).unwrap();
+        let inspection = inspect_stem_audio_folder(&root).expect("stems do not need MIDI");
+        assert_eq!(inspection.stem_parts.len(), 2);
+        assert!(inspection.midi_paths.is_empty());
+        assert!(!inspection.midi_chart_ready);
+        assert!(inspection.stem_parts.iter().any(|part| part.detected_role == "keys"));
+        assert!(inspect_raw_song_folder(&root).unwrap_err().contains("no MIDI"));
+        assert!(preserve_source_midis_into_auralsong(&root, &root.join("draft.auralsong")).unwrap().is_empty());
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     #[ignore = "pre-existing: suno-drum source-pitch remap is built but not wired into import (dead-code); tracked separately"]
     fn import_raw_song_folder_preserves_suno_drum_source_pitches() {
         let unique = SystemTime::now()
@@ -3498,6 +3516,10 @@ fn find_root_lyrics_txt(root: &Path) -> Option<PathBuf> {
 }
 
 fn scan_raw_song_folder(root: &Path) -> Result<RawSongFolderScan, String> {
+    scan_raw_song_folder_with_midi_requirement(root, true)
+}
+
+fn scan_raw_song_folder_with_midi_requirement(root: &Path, require_midi: bool) -> Result<RawSongFolderScan, String> {
     if !root.is_dir() {
         return Err(format!("folder not found: {}", root.display()));
     }
@@ -3533,7 +3555,7 @@ fn scan_raw_song_folder(root: &Path) -> Result<RawSongFolderScan, String> {
     if wavs.is_empty() {
         return Err("no WAV files found in folder".to_string());
     }
-    if midis.is_empty() {
+    if require_midi && midis.is_empty() {
         return Err("no MIDI files found in folder".to_string());
     }
 
@@ -3675,6 +3697,9 @@ fn scan_raw_song_folder(root: &Path) -> Result<RawSongFolderScan, String> {
         source_midi_offset_pair_count: 0,
         warnings,
     };
+    if scan.midi_files.is_empty() {
+        return Ok(scan);
+    }
     scan.warnings
         .extend(collect_source_midi_audio_sync_warnings(&scan)?);
     if let Some((offset_sec, pair_count)) = estimate_audio_start_offset_sec(&scan)? {
@@ -3693,7 +3718,15 @@ fn scan_raw_song_folder(root: &Path) -> Result<RawSongFolderScan, String> {
 }
 
 pub fn inspect_raw_song_folder(folder_path: &Path) -> Result<RawSongFolderInspection, String> {
-    let scan = scan_raw_song_folder(folder_path)?;
+    inspect_song_folder(folder_path, true)
+}
+
+pub fn inspect_stem_audio_folder(folder_path: &Path) -> Result<RawSongFolderInspection, String> {
+    inspect_song_folder(folder_path, false)
+}
+
+fn inspect_song_folder(folder_path: &Path, require_midi: bool) -> Result<RawSongFolderInspection, String> {
+    let scan = scan_raw_song_folder_with_midi_requirement(folder_path, require_midi)?;
     Ok(RawSongFolderInspection {
         folder_path: scan.folder_path.to_string_lossy().to_string(),
         title_guess: scan.title_guess,
@@ -3763,7 +3796,7 @@ pub fn preserve_source_midis_into_auralsong(
     if !source_folder.is_dir() {
         return Ok(vec![]);
     }
-    let scan = scan_raw_song_folder(source_folder)?;
+    let scan = scan_raw_song_folder_with_midi_requirement(source_folder, false)?;
     if scan.midi_files.is_empty() {
         return Ok(vec![]);
     }

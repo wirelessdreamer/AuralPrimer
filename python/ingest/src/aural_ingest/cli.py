@@ -59,6 +59,7 @@ from aural_ingest.transcription import (
     resolve_basic_pitch_model_path,
     DrumTranscriptionResult,
     InstrumentTranscriptionResult,
+    MelodicTranscriptionResult,
     transcribe_all_melodic_stems,
     transcribe_melodic,
     transcribe_drums,
@@ -910,6 +911,13 @@ def _stable_song_id(source_sha256: str, profile: str, transcription_options: dic
         "shifts": transcription_options.get("shifts"),
         "multi_filter": bool(transcription_options.get("multi_filter", False)),
     }
+    if transcription_options.get("keyboard_only"):
+        fingerprint["keyboard_only"] = True
+    if transcription_options.get("wholemix_transcriber"):
+        fingerprint["wholemix_transcriber"] = transcription_options["wholemix_transcriber"]
+    for key in ("recognition_instruments", "recognition_stems", "source_stem_role", "recognition_stem_hashes"):
+        if transcription_options.get(key):
+            fingerprint[key] = transcription_options[key]
     h.update(source_sha256.encode("utf-8"))
     h.update(b"|")
     h.update(json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode("utf-8"))
@@ -2193,40 +2201,28 @@ def _synthesize_mix_wav_from_input_stems(dst_wav: Path, config: dict[str, Any]) 
         return None
 
     import numpy as np
-    import wave
+    import soundfile as sf
+    from scipy.signal import resample_poly
+    from math import gcd
 
     mixed: np.ndarray | None = None
     target_sr: int | None = None
 
     for stem_path in stem_paths.values():
-        with wave.open(str(stem_path), "rb") as w:
-            channels = int(w.getnchannels())
-            sr = int(w.getframerate())
-            sampwidth = int(w.getsampwidth())
-            nframes = int(w.getnframes())
-            if channels <= 0 or sr <= 0 or nframes <= 0:
-                raise RuntimeError(f"invalid wav for synthesized mix: {stem_path}")
-            if sampwidth != 2:
-                raise RuntimeError(
-                    f"unsupported wav sample width for synthesized mix: {stem_path} ({sampwidth})"
-                )
-            raw = w.readframes(nframes)
-
-        audio = np.frombuffer(raw, dtype="<i2").astype(np.float32, copy=False)
-        frame_count = max(1, audio.size // channels)
-        audio = audio[: frame_count * channels].reshape(frame_count, channels)
+        audio, sr = sf.read(str(stem_path), dtype="float32", always_2d=True)
+        channels = audio.shape[1]
+        if not audio.size or sr <= 0 or not np.isfinite(audio).all():
+            raise RuntimeError(f"invalid audio for synthesized mix: {stem_path}")
         if channels == 1:
             audio = np.repeat(audio, 2, axis=1)
         elif channels > 2:
             audio = audio[:, :2]
 
-        audio = audio / 32768.0
         if target_sr is None:
             target_sr = sr
         elif sr != target_sr:
-            raise RuntimeError(
-                f"configured input stems must share the same sample rate; got {sr} for {stem_path} vs {target_sr}"
-            )
+            divisor = gcd(sr, target_sr)
+            audio = resample_poly(audio, target_sr // divisor, sr // divisor, axis=0)
 
         if mixed is None:
             mixed = audio.copy()
@@ -2248,11 +2244,7 @@ def _synthesize_mix_wav_from_input_stems(dst_wav: Path, config: dict[str, Any]) 
         mixed *= 0.98 / peak
 
     pcm = (np.clip(mixed, -1.0, 1.0) * 32767.0).round().astype(np.int16, copy=False)
-    with wave.open(str(dst_wav), "wb") as w:
-        w.setnchannels(int(pcm.shape[1]) if pcm.ndim == 2 else 1)
-        w.setsampwidth(2)
-        w.setframerate(int(target_sr))
-        w.writeframes(pcm.tobytes())
+    sf.write(str(dst_wav), pcm, int(target_sr), subtype="PCM_16")
 
     return _wav_duration_sec(dst_wav)
 
@@ -2997,12 +2989,45 @@ def _resolve_transcription_options(
             f"supported: {', '.join(KNOWN_MELODIC_METHODS)}"
         )
 
+    raw_keyboard_only = getattr(args, "keyboard_only", None)
+    if raw_keyboard_only is None:
+        raw_keyboard_only = config.get("keyboard_only", False)
+    if not isinstance(raw_keyboard_only, bool):
+        return None, "keyboard_only must be a boolean"
+    keyboard_only = raw_keyboard_only
     raw_wholemix = (
         getattr(args, "wholemix_transcriber", None)
         if getattr(args, "wholemix_transcriber", None) is not None
         else config.get("wholemix_transcriber")
     )
     wholemix_transcriber = str(raw_wholemix).strip().lower() if raw_wholemix else ""
+    from aural_ingest.algorithms.muscriptor import SUPPORTED_INSTRUMENTS
+
+    stem_roles = ("keys", "guitar", "lead_guitar", "rhythm_guitar", "bass", "drums", "vocals", "other")
+    selections: dict[str, list[str] | None] = {}
+    for key, allowed in (("recognition_instruments", SUPPORTED_INSTRUMENTS), ("recognition_stems", stem_roles)):
+        raw = getattr(args, key, None)
+        if raw is None:
+            raw = config.get(key)
+        if isinstance(raw, str):
+            raw = raw.split(",")
+        if raw is not None:
+            if not isinstance(raw, list) or not raw or any(not isinstance(item, str) or item.strip() not in allowed for item in raw):
+                return None, f"{key} must contain at least one valid selection. Supported: {', '.join(allowed)}"
+            raw = sorted({item.strip() for item in raw})
+        selections[key] = raw
+    source_stem_role = getattr(args, "source_stem_role", None)
+    if source_stem_role is None:
+        source_stem_role = config.get("source_stem_role")
+    if source_stem_role is not None and source_stem_role not in stem_roles:
+        return None, "source_stem_role must be a supported stem role"
+    if source_stem_role and selections["recognition_stems"]:
+        return None, "Choose either a single source stem role or folder stems, not both"
+    selected_recognition = any(selections.values()) or source_stem_role is not None
+    if keyboard_only and selected_recognition:
+        return None, "Use instrument/stem selections instead of combining them with legacy keyboard_only"
+    if keyboard_only or selected_recognition:
+        wholemix_transcriber = "muscriptor"
     if wholemix_transcriber and wholemix_transcriber not in {"muscriptor"}:
         return None, f"invalid --wholemix-transcriber '{raw_wholemix}'. supported: muscriptor"
 
@@ -3048,7 +3073,8 @@ def _resolve_transcription_options(
         getattr(args, "stem_separation_provider_path", None)
         or config.get("stem_separation_provider_path")
     )
-    provider_name = str(raw_provider).strip().lower()
+    direct_stems = keyboard_only or source_stem_role or selections["recognition_stems"]
+    provider_name = "none" if direct_stems else str(raw_provider).strip().lower()
     if provider_name in {"", "auto"}:
         if provider_path:
             provider_name = "external"
@@ -3150,6 +3176,9 @@ def _resolve_transcription_options(
         "warnings": warnings,
         "melodic_method": melodic_method,
         "wholemix_transcriber": wholemix_transcriber,
+        "keyboard_only": keyboard_only,
+        **selections,
+        "source_stem_role": source_stem_role,
         "transcription_profile": transcription_profile,
         "beat_analysis_mode": beat_analysis_mode,
         "shifts": shifts,
@@ -3161,9 +3190,16 @@ def _resolve_transcription_options(
 
 
 def _add_transcription_options(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--recognition-instruments", help="Comma-separated MuScriptor instrument labels; omit for automatic conditioning.")
+    p.add_argument("--recognition-stems", help="Comma-separated supplied stem roles to combine for recognition; never substitutes the full mix.")
+    p.add_argument("--source-stem-role", help="Treat one audio file as this isolated stem role; skip separation.")
     p.add_argument("--drum-filter", "--drum-engine", dest="drum_filter", default=None)
     p.add_argument("--drum-stem-path")
     p.add_argument("--melodic-method", default=DEFAULT_MELODIC_METHOD)
+    p.add_argument(
+        "--keyboard-only", action=argparse.BooleanOptionalAction, default=None,
+        help="Recognize an isolated keys stem with MuScriptor and a keyboard-only mask; skip separation.",
+    )
     p.add_argument(
         "--wholemix-transcriber",
         dest="wholemix_transcriber",
@@ -6133,6 +6169,20 @@ def cmd_import(args: argparse.Namespace) -> int:
         return 2
 
     input_stem_paths = _resolved_input_stem_paths(config)
+    selected_stems = tr_opts.get("recognition_stems")
+    if selected_stems:
+        missing = [role for role in selected_stems if role not in input_stem_paths or not input_stem_paths[role].is_file()]
+        if missing:
+            log(f"Selected source stems are missing: {', '.join(missing)}; no full mix was substituted.")
+            return 2
+        tr_opts["recognition_stem_hashes"] = {role: _sha256_file(input_stem_paths[role]) for role in selected_stems}
+    if tr_opts["keyboard_only"] and input_stem_paths:
+        keys_source = input_stem_paths.get("keys")
+        if keys_source is None or not keys_source.is_file():
+            log("keyboard-only recognition requires a supplied keys/keyboard stem")
+            return 2
+        src = keys_source
+        config = {**config, "input_stem_paths": {"keys": str(src)}}
     if input_stem_paths:
         try:
             src_resolved = src.resolve()
@@ -6261,6 +6311,12 @@ def cmd_import(args: argparse.Namespace) -> int:
     # Stage 4: separate_stems (Demucs modelpack-gated)
     stems_dir = out / "audio" / "stems"
     _mkdir(stems_dir)
+    if tr_opts["keyboard_only"]:
+        # dst_wav is the decoded user-supplied stem, including compressed inputs.
+        # Protect it from separation and never re-separate it into new guesses.
+        config = {**config, "input_stem_paths": {"keys": str(dst_wav)}}
+    elif tr_opts.get("source_stem_role"):
+        config = {**config, "input_stem_paths": {tr_opts["source_stem_role"]: str(dst_wav)}}
     copied_input_stems = _copy_input_stems_from_config(stems_dir, config)
     if copied_input_stems:
         audio_assets = manifest.setdefault("assets", {}).setdefault("audio", {})
@@ -6400,8 +6456,8 @@ def cmd_import(args: argparse.Namespace) -> int:
                 message="reused",
             )
         )
-    elif synthesized_input_mix and split_source_kind == "mix_fallback":
-        msg = "skipped: synthesized input-stem mix has no guitar source"
+    elif tr_opts["keyboard_only"] or tr_opts.get("recognition_stems") or tr_opts.get("source_stem_role") or (synthesized_input_mix and split_source_kind == "mix_fallback"):
+        msg = "skipped: selected source audio is used directly" if tr_opts["keyboard_only"] or tr_opts.get("recognition_stems") or tr_opts.get("source_stem_role") else "skipped: synthesized input-stem mix has no guitar source"
         manifest.setdefault("pipeline", {})["guitar_split"] = {
             "status": "skipped",
             "reason": msg,
@@ -6485,27 +6541,103 @@ def cmd_import(args: argparse.Namespace) -> int:
     # normal per-stem path.
     wholemix_result = None
     wholemix_active = False
+    explicit_recognition = bool(tr_opts.get("recognition_instruments") or tr_opts.get("recognition_stems") or tr_opts.get("source_stem_role"))
+    wholemix_method = "muscriptor_keyboard_only" if tr_opts["keyboard_only"] else "muscriptor_selected" if explicit_recognition else "muscriptor_wholemix"
     if tr_opts.get("wholemix_transcriber") == "muscriptor":
         from aural_ingest.algorithms import muscriptor as _muscriptor
 
+        recognition_source = dst_wav
+        recognition_roles = tr_opts.get("recognition_stems") or ([tr_opts["source_stem_role"]] if tr_opts.get("source_stem_role") else None)
+        if tr_opts["keyboard_only"]:
+            recognition_source = stems_dir / "keys.wav"
+        elif recognition_roles:
+            if len(recognition_roles) == 1:
+                recognition_source = stems_dir / f"{recognition_roles[0]}.wav"
+            else:
+                recognition_source = out / "audio" / "recognition.wav"
+                try:
+                    _synthesize_mix_wav_from_input_stems(recognition_source, {
+                        "input_stem_paths": {role: str(stems_dir / f"{role}.wav") for role in recognition_roles},
+                    })
+                except Exception as exc:
+                    log(f"Cannot combine selected source stems: {exc}; no full mix was substituted.")
+                    return 4
+        conditioning = tr_opts.get("recognition_instruments")
+        if conditioning is None:
+            if tr_opts["keyboard_only"]:
+                conditioning = list(_muscriptor.KEYBOARD_INSTRUMENTS)
+            elif recognition_roles:
+                conditioning = _muscriptor.instruments_from_stems(stems_dir, roles=recognition_roles)
+            else:
+                conditioning = _muscriptor.instruments_from_stems(stems_dir)
         if _muscriptor.available():
             emit(
                 ProgressEvent(
                     type="stage_progress",
                     id="transcribe_drums",
                     progress=0.90,
-                    message="whole-mix transcription (MuScriptor)",
+                    message="recognizing selected instruments and audio (MuScriptor)" if explicit_recognition else "whole-mix transcription (MuScriptor)",
                 )
             )
             # Condition on what the separator found rather than letting the
             # model guess. Free: the stems already exist by this point, and a
             # stem with sound in it is an instrument that is present.
-            conditioning = _muscriptor.instruments_from_stems(stems_dir)
             if conditioning:
                 log(f"conditioning MuScriptor on: {', '.join(conditioning)}")
             wholemix_result = _muscriptor.transcribe_mix(
-                dst_wav, instruments=conditioning
+                recognition_source,
+                instruments=conditioning,
             )
+        if explicit_recognition:
+            if wholemix_result is None:
+                log("MuScriptor recognition failed. Check model setup; no alternate engine or full mix was substituted.")
+                return 4
+            if conditioning:
+                counts = wholemix_result.meta.get("instrument_group_counts", {})
+                unexpected = set(counts) - set(conditioning) - {"_unpaired_starts"}
+                if unexpected:
+                    log(f"Recognition returned instruments outside the selection: {', '.join(sorted(unexpected))}")
+                    return 4
+            tr_opts["recognition_source_path"] = _try_relpath(recognition_source, out)
+            tr_opts["recognition_source_sha256"] = _sha256_file(recognition_source)
+            tr_opts["instruments_conditioned"] = conditioning
+            recognition_path = out / "features" / "recognition" / "selected_instruments.json"
+            recognition_path.parent.mkdir(exist_ok=True)
+            _write_json(recognition_path, {
+                "source_path": tr_opts["recognition_source_path"],
+                "source_sha256": tr_opts["recognition_source_sha256"],
+                "source_stems": recognition_roles,
+                "instruments_conditioned": conditioning,
+                "meta": wholemix_result.meta,
+                "notes": [{"t_on": n.t_on, "t_off": n.t_off, "pitch": n.pitch,
+                           "velocity": n.velocity, "instrument": role}
+                          for role, notes in wholemix_result.melodic.items() for n in notes],
+                "drums": [{"time": n.time, "note": n.note, "velocity": n.velocity} for n in wholemix_result.drums],
+            })
+            if not wholemix_result.melodic and not wholemix_result.drums:
+                log("No notes found in the selected audio for the chosen instruments; the empty result is preserved for review.")
+        if tr_opts["keyboard_only"]:
+            if wholemix_result is None or not wholemix_result.melodic.get("keys"):
+                log("Keyboard-only MuScriptor recognition failed or returned no keys notes. Check model setup; no fallback was substituted.")
+                return 4
+            extra_roles = set(wholemix_result.melodic) - {"keys"}
+            if extra_roles or wholemix_result.drums:
+                log("Keyboard-only recognition returned non-keyboard notes; import stopped.")
+                return 4
+            tr_opts["recognition_source_path"] = "audio/stems/keys.wav"
+            tr_opts["recognition_source_sha256"] = _sha256_file(stems_dir / "keys.wav")
+            tr_opts["instruments_conditioned"] = conditioning
+            recognition_path = out / "features" / "recognition" / "keyboard_only.json"
+            recognition_path.parent.mkdir(exist_ok=True)
+            _write_json(recognition_path, {
+                "source_path": tr_opts["recognition_source_path"],
+                "source_sha256": tr_opts["recognition_source_sha256"],
+                "meta": wholemix_result.meta,
+                "notes": [{
+                    "t_on": n.t_on, "t_off": n.t_off, "pitch": n.pitch,
+                    "velocity": n.velocity, "instrument": "keys",
+                } for n in wholemix_result.melodic["keys"]],
+            })
         if wholemix_result is None:
             log(
                 "whole-mix transcriber 'muscriptor' unavailable or produced nothing; "
@@ -6532,7 +6664,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     if wholemix_active:
         drum_result = DrumTranscriptionResult(
             events=wholemix_result.drums,
-            used_algorithm="muscriptor_wholemix",
+            used_algorithm=wholemix_method,
             attempted_algorithms=["muscriptor"],
             warnings=[],
             meta={"backend": "muscriptor_wholemix", **wholemix_result.meta},
@@ -6643,7 +6775,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             InstrumentTranscriptionResult(
                 instrument=role,
                 notes=notes,
-                used_method="muscriptor_wholemix",
+                used_method=wholemix_method,
                 attempted_methods=["muscriptor"],
                 warnings=[],
             )
@@ -6684,6 +6816,13 @@ def cmd_import(args: argparse.Namespace) -> int:
         )
 
     # Build MIDI output.
+    if wholemix_active and not instrument_results:
+        # A valid drums-only or empty selected result has no melodic pass.
+        # Supply empty metadata to the legacy event writer without recognizing
+        # an unrequested melodic track or dereferencing a missing result.
+        melodic_result = MelodicTranscriptionResult(
+            notes=[], used_method=wholemix_method, attempted_methods=["muscriptor"], warnings=[],
+        )
     if instrument_results or wholemix_active:
         inst_tracks = {r.instrument: r.notes for r in (instrument_results or [])}
         notes_mid = _build_notes_mid_bytes(
@@ -6903,14 +7042,41 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
 
     config = _parse_config_arg(args.config)
     temp_mix_ctx: tempfile.TemporaryDirectory[str] | None = None
-    src_audio = _find_preferred_mix_audio_in_dir(src_dir)
+    tr_opts, tr_err = _resolve_transcription_options(args, config)
+    if tr_opts is None:
+        log(tr_err or "invalid transcription options")
+        return 2
+    if tr_opts.get("source_stem_role"):
+        log("A single source stem role requires one audio file; select folder stems instead.")
+        return 2
+    selected_stems = tr_opts.get("recognition_stems")
+    synthesis_config = config
+    if selected_stems:
+        available_stems = _resolved_input_stem_paths(config)
+        missing = [role for role in selected_stems if role not in available_stems or not available_stems[role].is_file()]
+        if missing:
+            log(f"Selected source stems are missing: {', '.join(missing)}; no full mix was substituted.")
+            return 2
+        synthesis_config = {**config, "input_stem_paths": {role: str(available_stems[role]) for role in selected_stems}}
+    keyboard_only = getattr(args, "keyboard_only", None)
+    if keyboard_only is None:
+        keyboard_only = config.get("keyboard_only", False)
+    if keyboard_only:
+        src_audio = _resolved_input_stem_paths(config).get("keys")
+        if src_audio is None:
+            log("Keyboard-only folder import requires a detected keys/keyboard stem. Choose a stems folder or one isolated keys audio file.")
+            return 2
+    elif selected_stems or config.get("use_selected_input_stems"):
+        src_audio = None
+    else:
+        src_audio = _find_preferred_mix_audio_in_dir(src_dir)
     if src_audio is None:
         try:
             input_stem_paths = _resolved_input_stem_paths(config)
             if input_stem_paths:
                 temp_mix_ctx = tempfile.TemporaryDirectory(prefix="auralprimer_input_stems_mix_")
                 temp_mix_path = Path(temp_mix_ctx.name) / "mix.wav"
-                synth = _synthesize_mix_wav_from_input_stems(temp_mix_path, config)
+                synth = _synthesize_mix_wav_from_input_stems(temp_mix_path, synthesis_config)
                 if synth is not None:
                     src_audio = temp_mix_path
                     config = {**config, "_synthesized_mix_from_input_stems": True}
@@ -6943,6 +7109,11 @@ def cmd_import_dir(args: argparse.Namespace) -> int:
             drum_silence_gate_window_ms=getattr(args, "drum_silence_gate_window_ms", None),
             drum_silence_gate_disabled=bool(getattr(args, "drum_silence_gate_disabled", False)),
             melodic_method=getattr(args, "melodic_method", DEFAULT_MELODIC_METHOD),
+            wholemix_transcriber=getattr(args, "wholemix_transcriber", None),
+            keyboard_only=getattr(args, "keyboard_only", None),
+            recognition_instruments=getattr(args, "recognition_instruments", None),
+            recognition_stems=getattr(args, "recognition_stems", None),
+            source_stem_role=getattr(args, "source_stem_role", None),
             transcription_profile=getattr(args, "transcription_profile", DEFAULT_TRANSCRIPTION_PROFILE),
             beat_analysis_mode=getattr(args, "beat_analysis_mode", DEFAULT_BEAT_ANALYSIS_MODE),
             stem_separation_provider=getattr(args, "stem_separation_provider", DEFAULT_STEM_SEPARATION_PROVIDER),

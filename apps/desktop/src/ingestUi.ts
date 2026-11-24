@@ -1,4 +1,5 @@
 import type { IngestImportRequest, IngestSubcommand } from "./ingestClient";
+import { validateInstrumentSelection } from "./recognitionOptions";
 
 export type IngestFormState = {
   sourcePath: string;
@@ -10,8 +11,11 @@ export type IngestFormState = {
   artist?: string;
   drumFilter?: string;
   melodicMethod?: string;
-  /** "muscriptor" to transcribe the whole mix in one pass instead. */
+  /** "muscriptor" for selectable multi-instrument recognition. */
   wholemixTranscriber?: string;
+  recognitionInstruments?: string[];
+  recognitionStems?: string[];
+  sourceStemRole?: string;
   shiftsText?: string;
   multiFilter: boolean;
 };
@@ -100,6 +104,7 @@ export function inferIngestTitleArtistFromSourcePath(sourcePath: string): {
 export function buildIngestRequestFromForm(state: IngestFormState): IngestImportRequest {
   const sourcePath = state.sourcePath.trim();
   if (!sourcePath) throw new Error("source path is required");
+  const recognizer = nonEmpty(state.wholemixTranscriber);
 
   const req: IngestImportRequest = {
     source_path: sourcePath,
@@ -111,10 +116,19 @@ export function buildIngestRequestFromForm(state: IngestFormState): IngestImport
     artist: nonEmpty(state.artist),
     drum_filter: nonEmpty(state.drumFilter),
     melodic_method: nonEmpty(state.melodicMethod),
-    wholemix_transcriber: nonEmpty(state.wholemixTranscriber),
+    wholemix_transcriber: recognizer,
     shifts: parseShifts(state.shiftsText),
     multi_filter: state.multiFilter
   };
+
+  if (recognizer === "muscriptor") {
+    if (state.recognitionInstruments) req.recognition_instruments = validateInstrumentSelection(state.recognitionInstruments);
+    if (state.recognitionStems) {
+      if (!state.recognitionStems.length) throw new Error("Choose at least one source stem.");
+      req.recognition_stems = [...new Set(state.recognitionStems)].sort();
+    }
+    if (nonEmpty(state.sourceStemRole)) req.source_stem_role = nonEmpty(state.sourceStemRole);
+  }
 
   return req;
 }

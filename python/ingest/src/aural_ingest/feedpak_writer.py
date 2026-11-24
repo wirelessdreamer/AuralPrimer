@@ -1231,6 +1231,11 @@ def write_feedpak(auralsong_dir: Path, out_dir: Path) -> dict[str, Any]:
     if isinstance(manifest.get("pipeline"), dict):
         aural_ext["aural_pipeline"] = manifest["pipeline"]
 
+    recognition_src = auralsong_dir / "features" / "recognition"
+    if recognition_src.is_dir():
+        _copy_tree(recognition_src, aural_dir / "recognition")
+        aural_ext["aural_recognition"] = "aural/recognition"
+
     # --- manifest --------------------------------------------------------
     title = manifest.get("title") or song_stem
     artist = manifest.get("artist") or "Unknown"

@@ -19,6 +19,7 @@ import { extractKeyModeFromManifest } from "./hud";
 import { ingestImport, type IngestImportRequest, type IngestSubcommand } from "./ingestClient";
 import { fetchModelSetup, initModelSetupPanel } from "./modelSetupPanel";
 import { buildIngestRequestFromForm, inferIngestTitleArtistFromSourcePath } from "./ingestUi";
+import { RECOGNITION_GROUPS, SOURCE_STEM_ROLES, instrumentLabel } from "./recognitionOptions";
 import { PREFERRED_MODEL_PACKS } from "./models/preferredModelPacks";
 import {
   installModelPackFromPath,
@@ -688,7 +689,7 @@ root.innerHTML = `
               <h2 id="importAnalysisHeading">Point us at your audio</h2>
               <div class="meta">step 2 of 2</div>
             </div>
-            <p class="meta importStageNote">
+            <p class="meta importStageNote" id="ingestAnalysisNote">
               We decode the audio, find the beat and tempo, separate it into parts, split lead from
               rhythm guitar, then write out the drum and melody notes. The defaults are good &mdash;
               normally you only need the file.
@@ -719,22 +720,55 @@ root.innerHTML = `
               <div class="meta">Filled in from the filename when you pick a file. Edit it if the guess is wrong.</div>
             </div>
 
+            <div class="importField">
+              <label class="importLabel" for="ingestWholemix">Recognition mode</label>
+              <select id="ingestWholemix" aria-describedby="ingestWholemixNote">
+                <option value="">Per-instrument analysis (default)</option>
+                <option value="muscriptor">MuScriptor &mdash; choose instruments and stems</option>
+              </select>
+              <div class="meta" id="ingestWholemixNote" aria-live="polite">
+                Separate the recording into parts, then recognize each instrument.
+              </div>
+            </div>
+
+            <div id="ingestRecognitionOptions" hidden>
+              <div class="importField">
+                <label class="importLabel" for="ingestInstrumentMode">Instruments to recognize</label>
+                <select id="ingestInstrumentMode">
+                  <option value="auto">Automatic — infer instruments from the audio</option>
+                  <option value="selected">Choose instruments…</option>
+                </select>
+                <div id="ingestInstrumentPicker" hidden>
+                  <div class="row importSubRow">
+                    <button type="button" data-recognition-preset="keys">Keys</button>
+                    <button type="button" data-recognition-preset="guitar">Guitars</button>
+                    <button type="button" data-recognition-preset="all">All</button>
+                    <button type="button" data-recognition-preset="none">Clear</button>
+                  </div>
+                  <div class="recognitionGrid">
+                    ${RECOGNITION_GROUPS.map(([group, names]) => `<fieldset><legend>${group}</legend>${names.map((name) => `<label><input type="checkbox" data-recognition-instrument="${name}" /> ${instrumentLabel(name)}</label>`).join("")}</fieldset>`).join("")}
+                  </div>
+                </div>
+                <div class="meta">Choose the sounds to look for independently of the stem names. Multiple instruments can be recognized together.</div>
+              </div>
+              <div id="ingestSingleStemOptions" class="importField">
+                <label class="importLabel" for="ingestSourceStemRole">This audio file contains</label>
+                <select id="ingestSourceStemRole">
+                  <option value="">A full song / mix</option>
+                  ${SOURCE_STEM_ROLES.map((role) => `<option value="${role}">An isolated ${instrumentLabel(role).toLowerCase()} stem</option>`).join("")}
+                </select>
+                <div class="meta">An isolated stem is used directly without another separation pass.</div>
+              </div>
+            </div>
+            <div id="ingestStemSelection" class="importField" hidden>
+              <div class="importLabel">Source stems to analyze</div>
+              <div id="ingestStemChoices" class="recognitionStemChoices">Choose a stems folder to see its audio files.</div>
+              <div class="meta">Only checked stems are analyzed. Select multiple to combine their audio; the folder’s full mix is not substituted. You can correct each stem’s role.</div>
+            </div>
+
             <details id="importAdvanced" class="importAdvanced">
               <summary>Advanced &mdash; engines and tuning</summary>
               <div class="importAdvancedBody">
-
-                <div class="importField">
-                  <label class="importLabel" for="ingestWholemix">Transcribe the whole mix in one pass</label>
-                  <select id="ingestWholemix">
-                    <option value="">Off &mdash; separate into stems first (default)</option>
-                    <option value="muscriptor">MuScriptor &mdash; one pass over the full mix</option>
-                  </select>
-                  <div class="meta" id="ingestWholemixNote">
-                    One model reads the whole mix and writes every instrument at once, instead of
-                    separating stems and running a detector per part. When this is on, the two
-                    engine choices below are not used.
-                  </div>
-                </div>
 
                 <div class="importField">
                   <label class="importLabel" for="ingestDrumFilter">How drum hits are found</label>
@@ -1279,21 +1313,23 @@ const ingestWholemixSelect = document.getElementById("ingestWholemix") as HTMLSe
  * picking it with no weights would fail minutes into an import.
  */
 async function refreshWholemixAvailability(): Promise<void> {
-  const option = ingestWholemixSelect.querySelector<HTMLOptionElement>('option[value="muscriptor"]');
-  if (!option) return;
+  const options = Array.from(ingestWholemixSelect.options).filter((o) => o.value.startsWith("muscriptor"));
   if (!haveTauri()) {
-    option.disabled = true;
-    option.textContent = "MuScriptor — needs the desktop app";
+    for (const option of options) {
+      option.disabled = true;
+      option.textContent += " — needs the desktop app";
+    }
     return;
   }
   try {
     const entry = (await fetchModelSetup()).find((e) => e.id === "muscriptor");
     const ready = entry?.next_step === "ready";
-    option.disabled = !ready;
-    option.textContent = ready
-      ? "MuScriptor — one pass over the full mix"
-      : "MuScriptor — needs setup in Configure › Models";
-    if (!ready && ingestWholemixSelect.value === "muscriptor") {
+    for (const option of options) {
+      option.disabled = !ready;
+      const label = "MuScriptor — choose instruments and stems";
+      option.textContent = ready ? label : `${label} — needs setup in Configure › Models`;
+    }
+    if (!ready && ingestWholemixSelect.value.startsWith("muscriptor")) {
       ingestWholemixSelect.value = "";
       syncWholemixDependentControls();
     }
@@ -1307,6 +1343,17 @@ function syncWholemixDependentControls(): void {
   const on = ingestWholemixSelect.value !== "";
   ingestDrumFilterSelect.disabled = on;
   ingestMelodicMethodSelect.disabled = on;
+  const note = document.getElementById("ingestWholemixNote");
+  if (note) note.textContent = on
+      ? "Choose the source audio and instruments below. MuScriptor handles both drum and melody notes. Sections missing from the selected audio can still be missing from the chart."
+      : "Separate the recording into parts, then recognize each instrument.";
+  const intro = document.getElementById("ingestAnalysisNote");
+  if (intro) intro.textContent = on
+    ? "Turn a full song or selected stems into editable notes. Choose the instruments you want to recognize and the audio you want analyzed."
+    : "We decode the audio, find the beat and tempo, separate it into parts, split lead from rhythm guitar, then write out the drum and melody notes. The defaults are good — normally you only need the file.";
+  document.getElementById("ingestRecognitionOptions")!.hidden = !on;
+  document.getElementById("ingestSingleStemOptions")!.hidden = currentIngestMode() !== "import";
+  document.getElementById("ingestStemSelection")!.hidden = currentIngestMode() !== "stem-dir";
 }
 const ingestConfigInput = document.getElementById("ingestConfig") as HTMLInputElement;
 const ingestTitleInput = document.getElementById("ingestTitle") as HTMLInputElement;
@@ -4077,6 +4124,7 @@ function currentIngestMode(): DesktopAnalysisImportMode {
 }
 
 function setIngestSourcePlaceholder(mode: DesktopAnalysisImportMode) {
+  syncWholemixDependentControls();
   ingestBrowseSourceBtn.textContent = mode === "import" ? "Browse..." : "Pick folder...";
   if (mode === "stem-dir") {
     ingestSourcePathInput.placeholder = "C:\\music\\split-stems-folder";
@@ -4187,29 +4235,29 @@ async function buildStemDirConfig(
   inputStemPaths: Partial<Record<InputStemRole, string>>
 ): Promise<string> {
   const baseConfig = await parseIngestConfigObject(configValue);
-  const existingStemPaths =
-    baseConfig.input_stem_paths && typeof baseConfig.input_stem_paths === "object" && !Array.isArray(baseConfig.input_stem_paths)
-      ? (baseConfig.input_stem_paths as Record<string, unknown>)
-      : {};
-
   return JSON.stringify({
     ...baseConfig,
     disable_stem_separation: true,
-    input_stem_paths: {
-      ...existingStemPaths,
-      ...inputStemPaths
-    }
+    use_selected_input_stems: true,
+    input_stem_paths: inputStemPaths
   });
 }
 
 async function inspectIngestStemFolder(folderPath: string): Promise<RawSongFolderInspection> {
-  const inspection = await safeInvoke<RawSongFolderInspection>("inspect_raw_song_folder", { folderPath });
+  const inspection = await safeInvoke<RawSongFolderInspection>("inspect_raw_song_folder", { folderPath, allowMissingMidi: true });
+  if (ingestSourcePathInput.value.trim() !== folderPath || currentIngestMode() !== "stem-dir") return inspection;
   ingestStemInspection = inspection;
   if (!ingestTitleInput.value.trim() && inspection.title_guess) {
     ingestTitleInput.value = inspection.title_guess;
   }
 
   const inputStemPaths = buildIngestInputStemPaths(inspection);
+  const defaults = new Set(Object.values(inputStemPaths));
+  const choices = document.getElementById("ingestStemChoices")!;
+  choices.innerHTML = inspection.stem_parts.map((part, index) => {
+    const role = normalizeInputStemRole(part.detected_role) ?? normalizeInputStemRole(part.game_role) ?? "other";
+    return `<div class="recognitionStemRow"><label><input type="checkbox" data-source-stem="${index}" ${defaults.has(part.path) ? "checked" : ""} /> ${escapeHtml(part.path.split(/[\\/]/).pop() ?? part.path)}</label><select data-source-role="${index}" aria-label="Role for ${escapeHtml(part.path.split(/[\\/]/).pop() ?? part.path)}">${SOURCE_STEM_ROLES.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${instrumentLabel(r)}</option>`).join("")}</select></div>`;
+  }).join("") || "No stem audio files were detected in this folder.";
   const availableRoles = Object.keys(inputStemPaths);
   const warnings = inspection.warnings.length;
   const mixLabel = inspection.mix_wav_path ? "mix found" : "mix will be synthesized from stems";
@@ -4219,6 +4267,24 @@ async function inspectIngestStemFolder(folderPath: string): Promise<RawSongFolde
     `validated stem folder: ${inspection.stem_wav_paths.length} WAV(s) | ${mixLabel} | roles: ${rolesLabel}${warningLabel}`
   );
   return inspection;
+}
+
+function selectedIngestStemPaths(inspection: RawSongFolderInspection): Partial<Record<InputStemRole, string>> {
+  const paths: Partial<Record<InputStemRole, string>> = {};
+  for (const checkbox of document.querySelectorAll<HTMLInputElement>("[data-source-stem]:checked")) {
+    const index = Number(checkbox.dataset.sourceStem);
+    const part = inspection.stem_parts[index];
+    const role = document.querySelector<HTMLSelectElement>(`[data-source-role="${index}"]`)!.value as InputStemRole;
+    if (paths[role]) throw new Error(`Two selected stems use the ${instrumentLabel(role)} role. Select one, or give them different roles.`);
+    paths[role] = part.path;
+  }
+  if (!Object.keys(paths).length) throw new Error("Choose at least one source stem to analyze.");
+  return paths;
+}
+
+function selectedRecognitionInstruments(): string[] | undefined {
+  if ((document.getElementById("ingestInstrumentMode") as HTMLSelectElement).value !== "selected") return undefined;
+  return Array.from(document.querySelectorAll<HTMLInputElement>("[data-recognition-instrument]:checked"), (el) => el.dataset.recognitionInstrument!);
 }
 
 async function ingestBrowseSource() {
@@ -4269,7 +4335,7 @@ async function runIngestImport() {
         ingestStemInspection?.folder_path === folderPath
           ? ingestStemInspection
           : await inspectIngestStemFolder(folderPath);
-      const inputStemPaths = buildIngestInputStemPaths(inspection);
+      const inputStemPaths = selectedIngestStemPaths(inspection);
       if (!Object.keys(inputStemPaths).length) {
         setIngestStatus("no reusable stems were detected in that folder");
         setIngestSummary("error", "Import setup failed", "No reusable stems were detected in that folder.", {
@@ -4290,6 +4356,8 @@ async function runIngestImport() {
         drumFilter: ingestDrumFilterSelect.value,
         melodicMethod: ingestMelodicMethodSelect.value,
         wholemixTranscriber: ingestWholemixSelect.value,
+        recognitionInstruments: selectedRecognitionInstruments(),
+        recognitionStems: Object.keys(inputStemPaths),
         shiftsText: ingestShiftsInput.value,
         multiFilter: ingestMultiFilterInput.checked
       });
@@ -4305,6 +4373,8 @@ async function runIngestImport() {
         drumFilter: ingestDrumFilterSelect.value,
         melodicMethod: ingestMelodicMethodSelect.value,
         wholemixTranscriber: ingestWholemixSelect.value,
+        recognitionInstruments: selectedRecognitionInstruments(),
+        sourceStemRole: mode === "import" ? (document.getElementById("ingestSourceStemRole") as HTMLSelectElement).value : undefined,
         shiftsText: ingestShiftsInput.value,
         multiFilter: ingestMultiFilterInput.checked
       });
@@ -5315,6 +5385,18 @@ for (const card of importChoiceCards) {
 importOpenModelsBtn.addEventListener("click", () => setRoute("config"));
 
 ingestWholemixSelect.addEventListener("change", syncWholemixDependentControls);
+document.getElementById("ingestInstrumentMode")!.addEventListener("change", (event) => {
+  document.getElementById("ingestInstrumentPicker")!.hidden = (event.target as HTMLSelectElement).value !== "selected";
+});
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-recognition-preset]")) {
+  button.addEventListener("click", () => {
+    const preset = button.dataset.recognitionPreset;
+    const names = preset === "keys" ? RECOGNITION_GROUPS[0][1] : preset === "guitar" ? RECOGNITION_GROUPS[1][1].slice(0, 3) : [];
+    for (const box of document.querySelectorAll<HTMLInputElement>("[data-recognition-instrument]")) {
+      box.checked = preset === "all" || (names as readonly string[]).includes(box.dataset.recognitionInstrument!);
+    }
+  });
+}
 syncWholemixDependentControls();
 
 setImportKind("suno");
