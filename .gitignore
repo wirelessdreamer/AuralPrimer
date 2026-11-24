@@ -234,3 +234,6 @@ hardware/quest-guitar-mount/out/
 .env
 .env.*
 !.env.example
+
+# Talk decks and their demo media live outside the repository.
+talks/
