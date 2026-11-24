@@ -3,7 +3,7 @@
  *
  * Owns:
  *   - The status line, auralsong list, and details panel DOM
- *   - The library toolbar (search / sort / group-by-composer) it injects
+ *   - The library toolbar (search / sort / group-by) it injects
  *     above the list, plus the render that honours it
  *   - The songs-folder override input + set/clear buttons
  *   - The "Refresh" button + the auralsong-list render
@@ -31,6 +31,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   buildLibraryView,
   type LibraryGroup,
+  type LibraryGroupKey,
   type LibraryItem,
   type LibrarySortKey,
   type LibraryView,
@@ -61,6 +62,7 @@ type SortOption = {
 const SORT_OPTIONS: SortOption[] = [
   { key: "title", descending: false, label: "Title" },
   { key: "composer", descending: false, label: "Composer" },
+  { key: "genre", descending: false, label: "Genre" },
   { key: "duration", descending: false, label: "Duration" },
   { key: "added", descending: true, label: "Recently added" },
 ];
@@ -76,6 +78,7 @@ function toLibraryItem(e: AuralSongScanEntry): LibraryItem {
     path: e.container_path,
     title: e.manifest?.title ?? "(missing title)",
     composer: e.manifest?.artist ?? "",
+    genre: e.manifest?.genre ?? "",
     durationSec: typeof duration === "number" ? duration : null,
     addedAtMs: typeof e.added_at_ms === "number" ? e.added_at_ms : null,
     ok: e.ok,
@@ -110,6 +113,9 @@ export type SongLibraryPanelHandle = {
   setDetailsHTML: (html: string) => void;
   /** Re-apply the .isSelected class + aria-pressed to the matching list row. */
   setSelectedSongCard: (containerPath: string | null) => void;
+  /** Save/restore the library's visible song and its offset in the viewport. */
+  captureScrollPosition: () => void;
+  restoreScrollPosition: () => void;
 };
 
 export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPanelHandle {
@@ -130,15 +136,23 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
   toolbar.id = "songLibraryToolbar";
   toolbar.className = "songLibraryToolbar";
   toolbar.innerHTML = `
-    <input id="songLibrarySearch" class="songLibrarySearch" type="search" placeholder="Search title or composer" aria-label="Search the song library" />
+    <div class="songLibraryFilters">
+      <label class="meta songLibraryFilter">Artist <select id="songLibraryArtist" aria-label="Filter songs by artist"></select></label>
+      <label class="meta songLibraryFilter">Genre <select id="songLibraryGenre" aria-label="Filter songs by genre"></select></label>
+      <button id="songLibraryClearFilters" type="button" disabled>Clear filters</button>
+    </div>
+    <input id="songLibrarySearch" class="songLibrarySearch" type="search" placeholder="Search title or artist" aria-label="Search the song library" />
     <label class="meta songLibraryControl">Sort <select id="songLibrarySort" aria-label="Sort songs by"></select></label>
-    <label class="meta songLibraryControl"><input id="songLibraryGroup" type="checkbox" /> Group by composer</label>
+    <label class="meta songLibraryControl">Group <select id="songLibraryGroup" aria-label="Group songs by"></select></label>
   `;
   listEl.before(toolbar);
 
   const searchEl = toolbar.querySelector("#songLibrarySearch") as HTMLInputElement;
   const sortEl = toolbar.querySelector("#songLibrarySort") as HTMLSelectElement;
-  const groupEl = toolbar.querySelector("#songLibraryGroup") as HTMLInputElement;
+  const groupEl = toolbar.querySelector("#songLibraryGroup") as HTMLSelectElement;
+  const artistEl = toolbar.querySelector("#songLibraryArtist") as HTMLSelectElement;
+  const genreEl = toolbar.querySelector("#songLibraryGenre") as HTMLSelectElement;
+  const clearFiltersBtn = toolbar.querySelector("#songLibraryClearFilters") as HTMLButtonElement;
 
   // Last scan, kept so a search keystroke or a sort change rerenders without
   // another round-trip to Rust.
@@ -149,14 +163,91 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
   // View state.
   let sortKey: LibrarySortKey = "title";
   let sortDescending = false;
-  let groupByComposer = false;
+  let groupBy: LibraryGroupKey = "none";
   let query = "";
+  let artistFilter: string | null = null;
+  let genreFilter: string | null = null;
   const collapsedGroups = new Set<string>();
+  let scrollPosition: { top: number; path?: string; offset?: number } | null = null;
+  let refreshGeneration = 0;
 
-  /** Offer "Recently added" only while the scan actually dates the packs. */
-  function syncSortOptions(): void {
+  function isLibraryVisible(): boolean {
+    const route = listEl!.closest(".route");
+    return (!route || route.classList.contains("isActive"))
+      && !listEl!.closest(".playLayout")?.classList.contains("isFocus");
+  }
+
+  function captureScrollPosition(): void {
+    if (!isLibraryVisible()) return;
+    const scroller = document.scrollingElement ?? document.documentElement;
+    const headerBottom = document.querySelector(".appHeader")?.getBoundingClientRect().bottom ?? 0;
+    const row = Array.from(listEl!.querySelectorAll<HTMLButtonElement>("button.songSelectBtn")).find((button) => {
+      const rect = button.getBoundingClientRect();
+      return rect.height > 0 && rect.bottom > headerBottom && rect.top < window.innerHeight;
+    });
+    scrollPosition = {
+      top: scroller.scrollTop,
+      path: row?.dataset.path,
+      offset: row?.getBoundingClientRect().top,
+    };
+  }
+
+  function restoreScrollPosition(): void {
+    if (!isLibraryVisible()) return;
+    const scroller = document.scrollingElement ?? document.documentElement;
+    if (!scrollPosition) { scroller.scrollTop = 0; return; }
+    const row = Array.from(listEl!.querySelectorAll<HTMLButtonElement>("button.songSelectBtn"))
+      .find((button) => button.dataset.path === scrollPosition!.path);
+    if (row && scrollPosition.offset !== undefined) {
+      scroller.scrollTop += row.getBoundingClientRect().top - scrollPosition.offset;
+    } else {
+      scroller.scrollTop = scrollPosition.top;
+    }
+  }
+
+  function syncMetadataFilter(
+    select: HTMLSelectElement, field: "composer" | "genre", selected: string | null,
+    allLabel: string, missingLabel: string,
+  ): string | null {
+    const values = new Map<string, { label: string; count: number }>();
+    for (const item of items) {
+      const label = item[field].trim();
+      const key = label.toLowerCase();
+      const existing = values.get(key);
+      if (existing) existing.count += 1;
+      else values.set(key, { label: label || missingLabel, count: 1 });
+    }
+    select.replaceChildren(new Option(allLabel, ""));
+    const options = [...values.entries()].sort(([a, av], [b, bv]) =>
+      a === "" ? 1 : b === "" ? -1 : av.label.localeCompare(bv.label, undefined, { sensitivity: "base" }));
+    for (const [value, option] of options) {
+      // JSON distinguishes an empty metadata value from the All option and
+      // from any literal artist/genre name, without reserved sentinel names.
+      select.add(new Option(`${option.label} (${option.count})`, JSON.stringify(value)));
+    }
+    if (selected !== null && !values.has(selected)) selected = null;
+    select.value = selected === null ? "" : JSON.stringify(selected);
+    return selected;
+  }
+
+  /**
+   * Offer a control only while the library can answer it: "Recently added"
+   * needs dated packs, and genre needs at least one pack that records one.
+   *
+   * Genre is gated because almost nothing sets it -- only a fresh
+   * `aural_ingest import --genre` ever has. An ungated control would sort a
+   * whole library into one "No genre" bucket and look broken rather than
+   * empty, which is the failure the MR client's own genre filter is warned
+   * about in `feedpak.rs`.
+   */
+  function syncToolbarOptions(): void {
+    artistFilter = syncMetadataFilter(artistEl, "composer", artistFilter, "All artists", "Unknown artist");
+    genreFilter = syncMetadataFilter(genreEl, "genre", genreFilter, "All genres", "No genre");
+    const hasGenre = items.some((i) => i.genre.trim() !== "");
     const options = SORT_OPTIONS.filter(
-      (o) => o.key !== "added" || items.some((i) => i.addedAtMs !== null)
+      (o) =>
+        (o.key !== "added" || items.some((i) => i.addedAtMs !== null)) &&
+        (o.key !== "genre" || hasGenre)
     );
     if (!options.some((o) => o.key === sortKey)) {
       sortKey = "title";
@@ -166,6 +257,17 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
       .map((o) => `<option value="${o.key}">${deps.escapeHtml(o.label)}</option>`)
       .join("");
     sortEl.value = sortKey;
+
+    const groupOptions: { key: LibraryGroupKey; label: string }[] = [
+      { key: "none", label: "None" },
+      { key: "composer", label: "Composer" },
+      ...(hasGenre ? [{ key: "genre" as const, label: "Genre" }] : []),
+    ];
+    if (!groupOptions.some((o) => o.key === groupBy)) groupBy = "none";
+    groupEl.innerHTML = groupOptions
+      .map((o) => `<option value="${o.key}">${deps.escapeHtml(o.label)}</option>`)
+      .join("");
+    groupEl.value = groupBy;
   }
 
   function renderStatus(view: LibraryView): void {
@@ -230,16 +332,19 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
     const view = buildLibraryView(items, {
       sort: sortKey,
       descending: sortDescending,
-      groupByComposer,
+      groupBy,
       query,
+      artist: artistFilter,
+      genre: genreFilter,
     });
+    clearFiltersBtn.disabled = !query.trim() && artistFilter === null && genreFilter === null;
     const selected = deps.selectedAuralSongPath();
 
     if (view.matched === 0) {
       listEl!.innerHTML =
         view.total === 0
           ? `<ul class="songLibraryList"></ul>`
-          : `<p class="meta songLibraryEmpty">No songs match that search.</p>`;
+          : `<p class="meta songLibraryEmpty">No songs match these filters. Clear filters to browse all songs.</p>`;
     } else {
       listEl!.innerHTML = view.groups.map((g) => renderGroup(g, selected)).join("\n");
     }
@@ -251,6 +356,7 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
         const el = ev.currentTarget as HTMLButtonElement;
         const containerPath = el.getAttribute("data-path");
         if (!containerPath) return;
+        captureScrollPosition();
         await deps.onSongSelected(containerPath);
       });
     }
@@ -267,13 +373,16 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
   }
 
   async function refresh(): Promise<void> {
-    statusEl!.textContent = "Loading...";
-    listEl!.innerHTML = "";
-    detailsEl!.innerHTML = "";
+    const generation = ++refreshGeneration;
+    if (items.length === 0) statusEl!.textContent = "Loading...";
 
     try {
-      songsFolder = await invoke<string>("get_songs_folder");
+      const folder = await invoke<string>("get_songs_folder");
       const entries = await invoke<AuralSongScanEntry[]>("scan_auralsongs");
+      if (generation !== refreshGeneration) return;
+      captureScrollPosition();
+      songsFolder = folder;
+      detailsEl!.innerHTML = "";
 
       songsFolderInput!.value = songsFolder;
 
@@ -281,9 +390,11 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
       for (const e of entries) entryByPath.set(e.container_path, e);
       items = entries.map(toLibraryItem);
 
-      syncSortOptions();
+      syncToolbarOptions();
       renderList();
+      restoreScrollPosition();
     } catch (e) {
+      if (generation !== refreshGeneration) return;
       statusEl!.textContent = String(e);
       listEl!.innerHTML = `
         <p>
@@ -293,6 +404,12 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
     }
   }
 
+  // Both selects are populated from the scan, so seed them now with the
+  // empty-library defaults -- otherwise they render with no options at all
+  // until the first scan returns, and a <select> with nothing in it reads as
+  // a broken control rather than a pending one.
+  syncToolbarOptions();
+
   // Wire button events.
   refreshBtn.addEventListener("click", () => void refresh());
 
@@ -300,6 +417,23 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
   // from the last scan instead of invoking Rust again.
   searchEl.addEventListener("input", () => {
     query = searchEl.value;
+    renderList();
+  });
+  artistEl.addEventListener("change", () => {
+    artistFilter = artistEl.value === "" ? null : JSON.parse(artistEl.value) as string;
+    renderList();
+  });
+  genreEl.addEventListener("change", () => {
+    genreFilter = genreEl.value === "" ? null : JSON.parse(genreEl.value) as string;
+    renderList();
+  });
+  clearFiltersBtn.addEventListener("click", () => {
+    query = "";
+    artistFilter = null;
+    genreFilter = null;
+    searchEl.value = "";
+    artistEl.value = "";
+    genreEl.value = "";
     renderList();
   });
 
@@ -312,7 +446,7 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
   });
 
   groupEl.addEventListener("change", () => {
-    groupByComposer = groupEl.checked;
+    groupBy = groupEl.value as LibraryGroupKey;
     renderList();
   });
 
@@ -346,6 +480,8 @@ export function initSongLibraryPanel(deps: SongLibraryPanelDeps): SongLibraryPan
 
   return {
     refresh,
+    captureScrollPosition,
+    restoreScrollPosition,
     disableFolderControls: () => {
       setOverrideBtn!.disabled = true;
       clearOverrideBtn!.disabled = true;

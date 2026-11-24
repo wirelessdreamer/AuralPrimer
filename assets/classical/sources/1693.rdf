@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Fantaisie-Impromptu</mp:title>
+    <mp:composer>ChopinFF</mp:composer>
+    <mp:opus>Op. 66</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date/>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Herrmann Scholtz (1845-1918)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>chopin_fantaisie-impromptu.ly</mp:lyFile>
+    <mp:midFile>chopin_fantaisie-impromptu.mid</mp:midFile>
+    <mp:psFileA4>chopin_fantaisie-impromptu-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>chopin_fantaisie-impromptu-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>chopin_fantaisie-impromptu-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>chopin_fantaisie-impromptu-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>chopin_fantaisie-impromptu-preview.png</mp:pngFile>
+    <mp:pngHeight>139</mp:pngHeight>
+    <mp:pngWidth>539</mp:pngWidth>
+
+    <mp:id>Mutopia-2009/09/05-1693</mp:id>
+    <mp:maintainer>Guy D. Lederfein</mp:maintainer>
+    <mp:maintainerEmail>glederfein@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.10.33</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

@@ -1295,6 +1295,29 @@ li {
   min-width: 0;
 }
 
+.songLibraryFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 1 0 100%;
+  min-width: 0;
+}
+
+.songLibraryFilter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.songLibraryFilter select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .songLibraryControl {
   display: flex;
   align-items: center;

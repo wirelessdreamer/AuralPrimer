@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rdf:RDF xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=".">
+    <mp:title>Consolation, S.172 No.3</mp:title>
+    <mp:composer>LisztF</mp:composer>
+    <mp:opus>S.172</mp:opus>
+    <mp:lyricist />
+    <mp:for>Piano</mp:for>
+    <mp:date />
+    <mp:style>Romantic</mp:style>
+    <mp:metre />
+    <mp:arranger />
+    <mp:source>Breitkopf &amp; Härtel, 1850</mp:source>
+    <mp:licence>Creative Commons Attribution 3.0</mp:licence>
+    <mp:lyFile>liszt-consolation-no3.ly</mp:lyFile>
+    <mp:midFile>liszt-consolation-no3.mid</mp:midFile>
+    <mp:psFileA4>liszt-consolation-no3-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>liszt-consolation-no3-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>liszt-consolation-no3-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>liszt-consolation-no3-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>liszt-consolation-no3-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+    <mp:id>Mutopia-2019/06/23-1647</mp:id>
+    <mp:maintainer>Ryan Prince</mp:maintainer>
+    <mp:maintainerEmail>rprincerp@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb />
+    <mp:moreInfo>This file was created from a public domain scan of the work's first edition which is located in the Petrucci Music Library, http://imslp.org/.</mp:moreInfo>
+    <mp:lilypondVersion>2.18.0</mp:lilypondVersion>
+  </rdf:Description>
+</rdf:RDF>

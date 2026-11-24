@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Rondo A Capriccio</mp:title>
+    <mp:composer>BeethovenLv</mp:composer>
+    <mp:opus>Op. 129</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1795</mp:date>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Augener's Edition</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>beethoven_rondo_op129-lys.zip</mp:lyFile>
+    <mp:midFile>beethoven_rondo_op129.mid</mp:midFile>
+    <mp:psFileA4>beethoven_rondo_op129-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>beethoven_rondo_op129-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>beethoven_rondo_op129-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>beethoven_rondo_op129-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>beethoven_rondo_op129-preview.png</mp:pngFile>
+    <mp:pngHeight>93</mp:pngHeight>
+    <mp:pngWidth>545</mp:pngWidth>
+
+    <mp:id>Mutopia-2015/01/17-498</mp:id>
+    <mp:maintainer>Magnus Lewis-Smith</mp:maintainer>
+    <mp:maintainerEmail>mlewissmith@users.sourceforge.net</mp:maintainerEmail>
+    <mp:maintainerWeb>http://magware.sourceforge.net/</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

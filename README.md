@@ -54,6 +54,11 @@ See [`BUILDING.md`](BUILDING.md) for the full install / test / package
 matrix and [`docs/local-dev-prereqs.md`](docs/local-dev-prereqs.md) for
 OS-level prerequisites.
 
+The optional [classical standards library](assets/classical/README.md)
+adds 45 licensed works in 60 MIDI practice tracks, including Bach's *Toccata
+and Fugue*, all of Vivaldi's *Four Seasons*, and 40 more standards. Its installer
+builds playable song packs with synthesized audio and per-edition attribution.
+
 ## Playing with a MIDI keyboard
 
 Live MIDI input is native (Rust `midir`: WinRT on Windows, CoreMIDI on macOS,
@@ -215,6 +220,9 @@ shell, and native audio/MIDI:
 | MR | **Meta Platforms** | [**Meta XR Core SDK**](https://developers.meta.com/horizon/documentation/unity/unity-package-manager/) — body / face / eye tracking for the Quest client's performance capture | Oculus SDK License (proprietary) |
 | MR | **Cadson Demak** — Chakra Petch project authors | [**Chakra Petch**](https://github.com/google/fonts/tree/main/ofl/chakrapetch) — the MR client's interface typeface | SIL OFL 1.1 |
 | Game | **Alexander Holm** / the [FreePats](https://freepats.zenvoid.org/) project | [**Salamander Grand Piano**](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html) — the sampled piano the game plays a chart's keys part with | CC BY 3.0 |
+| Content | **The Mutopia Project** — volunteer typesetters and arrangers | [**Mutopia Project**](https://www.mutopiaproject.org/) editions — the MIDI and LilyPond sources of the optional classical standards library | Public domain · CC BY · CC BY-SA (per edition) |
+| Content | **S. Christian Collins** | [**GeneralUser GS**](https://www.schristiancollins.com/generaluser.php) 2.0.3 — the soundfont the classical packs' audio is rendered with; the renders ship, the soundfont does not | GeneralUser GS License v2.0 |
+| Build | **FluidSynth project** | [**FluidSynth**](https://www.fluidsynth.org/) 2.6.1 — offline renderer for the classical packs; build tool only, not bundled | LGPL-2.1-or-later |
 | MR | **Unity Technologies** | [**TextMesh Pro**](https://docs.unity3d.com/Packages/com.unity.ugui@2.0/manual/TextMeshPro/index.html) — text rendering in the MR client; its SDF shaders are vendored under `Assets/TextMesh Pro/` as Unity's importer places them | Unity Companion License |
 | MR | **Unity Technologies** | [**XR Interaction Toolkit**](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.5/manual/index.html) · [**XR Hands**](https://docs.unity3d.com/Packages/com.unity.xr.hands@1.5/manual/index.html) · [**OpenXR**](https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.14/manual/index.html) · [**AR Foundation**](https://docs.unity3d.com/Packages/com.unity.xr.arfoundation@6.1/manual/index.html) · [**Input System**](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.14/manual/index.html) — the Quest client's runtime and interaction stack | Unity Companion / Package Distribution License |
 
@@ -320,6 +328,18 @@ outside the copyleft boundary described under *Licensing* below.
 | [**Chakra Petch**](https://fonts.google.com/specimen/Chakra+Petch) | the MR client's interface typeface — Bold for caps, SemiBold for reading; TTFs bundled and baked into TMP SDF atlases | [SIL OFL 1.1](https://openfontlicense.org/) |
 | [**Salamander Grand Piano**](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html) | A Yamaha C5 sampled in minor thirds across sixteen velocity layers. The game ships a trimmed cut of the FreePats SF2 build — three layers, tails shortened to each register's ring time — so a chart's keys part can be heard without a recorded stem for it | Alexander Holm; SF2 build by roberto@zenvoid.org | [CC BY 3.0](http://creativecommons.org/licenses/by/3.0/) |
 | [**TextMesh Pro**](https://docs.unity3d.com/Packages/com.unity.ugui@2.0/manual/TextMeshPro/index.html) | Text rendering for every label in the MR client. Ships with `com.unity.ugui`, but its SDF shaders live in the project as `Assets/TextMesh Pro/Shaders/TMP_*` — Unity's importer copies them there, and the build needs them present or every glyph renders as a magenta quad | Unity Technologies | Unity Companion License |
+
+### Music content (classical standards library)
+
+Optional content installed by `scripts/import_classical_library.py`. Each
+edition's own source, contributor, license and modification notice is in
+`assets/classical/catalog.json` and travels with every installed pack.
+
+| Component | Role | Made by | License |
+|---|---|---|---|
+| [**Mutopia Project**](https://www.mutopiaproject.org/) editions | the unchanged original MIDI and LilyPond sources for 45 works in 60 tracks | Mutopia typesetters and arrangers, credited per edition | Public domain · [CC BY](https://creativecommons.org/licenses/by/4.0/) · [CC BY-SA](https://creativecommons.org/licenses/by-sa/4.0/) (per edition) |
+| [**GeneralUser GS**](https://www.schristiancollins.com/generaluser.php) 2.0.3 | the soundfont each pack's stereo FLAC is rendered with; the soundfont itself is not bundled | S. Christian Collins | GeneralUser GS License v2.0 (free use, including for distributed music) |
+| [**FluidSynth**](https://www.fluidsynth.org/) 2.6.1 (build tool) | offline MIDI-to-audio renderer used to build the packs; not bundled | FluidSynth project | LGPL-2.1-or-later |
 
 > **Why a proprietary SDK is admissible here.** The Meta XR Core SDK is under
 > the Oculus SDK License, which is *not* GPLv3-compatible and so would fail the

@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rdf:RDF xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=".">
+    <mp:title>Symphony No. 5 - Opus 67 (1st Movement)</mp:title>
+    <mp:composer>BeethovenLv</mp:composer>
+    <mp:opus>Op. 67</mp:opus>
+    <mp:lyricist />
+    <mp:for>Orchestra</mp:for>
+    <mp:date>1807/08</mp:date>
+    <mp:style>Classical</mp:style>
+    <mp:metre />
+    <mp:arranger />
+    <mp:source>Breitkopf and Härtel (1862-1865)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+    <mp:lyFile>Symphony5_1-lys.zip</mp:lyFile>
+    <mp:midFile>Symphony5_1.mid</mp:midFile>
+    <mp:psFileA4>Symphony5_1-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Symphony5_1-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Symphony5_1-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Symphony5_1-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Symphony5_1-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+    <mp:id>Mutopia-2017/11/05-941</mp:id>
+    <mp:maintainer>Stelios Samelis (adapted to 2.16.2 by Johannes Heinecke)</mp:maintainer>
+    <mp:maintainerEmail />
+    <mp:maintainerWeb />
+    <mp:moreInfo />
+    <mp:lilypondVersion>2.16.2</mp:lilypondVersion>
+  </rdf:Description>
+</rdf:RDF>

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Prelude in C# minor</mp:title>
+    <mp:composer>RachmaninoffS</mp:composer>
+    <mp:opus>Op. 3, No. 2</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1892</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Bosworth &amp;amp; Co. 1896; Universal Edition 1910</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 4.0</mp:licence>
+
+    <mp:lyFile>rach-prelude-op3-no2.ly</mp:lyFile>
+    <mp:midFile>rach-prelude-op3-no2.mid</mp:midFile>
+    <mp:psFileA4>rach-prelude-op3-no2-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>rach-prelude-op3-no2-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>rach-prelude-op3-no2-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>rach-prelude-op3-no2-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>rach-prelude-op3-no2-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2015/07/09-2033</mp:id>
+    <mp:maintainer>Petro Kostandy</mp:maintainer>
+    <mp:maintainerEmail>pmkost-at-gmail-dot-com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

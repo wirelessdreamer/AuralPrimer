@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Air ('on the G string')</mp:title>
+    <mp:composer>BachJS</mp:composer>
+    <mp:opus>BWV 1068</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Flute and Guitar</mp:for>
+    <mp:date/>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>New adaptation from Bach-Gesellschaft</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>bach_air_bmv_1068.ly</mp:lyFile>
+    <mp:midFile>bach_air_bmv_1068.mid</mp:midFile>
+    <mp:psFileA4>bach_air_bmv_1068-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>bach_air_bmv_1068-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>bach_air_bmv_1068-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>bach_air_bmv_1068-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>bach_air_bmv_1068-preview.png</mp:pngFile>
+    <mp:pngHeight>106</mp:pngHeight>
+    <mp:pngWidth>537</mp:pngWidth>
+
+    <mp:id>Mutopia-2008/10/28-1534</mp:id>
+    <mp:maintainer>Mike Blackstock</mp:maintainer>
+    <mp:maintainerEmail>mike@blackstock.ca</mp:maintainerEmail>
+    <mp:maintainerWeb>http://www.blackstock.ca</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.11.62</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

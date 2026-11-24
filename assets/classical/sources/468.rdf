@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Prelude: Op. 28, No. 4 ('Suffocation')</mp:title>
+    <mp:composer>ChopinFF</mp:composer>
+    <mp:opus>Op. 28</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1838/39</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Peters, 1879</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Chop-28-4.ly</mp:lyFile>
+    <mp:midFile>Chop-28-4.mid</mp:midFile>
+    <mp:psFileA4>Chop-28-4-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Chop-28-4-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Chop-28-4-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Chop-28-4-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Chop-28-4-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2016/10/28-468</mp:id>
+    <mp:maintainer>Magnus Lewis-Smith</mp:maintainer>
+    <mp:maintainerEmail>mlewissmith@users.sourceforge.net</mp:maintainerEmail>
+    <mp:maintainerWeb>http://magware.sourceforge.net/</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

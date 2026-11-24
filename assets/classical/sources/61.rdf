@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Invention 8</mp:title>
+    <mp:composer>BachJS</mp:composer>
+    <mp:opus>BWV 779</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Harpsichord, Piano</mp:for>
+    <mp:date/>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Bach-Gesellschaft</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>bach-invention-08.ly</mp:lyFile>
+    <mp:midFile>bach-invention-08.mid</mp:midFile>
+    <mp:psFileA4>bach-invention-08-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>bach-invention-08-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>bach-invention-08-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>bach-invention-08-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>bach-invention-08-preview.png</mp:pngFile>
+    <mp:pngHeight>98</mp:pngHeight>
+    <mp:pngWidth>539</mp:pngWidth>
+
+    <mp:id>Mutopia-2008/06/15-61</mp:id>
+    <mp:maintainer>Allen Garvin</mp:maintainer>
+    <mp:maintainerEmail>AGarvin@tribalddb.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.11.49</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

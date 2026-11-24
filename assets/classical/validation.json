@@ -1,0 +1,1806 @@
+{
+  "version": 1,
+  "tracks": 60,
+  "works": 45,
+  "notes": 140700,
+  "audio_duration_sec": 13477.82530612245,
+  "all_passed": true,
+  "entries": [
+    {
+      "id": "classical__bach_bwv565",
+      "work_id": "bach_bwv565",
+      "title": "Toccata and Fugue in D minor, BWV 565",
+      "composer": "Johann Sebastian Bach",
+      "notes": 3651,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 572.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 575.0770068027211,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.24200439453125,
+        "rms": 0.02384414809901997
+      },
+      "original_sha256": "1aabd00967aded08d6633482c211af46f679d97f01cfeaca43c83a59dfeeeb6b",
+      "chart_sha256": "470729f21750a5113aa3bd49859c23b8752a52e034ab5cbde2dc0e301517e5ba",
+      "audio_sha256": "820c7701dca46359e31cd186333619c69326a4b4ac49370316395aa9f58cd991",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_spring_rv269_m1",
+      "work_id": "vivaldi_spring_rv269",
+      "title": "The Four Seasons: Spring, RV 269 — I. Allegro",
+      "composer": "Antonio Vivaldi",
+      "notes": 3173,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 171.39126149999998,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 174.01034013605442,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.229522705078125,
+        "rms": 0.03828764950729598
+      },
+      "original_sha256": "9f9eaaaac0f1a6b0e1a9af86ff2ff65a0ff786dd4fa8d8b8eda19f8d564e35e0",
+      "chart_sha256": "ac9cc38b81e0384e05baca1dd7fe0f7443ece99ce6eba6105c38c163c6ad47b9",
+      "audio_sha256": "a242af97407b25dc0a1ef2e21460559da0c44880a62505fa6c4df7bdc2d50770",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_spring_rv269_m2",
+      "work_id": "vivaldi_spring_rv269",
+      "title": "The Four Seasons: Spring, RV 269 — II. Largo",
+      "composer": "Antonio Vivaldi",
+      "notes": 1042,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 140.39999999999998,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 142.918820861678,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.20135498046875,
+        "rms": 0.03709702670497191
+      },
+      "original_sha256": "66df8c8a0f1907049e7afbe1ab0b042ba176a69f7d8447cc0577117c31fe0f1d",
+      "chart_sha256": "0e23332e46489d48dfac925de07dd798292abc6635596692aee89ed1e8bc904c",
+      "audio_sha256": "f61a09e44f8da3422005bb289008c4bd0dcf6b6f6de312b3db6ff736a3a1f391",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_spring_rv269_m3",
+      "work_id": "vivaldi_spring_rv269",
+      "title": "The Four Seasons: Spring, RV 269 — III. Danza pastorale",
+      "composer": "Antonio Vivaldi",
+      "notes": 2071,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 222.499644,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          12,
+          8
+        ]
+      ],
+      "audio": {
+        "duration_sec": 225.1174603174603,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.250823974609375,
+        "rms": 0.0424795125227524
+      },
+      "original_sha256": "e64de4135996b9a73e6aea351bf9de21948691651095cb3ec9dadc10444ce158",
+      "chart_sha256": "cbfbcde6f4de838b5fd04fa283e20a546e19b9d35da920948ce380345474f6bb",
+      "audio_sha256": "45429a2697ed116b147d3190902f65ab31c13e8af354b760990692eaef1179bd",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_summer_rv315_m1",
+      "work_id": "vivaldi_summer_rv315",
+      "title": "The Four Seasons: Summer, RV 315 — I. Allegro non molto",
+      "composer": "Antonio Vivaldi",
+      "notes": 3621,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 252.0,
+      "tempo_segments": 1,
+      "meter_segments": 3,
+      "meters": [
+        [
+          3,
+          8
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          3,
+          8
+        ]
+      ],
+      "audio": {
+        "duration_sec": 254.6184126984127,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.24945068359375,
+        "rms": 0.03453870398438177
+      },
+      "original_sha256": "a477f24156cbc0068f5c02a045a4cb870f6f128a291618e56b3ad45db51d689f",
+      "chart_sha256": "3b564e30d0559aef92d75c36fec027a682019ff3fa7c8d3f91bed6fce6b35142",
+      "audio_sha256": "3278df6ec5926e2e5849f56db565c48cdac1c586a93ba00022d4dcda1d00473b",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_summer_rv315_m2",
+      "work_id": "vivaldi_summer_rv315",
+      "title": "The Four Seasons: Summer, RV 315 — II. Adagio",
+      "composer": "Antonio Vivaldi",
+      "notes": 629,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 117.33330399999998,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 119.8033560090703,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.239654541015625,
+        "rms": 0.037476268166256634
+      },
+      "original_sha256": "a8cd55fef5f2a65748b3bf42b97ea0fbe05f979d277b6de0627c849d55162055",
+      "chart_sha256": "6ad618400930ab281113fd2438ae97f66507c40e705586f930caebc124d3ee00",
+      "audio_sha256": "15d2ec1c149c00d6aa8b98141ea8d92c0a98a8770732b5c2ac68b82d59f2533d",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_summer_rv315_m3",
+      "work_id": "vivaldi_summer_rv315",
+      "title": "The Four Seasons: Summer, RV 315 — III. Presto",
+      "composer": "Antonio Vivaldi",
+      "notes": 5158,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 156.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 158.61551020408163,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.23822021484375,
+        "rms": 0.03479443228180348
+      },
+      "original_sha256": "d6e8b3523b367455f0a3fa0080009bddddb742042d5b9b2c0432a25d5c8273b3",
+      "chart_sha256": "8d7f566c6affed4193467a05d4bbc1af4e56fd52746826952637226c4dd21933",
+      "audio_sha256": "9a10454898150e21bfd70c813d4d7a12793ddd3166eed6f877afea1d9f967821",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_autumn_rv293_m1",
+      "work_id": "vivaldi_autumn_rv293",
+      "title": "The Four Seasons: Autumn, RV 293 — I. Allegro",
+      "composer": "Antonio Vivaldi",
+      "notes": 3111,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 230.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 232.61750566893423,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.277252197265625,
+        "rms": 0.03455239498347427
+      },
+      "original_sha256": "f5a7f67ded1ba8ce845dbea3da395e1daf8e23ae3871e730fe11ab527770c401",
+      "chart_sha256": "7687ce103e10e331cea8409f04f4f3b2abc777f5fa4a67d7b8467bc8cbf2878d",
+      "audio_sha256": "e571d584dd4217eed3829a96c5d1ddf027b9b0ba91746206cce8b0488d88d786",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_autumn_rv293_m2",
+      "work_id": "vivaldi_autumn_rv293",
+      "title": "The Four Seasons: Autumn, RV 293 — II. Adagio molto",
+      "composer": "Antonio Vivaldi",
+      "notes": 187,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 152.83012499999998,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 155.44598639455782,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.260711669921875,
+        "rms": 0.058344946994189094
+      },
+      "original_sha256": "22772724a473eab196c8b5fc5df18e6815c095484aac284b2b5e6ffe20c6266a",
+      "chart_sha256": "da2d3bd12e670a69e972d0c2a3297ade1b876da363ea44eb62ae6aabc80b9808",
+      "audio_sha256": "b3f9e394c1ef6393b6b75fc7d9135d4e5877d7f2e4c67dcf47b6dcfcd7299f1f",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_autumn_rv293_m3",
+      "work_id": "vivaldi_autumn_rv293",
+      "title": "The Four Seasons: Autumn, RV 293 — III. Allegro",
+      "composer": "Antonio Vivaldi",
+      "notes": 2582,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 176.625,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          8
+        ]
+      ],
+      "audio": {
+        "duration_sec": 179.24643990929704,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.277252197265625,
+        "rms": 0.04287583972932983
+      },
+      "original_sha256": "e8cfd9348ae3377d6e549b4d41a4ed0a6edb5f2651047f255d9092565641098e",
+      "chart_sha256": "c3f0c163a5c1b4ba0daa38ac46c6954db781d0169a8f1a82a88894d8f9a826d4",
+      "audio_sha256": "8a4dbb1c5963c1e4d8a90e370281a35e19c1405756a2567496470728da490871",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_winter_rv297_m1",
+      "work_id": "vivaldi_winter_rv297",
+      "title": "The Four Seasons: Winter, RV 297 — I. Allegro non molto",
+      "composer": "Antonio Vivaldi",
+      "notes": 3255,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 107.99989199999999,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 110.61986394557823,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.28814697265625,
+        "rms": 0.031191590812394993
+      },
+      "original_sha256": "4265d2320e01e8eb4934d7dd4a798c91e9a98bca58b35b9bd5c8db986a57e093",
+      "chart_sha256": "e8ad27ceec4df0d75540cccd3e4111c3168b0c85a0d72fd1c17f9e802f2904ee",
+      "audio_sha256": "d1b1878f8c827044ca23da29fba622384024d299b005c10d1c0b3736e0394ceb",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_winter_rv297_m2",
+      "work_id": "vivaldi_winter_rv297",
+      "title": "The Four Seasons: Winter, RV 297 — II. Largo",
+      "composer": "Antonio Vivaldi",
+      "notes": 851,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 93.912984,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 96.5253514739229,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.230133056640625,
+        "rms": 0.04404254219842956
+      },
+      "original_sha256": "4c708c073785ed2ca4f72aa69b244e91f4cf0ea6af64896d9feb3c7ec198f7fa",
+      "chart_sha256": "228d23fadba6e1dba6935ffa685c28a673afc2f66b3746b5f64e98302eaf3441",
+      "audio_sha256": "4506d5edfed6a7925e8db0e1e719a40b9e027316f48aaf9449487efc663819c6",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__vivaldi_winter_rv297_m3",
+      "work_id": "vivaldi_winter_rv297",
+      "title": "The Four Seasons: Winter, RV 297 — III. Allegro",
+      "composer": "Antonio Vivaldi",
+      "notes": 2696,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 183.6,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          8
+        ]
+      ],
+      "audio": {
+        "duration_sec": 186.21242630385487,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.28814697265625,
+        "rms": 0.03942216378997812
+      },
+      "original_sha256": "245ef8976c000decf9bb6b3ffc2e62c9fb09c013475092afc730310b03ec0f4b",
+      "chart_sha256": "a4797cd231393c8aaf5184ffa8f10e20dd3a263f3ac22abe2fe8d9be65d7c05c",
+      "audio_sha256": "cfaeb9c241bd54c974a0005cf8cf8a48d4ee3ea98bbb26c8f9631dacae4c3990",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__bach_sheep_bwv208",
+      "work_id": "bach_sheep_bwv208",
+      "title": "Sheep May Safely Graze, BWV 208",
+      "composer": "Johann Sebastian Bach",
+      "notes": 1045,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 160.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 163.3059410430839,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.188140869140625,
+        "rms": 0.022764880612050724
+      },
+      "original_sha256": "671d16499293e7911cbd717d68fbcc09f122d1195fb2349924c7b9409c4eec1f",
+      "chart_sha256": "5c5c2e512987d106e14c7f30db38331cf0ff697212f6c98db78927d3e770e228",
+      "audio_sha256": "1187aa969cfd6f13399c4a6bd19b4ed0165a60bb666bf49da7f984840a9597d1",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__bach_air_bwv1068",
+      "work_id": "bach_air_bwv1068",
+      "title": "Air on the G String, BWV 1068 (flute and guitar)",
+      "composer": "Johann Sebastian Bach",
+      "notes": 461,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 63.333307999999995,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 65.97950113378685,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.30023193359375,
+        "rms": 0.07061272214595189
+      },
+      "original_sha256": "5f7763dd4d29f309cac6d670c22aa029aca23c8c97743a0511d4b9c6d3435f1c",
+      "chart_sha256": "7521c03a22cc5c696566d77b21b6a50369b3b3e9e51a60ec325440a9a3d6f1f8",
+      "audio_sha256": "275ddd6501868b2d762a092818dc8802add913d9f420eea2685b83e1a38f937d",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__bach_goldberg_aria_bwv988",
+      "work_id": "bach_goldberg_aria_bwv988",
+      "title": "Goldberg Variations, BWV 988 — Aria",
+      "composer": "Johann Sebastian Bach",
+      "notes": 418,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 96.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 98.97505668934241,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.107666015625,
+        "rms": 0.014538914905225792
+      },
+      "original_sha256": "05c6155d67e1ef5167eef113defabbc6c42a0fa0f74abe11c7d63258084d9a48",
+      "chart_sha256": "a2e9063531d1bfc7e07360a59f1b56f53c01e8a52aa9c1674a9225ef3036f8dd",
+      "audio_sha256": "b5240e592acae9f8ca02b686a670b61ea4a1a2688463e3d497933363f1b3f67d",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__bach_invention1_bwv772",
+      "work_id": "bach_invention1_bwv772",
+      "title": "Invention No. 1 in C major, BWV 772",
+      "composer": "Johann Sebastian Bach",
+      "notes": 458,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 66.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 69.56698412698412,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.215179443359375,
+        "rms": 0.03672419250705441
+      },
+      "original_sha256": "9b9a6213941932d5171d9102d85912c3c1c61f8176ce02005cd2198881823c2d",
+      "chart_sha256": "b01968c111f21031ca3c66f926e86b33e248856753f83917f0fc468fb9342fff",
+      "audio_sha256": "b914beb4205302173efcf28ae20282ebe31a79ae17cdc7ce373d1cbaae4664e5",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__bach_invention8_bwv779",
+      "work_id": "bach_invention8_bwv779",
+      "title": "Invention No. 8 in F major, BWV 779",
+      "composer": "Johann Sebastian Bach",
+      "notes": 598,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 66.6666,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 70.21714285714286,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.238128662109375,
+        "rms": 0.04127158701689441
+      },
+      "original_sha256": "07238719180171f76283756405ee43a0319226e869283bf29affb9e4c360e6f8",
+      "chart_sha256": "6ee2ab34b11d296a5511adb1077afd86836d6f48c794d45b6549688f8e1ee2e9",
+      "audio_sha256": "778f07607514a226ded930d603dd288e183e3ca322ee25bfa3fd43a343482d6d",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__bach_wachet_auf_bwv645",
+      "work_id": "bach_wachet_auf_bwv645",
+      "title": "Wachet auf, ruft uns die Stimme, BWV 645",
+      "composer": "Johann Sebastian Bach",
+      "notes": 865,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 220.5,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 223.5501133786848,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.22332763671875,
+        "rms": 0.03387272515416556
+      },
+      "original_sha256": "70478d1c4096009b5662adf154f72d9b814d3e58312bd01f9fc2830c0b0cc969",
+      "chart_sha256": "b7a4a74d5b127f68807e8a60d33ef591234f890e82363302cc7f6df32a0be9d7",
+      "audio_sha256": "dc9a8bf1ba3e084cbe6eed594303e093a79a17bd6590fa1695c95e0905984a9e",
+      "license": "Creative Commons Attribution-ShareAlike 2.5",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_moonlight_op27_2_m1",
+      "work_id": "beethoven_moonlight_op27_2",
+      "title": "Piano Sonata No. 14 “Moonlight”, Op. 27 No. 2 — I. Adagio sostenuto",
+      "composer": "Ludwig van Beethoven",
+      "notes": 1142,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 276.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          2
+        ]
+      ],
+      "audio": {
+        "duration_sec": 279.4985941043084,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.248321533203125,
+        "rms": 0.03385098810742692
+      },
+      "original_sha256": "a34e969c4957f0e9e98fc9ff0278cc1284931bdae6d463469797faa2b73a9c5c",
+      "chart_sha256": "20539b5ae95133470aea6710f9584c180fa105506c2586f66d3a29b54a2f7104",
+      "audio_sha256": "ad645a431e08cbeecb299b49c732ea95813d6a42c1a03e575d5569ae68f38917",
+      "license": "Creative Commons Attribution-ShareAlike 2.5",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_moonlight_op27_2_m2",
+      "work_id": "beethoven_moonlight_op27_2",
+      "title": "Piano Sonata No. 14 “Moonlight”, Op. 27 No. 2 — II. Allegretto",
+      "composer": "Ludwig van Beethoven",
+      "notes": 373,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 179.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 182.69460317460317,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.244903564453125,
+        "rms": 0.028311615419930446
+      },
+      "original_sha256": "c6c291cec6a2afc5761176240ecec9f4632c73fae554a4dc939e7f706bc99421",
+      "chart_sha256": "901a70330556f88b87f2d2a17f1ba1833f7a0879244059de559f21759d625a64",
+      "audio_sha256": "e9cea8ac373ba156e18f47630a837c6bb5cfa6c06c6774364e03c74a7a4b4010",
+      "license": "Creative Commons Attribution-ShareAlike 2.5",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_moonlight_op27_2_m3",
+      "work_id": "beethoven_moonlight_op27_2",
+      "title": "Piano Sonata No. 14 “Moonlight”, Op. 27 No. 2 — III. Presto agitato",
+      "composer": "Ludwig van Beethoven",
+      "notes": 4863,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 801.7135416666666,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 804.8268480725624,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.33355712890625,
+        "rms": 0.03744216067261447
+      },
+      "original_sha256": "8b5256217def67f68e0af830e0f7c9a4a71ab6f09e211999a1914c1f39cec082",
+      "chart_sha256": "e02b18fe33e88da942e9aa4b9f3eeb62eb3ed91a444b69fae4ad825e9be589b7",
+      "audio_sha256": "e61b0951833ebf129c1cb7c3b4f7b081b746d6fcccace4c2c7fa46d858bce9f5",
+      "license": "Creative Commons Attribution-ShareAlike 2.5",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_pathetique_op13_m1",
+      "work_id": "beethoven_pathetique_op13",
+      "title": "Piano Sonata No. 8 “Pathétique”, Op. 13 — I. Grave – Allegro molto e con brio",
+      "composer": "Ludwig van Beethoven",
+      "notes": 4285,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 375.28364099999993,
+      "tempo_segments": 6,
+      "meter_segments": 6,
+      "meters": [
+        [
+          4,
+          4
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "audio": {
+        "duration_sec": 379.0077097505669,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.36151123046875,
+        "rms": 0.04603198332371965
+      },
+      "original_sha256": "cfe2b012227077a304a0ed282a98dceaca6a73bd0fb4d3f2249ac4bacbe30121",
+      "chart_sha256": "0439f05949dc5d2f3488bfa5cb0c6cb143d33fe1176c71ed0cf10aac0cb51133",
+      "audio_sha256": "91cc02024c4a6a5c470fd58915d53ecd3a2288cbe6b6654ca7263d6570cd3d89",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_symphony5_op67",
+      "work_id": "beethoven_symphony5_op67",
+      "title": "Symphony No. 5 in C minor, Op. 67 — I. Allegro con brio",
+      "composer": "Ludwig van Beethoven",
+      "notes": 8295,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 316.5625,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 320.49342403628117,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.607330322265625,
+        "rms": 0.07094897143821154
+      },
+      "original_sha256": "0ce1bca911ba8e6234fd2e474a9b6da4c968c5cfe85b0cccfe7e56505df52046",
+      "chart_sha256": "86f5ee2bab1000e8b24f7c583c1001ee7e269821de9a5764a561913c6322183d",
+      "audio_sha256": "8a42e6608348a2aa80abe054487e1f0c2fc0d34dd2294ad4b184d16957d0091b",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_rage_op129",
+      "work_id": "beethoven_rage_op129",
+      "title": "Rage Over a Lost Penny, Op. 129",
+      "composer": "Ludwig van Beethoven",
+      "notes": 5536,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 391.249374,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 395.1804081632653,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.2261962890625,
+        "rms": 0.0314863000064672
+      },
+      "original_sha256": "1f628f2abf5b0c193dc808dd75000873ac12bc91b9dc8df12275a75c90f905c4",
+      "chart_sha256": "1e5cc961f6ce0856e09a38f90ff3fcdb979416a0afb4f0ee59111badb58e7298",
+      "audio_sha256": "c4544b7493196608face5c574f87f687875e70b89000d10c2912948a00c7a669",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__brahms_lullaby_op49_4",
+      "work_id": "brahms_lullaby_op49_4",
+      "title": "Lullaby (Wiegenlied), Op. 49 No. 4",
+      "composer": "Johannes Brahms",
+      "notes": 227,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 53.5,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 57.03981859410431,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.292510986328125,
+        "rms": 0.038595333796212744
+      },
+      "original_sha256": "0ca12af297a5b55228dff2428a157b2811ff3f4e88098ad4f9edce1e3964aef1",
+      "chart_sha256": "49366c4531c93db9f66007c8d23fd049709b5b5742d00e8fdd5fdd5d92ec3106",
+      "audio_sha256": "f03914f0a5e8b8a9f7e8482f8dc9b6e69caeb0005029e55866460917ef4e30f8",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__brahms_waltz15_op39",
+      "work_id": "brahms_waltz15_op39",
+      "title": "Waltz in A-flat major, Op. 39 No. 15",
+      "composer": "Johannes Brahms",
+      "notes": 720,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 67.758571,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 72.8409977324263,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.3350830078125,
+        "rms": 0.05219171526813049
+      },
+      "original_sha256": "e081ef3fe7023cdf4656e1528df50534b2e3df863cd0a194a04a82206f783ace",
+      "chart_sha256": "3f2bcca2ace80637b1e6a9e4f91045386f52076add1b3cea6a1ef6db31e370c8",
+      "audio_sha256": "8c60254b98e82ee2dd0022390d94b8869f334b0ec237964ccf92e77c332f7f94",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_nocturne_op9_2",
+      "work_id": "chopin_nocturne_op9_2",
+      "title": "Nocturne in E-flat major, Op. 9 No. 2",
+      "composer": "Frédéric Chopin",
+      "notes": 1242,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 202.27252499999997,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          12,
+          8
+        ]
+      ],
+      "audio": {
+        "duration_sec": 205.67074829931974,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.2020263671875,
+        "rms": 0.02406913400029448
+      },
+      "original_sha256": "e202d3941ce5f26397f57f59f0e2e4e3ad9e19061fa3c4dc596c5ee6a6a2548e",
+      "chart_sha256": "2c40137acf8d207c3f15fa0fa517c3f3fbf5795cab1e6f121d7b78c6f3f60617",
+      "audio_sha256": "7493d21c994cd2413c182d3f35c844b46b4d1adf59d669e61259eb14df4a28ba",
+      "license": "Creative Commons Attribution-ShareAlike 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_nocturne_op9_1",
+      "work_id": "chopin_nocturne_op9_1",
+      "title": "Nocturne in B-flat minor, Op. 9 No. 1",
+      "composer": "Frédéric Chopin",
+      "notes": 1714,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 264.31015099999996,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          6,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 268.08598639455784,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.2586669921875,
+        "rms": 0.02165880423110644
+      },
+      "original_sha256": "97194fec7586ca37280a3a5641db96f09f515c8358ccba9a9dd6a0f427ff9330",
+      "chart_sha256": "5fa7ae0ddde601c94392a8c3c35ef14a948a34bd47ba8b73267706e3bb8a98dc",
+      "audio_sha256": "3499752765ad17e2254d1e1faf972c5ade8bf25ceb47d0aeef878751c6f303d1",
+      "license": "Creative Commons Attribution-ShareAlike 2.5",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_revolutionary_op10_12",
+      "work_id": "chopin_revolutionary_op10_12",
+      "title": "Revolutionary Étude, Op. 10 No. 12",
+      "composer": "Frédéric Chopin",
+      "notes": 2082,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 125.25,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 129.21904761904761,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.30029296875,
+        "rms": 0.029488202679229494
+      },
+      "original_sha256": "1902287905aa68175f9d13207e6cfc397894d4210617ec1a5c1ae38334c3c7d6",
+      "chart_sha256": "25ae97712970b2929dd00aa9e46338e5fda1a3d525de8f46f97ae94b29a9361c",
+      "audio_sha256": "b914a90c4444b6d4c6a4f5ff6cc1ce8d69a89ac9e1ebe38ace0b1f3a6d19fde5",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_black_keys_op10_5",
+      "work_id": "chopin_black_keys_op10_5",
+      "title": "Black Keys Étude, Op. 10 No. 5",
+      "composer": "Frédéric Chopin",
+      "notes": 1628,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 90.16591162500002,
+      "tempo_segments": 41,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 96.17705215419501,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.435791015625,
+        "rms": 0.02503459312351679
+      },
+      "original_sha256": "3b7c267dc6047e881b7404e47259de23dce3cfe8fe74966a1cc28adacf5e3336",
+      "chart_sha256": "525d28a525b415ea5165037f61c5cbd8ea5855cd26287381530d8fbd45a2dffa",
+      "audio_sha256": "9418fa02b54293b870f76515c47d2092b7b62050fb74454a0f218ed0a317bca3",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_waterfall_op10_1",
+      "work_id": "chopin_waterfall_op10_1",
+      "title": "Waterfall Étude, Op. 10 No. 1",
+      "composer": "Frédéric Chopin",
+      "notes": 1337,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 107.727244,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 113.29015873015874,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.353271484375,
+        "rms": 0.0421121992805919
+      },
+      "original_sha256": "42c52ece86795168636b3bbd387393fba9759214498a20b39308c848f8e49f03",
+      "chart_sha256": "28fef22cf8d3025d1c77d3965c85333ea92fb328c10bfac7141f1f15bdf90b97",
+      "audio_sha256": "29c59e8caaf39d87c660193af10caabfd3915f551e378fa5b09845f0f1169534",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_minute_waltz_op64_1",
+      "work_id": "chopin_minute_waltz_op64_1",
+      "title": "Minute Waltz, Op. 64 No. 1",
+      "composer": "Frédéric Chopin",
+      "notes": 1370,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 89.785415,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 95.55011337868481,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.218231201171875,
+        "rms": 0.034659956540749354
+      },
+      "original_sha256": "62333ad9f9b22603d009734ab500330a12ac09aeca13d185ac0ba64a7fb9d206",
+      "chart_sha256": "3faa2a64ad3520ca77220a564efcda4aca46b3a2bd40c28cc6b64a017ef08bc3",
+      "audio_sha256": "29f85bbecf4c5d128a0c0fe36046c684927f428daf479abd342ed0df2f9ee235",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_fantaisie_impromptu_op66",
+      "work_id": "chopin_fantaisie_impromptu_op66",
+      "title": "Fantaisie-Impromptu, Op. 66",
+      "composer": "Frédéric Chopin",
+      "notes": 3014,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 253.523384,
+      "tempo_segments": 5,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 257.14938775510205,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.384918212890625,
+        "rms": 0.03964057778133969
+      },
+      "original_sha256": "b29f6add7473b6e931c2e66349e860bf0e884cf68e19e90420a4870aae689f96",
+      "chart_sha256": "f4bc9195e8341ee4b8217e79c4fee7e7e244d0f8484dc8c880b02e37e4e47d94",
+      "audio_sha256": "5a2127b7c4bf60733b95e9ed525399169bd6474f2e35d3d1f9bec5ce5623730b",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_prelude_op28_4",
+      "work_id": "chopin_prelude_op28_4",
+      "title": "Prelude in E minor, Op. 28 No. 4",
+      "composer": "Frédéric Chopin",
+      "notes": 600,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 108.214228,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          2
+        ]
+      ],
+      "audio": {
+        "duration_sec": 111.85052154195012,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.194091796875,
+        "rms": 0.029757771720303076
+      },
+      "original_sha256": "c1d7e05aa4e6e2baeec2e9108402a969c16d5df302b82fd66d110634697f2e3b",
+      "chart_sha256": "eae2865ccdb65c45b28205e48d9b5d64f3d2bab883fe5e879a7695877ea80f98",
+      "audio_sha256": "3bfd24979cd219905ffbd98aba28e8ec57241a117825a3f310ffea1da1ff6e93",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__chopin_prelude_op28_20",
+      "work_id": "chopin_prelude_op28_20",
+      "title": "Prelude in C minor, Op. 28 No. 20",
+      "composer": "Frédéric Chopin",
+      "notes": 286,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 74.285692,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 77.25278911564625,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.19146728515625,
+        "rms": 0.026542517461744575
+      },
+      "original_sha256": "9cc6c417d4bb261644f6bd3d00033025e675a25694fd172be2f98e93efc1fcfe",
+      "chart_sha256": "3e1088b01a71fd05a30b41d86bc05351040d87e1794a6c593255f22cfd9196ba",
+      "audio_sha256": "5b5583db1753025b879873a3a1f25b839a5a84a3402ad872148f42d68f09e0cd",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__debussy_arabesque1_l66",
+      "work_id": "debussy_arabesque1_l66",
+      "title": "Arabesque No. 1, L. 66",
+      "composer": "Claude Debussy",
+      "notes": 1448,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 176.249718,
+      "tempo_segments": 1,
+      "meter_segments": 3,
+      "meters": [
+        [
+          4,
+          4
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 183.12417233560092,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.22705078125,
+        "rms": 0.0268062321953791
+      },
+      "original_sha256": "6732dc10799ec0af47d19d9095562d0671864a750129e0279901def169a34757",
+      "chart_sha256": "4ddb3ef117ce3aa25321fe22c720a18ab8f859bcd65fa59ad26514f6a2a32815",
+      "audio_sha256": "401d9872adb5f1a8b38d5d4a65c99cac87b5ba42ddde6d481f4c3e2d976a9076",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__debussy_arabesque2_l66",
+      "work_id": "debussy_arabesque2_l66",
+      "title": "Arabesque No. 2, L. 66",
+      "composer": "Claude Debussy",
+      "notes": 1803,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 218.25,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 221.83183673469387,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.288818359375,
+        "rms": 0.027378703798662148
+      },
+      "original_sha256": "b7991339535a5436b01f4b0f8fe97304a60a0a7f38d16365692d82f6c6e22d8e",
+      "chart_sha256": "b43d6436661cdaffd2823e3c7a826c7d232df3955e4b0ac80f9fd367977545d7",
+      "audio_sha256": "9f6c59fc090a2fb269feb767af3e4ae1f1144f20b473e07da7abaf14eee620fc",
+      "license": "Creative Commons Attribution-ShareAlike 4.0",
+      "ok": true
+    },
+    {
+      "id": "classical__grieg_mountain_king_op46_4",
+      "work_id": "grieg_mountain_king_op46_4",
+      "title": "In the Hall of the Mountain King, Op. 46 No. 4 (piano)",
+      "composer": "Edvard Grieg",
+      "notes": 1453,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 145.2293873125,
+      "tempo_segments": 2,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 152.4390022675737,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.302978515625,
+        "rms": 0.01819589421849877
+      },
+      "original_sha256": "0c256a809b5af1faef81b6aad6106088a71d76b12435d5f0775d4ceee60c917e",
+      "chart_sha256": "c084e26a9f7ea47f0a5c5adb1604af4431370ab3b871f3453ffe95e87971bc25",
+      "audio_sha256": "170a87dad744be80381424f81c2f02b14976bb67fde52b1ccda814fe81117021",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__grieg_dwarfs_op54_3",
+      "work_id": "grieg_dwarfs_op54_3",
+      "title": "March of the Dwarfs, Op. 54 No. 3",
+      "composer": "Edvard Grieg",
+      "notes": 2184,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 193.25,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 196.8471655328798,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.255157470703125,
+        "rms": 0.032129716895620525
+      },
+      "original_sha256": "9d73618b3ab01976b9138c57ce7e41db3256b0eaad8b9741c909d322c6fb369e",
+      "chart_sha256": "b8b6a8946895756bbb97c55d52e5c2192eaa80428b3b6b6ae12128697bfd1d37",
+      "audio_sha256": "80d7e134da1b67bc50057e3d4cd840ed45bfde421702e3a1d72494312f1d98b9",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__liszt_consolation3_s172",
+      "work_id": "liszt_consolation3_s172",
+      "title": "Consolation No. 3, S. 172",
+      "composer": "Franz Liszt",
+      "notes": 1029,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 243.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 246.22439909297051,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.260955810546875,
+        "rms": 0.02504960883229066
+      },
+      "original_sha256": "0e5a927f5753e3e7edf7f271efeb0c802d7476bed69c696798a06c780c5a1bb7",
+      "chart_sha256": "ba8cb01ff392bd2a4f8aa2c831de4565a1bf49534860a7d6b24f5045078bdbbe",
+      "audio_sha256": "d48bb2ead2db94dffcdce5fea15377a98eebded29900ad5e93f4e9e0cd5203cc",
+      "license": "Creative Commons Attribution 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__mozart_symphony25_k183",
+      "work_id": "mozart_symphony25_k183",
+      "title": "Symphony No. 25 in G minor, K. 183 — I. Allegro con brio",
+      "composer": "Wolfgang Amadeus Mozart",
+      "notes": 9639,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 652.4986079999999,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 655.1161904761905,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.554718017578125,
+        "rms": 0.06766580464619239
+      },
+      "original_sha256": "36bcc5b01a15e5c478ea1298ea93fe92b6bba6106ceeea29a2c3ab6921bca092",
+      "chart_sha256": "e2029c9ebb9fff9a77878fca8b67240ffa2bd5383a61824c60d10306ad26bbfa",
+      "audio_sha256": "9cddcd3e52d31b4a0df784e664561cd7c77ae0fe864002ffe1fe2b88cad5956a",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__mozart_nachtmusik_k525_m1",
+      "work_id": "mozart_nachtmusik_k525",
+      "title": "Eine kleine Nachtmusik, K. 525 — I. Allegro",
+      "composer": "Wolfgang Amadeus Mozart",
+      "notes": 2955,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 248.63611499999996,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 251.25151927437642,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.171295166015625,
+        "rms": 0.017420597414747305
+      },
+      "original_sha256": "7a6f71b2b7763524a56322723c774d584af006dd980289fce60ebd93a91a16d7",
+      "chart_sha256": "b92e4e3d499a162779c7fdc6550c00a905e8dfce8c3a5c8bbddce37a6c995484",
+      "audio_sha256": "a7790d87204bbc76f4e7f5132805c2acae58bd95e679fcbc1239db0cfdb2ae7b",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__mozart_nachtmusik_k525_m2",
+      "work_id": "mozart_nachtmusik_k525",
+      "title": "Eine kleine Nachtmusik, K. 525 — II. Romanze",
+      "composer": "Wolfgang Amadeus Mozart",
+      "notes": 1667,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 243.7499025,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 246.3637188208617,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.208465576171875,
+        "rms": 0.01659839636876169
+      },
+      "original_sha256": "7222397a488d4ee6d43f6d7a10ce12bf1e871af115be8623c15f44c23e1c8691",
+      "chart_sha256": "a18f34b78827b69c2ca262023a12986274fbed499fde90910218214ca436985c",
+      "audio_sha256": "5ae814359e203fa3bb30f4e9b273081b57a6d2ff8f1fa2fb14256810a8639070",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__mozart_nachtmusik_k525_m3",
+      "work_id": "mozart_nachtmusik_k525",
+      "title": "Eine kleine Nachtmusik, K. 525 — III. Menuetto",
+      "composer": "Wolfgang Amadeus Mozart",
+      "notes": 584,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 57.857112,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 60.47637188208617,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.10260009765625,
+        "rms": 0.017175087013841486
+      },
+      "original_sha256": "d66d5eaf5d7c75f4da0e38dd87a1d1ea1adbb30e030a84b81acc2847535e9c77",
+      "chart_sha256": "c70d3a84adc07d99d80961003a1c2a525493294f0daa09963bd54707c7a6ecfe",
+      "audio_sha256": "dfd9fb561507f4368cdf9a797f80c5dd581603734f64df01f777ba00293beb0b",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__mozart_nachtmusik_k525_m4",
+      "work_id": "mozart_nachtmusik_k525",
+      "title": "Eine kleine Nachtmusik, K. 525 — IV. Rondo",
+      "composer": "Wolfgang Amadeus Mozart",
+      "notes": 3447,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 298.18152,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          2
+        ]
+      ],
+      "audio": {
+        "duration_sec": 300.8029024943311,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.17041015625,
+        "rms": 0.01669599291946128
+      },
+      "original_sha256": "d835eb169a339ee05a2e703b1cc4d3cd5641e6273fc61c03f770904eaf1341c5",
+      "chart_sha256": "acc98a72cf1d42afc38897cc52baf7d098ba5457659a0644e82b5dd26852e64e",
+      "audio_sha256": "214e5609cb90c6a279b5f73b897d0f73db56dc69bc967eab54c18c05a526a242",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__mozart_fantasy_k397",
+      "work_id": "mozart_fantasy_k397",
+      "title": "Fantasia in D minor, K. 397",
+      "composer": "Wolfgang Amadeus Mozart",
+      "notes": 1511,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 283.25239750000003,
+      "tempo_segments": 10,
+      "meter_segments": 2,
+      "meters": [
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 286.82448979591834,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.244384765625,
+        "rms": 0.0215202721366648
+      },
+      "original_sha256": "22a84b967a00f9d7cf6bec68f6d4e9c0578c1275ad0eb7fc8e30979d375e58cb",
+      "chart_sha256": "2fe851554b5f552bcd98ffc9a4547cd71e7751080a67f106bd64c3002802c27c",
+      "audio_sha256": "610a321e2b7a7b510e35facfe7fbd3f6249ea47445a4760f8d28bec9257c6de5",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__pachelbel_canon_d",
+      "work_id": "pachelbel_canon_d",
+      "title": "Canon in D (three violins and cello)",
+      "composer": "Johann Pachelbel",
+      "notes": 1956,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 245.45452499999996,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 248.07038548752834,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.229156494140625,
+        "rms": 0.04276774417837678
+      },
+      "original_sha256": "953b73e270117d388e9ef1a76f8b9e97ff640d1400768849f41a3cf71c59cbc1",
+      "chart_sha256": "9e907105bcf27a6d43bdafb84648f46b2d0b1a5f34d8fa3027a32e69c633c2c4",
+      "audio_sha256": "7c365b206d35dc13a20ac90215f6e9e9298ef02906e15c9db50660d03204a39b",
+      "license": "Creative Commons Attribution 4.0",
+      "ok": true
+    },
+    {
+      "id": "classical__rachmaninoff_prelude_op3_2",
+      "work_id": "rachmaninoff_prelude_op3_2",
+      "title": "Prelude in C-sharp minor, Op. 3 No. 2",
+      "composer": "Sergei Rachmaninoff",
+      "notes": 1725,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 163.798316,
+      "tempo_segments": 3,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 167.39265306122448,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.289215087890625,
+        "rms": 0.03322759929723412
+      },
+      "original_sha256": "cd7879a13accb06c539b1a74855121ed25ec4c71f8069473c6fc78ae56d7c43b",
+      "chart_sha256": "75e1efe59f619e0f2c1eb5d72251bd0eaee0064bb69157f7db1ffc4ebac0d628",
+      "audio_sha256": "8f39908908d21d1334c699b4545f99ee5e1cbb735a75608a70a39e54a52d752a",
+      "license": "Creative Commons Attribution-ShareAlike 4.0",
+      "ok": true
+    },
+    {
+      "id": "classical__rachmaninoff_prelude_op23_5",
+      "work_id": "rachmaninoff_prelude_op23_5",
+      "title": "Prelude in G minor, Op. 23 No. 5",
+      "composer": "Sergei Rachmaninoff",
+      "notes": 3858,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 227.19268175,
+      "tempo_segments": 15,
+      "meter_segments": 5,
+      "meters": [
+        [
+          4,
+          4
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 234.16163265306122,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.39715576171875,
+        "rms": 0.0398094306592804
+      },
+      "original_sha256": "c0c8f2af8129307bdfe72cedb07e701341f8254d3270a482c298c67948f1b28d",
+      "chart_sha256": "d2936aed8a1487fb99a0f79d5dc87d63a94e656408a79fe73e1a8c73fc3d9ea4",
+      "audio_sha256": "2a52f123224b749d3159636d3c17450f2fc325fddf46c462163a4b9eb44fa4ff",
+      "license": "Creative Commons Attribution-ShareAlike 4.0",
+      "ok": true
+    },
+    {
+      "id": "classical__satie_gymnopedie1",
+      "work_id": "satie_gymnopedie1",
+      "title": "Gymnopédie No. 1",
+      "composer": "Erik Satie",
+      "notes": 282,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 141.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          3,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 144.38167800453516,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.163970947265625,
+        "rms": 0.014374915188524552
+      },
+      "original_sha256": "09ce7337b4bf42ba12e1aa64b4c7dc7fcfa6455f1070cb12f8880a755df97384",
+      "chart_sha256": "c2d18ececf39da6b1d72ee5a70b76114ffaf3c4ae80c6bb23e6d81104ad41bbf",
+      "audio_sha256": "9b86628d74005fb8262bd2c94a71e769616f5f467591d6fb793fde2e1ce11296",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__satie_gnossienne1",
+      "work_id": "satie_gnossienne1",
+      "title": "Gnossienne No. 1",
+      "composer": "Erik Satie",
+      "notes": 832,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 196.725,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 199.8077097505669,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.139129638671875,
+        "rms": 0.02311817328499853
+      },
+      "original_sha256": "f49fc6c6653295e09350d64479d09b4c31091aa5dade81f2494383ab7e71708a",
+      "chart_sha256": "82dd809121452ce6bfe351970d4c0c975a32a415c47616b17704f42666080455",
+      "audio_sha256": "c38526f45c3198c87f0d903acab4cd27fd4b5e3abd22543d15fea842095a3c41",
+      "license": "Creative Commons Attribution-ShareAlike 4.0",
+      "ok": true
+    },
+    {
+      "id": "classical__schubert_ave_maria_d839",
+      "work_id": "schubert_ave_maria_d839",
+      "title": "Ave Maria (Ellens dritter Gesang), D. 839",
+      "composer": "Franz Schubert",
+      "notes": 2335,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 432.5,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 435.7340589569161,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.07366943359375,
+        "rms": 0.016404630321612653
+      },
+      "original_sha256": "289d1d2c8f5a16f1b1732bc1a60652e662f24e09531ebb0d8017b49712724684",
+      "chart_sha256": "7c322356db8bae3f7af1c23f71af91472ba629ad28eac0aa9f8821f2a5245348",
+      "audio_sha256": "5b6a9ec90c9084ddb130cbdef87bc617b87ceb8e6203cd94c6bca24e3cc4d943",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__schubert_erlkonig_d328",
+      "work_id": "schubert_erlkonig_d328",
+      "title": "Erlkönig, D. 328",
+      "composer": "Franz Schubert",
+      "notes": 5567,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 238.99606299999994,
+      "tempo_segments": 13,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 242.84589569160997,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.595703125,
+        "rms": 0.049695891900180256
+      },
+      "original_sha256": "e433eca07d4d1ca85622bfc0fafeb6f74ac84710f1eebe57a1e1199876fc6603",
+      "chart_sha256": "069dbd5b18e29665c09b51f53fe1847f056964b2f32c68d3e304ce27cae0c4b6",
+      "audio_sha256": "a2df844442fa991c04a984e1b864720b3ca042ce920eee718499df01ffc0d30c",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__joplin_entertainer",
+      "work_id": "joplin_entertainer",
+      "title": "The Entertainer",
+      "composer": "Scott Joplin",
+      "notes": 2621,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 252.9165655,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 256.4527891156463,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.224578857421875,
+        "rms": 0.032535771116125684
+      },
+      "original_sha256": "33e4e81ee64ffb2edf90d1c6a1ddee7276507296bfb915c2bb775231a467f066",
+      "chart_sha256": "74bf679db9585d22d1ddf67de697ba9dac93ec5bd517acc80234ea6dba3c8240",
+      "audio_sha256": "f178cfa441c765f6b8c5554fbe0a7f925ce13dc34163df917ca623bd611d957b",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__joplin_maple_leaf",
+      "work_id": "joplin_maple_leaf",
+      "title": "Maple Leaf Rag",
+      "composer": "Scott Joplin",
+      "notes": 2566,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 144.0,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 147.67891156462585,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.210540771484375,
+        "rms": 0.03736536086113818
+      },
+      "original_sha256": "3dd712a85fabd267f5a2cee5cb23af4683408c2f29b8814721844498f1ee4f66",
+      "chart_sha256": "72f19f95f54a40a8a952815f92930d8b3b6560eb349c9a7e8606c1b5db488519",
+      "audio_sha256": "82bf1a471a097f112252b0e1ac968dd235569c34070787c5b13c257e6fef8d7c",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__mendelssohn_wedding_op61",
+      "work_id": "mendelssohn_wedding_op61",
+      "title": "Wedding March, Op. 61 (organ arrangement)",
+      "composer": "Felix Mendelssohn",
+      "notes": 3325,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 345.34580850000003,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          4,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 348.42702947845805,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.282562255859375,
+        "rms": 0.0397799394724749
+      },
+      "original_sha256": "db95bd1d11c81fccb6323b389fa7d69de9323f00a9272acf89a2f6c016502f50",
+      "chart_sha256": "f083d4c9edd33cc56a93cf6319f380c69a8c19290c545c804632351ade34bc0d",
+      "audio_sha256": "1c5a59eb23a4bb5d6b52b5af4344fbef3fc8662edaab37593e44ec969845188f",
+      "license": "Creative Commons Attribution-ShareAlike 4.0",
+      "ok": true
+    },
+    {
+      "id": "classical__mussorgsky_night_bald_mountain",
+      "work_id": "mussorgsky_night_bald_mountain",
+      "title": "Night on Bald Mountain (piano arrangement)",
+      "composer": "Modest Mussorgsky",
+      "notes": 9313,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 610.666056,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          2
+        ]
+      ],
+      "audio": {
+        "duration_sec": 617.2212244897959,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.216522216796875,
+        "rms": 0.030538168428391462
+      },
+      "original_sha256": "e8000d60d4e9ba0f35a1514d2c1444b6a895d2284bae26c1d87eb8e0b815e94d",
+      "chart_sha256": "8be00e2693f9faa56eb2557b0d67e93f05f30329be5c4b57a822eb9c7ffdd34b",
+      "audio_sha256": "ba157c7beab9fc2c4fae68af22545686c9b9a37b1694f908497e2a235f78bea9",
+      "license": "Creative Commons Attribution 3.0",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_pathetique_op13_m2",
+      "work_id": "beethoven_pathetique_op13",
+      "title": "Piano Sonata No. 8 “Pathétique”, Op. 13 — II. Adagio cantabile",
+      "composer": "Ludwig van Beethoven",
+      "notes": 1629,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 243.33323599999997,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          4
+        ]
+      ],
+      "audio": {
+        "duration_sec": 246.93260770975056,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.19366455078125,
+        "rms": 0.027182264548099758
+      },
+      "original_sha256": "92c685ca98001473bcc21fa98110cc125ab489c1bf49be185e062d204a268492",
+      "chart_sha256": "86d67b06b0554c88c9b3d9a7534799a9c76e1d534a4e7371968ea7c7141e4110",
+      "audio_sha256": "fa607c36d9a9344582bd745a5668984cb25ed9bdb817d450c014c8826ceb2889",
+      "license": "Public Domain",
+      "ok": true
+    },
+    {
+      "id": "classical__beethoven_pathetique_op13_m3",
+      "work_id": "beethoven_pathetique_op13",
+      "title": "Piano Sonata No. 8 “Pathétique”, Op. 13 — III. Rondo",
+      "composer": "Ludwig van Beethoven",
+      "notes": 2385,
+      "percussion_notes_in_source": 0,
+      "score_duration_sec": 232.9160145,
+      "tempo_segments": 1,
+      "meter_segments": 1,
+      "meters": [
+        [
+          2,
+          2
+        ]
+      ],
+      "audio": {
+        "duration_sec": 239.16553287981858,
+        "sample_rate": 44100,
+        "channels": 2,
+        "peak": 0.22589111328125,
+        "rms": 0.027644142210888928
+      },
+      "original_sha256": "e0e27f158b9eac0747569f0e4096c96c54a5eba425c567b368523afef2190797",
+      "chart_sha256": "7b8e954b426d16a46058dbd85ecac72b83b614090d8f91d2e4baaf374778678a",
+      "audio_sha256": "9813d100c6b4393ea39980fcef861078ec126c4b69059c325eba605422d94d5e",
+      "license": "Public Domain",
+      "ok": true
+    }
+  ]
+}

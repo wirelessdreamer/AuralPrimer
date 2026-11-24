@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Nocturne</mp:title>
+    <mp:composer>ChopinFF</mp:composer>
+    <mp:opus>Op. 9, No. 2</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1833</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>G. Schirmer, New York, 1881</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 3.0</mp:licence>
+
+    <mp:lyFile>chopin_nocturne_op9_n2.ly</mp:lyFile>
+    <mp:midFile>chopin_nocturne_op9_n2.mid</mp:midFile>
+    <mp:psFileA4>chopin_nocturne_op9_n2-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>chopin_nocturne_op9_n2-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>chopin_nocturne_op9_n2-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>chopin_nocturne_op9_n2-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>chopin_nocturne_op9_n2-preview.png</mp:pngFile>
+    <mp:pngHeight>193</mp:pngHeight>
+    <mp:pngWidth>543</mp:pngWidth>
+
+    <mp:id>Mutopia-2014/12/18-1590</mp:id>
+    <mp:maintainer>Renato Biolcati Rinaldi</mp:maintainer>
+    <mp:maintainerEmail>rebiolca@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb>http://www.nightpassage.org</mp:maintainerWeb>
+    <mp:moreInfo>Made from scans available at Library Of Congress http://memory.loc.gov</mp:moreInfo>
+    <mp:lilypondVersion>2.12.3</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

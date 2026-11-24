@@ -69,6 +69,9 @@ export function initRouteController(deps: RouteControllerDeps): RouteControllerH
   let currentRoute: Route = "home";
 
   function setRoute(route: Route): void {
+    if (currentRoute === "play" && deps.playLayoutEl.classList.contains("isLibraryOnly")) {
+      deps.songLibraryPanel.captureScrollPosition();
+    }
     currentRoute = route;
     const routes = Array.from(document.querySelectorAll<HTMLElement>(".route"));
     for (const el of routes) {
@@ -107,8 +110,8 @@ export function initRouteController(deps: RouteControllerDeps): RouteControllerH
 
     deps.syncPlaySurfaceMode();
 
-    // Always scroll to top of content on navigation.
-    document.documentElement.scrollTop = 0;
+    // Library returns restore their browsing position after revealing the list.
+    if (route !== "play") document.documentElement.scrollTop = 0;
     deps.consoleBridge.log("gamestate", `route -> ${route}`);
   }
 
@@ -140,6 +143,7 @@ export function initRouteController(deps: RouteControllerDeps): RouteControllerH
     deps.playLayoutEl.classList.add("isLibraryOnly");
     setPlayFocusMode(false);
     deps.syncPlaySurfaceMode();
+    deps.songLibraryPanel.restoreScrollPosition();
     try {
       deps.stopVisualizer();
       deps.transportController.pause();
@@ -156,6 +160,7 @@ export function initRouteController(deps: RouteControllerDeps): RouteControllerH
   }
 
   function showBandSetupStep(): void {
+    deps.songLibraryPanel.captureScrollPosition();
     deps.pauseMenu.close({ restoreFocus: false });
     deps.consoleBridge.log("gamestate", "show band setup step");
     deps.playLayoutEl.classList.remove("isLibraryOnly");

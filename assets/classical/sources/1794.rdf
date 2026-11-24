@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Schafe Können Sicher Weiden (Sheep Will Safely Graze)</mp:title>
+    <mp:composer>BachJS</mp:composer>
+    <mp:opus>from BWV 208</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Two flutes, soprano, and basso continuo</mp:for>
+    <mp:date/>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Breitkopf &amp;amp; Härtel, 1881</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Sheep.ly</mp:lyFile>
+    <mp:midFile>Sheep.mid</mp:midFile>
+    <mp:psFileA4>Sheep-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Sheep-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Sheep-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Sheep-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Sheep-preview.png</mp:pngFile>
+    <mp:pngHeight>210</mp:pngHeight>
+    <mp:pngWidth>549</mp:pngWidth>
+
+    <mp:id>Mutopia-2011/10/25-1794</mp:id>
+    <mp:maintainer>Jeremy Visser</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb>http://jeremy.visser.name/</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.14.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

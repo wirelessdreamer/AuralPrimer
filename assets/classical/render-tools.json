@@ -1,0 +1,12 @@
+[
+  {
+    "source": "https://github.com/FluidSynth/fluidsynth/releases/download/v2.6.1/fluidsynth-v2.6.1-win10-x64-cpp11.zip",
+    "sha256": "fab7a2e4b85675b66970f97a39bbc239729c5e0f237198b5922a6a73cbc8677c",
+    "size": 2727529
+  },
+  {
+    "source": "https://codeload.github.com/mrbumpy409/GeneralUser-GS/zip/684543d5e5efaef08d02be50dcda8d552478fa60",
+    "sha256": "197207fffaf7bad496a1d5d9a44b0edd16efe97d53db42afb6c73cdbdefb4484",
+    "size": 65366576
+  }
+]

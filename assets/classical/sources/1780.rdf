@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Toccata and Fugue in D Minor</mp:title>
+    <mp:composer>BachJS</mp:composer>
+    <mp:opus>BWV 565</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Organ</mp:for>
+    <mp:date/>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Bach-Gesellschaft Ausgabe, 1867</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>ToccataFugue.ly</mp:lyFile>
+    <mp:midFile>ToccataFugue.mid</mp:midFile>
+    <mp:psFileA4>ToccataFugue-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>ToccataFugue-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>ToccataFugue-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>ToccataFugue-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>ToccataFugue-preview.png</mp:pngFile>
+    <mp:pngHeight>194</mp:pngHeight>
+    <mp:pngWidth>546</mp:pngWidth>
+
+    <mp:id>Mutopia-2011/09/11-1780</mp:id>
+    <mp:maintainer>Anonymous</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.14.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

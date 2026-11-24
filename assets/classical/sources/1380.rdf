@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Symphony No. 25 - KV183 (1st Movement)</mp:title>
+    <mp:composer>MozartWA</mp:composer>
+    <mp:opus>KV 183</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Orchestra: Oboes, Horns, Violins, Viola, 'Cello, Bass</mp:for>
+    <mp:date>1773</mp:date>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Breitkopf and Hartel (1880)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Symphony25_1-lys.zip</mp:lyFile>
+    <mp:midFile>Symphony25_1.mid</mp:midFile>
+    <mp:psFileA4>Symphony25_1-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Symphony25_1-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Symphony25_1-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Symphony25_1-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Symphony25_1-preview.png</mp:pngFile>
+    <mp:pngHeight>389</mp:pngHeight>
+    <mp:pngWidth>568</mp:pngWidth>
+
+    <mp:id>Mutopia-2008/04/16-1380</mp:id>
+    <mp:maintainer>Stelios Samelis</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.10.33</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

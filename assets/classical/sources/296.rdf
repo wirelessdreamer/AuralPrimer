@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Sonata No. 8 “Pathétique” (3rd Movement: Rondo)</mp:title>
+    <mp:composer>BeethovenLv</mp:composer>
+    <mp:opus>Op. 13</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date/>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Berners, 1908 (edited by A. Winterberger)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>pathetique-3.ly</mp:lyFile>
+    <mp:midFile>pathetique-3.mid</mp:midFile>
+    <mp:psFileA4>pathetique-3-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>pathetique-3-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>pathetique-3-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>pathetique-3-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>pathetique-3-preview.png</mp:pngFile>
+    <mp:pngHeight>102</mp:pngHeight>
+    <mp:pngWidth>539</mp:pngWidth>
+
+    <mp:id>Mutopia-2013/01/08-296</mp:id>
+    <mp:maintainer>Chris Sawer</mp:maintainer>
+    <mp:maintainerEmail>chris@mutopiaproject.org</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>I haven't typeset all of Winterberger's additions, by a long way - no fingering is included, and much of the phrasing, dynamics and performance directions have also been omitted.</mp:moreInfo>
+    <mp:lilypondVersion>2.16.1</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

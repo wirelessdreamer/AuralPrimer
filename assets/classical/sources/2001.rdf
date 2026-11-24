@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Prelude Op. 23, No. 5</mp:title>
+    <mp:composer>RachmaninoffS</mp:composer>
+    <mp:opus>Op. 23</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1901</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>IMSLP - Muzyka and Gutheil editions</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 4.0</mp:licence>
+
+    <mp:lyFile>rach-prelude23-05.ly</mp:lyFile>
+    <mp:midFile>rach-prelude23-05.mid</mp:midFile>
+    <mp:psFileA4>rach-prelude23-05-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>rach-prelude23-05-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>rach-prelude23-05-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>rach-prelude23-05-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>rach-prelude23-05-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2015/09/28-2001</mp:id>
+    <mp:maintainer>Joram Berger</mp:maintainer>
+    <mp:maintainerEmail>joram.berger at gmx dot de</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.19.17</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

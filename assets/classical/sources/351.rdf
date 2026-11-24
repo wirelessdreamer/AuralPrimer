@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>L'Inverno / Winter</mp:title>
+    <mp:composer>VivaldiA</mp:composer>
+    <mp:opus>Op. 8, No. 4</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Violin, String</mp:for>
+    <mp:date>1725</mp:date>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Performers' Facsimiles</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 3.0</mp:licence>
+
+    <mp:lyFile>winter-lys.zip</mp:lyFile>
+    <mp:midFile>winter-mids.zip</mp:midFile>
+    <mp:psFileA4>winter-a4-pss.zip</mp:psFileA4>
+    <mp:pdfFileA4>winter-a4-pdfs.zip</mp:pdfFileA4>
+    <mp:psFileLet>winter-let-pss.zip</mp:psFileLet>
+    <mp:pdfFileLet>winter-let-pdfs.zip</mp:pdfFileLet>
+    <mp:pngFile>winter-preview.png</mp:pngFile>
+    <mp:pngHeight>741</mp:pngHeight>
+    <mp:pngWidth>548</mp:pngWidth>
+
+    <mp:id>Mutopia-2010/02/08-351</mp:id>
+    <mp:maintainer/>
+    <mp:maintainerEmail>smailliw@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.12.3</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

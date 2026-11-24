@@ -31,7 +31,7 @@ function makeDeps(overrides: Partial<Parameters<typeof initRouteController>[0]> 
   return {
     consoleBridge: { log: vi.fn(), warn: vi.fn(), error: vi.fn() } as any,
     pauseMenu: { close: vi.fn() } as any,
-    songLibraryPanel: { refresh: vi.fn(async () => {}) } as any,
+    songLibraryPanel: { refresh: vi.fn(async () => {}), captureScrollPosition: vi.fn(), restoreScrollPosition: vi.fn() } as any,
     transportController: { pause: vi.fn() } as any,
     haveTauri: vi.fn(() => false),
     stopVisualizer: vi.fn(),
@@ -111,6 +111,22 @@ describe("routeController", () => {
     const layout = document.getElementById("playLayout")!;
     expect(layout.classList.contains("isLibraryOnly")).toBe(false);
     expect(layout.classList.contains("isFocus")).toBe(true);
+    expect(deps.songLibraryPanel.captureScrollPosition).toHaveBeenCalled();
+  });
+
+  it("captures browsing position before leaving Play and restores it when returning to the library", () => {
+    const deps = makeDeps();
+    const handle = initRouteController(deps);
+    handle.openPlaySongFlow();
+    vi.mocked(deps.songLibraryPanel.captureScrollPosition).mockClear();
+    vi.mocked(deps.songLibraryPanel.restoreScrollPosition).mockClear();
+    handle.setRoute("home");
+    expect(deps.songLibraryPanel.captureScrollPosition).toHaveBeenCalledOnce();
+    handle.openPlaySongFlow();
+    expect(deps.songLibraryPanel.restoreScrollPosition).toHaveBeenCalledOnce();
+    handle.showBandSetupStep();
+    handle.showSongLibraryStep();
+    expect(deps.songLibraryPanel.restoreScrollPosition).toHaveBeenCalledTimes(2);
   });
 
   it("setPlayFocusMode toggles the layout class + resizes the canvas", () => {

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Troldtog (March of the Dwarfs)</mp:title>
+    <mp:composer>GriegE</mp:composer>
+    <mp:opus>Op. 54, No. 3</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date/>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>C.F. Peters, n.d.(ca.1891)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Troldtog.ly</mp:lyFile>
+    <mp:midFile>Troldtog.mid</mp:midFile>
+    <mp:psFileA4>Troldtog-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Troldtog-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Troldtog-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Troldtog-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Troldtog-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2015/06/14-2014</mp:id>
+    <mp:maintainer>Anonymous</mp:maintainer>
+    <mp:maintainerEmail>beybladepiano@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>Changed a few 'molto cresc.' and one 'dim.' for easier reading.</mp:moreInfo>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

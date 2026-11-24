@@ -3,6 +3,13 @@ export interface AuralSongManifest {
   song_id: string;
   title: string;
   artist: string;
+  /**
+   * Free-text genre. Optional: nothing but a fresh import has ever written
+   * one, so most packs carry none. Undeclared in manifest.schema.json, which
+   * only tolerates it via `additionalProperties: true` -- the Rust reader has
+   * always parsed it regardless.
+   */
+  genre?: string;
   duration_sec: number;
 
   // allow forward-compat without typing the entire schema yet

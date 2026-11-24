@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Gnossienne No. 1</mp:title>
+    <mp:composer>SatieE</mp:composer>
+    <mp:opus/>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1890</mp:date>
+    <mp:style>Modern</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>EDITIONS SALABERT, 22, Rue Chauchat. Paris, 1913</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 4.0</mp:licence>
+
+    <mp:lyFile>no_1.ly</mp:lyFile>
+    <mp:midFile>no_1.mid</mp:midFile>
+    <mp:psFileA4>no_1-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>no_1-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>no_1-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>no_1-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>no_1-preview.png</mp:pngFile>
+    <mp:pngHeight>100</mp:pngHeight>
+    <mp:pngWidth>541</mp:pngWidth>
+
+    <mp:id>Mutopia-2015/07/23-2035</mp:id>
+    <mp:maintainer>Knute Snortum</mp:maintainer>
+    <mp:maintainerEmail>knute (at) snortum (dot) net</mp:maintainerEmail>
+    <mp:maintainerWeb>http://www.musicwithknute.com/</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

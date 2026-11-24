@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>In the Hall of the Mountain King</mp:title>
+    <mp:composer>GriegE</mp:composer>
+    <mp:opus>Op. 46, No. 4</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1874</mp:date>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger>Edvard Grieg</mp:arranger>
+    <mp:source>The University Society, 1918</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Dans_l_antre_du_roi_de_la_montagne.ly</mp:lyFile>
+    <mp:midFile>Dans_l_antre_du_roi_de_la_montagne.mid</mp:midFile>
+    <mp:psFileA4>Dans_l_antre_du_roi_de_la_montagne-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Dans_l_antre_du_roi_de_la_montagne-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Dans_l_antre_du_roi_de_la_montagne-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Dans_l_antre_du_roi_de_la_montagne-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Dans_l_antre_du_roi_de_la_montagne-preview.png</mp:pngFile>
+    <mp:pngHeight>181</mp:pngHeight>
+    <mp:pngWidth>541</mp:pngWidth>
+
+    <mp:id>Mutopia-2013/12/07-1888</mp:id>
+    <mp:maintainer>Coyau</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>scan: http://imslp.org/wiki/Special:ReverseLookup/581</mp:moreInfo>
+    <mp:lilypondVersion>2.16.1</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

@@ -11,10 +11,16 @@
  * shown, so a small library looks exactly as it did before.
  */
 
-export type LibrarySortKey = "title" | "composer" | "duration" | "added";
+export type LibrarySortKey = "title" | "composer" | "genre" | "duration" | "added";
+
+/** What the list is bucketed by. */
+export type LibraryGroupKey = "none" | "composer" | "genre";
 
 /** Group label for items whose pack records no composer/artist. */
 export const UNKNOWN_COMPOSER_LABEL = "Unknown composer";
+
+/** Group label for items whose pack records no genre. */
+export const UNKNOWN_GENRE_LABEL = "No genre";
 
 export interface LibraryItem {
   /** Stable identity — the container path. */
@@ -23,6 +29,11 @@ export interface LibraryItem {
   title: string;
   /** Composer/artist. Empty when the pack records none. */
   composer: string;
+  /**
+   * Free-text genre. Empty when the pack records none -- which is most of
+   * them, since nothing but a fresh import has ever been able to set one.
+   */
+  genre: string;
   /** Track length in seconds, or null when unknown. */
   durationSec: number | null;
   /** Epoch ms the pack landed in the library, or null when unknown. */
@@ -44,10 +55,14 @@ export interface LibraryViewOptions {
   sort?: LibrarySortKey;
   /** Reverse the sort. Default false. */
   descending?: boolean;
-  /** Split into per-composer groups. Default false (one flat list). */
-  groupByComposer?: boolean;
+  /** Bucket the list. Default "none" (one flat list, as it has always been). */
+  groupBy?: LibraryGroupKey;
   /** Incremental text filter over title + composer. Default "" (no filter). */
   query?: string;
+  /** Exact artist/composer filter. Null/undefined means all; "" means unknown. */
+  artist?: string | null;
+  /** Exact genre filter. Null/undefined means all; "" means untagged. */
+  genre?: string | null;
 }
 
 export interface LibraryView {
@@ -69,6 +84,8 @@ function isMissing(item: LibraryItem, key: LibrarySortKey): boolean {
   switch (key) {
     case "composer":
       return item.composer.trim() === "";
+    case "genre":
+      return item.genre.trim() === "";
     case "duration":
       return item.durationSec === null;
     case "added":
@@ -82,6 +99,8 @@ function compareOn(a: LibraryItem, b: LibraryItem, key: LibrarySortKey): number 
   switch (key) {
     case "composer":
       return compareText(a.composer.trim(), b.composer.trim());
+    case "genre":
+      return compareText(a.genre.trim(), b.genre.trim());
     case "duration":
       return (a.durationSec ?? 0) - (b.durationSec ?? 0);
     case "added":
@@ -135,26 +154,34 @@ export function filterLibraryItems(items: readonly LibraryItem[], query: string)
 }
 
 /**
- * Bucket items by composer, preserving the incoming item order inside each
- * group. Groups come out alphabetically with the no-composer bucket last.
- * Composer matching is case-insensitive; the first spelling seen wins.
+ * Bucket items on one free-text field, preserving the incoming item order
+ * inside each group. Groups come out alphabetically with the value-less
+ * bucket last. Matching is case-insensitive; the first spelling seen wins.
+ *
+ * Shared by composer and genre because the fiddly parts -- the empty bucket
+ * sorting last no matter its label, and one spelling winning over later
+ * variants -- are exactly where two copies would drift apart.
  */
-export function groupLibraryItemsByComposer(items: readonly LibraryItem[]): LibraryGroup[] {
+function bucketBy(
+  items: readonly LibraryItem[],
+  select: (item: LibraryItem) => string,
+  unknownLabel: string
+): LibraryGroup[] {
   const groups = new Map<string, LibraryGroup>();
 
   for (const item of items) {
-    const composer = item.composer.trim();
-    const key = composer.toLowerCase();
+    const value = select(item).trim();
+    const key = value.toLowerCase();
     const existing = groups.get(key);
     if (existing) {
       existing.items.push(item);
       continue;
     }
-    groups.set(key, { label: composer || UNKNOWN_COMPOSER_LABEL, items: [item] });
+    groups.set(key, { label: value || unknownLabel, items: [item] });
   }
 
-  // Keyed on "" rather than the label so a pack literally titled "Unknown
-  // composer" can't jump the queue.
+  // Keyed on "" rather than the label so a pack whose value literally reads
+  // like the unknown bucket can't jump the queue.
   return [...groups.entries()]
     .sort(([ak, a], [bk, b]) => {
       if ((ak === "") !== (bk === "")) return ak === "" ? 1 : -1;
@@ -163,22 +190,39 @@ export function groupLibraryItemsByComposer(items: readonly LibraryItem[]): Libr
     .map(([, group]) => group);
 }
 
+/** Bucket items by composer. See {@link bucketBy}. */
+export function groupLibraryItemsByComposer(items: readonly LibraryItem[]): LibraryGroup[] {
+  return bucketBy(items, (i) => i.composer, UNKNOWN_COMPOSER_LABEL);
+}
+
+/** Bucket items by genre. See {@link bucketBy}. */
+export function groupLibraryItemsByGenre(items: readonly LibraryItem[]): LibraryGroup[] {
+  return bucketBy(items, (i) => i.genre, UNKNOWN_GENRE_LABEL);
+}
+
 /** Filter, then sort, then (optionally) group — the whole picker order. */
 export function buildLibraryView(
   items: readonly LibraryItem[],
   opts: LibraryViewOptions = {}
 ): LibraryView {
+  const artist = opts.artist?.trim().toLowerCase();
+  const genre = opts.genre?.trim().toLowerCase();
   const matched = sortLibraryItems(
-    filterLibraryItems(items, opts.query ?? ""),
+    filterLibraryItems(items, opts.query ?? "").filter((item) =>
+      (artist === undefined || item.composer.trim().toLowerCase() === artist)
+      && (genre === undefined || item.genre.trim().toLowerCase() === genre)
+    ),
     opts.sort ?? "title",
     opts.descending ?? false
   );
 
-  const groups = opts.groupByComposer
-    ? groupLibraryItemsByComposer(matched)
-    : matched.length > 0
-      ? [{ label: "", items: matched }]
-      : [];
+  const groupBy = opts.groupBy ?? "none";
+  const bucketed =
+    groupBy === "composer" ? groupLibraryItemsByComposer(matched)
+    : groupBy === "genre" ? groupLibraryItemsByGenre(matched)
+    : null;
+
+  const groups = bucketed ?? (matched.length > 0 ? [{ label: "", items: matched }] : []);
 
   return {
     groups,

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Canon per 3 Violini e Basso</mp:title>
+    <mp:composer>PachelbelJ</mp:composer>
+    <mp:opus/>
+    <mp:lyricist/>
+    <mp:for>3 Violins, Cello</mp:for>
+    <mp:date>1694</mp:date>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>IMSLP</mp:source>
+    <mp:licence>Creative Commons Attribution 4.0</mp:licence>
+
+    <mp:lyFile>Canon_per_3_Violini_e_Basso-lys.zip</mp:lyFile>
+    <mp:midFile>Canon_per_3_Violini_e_Basso-mids.zip</mp:midFile>
+    <mp:psFileA4>Canon_per_3_Violini_e_Basso-a4-pss.zip</mp:psFileA4>
+    <mp:pdfFileA4>Canon_per_3_Violini_e_Basso-a4-pdfs.zip</mp:pdfFileA4>
+    <mp:psFileLet>Canon_per_3_Violini_e_Basso-let-pss.zip</mp:psFileLet>
+    <mp:pdfFileLet>Canon_per_3_Violini_e_Basso-let-pdfs.zip</mp:pdfFileLet>
+    <mp:pngFile>Canon_per_3_Violini_e_Basso-preview.png</mp:pngFile>
+    <mp:pngHeight>162</mp:pngHeight>
+    <mp:pngWidth>544</mp:pngWidth>
+
+    <mp:id>Mutopia-2015/09/02-2047</mp:id>
+    <mp:maintainer>Michael Fischer v. Mollard</mp:maintainer>
+    <mp:maintainerEmail>konfusator@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

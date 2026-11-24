@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Night on Bald Mountain</mp:title>
+    <mp:composer>MussorgskyM</mp:composer>
+    <mp:opus/>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date/>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger>Константин Чернов</mp:arranger>
+    <mp:source>IMSLP #19990</mp:source>
+    <mp:licence>Creative Commons Attribution 3.0</mp:licence>
+
+    <mp:lyFile>nobm.ly</mp:lyFile>
+    <mp:midFile>nobm.mid</mp:midFile>
+    <mp:psFileA4>nobm-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>nobm-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>nobm-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>nobm-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>nobm-preview.png</mp:pngFile>
+    <mp:pngHeight>105</mp:pngHeight>
+    <mp:pngWidth>503</mp:pngWidth>
+
+    <mp:id>Mutopia-2013/12/08-1892</mp:id>
+    <mp:maintainer>Robert Clausecker</mp:maintainer>
+    <mp:maintainerEmail>fuz@fuz.su</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>Piano arrangement by Konstantin Chernov</mp:moreInfo>
+    <mp:lilypondVersion>2.17.29</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

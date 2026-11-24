@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Erlkönig</mp:title>
+    <mp:composer>SchubertF</mp:composer>
+    <mp:opus>D.328 (Op. 1)</mp:opus>
+    <mp:lyricist>Johann Wolfgang von Goethe (1749-1832)</mp:lyricist>
+    <mp:for>Voice and Piano</mp:for>
+    <mp:date>1815</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>C.F. Peters (Band I)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Erlkoenig.ly</mp:lyFile>
+    <mp:midFile>Erlkoenig.mid</mp:midFile>
+    <mp:psFileA4>Erlkoenig-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Erlkoenig-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Erlkoenig-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Erlkoenig-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Erlkoenig-preview.png</mp:pngFile>
+    <mp:pngHeight>129</mp:pngHeight>
+    <mp:pngWidth>475</mp:pngWidth>
+
+    <mp:id>Mutopia-2007/09/07-1030</mp:id>
+    <mp:maintainer>Ph. Raynaud</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>A source is freely available at http://www.dlib.indiana.edu/variations/scores/</mp:moreInfo>
+    <mp:lilypondVersion>2.11.32</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

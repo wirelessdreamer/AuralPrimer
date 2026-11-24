@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Sonata No. 14 “Moonlight”</mp:title>
+    <mp:composer>BeethovenLv</mp:composer>
+    <mp:opus>Op. 27, No. 2</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1802</mp:date>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Berners, 1908 (edited by A. Winterberger)</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 2.5</mp:licence>
+
+    <mp:lyFile>moonlight-lys.zip</mp:lyFile>
+    <mp:midFile>moonlight-mids.zip</mp:midFile>
+    <mp:psFileA4>moonlight-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>moonlight-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>moonlight-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>moonlight-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>moonlight-preview.png</mp:pngFile>
+    <mp:pngHeight>133</mp:pngHeight>
+    <mp:pngWidth>546</mp:pngWidth>
+
+    <mp:id>Mutopia-2007/02/11-276</mp:id>
+    <mp:maintainer>Stewart Holmes</mp:maintainer>
+    <mp:maintainerEmail>stewart@stewartholmes.com</mp:maintainerEmail>
+    <mp:maintainerWeb>http://www.stewartholmes.com</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.10.16</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

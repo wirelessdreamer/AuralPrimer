@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Gymnopédie No. 1</mp:title>
+    <mp:composer>SatieE</mp:composer>
+    <mp:opus/>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>1888</mp:date>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Dover Edition</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>gymnopedie_1.ly</mp:lyFile>
+    <mp:midFile>gymnopedie_1.mid</mp:midFile>
+    <mp:psFileA4>gymnopedie_1-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>gymnopedie_1-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>gymnopedie_1-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>gymnopedie_1-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>gymnopedie_1-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2014/12/14-37</mp:id>
+    <mp:maintainer>Evin Robertson</mp:maintainer>
+    <mp:maintainerEmail>nitfol@my-deja.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

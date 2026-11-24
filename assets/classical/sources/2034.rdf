@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Fantasy in D minor</mp:title>
+    <mp:composer>MozartWA</mp:composer>
+    <mp:opus>KV 397</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date/>
+    <mp:style>Classical</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>'Mozart Album: Zongorára' Budapest: Zeneműkiadó Vállalat, 1951</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Fantasia.ly</mp:lyFile>
+    <mp:midFile>Fantasia.mid</mp:midFile>
+    <mp:psFileA4>Fantasia-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Fantasia-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Fantasia-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Fantasia-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Fantasia-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2015/07/09-2034</mp:id>
+    <mp:maintainer>Andrés Necochea</mp:maintainer>
+    <mp:maintainerEmail>yayopoint@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>Listed as Public Domain in IMSLP due to publishing done by a state entity. Ref: &lt;a href="http://imslp.org/wiki/Editio_Musica_Budapest"&gt;http://imslp.org/wiki/Editio_Musica_Budapest&lt;/a&gt;</mp:moreInfo>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Waltz No. 15</mp:title>
+    <mp:composer>BrahmsJ</mp:composer>
+    <mp:opus>Op. 39</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>19th C</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Ed. R. Joseffy</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>waltz-op39-15.ly</mp:lyFile>
+    <mp:midFile>waltz-op39-15.mid</mp:midFile>
+    <mp:psFileA4>waltz-op39-15-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>waltz-op39-15-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>waltz-op39-15-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>waltz-op39-15-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>waltz-op39-15-preview.png</mp:pngFile>
+    <mp:pngHeight>108</mp:pngHeight>
+    <mp:pngWidth>570</mp:pngWidth>
+
+    <mp:id>Mutopia-2006/07/30-794</mp:id>
+    <mp:maintainer>Brian D. Rude</mp:maintainer>
+    <mp:maintainerEmail>brianrude@hotmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb>http://brianrude.com</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.8.5</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

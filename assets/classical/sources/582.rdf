@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Nocturne No. 1 in B-flat minor</mp:title>
+    <mp:composer>ChopinFF</mp:composer>
+    <mp:opus>Op. 9, No. 1</mp:opus>
+    <mp:lyricist>n/a</mp:lyricist>
+    <mp:for>Piano</mp:for>
+    <mp:date>1827</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger>n/a</mp:arranger>
+    <mp:source>Schirmer, 1915, Ed. R. Joseffy</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 2.5</mp:licence>
+
+    <mp:lyFile>nocturne_in_b-flat_minor.ly</mp:lyFile>
+    <mp:midFile>nocturne_in_b-flat_minor.mid</mp:midFile>
+    <mp:psFileA4>nocturne_in_b-flat_minor-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>nocturne_in_b-flat_minor-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>nocturne_in_b-flat_minor-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>nocturne_in_b-flat_minor-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>nocturne_in_b-flat_minor-preview.png</mp:pngFile>
+    <mp:pngHeight>128</mp:pngHeight>
+    <mp:pngWidth>539</mp:pngWidth>
+
+    <mp:id>Mutopia-2005/08/08-582</mp:id>
+    <mp:maintainer>Benjamin D. Esham</mp:maintainer>
+    <mp:maintainerEmail>bdesham@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.6.3</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

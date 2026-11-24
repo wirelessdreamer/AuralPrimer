@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rdf:RDF xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=".">
+    <mp:title>MARCHE NUPTIALE (Wedding march)</mp:title>
+    <mp:composer>Mendelssohn-BartholdyF</mp:composer>
+    <mp:opus>O 61</mp:opus>
+    <mp:lyricist />
+    <mp:for>Organ</mp:for>
+    <mp:date>ca.1909</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre />
+    <mp:arranger>transcription for organ by Théodore Dubois</mp:arranger>
+    <mp:source>Paris: Durand &amp; Cie., Plate D. &amp; F. 9516</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 4.0</mp:licence>
+    <mp:lyFile>Sommernachtstraum-wedding-march.ly</mp:lyFile>
+    <mp:midFile>Sommernachtstraum-wedding-march.mid</mp:midFile>
+    <mp:psFileA4>Sommernachtstraum-wedding-march-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>Sommernachtstraum-wedding-march-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>Sommernachtstraum-wedding-march-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>Sommernachtstraum-wedding-march-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>Sommernachtstraum-wedding-march-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+    <mp:id>Mutopia-2017/10/24-2198</mp:id>
+    <mp:maintainer>Alexander Brock</mp:maintainer>
+    <mp:maintainerEmail>alexander@lunar-orbit.de</mp:maintainerEmail>
+    <mp:maintainerWeb />
+    <mp:moreInfo />
+    <mp:lilypondVersion>2.19.65</mp:lilypondVersion>
+  </rdf:Description>
+</rdf:RDF>

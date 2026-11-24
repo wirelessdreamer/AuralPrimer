@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Deuxième Arabesque</mp:title>
+    <mp:composer>DebussyC</mp:composer>
+    <mp:opus>L66 No.2</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date/>
+    <mp:style>Modern</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Paris: Durand et Schoenewerk, n.d.[1891]. Plates D.S. 4395-96</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 4.0</mp:licence>
+
+    <mp:lyFile>debussy_Arabesque_2.ly</mp:lyFile>
+    <mp:midFile>debussy_Arabesque_2.mid</mp:midFile>
+    <mp:psFileA4>debussy_Arabesque_2-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>debussy_Arabesque_2-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>debussy_Arabesque_2-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>debussy_Arabesque_2-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>debussy_Arabesque_2-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2014/12/14-1994</mp:id>
+    <mp:maintainer>Knute Snortum</mp:maintainer>
+    <mp:maintainerEmail>knute (at) snortum (dot) net</mp:maintainerEmail>
+    <mp:maintainerWeb>http://musicwithknute.com</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.18.2</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

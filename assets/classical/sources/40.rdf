@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Invention 1</mp:title>
+    <mp:composer>BachJS</mp:composer>
+    <mp:opus>BWV 772</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Harpsichord, Piano</mp:for>
+    <mp:date/>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Bach-Gesellschaft</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 3.0</mp:licence>
+
+    <mp:lyFile>bach-invention-01.ly</mp:lyFile>
+    <mp:midFile>bach-invention-01.mid</mp:midFile>
+    <mp:psFileA4>bach-invention-01-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>bach-invention-01-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>bach-invention-01-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>bach-invention-01-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>bach-invention-01-preview.png</mp:pngFile>
+    <mp:pngHeight>94</mp:pngHeight>
+    <mp:pngWidth>539</mp:pngWidth>
+
+    <mp:id>Mutopia-2008/06/15-40</mp:id>
+    <mp:maintainer>jeff covey</mp:maintainer>
+    <mp:maintainerEmail>jeff.covey@pobox.com</mp:maintainerEmail>
+    <mp:maintainerWeb>http://pobox.com/~jeff.covey/</mp:maintainerWeb>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.11.49</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

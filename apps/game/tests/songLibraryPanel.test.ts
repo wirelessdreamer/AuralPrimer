@@ -18,6 +18,7 @@ import { initSongLibraryPanel } from "../src/songLibraryPanel";
 import type { AuralSongScanEntry } from "../src/songLibraryPanel";
 
 function stageDom(): void {
+  document.documentElement.scrollTop = 0;
   document.body.innerHTML =
     '<pre id="status"></pre>' +
     '<div id="list"></div>' +
@@ -265,6 +266,28 @@ describe("songLibraryPanel", () => {
  * last scan (no extra Rust round-trip), and broken packs stay visible.
  */
 describe("songLibraryPanel toolbar", () => {
+  /** The same packs, but imported with `--genre`, plus one that was not. */
+  const tagged: AuralSongScanEntry[] = [
+    {
+      container_path: "/songs/nocturne.feedpak",
+      kind: "dir",
+      ok: true,
+      manifest: { song_id: "n", title: "Nocturne Op. 9", artist: "Chopin", genre: "Romantic", duration_sec: 300 } as any,
+    },
+    {
+      container_path: "/songs/invention.feedpak",
+      kind: "dir",
+      ok: true,
+      manifest: { song_id: "i", title: "Invention No. 1", artist: "J.S. Bach", genre: "Baroque", duration_sec: 90 } as any,
+    },
+    {
+      container_path: "/songs/untagged.feedpak",
+      kind: "dir",
+      ok: true,
+      manifest: { song_id: "u", title: "Untagged", artist: "Anon", duration_sec: 60 } as any,
+    },
+  ];
+
   const classical: AuralSongScanEntry[] = [
     {
       container_path: "/songs/nocturne.feedpak",
@@ -294,7 +317,13 @@ describe("songLibraryPanel toolbar", () => {
 
   const search = () => document.getElementById("songLibrarySearch") as HTMLInputElement;
   const sort = () => document.getElementById("songLibrarySort") as HTMLSelectElement;
-  const group = () => document.getElementById("songLibraryGroup") as HTMLInputElement;
+  const group = () => document.getElementById("songLibraryGroup") as HTMLSelectElement;
+  const artist = () => document.getElementById("songLibraryArtist") as HTMLSelectElement;
+  const genre = () => document.getElementById("songLibraryGenre") as HTMLSelectElement;
+  const setFilter = (select: HTMLSelectElement, value: string | null) => {
+    select.value = value === null ? "" : JSON.stringify(value);
+    select.dispatchEvent(new Event("change"));
+  };
   const titles = () =>
     Array.from(list().querySelectorAll(".songSelectTitle")).map((e) => e.textContent);
   const groupLabels = () =>
@@ -319,8 +348,43 @@ describe("songLibraryPanel toolbar", () => {
   it("injects the toolbar above the list", async () => {
     await mount();
     expect(search()).not.toBeNull();
-    expect(group().checked).toBe(false);
+    expect(group().value).toBe("none");
     expect(document.getElementById("songLibraryToolbar")!.nextElementSibling).toBe(list());
+  });
+
+  it("populates both selects before any scan returns", () => {
+    // A <select> with no options reads as a broken control, not a pending one.
+    initSongLibraryPanel(makeDeps());
+
+    expect(Array.from(sort().options).map((o) => o.value)).toContain("title");
+    expect(Array.from(group().options).map((o) => o.value)).toEqual(["none", "composer"]);
+  });
+
+  it("hides genre sorting/grouping for untagged packs while offering the No genre filter", async () => {
+    // The whole classical fixture predates genre, which is the state almost
+    // every real library is in. An offered-but-dead control would sort the
+    // library into one "No genre" bucket and look broken rather than empty.
+    await mount();
+
+    expect(Array.from(group().options).map((o) => o.value)).toEqual(["none", "composer"]);
+    expect(Array.from(sort().options).map((o) => o.value)).not.toContain("genre");
+    expect(Array.from(genre().options).map(o => o.textContent)).toEqual(["All genres", "No genre (4)"]);
+  });
+
+  it("offers genre once a pack records one, and buckets on it", async () => {
+    await mount(tagged);
+
+    expect(Array.from(group().options).map((o) => o.value)).toEqual([
+      "none",
+      "composer",
+      "genre",
+    ]);
+
+    group().value = "genre";
+    group().dispatchEvent(new Event("change"));
+
+    // Alphabetical, with the packs carrying no genre collected last.
+    expect(groupLabels()).toEqual(["Baroque", "Romantic", "No genre"]);
   });
 
   it("filters incrementally across title and composer without rescanning", async () => {
@@ -367,7 +431,7 @@ describe("songLibraryPanel toolbar", () => {
   it("groups by composer with per-group counts and the unknown bucket last", async () => {
     await mount();
 
-    group().checked = true;
+    group().value = "composer";
     group().dispatchEvent(new Event("change"));
 
     expect(groupLabels()).toEqual(["Chopin", "J.S. Bach", "Unknown composer"]);
@@ -380,7 +444,7 @@ describe("songLibraryPanel toolbar", () => {
 
   it("remembers which composer groups the user collapsed across rerenders", async () => {
     await mount();
-    group().checked = true;
+    group().value = "composer";
     group().dispatchEvent(new Event("change"));
 
     const chopin = list().querySelector('details[data-group="Chopin"]') as HTMLDetailsElement;
@@ -415,5 +479,92 @@ describe("songLibraryPanel toolbar", () => {
     sort().dispatchEvent(new Event("change"));
     // Newest first.
     expect(titles()).toEqual(["Invention No. 1", "Nocturne Op. 9"]);
+  });
+
+  it("browses artists and genres together with search, without another scan", async () => {
+    await mount(tagged);
+    invoke.mockClear();
+    expect(Array.from(artist().options).map(o => o.textContent)).toEqual(["All artists", "Anon (1)", "Chopin (1)", "J.S. Bach (1)"]);
+    setFilter(artist(), "chopin");
+    expect(titles()).toEqual(["Nocturne Op. 9"]);
+    setFilter(genre(), "baroque");
+    expect(titles()).toEqual([]);
+    expect(list().textContent).toContain("No songs match these filters");
+    setFilter(artist(), null);
+    expect(titles()).toEqual(["Invention No. 1"]);
+    search().value = "nocturne";
+    search().dispatchEvent(new Event("input"));
+    expect(titles()).toEqual([]);
+    (document.getElementById("songLibraryClearFilters") as HTMLButtonElement).click();
+    expect(titles()).toEqual(["Invention No. 1", "Nocturne Op. 9", "Untagged"]);
+    expect(search().value).toBe("");
+    expect(artist().value).toBe("");
+    expect(genre().value).toBe("");
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("normalizes metadata spelling and keeps missing values distinct from literal names", async () => {
+    await mount([
+      { ...tagged[0], manifest: { title: "One", artist: " Vivaldi ", genre: "Classical" } },
+      { ...tagged[1], manifest: { title: "Two", artist: "VIVALDI", genre: "classical" } },
+      { ...tagged[2], manifest: { title: "Three", artist: "Unknown artist", genre: "No genre" } },
+      { container_path: "/songs/missing.feedpak", kind: "dir", ok: true, manifest: { title: "Missing" } },
+    ]);
+    expect(Array.from(artist().options).filter(o => o.value === JSON.stringify("vivaldi"))[0].textContent).toBe("Vivaldi (2)");
+    setFilter(artist(), "");
+    setFilter(genre(), "");
+    expect(titles()).toEqual(["Missing"]);
+    setFilter(artist(), "unknown artist");
+    setFilter(genre(), "no genre");
+    expect(titles()).toEqual(["Three"]);
+  });
+
+  it("keeps filter choices across rescans and removes a vanished selection", async () => {
+    const handle = await mount(tagged);
+    setFilter(artist(), "chopin");
+    setFilter(genre(), "romantic");
+    await handle.refresh();
+    expect(artist().value).toBe(JSON.stringify("chopin"));
+    expect(genre().value).toBe(JSON.stringify("romantic"));
+    expect(titles()).toEqual(["Nocturne Op. 9"]);
+    invoke.mockImplementation(async (cmd: string) => cmd === "get_songs_folder" ? "/songs" : [tagged[1]]);
+    await handle.refresh();
+    expect(artist().value).toBe("");
+    expect(genre().value).toBe("");
+    expect(titles()).toEqual(["Invention No. 1"]);
+  });
+
+  it("restores the visible song at its old viewport offset after a refresh", async () => {
+    const handle = await mount();
+    document.documentElement.scrollTop = 900;
+    const row = list().querySelectorAll<HTMLButtonElement>("button.songSelectBtn")[1];
+    vi.spyOn(row, "getBoundingClientRect").mockImplementation(() => {
+      const top = 980 - document.documentElement.scrollTop;
+      return { top, bottom: top + 60, height: 60 } as DOMRect;
+    });
+    handle.captureScrollPosition();
+    document.documentElement.scrollTop = 0;
+    handle.restoreScrollPosition();
+    expect(document.documentElement.scrollTop).toBe(900);
+  });
+
+  it("preserves raw scroll position during a rescan and leaves rows visible while loading", async () => {
+    const handle = await mount();
+    document.documentElement.scrollTop = 1100;
+    handle.captureScrollPosition();
+    const refresh = handle.refresh();
+    expect(titles()).toHaveLength(4);
+    await refresh;
+    expect(document.documentElement.scrollTop).toBe(1100);
+    document.documentElement.scrollTop = 0;
+    handle.restoreScrollPosition();
+    expect(document.documentElement.scrollTop).toBe(1100);
+  });
+
+  it("starts at the top when there is no earlier library position", () => {
+    const handle = initSongLibraryPanel(makeDeps());
+    document.documentElement.scrollTop = 600;
+    handle.restoreScrollPosition();
+    expect(document.documentElement.scrollTop).toBe(0);
   });
 });

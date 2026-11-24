@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Autumno / Autumn</mp:title>
+    <mp:composer>VivaldiA</mp:composer>
+    <mp:opus>Op. 8, No. 3</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Violin, Strings</mp:for>
+    <mp:date>1725</mp:date>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Performers' Facsimiles</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 3.0</mp:licence>
+
+    <mp:lyFile>autumn-lys.zip</mp:lyFile>
+    <mp:midFile>autumn-mids.zip</mp:midFile>
+    <mp:psFileA4>autumn-a4-pss.zip</mp:psFileA4>
+    <mp:pdfFileA4>autumn-a4-pdfs.zip</mp:pdfFileA4>
+    <mp:psFileLet>autumn-let-pss.zip</mp:psFileLet>
+    <mp:pdfFileLet>autumn-let-pdfs.zip</mp:pdfFileLet>
+    <mp:pngFile>autumn-preview.png</mp:pngFile>
+    <mp:pngHeight>824</mp:pngHeight>
+    <mp:pngWidth>548</mp:pngWidth>
+
+    <mp:id>Mutopia-2010/02/08-350</mp:id>
+    <mp:maintainer/>
+    <mp:maintainerEmail>smailliw@gmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.12.3</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

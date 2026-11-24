@@ -182,10 +182,31 @@ describe("libraryItemFromEntry", () => {
       path: path.join(dir, "Prelude.auralsong"),
       title: "Prelude in C",
       composer: "J.S. Bach",
+      genre: "",
       durationSec: 118.5,
       ok: true
     });
     expect(item.addedAtMs).toBe(entry.addedAtMs);
+  });
+
+  it("carries a genre through, though manifest.schema.json never declares one", async () => {
+    // Genre reaches the library only because the schema sets
+    // `additionalProperties: true`. If that is ever tightened without adding
+    // genre to the declared properties, this is the test that notices.
+    dir = tmpDir();
+
+    makeDirAuralSong(dir, "Prelude.auralsong", {
+      schema_version: "1.0.0",
+      song_id: "prelude",
+      title: "Prelude in C",
+      artist: "J.S. Bach",
+      genre: "Baroque",
+      duration_sec: 118.5
+    });
+
+    const [entry] = await indexSongLibrary(dir);
+
+    expect(libraryItemFromEntry(entry)).toMatchObject({ genre: "Baroque" });
   });
 
   it("keeps an unparseable pack visible, falling back to its basename", async () => {
@@ -198,6 +219,7 @@ describe("libraryItemFromEntry", () => {
     expect(libraryItemFromEntry(entry)).toMatchObject({
       title: "Broken.auralsong",
       composer: "",
+      genre: "",
       durationSec: null,
       ok: false
     });

@@ -138,6 +138,7 @@ export function libraryItemFromEntry(e: LibraryEntry): LibraryItem {
     path: e.path,
     title: isParsedEntry(e) ? e.manifest.title : e.name,
     composer: isParsedEntry(e) ? e.manifest.artist : "",
+    genre: isParsedEntry(e) ? (e.manifest.genre ?? "") : "",
     durationSec: isParsedEntry(e) ? e.manifest.duration_sec : null,
     addedAtMs: e.addedAtMs,
     ok: isParsedEntry(e),

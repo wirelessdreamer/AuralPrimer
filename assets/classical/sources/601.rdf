@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Wachet auf, ruft uns die Stimme</mp:title>
+    <mp:composer>BachJS</mp:composer>
+    <mp:opus>BWV 645</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Organ</mp:for>
+    <mp:date/>
+    <mp:style>Baroque</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Bach-Gesellschaft, Leipzig</mp:source>
+    <mp:licence>Creative Commons Attribution-ShareAlike 2.5</mp:licence>
+
+    <mp:lyFile>bwv645.ly</mp:lyFile>
+    <mp:midFile>bwv645.mid</mp:midFile>
+    <mp:psFileA4>bwv645-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>bwv645-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>bwv645-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>bwv645-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>bwv645-preview.png</mp:pngFile>
+    <mp:pngHeight>126</mp:pngHeight>
+    <mp:pngWidth>552</mp:pngWidth>
+
+    <mp:id>Mutopia-2006/06/29-601</mp:id>
+    <mp:maintainer>Bart Golsteijn</mp:maintainer>
+    <mp:maintainerEmail>bartgolsteijn@hotmail.com</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.8.5</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

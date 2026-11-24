@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Première Arabesque</mp:title>
+    <mp:composer>DebussyC</mp:composer>
+    <mp:opus>L66 No.1</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date/>
+    <mp:style>Modern</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Durand et Fils (1904)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>debussy_Arabesque_1.ly</mp:lyFile>
+    <mp:midFile>debussy_Arabesque_1.mid</mp:midFile>
+    <mp:psFileA4>debussy_Arabesque_1-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>debussy_Arabesque_1-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>debussy_Arabesque_1-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>debussy_Arabesque_1-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>debussy_Arabesque_1-preview.png</mp:pngFile>
+    <mp:pngHeight>135</mp:pngHeight>
+    <mp:pngWidth>505</mp:pngWidth>
+
+    <mp:id>Mutopia-2011/10/25-1777</mp:id>
+    <mp:maintainer>Keith OHara</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.12.3</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

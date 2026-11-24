@@ -2,8 +2,10 @@ import {
   buildLibraryView,
   filterLibraryItems,
   groupLibraryItemsByComposer,
+  groupLibraryItemsByGenre,
   sortLibraryItems,
   UNKNOWN_COMPOSER_LABEL,
+  UNKNOWN_GENRE_LABEL,
   type LibraryItem
 } from "../src/libraryView";
 
@@ -11,6 +13,7 @@ function item(partial: Partial<LibraryItem> & { title: string }): LibraryItem {
   return {
     path: `/songs/${partial.title}.feedpak`,
     composer: "",
+    genre: "",
     durationSec: null,
     addedAtMs: null,
     ok: true,
@@ -52,6 +55,26 @@ describe("sortLibraryItems", () => {
       "Untitled"
     ]);
     expect(paths(sortLibraryItems(items, "composer", true))).toEqual([
+      "Nocturne",
+      "Invention",
+      "Untitled"
+    ]);
+  });
+
+  it("sorts by genre and sinks the genre-less items in both directions", () => {
+    const items = [
+      item({ title: "Nocturne", genre: "Romantic" }),
+      item({ title: "Untitled" }),
+      item({ title: "Invention", genre: "Baroque" })
+    ];
+
+    expect(paths(sortLibraryItems(items, "genre"))).toEqual([
+      "Invention",
+      "Nocturne",
+      "Untitled"
+    ]);
+    // "Unknown" is not "the earliest" -- it sinks whichever way you sort.
+    expect(paths(sortLibraryItems(items, "genre", true))).toEqual([
       "Nocturne",
       "Invention",
       "Untitled"
@@ -167,10 +190,54 @@ describe("groupLibraryItemsByComposer", () => {
   });
 });
 
+describe("groupLibraryItemsByGenre", () => {
+  it("buckets alphabetically with the genre-less bucket last", () => {
+    const groups = groupLibraryItemsByGenre([
+      item({ title: "Nocturne", genre: "Romantic" }),
+      item({ title: "Mystery" }),
+      item({ title: "Invention", genre: "Baroque" }),
+      item({ title: "Fugue", genre: "Baroque" })
+    ]);
+
+    expect(groups.map((g) => g.label)).toEqual(["Baroque", "Romantic", UNKNOWN_GENRE_LABEL]);
+    expect(paths(groups[0].items)).toEqual(["Invention", "Fugue"]);
+    expect(paths(groups[2].items)).toEqual(["Mystery"]);
+  });
+
+  it("matches genres case-insensitively and keeps the first spelling", () => {
+    // Genre is free text typed at import, so "Classical" and "classical"
+    // are one genre with two spellings, not two genres.
+    const groups = groupLibraryItemsByGenre([
+      item({ title: "Invention", genre: "Classical" }),
+      item({ title: "Fugue", genre: "  classical " })
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe("Classical");
+    expect(groups[0].items).toHaveLength(2);
+  });
+
+  it("does not let a song tagged like the unknown bucket jump the queue", () => {
+    const groups = groupLibraryItemsByGenre([
+      item({ title: "Odd", genre: UNKNOWN_GENRE_LABEL }),
+      item({ title: "Real", genre: "Worship" }),
+      item({ title: "Nameless" })
+    ]);
+
+    expect(groups.map((g) => g.label)).toEqual([
+      UNKNOWN_GENRE_LABEL,
+      "Worship",
+      UNKNOWN_GENRE_LABEL
+    ]);
+    expect(paths(groups[0].items)).toEqual(["Odd"]);
+    expect(paths(groups[2].items)).toEqual(["Nameless"]);
+  });
+});
+
 describe("buildLibraryView", () => {
   const items = [
-    item({ title: "Nocturne", composer: "Chopin", durationSec: 300 }),
-    item({ title: "Invention", composer: "Bach", durationSec: 90 }),
+    item({ title: "Nocturne", composer: "Chopin", genre: "Romantic", durationSec: 300 }),
+    item({ title: "Invention", composer: "Bach", genre: "Baroque", durationSec: 90 }),
     item({ title: "Broken", ok: false })
   ];
 
@@ -184,10 +251,24 @@ describe("buildLibraryView", () => {
   });
 
   it("groups by composer when asked, honouring the sort inside each group", () => {
-    const view = buildLibraryView(items, { sort: "duration", descending: true, groupByComposer: true });
+    const view = buildLibraryView(items, { sort: "duration", descending: true, groupBy: "composer" });
 
     expect(view.groups.map((g) => g.label)).toEqual(["Bach", "Chopin", UNKNOWN_COMPOSER_LABEL]);
     expect(paths(view.groups[2].items)).toEqual(["Broken"]);
+  });
+
+  it("groups by genre when asked", () => {
+    const view = buildLibraryView(items, { groupBy: "genre" });
+
+    expect(view.groups.map((g) => g.label)).toEqual(["Baroque", "Romantic", UNKNOWN_GENRE_LABEL]);
+    expect(paths(view.groups[2].items)).toEqual(["Broken"]);
+  });
+
+  it("groups by nothing when asked for none — the historical flat list", () => {
+    const view = buildLibraryView(items, { groupBy: "none" });
+
+    expect(view.groups).toHaveLength(1);
+    expect(view.groups[0].label).toBe("");
   });
 
   it("reports counts for the filtered subset", () => {
@@ -197,10 +278,31 @@ describe("buildLibraryView", () => {
     expect(paths(view.groups[0].items)).toEqual(["Invention"]);
   });
 
+  it("combines exact artist and genre filters with text search", () => {
+    const rows = [
+      item({ title: "Spring", composer: "Vivaldi", genre: "Classical" }),
+      item({ title: "Winter", composer: " VIVALDI ", genre: "classical" }),
+      item({ title: "Spring Waltz", composer: "Chopin", genre: "Classical" }),
+      item({ title: "Winter Remix", composer: "Vivaldi", genre: "Electronic" }),
+      item({ title: "Demo", pinned: true }),
+    ];
+    const view = buildLibraryView(rows, { artist: " vivaldi ", genre: " CLASSICAL ", query: "winter" });
+    expect(paths(view.groups[0].items)).toEqual(["Winter"]);
+    expect(view).toMatchObject({ total: 5, matched: 1, broken: 0 });
+    expect(buildLibraryView(rows, { artist: "Vivaldi", genre: "Electronic", query: "spring" }).matched).toBe(0);
+  });
+
+  it("distinguishes All from unknown artists and untagged genres", () => {
+    const rows = [item({ title: "Unknown" }), item({ title: "Named", composer: "Bach", genre: "Classical" })];
+    expect(buildLibraryView(rows, { artist: null, genre: null }).matched).toBe(2);
+    expect(paths(buildLibraryView(rows, { artist: "", genre: "" }).groups[0].items)).toEqual(["Unknown"]);
+    expect(buildLibraryView(rows, { artist: "Bach", genre: "" }).matched).toBe(0);
+  });
+
   it("returns no groups when nothing matches or the library is empty", () => {
     expect(buildLibraryView(items, { query: "liszt" }).groups).toEqual([]);
     expect(buildLibraryView([]).groups).toEqual([]);
-    expect(buildLibraryView([], { groupByComposer: true })).toMatchObject({
+    expect(buildLibraryView([], { groupBy: "composer" })).toMatchObject({
       groups: [],
       total: 0,
       matched: 0,

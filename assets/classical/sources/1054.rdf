@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Ave Maria (Ellens dritter Gesang)</mp:title>
+    <mp:composer>SchubertF</mp:composer>
+    <mp:opus>D.839 (Op. 52, No. 6)</mp:opus>
+    <mp:lyricist>Aus Walter Scotts “Fraülein vom See”</mp:lyricist>
+    <mp:for>Voice and Piano</mp:for>
+    <mp:date>1825</mp:date>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>C.F. Peters (Band I)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>SchubertF-D839_AveMaria.ly</mp:lyFile>
+    <mp:midFile>SchubertF-D839_AveMaria.mid</mp:midFile>
+    <mp:psFileA4>SchubertF-D839_AveMaria-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>SchubertF-D839_AveMaria-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>SchubertF-D839_AveMaria-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>SchubertF-D839_AveMaria-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>SchubertF-D839_AveMaria-preview.png</mp:pngFile>
+    <mp:pngHeight>141</mp:pngHeight>
+    <mp:pngWidth>487</mp:pngWidth>
+
+    <mp:id>Mutopia-2007/10/13-1054</mp:id>
+    <mp:maintainer>Ph. Raynaud</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>A source is freely available at http://www.dlib.indiana.edu/variations/scores/</mp:moreInfo>
+    <mp:lilypondVersion>2.11.34</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>Wiegenlied</mp:title>
+    <mp:composer>BrahmsJ</mp:composer>
+    <mp:opus>Op. 49, No. 4</mp:opus>
+    <mp:lyricist/>
+    <mp:for>Voice and Piano</mp:for>
+    <mp:date/>
+    <mp:style>Romantic</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Indiana University: http://www.dlib.indiana.edu/variations/scores/bgn9130/index1.html</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>Wiegenlied-lys.zip</mp:lyFile>
+    <mp:midFile>Wiegenlied-mids.zip</mp:midFile>
+    <mp:psFileA4>Wiegenlied-a4-pss.zip</mp:psFileA4>
+    <mp:pdfFileA4>Wiegenlied-a4-pdfs.zip</mp:pdfFileA4>
+    <mp:psFileLet>Wiegenlied-let-pss.zip</mp:psFileLet>
+    <mp:pdfFileLet>Wiegenlied-let-pdfs.zip</mp:pdfFileLet>
+    <mp:pngFile>Wiegenlied-preview.png</mp:pngFile>
+    <mp:pngHeight>170</mp:pngHeight>
+    <mp:pngWidth>503</mp:pngWidth>
+
+    <mp:id>Mutopia-2007/11/04-1037</mp:id>
+    <mp:maintainer>森 章吾</mp:maintainer>
+    <mp:maintainerEmail/>
+    <mp:maintainerWeb/>
+    <mp:moreInfo>The PDF file downloads include editions for piano/soprano and piano/SATB, the latter contributed by Agnès Zietek.</mp:moreInfo>
+    <mp:lilypondVersion>2.10.33</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:mp="http://www.mutopiaproject.org/piece-data/0.1/">
+
+<rdf:Description rdf:about=".">
+    <mp:title>The Entertainer</mp:title>
+    <mp:composer>JoplinS</mp:composer>
+    <mp:opus/>
+    <mp:lyricist/>
+    <mp:for>Piano</mp:for>
+    <mp:date>c. 1902</mp:date>
+    <mp:style>Jazz</mp:style>
+    <mp:metre/>
+    <mp:arranger/>
+    <mp:source>Reproduction of original edition (1902)</mp:source>
+    <mp:licence>Public Domain</mp:licence>
+
+    <mp:lyFile>entertainer.ly</mp:lyFile>
+    <mp:midFile>entertainer.mid</mp:midFile>
+    <mp:psFileA4>entertainer-a4.ps.gz</mp:psFileA4>
+    <mp:pdfFileA4>entertainer-a4.pdf</mp:pdfFileA4>
+    <mp:psFileLet>entertainer-let.ps.gz</mp:psFileLet>
+    <mp:pdfFileLet>entertainer-let.pdf</mp:pdfFileLet>
+    <mp:pngFile>entertainer-preview.svg</mp:pngFile>
+    <mp:pngHeight>0</mp:pngHeight>
+    <mp:pngWidth>0</mp:pngWidth>
+
+    <mp:id>Mutopia-2016/11/25-263</mp:id>
+    <mp:maintainer>Chris Sawer</mp:maintainer>
+    <mp:maintainerEmail>chris@mutopiaproject.org</mp:maintainerEmail>
+    <mp:maintainerWeb/>
+    <mp:moreInfo/>
+    <mp:lilypondVersion>2.19.32</mp:lilypondVersion>
+</rdf:Description>
+
+</rdf:RDF>
