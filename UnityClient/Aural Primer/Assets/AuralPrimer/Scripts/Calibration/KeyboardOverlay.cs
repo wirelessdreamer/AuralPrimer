@@ -19,6 +19,17 @@ namespace AuralPrimer.Calibration
         [SerializeField] MrLinkBehaviour link;
 
         [Tooltip("Depth of a white key marker, in metres (front to back).")]
+        /// <summary>
+        /// How much of the key's width the plate covers.
+        /// </summary>
+        /// <remarks>
+        /// Inset slightly so neighbouring plates read as separate keys rather
+        /// than one continuous strip. Named because the notch maths needs it:
+        /// the notch is cut at a fraction of the KEY, and the plate it is cut
+        /// out of is narrower than that.
+        /// </remarks>
+        const float PlateWidthFraction = 0.85f;
+
         [SerializeField] float whiteKeyDepth = 0.14f;
 
         [Tooltip("Depth of a black key marker. Shorter, as on a real keyboard.")]
@@ -60,6 +71,17 @@ namespace AuralPrimer.Calibration
         static readonly int[] MajorSteps = { 0, 2, 4, 5, 7, 9, 11 };
         static readonly int[] MinorSteps = { 0, 2, 3, 5, 7, 8, 10 };
         readonly Dictionary<int, Transform> _keyMarkers = new();
+        /// <summary>
+        /// The plates that make up each key's silhouette.
+        /// </summary>
+        /// <remarks>
+        /// A white key is two: a full-width head where the hand actually plays,
+        /// and a narrower tail running back between the black keys. Drawn as
+        /// one rectangle they were all identical, and an overlay that does not
+        /// have the shape of the key it is on cannot say which key that is --
+        /// the notches ARE the thing you read a keyboard by.
+        /// </remarks>
+        readonly Dictionary<int, Renderer[]> _keyPlates = new();
         readonly List<int> _litLastFrame = new();
         readonly Dictionary<int, Renderer> _previewFills = new();
         readonly Dictionary<int, Renderer> _sustainFills = new();
@@ -587,7 +609,7 @@ namespace AuralPrimer.Calibration
             foreach (var pair in _keyMarkers)
             {
                 if (pair.Value == null || _litLastFrame.Contains(pair.Key)) continue;
-                SetMaterial(pair.Value, IdleMaterial(pair.Key));
+                SetKeyMaterial(pair.Key, IdleMaterial(pair.Key));
             }
         }
 
@@ -610,7 +632,7 @@ namespace AuralPrimer.Calibration
             {
                 if (_keyMarkers.TryGetValue(pitch, out var marker) && marker != null)
                 {
-                    SetMaterial(marker, IdleMaterial(pitch));
+                    SetKeyMaterial(pitch, IdleMaterial(pitch));
                 }
             }
             _litLastFrame.Clear();
@@ -668,7 +690,7 @@ namespace AuralPrimer.Calibration
                 // a mis-calibrated overlay, which is what it is for -- and the
                 // bar keeps its own meaning of "strike this now", growing over
                 // the held key when the note comes round again.
-                SetMaterial(marker, _held);
+                SetKeyMaterial(note.pitch, _held);
                 _litLastFrame.Add(note.pitch);
             }
         }
@@ -682,6 +704,70 @@ namespace AuralPrimer.Calibration
         /// recreating sixty-one objects at that rate is a stutter you can feel,
         /// and it throws away the lit state mid-press.
         /// </remarks>
+        /// <summary>
+        /// Build a key's silhouette: one plate for a black key, two for a white.
+        /// </summary>
+        /// <remarks>
+        /// The notch geometry is derived from the layout rather than written
+        /// down again. A black key is `NormalisedWidth`'s 0.62 of a white and
+        /// sits centred on the boundary between two whites, so it eats 0.31 of
+        /// a white key from each neighbour -- which is exactly where the white
+        /// key's tail has to stop. Hard-coding that number here would be a
+        /// second copy free to drift from the one the black keys are drawn with,
+        /// and the symptom would be a notch that does not line up with the key
+        /// sitting in it.
+        /// </remarks>
+        Renderer[] BuildKeyPlates(Transform marker, int pitch)
+        {
+            var plates = new List<Renderer>(2);
+
+            Renderer Plate(string name, Vector3 centre, Vector3 size)
+            {
+                var plate = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                plate.name = name;
+                // Colliders would fight hand tracking and the passthrough scene
+                // for no benefit; these are pure visuals.
+                Destroy(plate.GetComponent<Collider>());
+                plate.transform.SetParent(marker, false);
+                plate.transform.localPosition = centre;
+                plate.transform.localScale = size;
+                plate.transform.localRotation = Quaternion.identity;
+                return plate.GetComponent<Renderer>();
+            }
+
+            if (KeyboardLayout.IsBlack(pitch))
+            {
+                plates.Add(Plate($"Plate {pitch}", Vector3.zero, Vector3.one));
+                return plates.ToArray();
+            }
+
+            // How far back the black keys reach, as a fraction of this key's
+            // depth. Local +Z is toward the player, so the tail is at the back.
+            var tailDepth = Mathf.Clamp01(blackKeyDepth / Mathf.Max(0.0001f, whiteKeyDepth));
+
+            // Where the tail has to stop on a notched side. In units of this
+            // plate, which is inset from the true key width.
+            var blackHalf = (float)KeyboardLayout.BlackKeyWidthRatio * 0.5f;
+            var notchEdge = (0.5f - blackHalf) / PlateWidthFraction;
+
+            // A key at the end of the instrument keeps its full width: there is
+            // no black key beside it to cut the notch, which is how the last key
+            // of a real keyboard is made.
+            var notchLeft = _layout.Contains(pitch - 1) && KeyboardLayout.IsBlack(pitch - 1);
+            var notchRight = _layout.Contains(pitch + 1) && KeyboardLayout.IsBlack(pitch + 1);
+
+            var left = notchLeft ? -notchEdge : -0.5f;
+            var right = notchRight ? notchEdge : 0.5f;
+
+            plates.Add(Plate($"Head {pitch}",
+                new Vector3(0f, 0f, tailDepth * 0.5f),
+                new Vector3(1f, 1f, 1f - tailDepth)));
+            plates.Add(Plate($"Tail {pitch}",
+                new Vector3((left + right) * 0.5f, 0f, -0.5f + tailDepth * 0.5f),
+                new Vector3(right - left, 1f, tailDepth)));
+            return plates.ToArray();
+        }
+
         void Rebuild()
         {
             var expected = _layout.HighestPitch - _layout.LowestPitch + 1;
@@ -690,14 +776,16 @@ namespace AuralPrimer.Calibration
                 Clear();
                 for (var pitch = _layout.LowestPitch; pitch <= _layout.HighestPitch; pitch++)
                 {
-                    var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    marker.name = $"Key {pitch}";
-                    // Colliders would fight hand tracking and the passthrough
-                    // scene for no benefit; these are pure visuals.
-                    Destroy(marker.GetComponent<Collider>());
+                    // An empty parent carrying the key's place and size, with
+                    // the silhouette built from plates inside it. The parent
+                    // keeps exactly the transform the single cube had, so the
+                    // bar, the drain and the break -- all positioned as
+                    // fractions of this box -- are untouched by the reshaping.
+                    var marker = new GameObject($"Key {pitch}");
                     marker.transform.SetParent(transform, false);
-                    SetMaterial(marker.transform, IdleMaterial(pitch));
                     _keyMarkers[pitch] = marker.transform;
+                    _keyPlates[pitch] = BuildKeyPlates(marker.transform, pitch);
+                    SetKeyMaterial(pitch, IdleMaterial(pitch));
 
                     // The "coming up" bar lives inside the key, as a child, so
                     // it inherits the key's size and rotation and can be
@@ -766,13 +854,6 @@ namespace AuralPrimer.Calibration
         /// <summary>Put every marker where the current calibration says it goes.</summary>
         void Place()
         {
-            // Tell the interactors where the keys ended up, so the hand rays can
-            // get out of the way when a hand is over them. Published on every
-            // placement rather than once, because an edge drag moves the bed.
-            AuralPrimer.UI.KeyboardProximity.Publish(
-                transform.TransformPoint(_profile.leftEdge),
-                transform.TransformPoint(_profile.rightEdge));
-
             var right = _profile.RightAxis;
             // Canted: two pinched points fix a line, not a plane, so the roll
             // about that line is the one thing calibration cannot know.
@@ -795,6 +876,13 @@ namespace AuralPrimer.Calibration
                     head.transform.position - centreWorld);
                 if (Vector3.Dot(forward, toPlayer) < 0f) forward = -forward;
             }
+
+            // Publish the same complete key bed the markers occupy, so hands
+            // near either the back or front of a key suppress their lasers.
+            AuralPrimer.UI.KeyboardProximity.Publish(
+                transform.TransformPoint(_profile.leftEdge),
+                transform.TransformPoint(_profile.rightEdge),
+                transform.TransformVector(forward * whiteKeyDepth));
 
             for (var pitch = _layout.LowestPitch; pitch <= _layout.HighestPitch; pitch++)
             {
@@ -836,7 +924,7 @@ namespace AuralPrimer.Calibration
                 // 2 mm at 22% alpha was invisible against a real keyboard in
                 // passthrough. Thick enough to read as an object, still flat
                 // enough to read as an overlay on the key rather than a block.
-                marker.localScale = new Vector3(keyWidth * 0.85f, 0.006f, depth);
+                marker.localScale = new Vector3(keyWidth * PlateWidthFraction, 0.006f, depth);
 
                 if (_degreeLabels.TryGetValue(pitch, out var label) && label != null)
                 {
@@ -899,6 +987,9 @@ namespace AuralPrimer.Calibration
                 if (marker != null) Destroy(marker.gameObject);
             }
             _keyMarkers.Clear();
+            // Plates are children of the markers, so destroying those took them
+            // with it; this drops the dangling references.
+            _keyPlates.Clear();
             _litLastFrame.Clear();
             // The bars are children of the markers, so destroying those took
             // them with it; this just drops the now-dangling references.
@@ -1017,6 +1108,22 @@ namespace AuralPrimer.Calibration
             }
 
             return copy;
+        }
+
+        /// <summary>Paint every plate a key is made of.</summary>
+        /// <remarks>
+        /// A white key is two plates and must not be painted by walking the
+        /// marker's children: the bar, the drain and the break edges live there
+        /// too, and painting those with the key's idle material would erase the
+        /// very cues the overlay exists to show.
+        /// </remarks>
+        void SetKeyMaterial(int pitch, Material material)
+        {
+            if (!_keyPlates.TryGetValue(pitch, out var plates) || plates == null) return;
+            for (var i = 0; i < plates.Length; i++)
+            {
+                if (plates[i] != null) plates[i].sharedMaterial = material;
+            }
         }
 
         static void SetMaterial(Transform marker, Material material)

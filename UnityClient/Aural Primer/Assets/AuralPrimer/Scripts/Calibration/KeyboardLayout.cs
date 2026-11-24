@@ -81,11 +81,23 @@ namespace AuralPrimer.Calibration
         }
 
         /// <summary>Width of a key as a fraction of the keyboard's width.</summary>
+        /// <summary>
+        /// A black key's width as a fraction of a white one.
+        /// </summary>
+        /// <remarks>
+        /// Public because the overlay needs it too: a black key sits centred on
+        /// the boundary between two whites, so this number is also how far it
+        /// eats into each neighbour -- which is where the white key's notch has
+        /// to be cut. Two copies of it would be free to drift, and the symptom
+        /// would be a notch that does not line up with the key sitting in it.
+        /// </remarks>
+        public const double BlackKeyWidthRatio = 0.62;
+
         public double NormalisedWidth(int pitch)
         {
             if (WhiteKeyCount <= 0) return 0.0;
             var whiteWidth = 1.0 / WhiteKeyCount;
-            return IsBlack(pitch) ? whiteWidth * 0.62 : whiteWidth;
+            return IsBlack(pitch) ? whiteWidth * BlackKeyWidthRatio : whiteWidth;
         }
 
         public bool Contains(int pitch) => pitch >= LowestPitch && pitch <= HighestPitch;

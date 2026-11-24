@@ -174,6 +174,83 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\create_portable.ps1 -Ffmpe
 4. In AuralPrimer (game), refresh library, load song, and play.
 5. In AuralStudio, verify import/creation tools and generated AuralSongs.
 
+## 8) Quest build, signing, and store upload
+
+The mixed-reality client is a separate Unity project (`UnityClient/Aural Primer`)
+and does not go through the Tauri pipeline above.
+
+### Build the APK
+
+```
+"C:\Program Files\Unity\Hub\Editor\6000.3.15f1\Editor\Unity.exe" -quit -batchmode -nographics -projectPath "D:\AuralPrimer\UnityClient\Aural Primer" -executeMethod AuralPrimer.EditorTools.BuildCommand.BuildAndroid -logFile -
+```
+
+Output lands at `UnityClient/Builds/AuralPrimer.apk`.
+
+**Unity exits 0 even when scripts fail to compile** — when compilation fails
+`-executeMethod` never runs and the exit code says nothing about it. Always
+confirm `[build] result=Succeeded` in the log rather than trusting the exit code.
+
+### Version code
+
+Derived, not stored: minutes elapsed since a fixed epoch. Meta rejects any
+upload whose version code is not strictly greater than the highest already
+accepted, and a counter kept in `ProjectSettings.asset` is not monotonic here —
+a build from a worktree, an unmerged branch, or a rebase hands back a number
+already spent, and the rejection arrives at the end of a long build. Pass
+`-versionCode N` or set `AURAL_VERSION_CODE` to pin a specific one.
+
+### Release signing
+
+Without a keystore the build is signed with Unity's debug key. That is correct
+for `adb install` and rejected by the store, so release signing is read from the
+environment:
+
+| variable | meaning |
+|---|---|
+| `AURAL_KEYSTORE` | absolute path to the keystore |
+| `AURAL_KEYSTORE_PASS` | store password |
+| `AURAL_KEY_ALIAS` | key alias |
+| `AURAL_KEY_PASS` | key password (same as the store password for PKCS12) |
+
+They are read at build time and **never written to `ProjectSettings.asset`**,
+which is a tracked file — setting a keystore through the Editor instead puts the
+password of an unrotatable key into the history permanently. The build clears
+both passwords out of `PlayerSettings` before the Editor can serialise them.
+
+The keystore lives outside the repo at `~/.auralprimer/`, with the values in
+`~/.auralprimer/signing.env` and the store API secret in
+`~/.auralprimer/meta.env`. Both are mirrored to
+`G:\My Drive\AuralPrimer Signing Key\`, which also carries a `README.txt`
+written for someone finding it years from now with no memory of this setup.
+
+> **Back that directory up somewhere you will still have in ten years.** Meta
+> pins an app to its signing key. Lose the keystore or its password and that app
+> ID can never be updated again — there is no recovery path, only a new listing.
+
+### Upload
+
+```
+node scripts/upload-quest-build.mjs [channel] [--notes "..."] [--yes]
+```
+
+The App Secret comes from `META_APP_SECRET`, or failing that from
+`~/.auralprimer/meta.env` beside the signing material — a file is offered as
+well as a variable because the alternative in practice is pasting the secret
+onto a command line, where it lands in shell history. The placeholder written by
+setup is rejected rather than sent, so a half-finished setup fails locally
+instead of at the API. Get the value from the Developer Dashboard → your app →
+API, with an admin account; unlike the signing key it is rotatable, so a leak
+means regenerating it rather than losing the app.
+
+Also needs `ovr-platform-util` on `PATH` or at `OVR_PLATFORM_UTIL`. Channel defaults to
+`ALPHA`; the production channel additionally requires `--yes`. The script
+refuses debug-signed APKs before transferring 90MB the store would reject, and
+attaches the IL2CPP symbols zip so crash reports symbolicate.
+
+Age group is fixed at `MIXED_AGES` in the script. Meta treats this as permanent
+after publishing.
+
 ## Notes
 - Bundled visualizers live under Tauri resources at runtime.
 - User visualizers are under app data directory.

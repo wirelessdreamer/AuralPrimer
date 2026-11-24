@@ -315,7 +315,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: AuralPrimer.Calibration::AuralPrimer.Calibration.NoteHighway
   link: {fileID: 302477619}
   lookAheadSeconds: 3
+  previewSeconds: 1.2
+  strikeGraceSeconds: 0.12
+  minimumHoldSeconds: 0.25
+  restrikeGapSeconds: 0.15
+  playLineSetbackMetres: 0.06
   noteThicknessMetres: 0.006
+  strikeHeadMetres: 0.014
+  articulationGapMetres: 0.006
+  holdWidthFraction: 0.42
   minimumNoteLengthMetres: 0.012
   maxVisibleNotes: 256
   noteWhiteMaterial: {fileID: 2100000, guid: d5d5ba5066928a745a62e65c28ae9c16, type: 2}
@@ -351,6 +359,7 @@ GameObject:
   - component: {fileID: 293072307}
   - component: {fileID: 293072306}
   - component: {fileID: 293072305}
+  - component: {fileID: 293072310}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -558,6 +567,50 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
+--- !u!114 &293072310
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 293072303}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
 --- !u!1 &302477618
 GameObject:
   m_ObjectHideFlags: 0
@@ -1402,8 +1455,8 @@ MonoBehaviour:
   leftHand: 1
   pinchEnterMetres: 0.02
   pinchExitMetres: 0.035
-  suppressNearKeysMetres: 0.25
-  restoreNearKeysMetres: 0.32
+  gazeRangeMetres: 4
+  gazeHoldSeconds: 0.35
 --- !u!1 &350902411
 GameObject:
   m_ObjectHideFlags: 0
@@ -2216,8 +2269,8 @@ MonoBehaviour:
   leftHand: 0
   pinchEnterMetres: 0.02
   pinchExitMetres: 0.035
-  suppressNearKeysMetres: 0.25
-  restoreNearKeysMetres: 0.32
+  gazeRangeMetres: 4
+  gazeHoldSeconds: 0.35
 --- !u!1 &910441266
 GameObject:
   m_ObjectHideFlags: 0
@@ -2392,9 +2445,13 @@ MonoBehaviour:
   whiteKeyDepth: 0.14
   blackKeyDepth: 0.09
   hoverMetres: 0.004
+  restingOpacity: 0.35
+  degreeFont: {fileID: 0}
+  degreeSize: 5
   idleWhiteMaterial: {fileID: 2100000, guid: 6f5581d08fc91b24d89dca6dce06d947, type: 2}
   idleBlackMaterial: {fileID: 2100000, guid: 53755d023b1b0c240bdb2c43a5e86c39, type: 2}
   litMaterial: {fileID: 2100000, guid: 8d5d8ee9de107b04ba8b85778f72ec0f, type: 2}
+  previewCurve: 3
 --- !u!4 &1203704251
 Transform:
   m_ObjectHideFlags: 0
@@ -2439,10 +2496,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 848f6fe453dcc2b4b92ef656a805084f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: AuralPrimer.Calibration::AuralPrimer.Calibration.SetupWizard
+  guitarAnchor: {fileID: 0}
+  guitarViews: {fileID: 0}
   link: {fileID: 302477619}
   panel: {fileID: 2088425082}
   hands: {fileID: 350902412}
   overlay: {fileID: 1203704250}
+  drumOverlay: {fileID: 0}
   highway: {fileID: 286128297}
   keyboardAnchor: {fileID: 1764251373}
   capture: {fileID: 302477621}
@@ -2450,6 +2510,7 @@ MonoBehaviour:
   showPinchMarkers: 1
   dockMarginMetres: 0.3
   dockHeightMetres: 0.3
+  dockPullTowardPlayerMetres: 0.18
   dockAngledAway: 1
   leftPinchMaterial: {fileID: 2100000, guid: 87a6a6e39c2cc924eb1700c6da8837c9, type: 2}
   rightPinchMaterial: {fileID: 2100000, guid: 8d94b2fe13a07d44e9e0378b42f61da4, type: 2}
@@ -2710,6 +2771,7 @@ GameObject:
   - component: {fileID: 2110819801}
   - component: {fileID: 2110819800}
   - component: {fileID: 2110819802}
+  - component: {fileID: 2110819803}
   m_Layer: 0
   m_Name: XR Origin (MR)
   m_TagString: Untagged
@@ -2766,6 +2828,95 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   m_AnchorPrefab: {fileID: 0}
+--- !u!114 &2110819803
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2110819799}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e933e81d3c20c74ea6fdc708a67e3a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Oculus.VR::OVRManager
+  _monoscopic: 0
+  _sharpenType: 0
+  _disableRecording: 0
+  _enableDynamicResolution: 0
+  minDynamicResolutionScale: 1
+  maxDynamicResolutionScale: 1
+  quest2MinDynamicResolutionScale: 0.7
+  quest2MaxDynamicResolutionScale: 1.3
+  quest3MinDynamicResolutionScale: 0.7
+  quest3MaxDynamicResolutionScale: 1.6
+  minRenderScale: 0.7
+  maxRenderScale: 1
+  _headPoseRelativeOffsetRotation: {x: 0, y: 0, z: 0}
+  _headPoseRelativeOffsetTranslation: {x: 0, y: 0, z: 0}
+  enableCoreMetricsRelease: 0
+  enableCoreMetricsDevelopment: 1
+  coreMetricVisibility:
+    visibleMemoryMetricStats: 0
+    visibleMemoryMetricGraphs: 0
+    visibleRenderMetricStats: 0
+    visibleRenderMetricGraphs: 0
+  enableMixedReality: 0
+  compositionMethod: 0
+  extraHiddenLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  extraVisibleLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  dynamicCullingMask: 1
+  externalCompositionBackdropColorRift: {r: 0, g: 1, b: 0, a: 1}
+  externalCompositionBackdropColorQuest: {r: 0, g: 0, b: 0, a: 0}
+  capturingCameraDevice: 0
+  flipCameraFrameHorizontally: 0
+  flipCameraFrameVertically: 0
+  handPoseStateLatency: 0
+  sandwichCompositionRenderLatency: 0
+  sandwichCompositionBufferedFrames: 8
+  chromaKeyColor: {r: 0, g: 1, b: 0, a: 1}
+  chromaKeySimilarity: 0.6
+  chromaKeySmoothRange: 0.03
+  chromaKeySpillRange: 0.06
+  useDynamicLighting: 0
+  depthQuality: 1
+  dynamicLightingSmoothFactor: 8
+  dynamicLightingDepthVariationClampingValue: 0.001
+  virtualGreenScreenType: 0
+  virtualGreenScreenTopY: 10
+  virtualGreenScreenBottomY: -10
+  virtualGreenScreenApplyDepthCulling: 0
+  virtualGreenScreenDepthTolerance: 0.2
+  mrcActivationMode: 0
+  launchSimultaneousHandsControllersOnStartup: 1
+  isInsightPassthroughEnabled: 0
+  shouldBoundaryVisibilityBeSuppressed: 0
+  requestBodyTrackingPermissionOnStartup: 0
+  requestFaceTrackingPermissionOnStartup: 1
+  requestEyeTrackingPermissionOnStartup: 1
+  requestScenePermissionOnStartup: 0
+  requestRecordAudioPermissionOnStartup: 1
+  requestPassthroughCameraAccessPermissionOnStartup: 0
+  _localDimming: 1
+  _trackingOriginType: 1
+  usePositionTracking: 1
+  useRotationTracking: 1
+  useIPDInPositionTracking: 1
+  resetTrackerOnLoad: 0
+  AllowRecenter: 1
+  LateControllerUpdate: 1
+  LateLatching: 0
+  controllerDrivenHandPosesType: 0
+  SimultaneousHandsAndControllersEnabled: 1
+  _readOnlyWideMotionModeHandPosesEnabled: 0
+  wideMotionModeHandPosesEnabled: 0
+  _readOnlyFastMotionModeHandPosesEnabled: 0
+  fastMotionModeHandPosesEnabled: 0
+  dynamicResolutionVersion: 1
 --- !u!1 &2135731687
 GameObject:
   m_ObjectHideFlags: 0

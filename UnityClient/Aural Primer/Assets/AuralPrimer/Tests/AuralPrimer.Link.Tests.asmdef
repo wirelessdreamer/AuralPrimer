@@ -4,6 +4,8 @@
     "references": [
         "AuralPrimer.Link",
         "AuralPrimer.Calibration",
+        "AuralPrimer.UI",
+        "Unity.XR.Interaction.Toolkit",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

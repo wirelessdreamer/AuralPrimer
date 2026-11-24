@@ -20,13 +20,18 @@ namespace AuralPrimer.UI
     {
         static Vector3 _left;
         static Vector3 _right;
+        static Vector3 _depth;
         static bool _known;
 
+        public const float RayHideDistanceMetres = 0.3048f; // one foot
+        public const float RayShowDistanceMetres = 0.36f;
+
         /// <summary>Publish the calibrated key bed, in world space.</summary>
-        public static void Publish(Vector3 worldLeft, Vector3 worldRight)
+        public static void Publish(Vector3 worldLeft, Vector3 worldRight, Vector3 worldDepth = default)
         {
             _left = worldLeft;
             _right = worldRight;
+            _depth = worldDepth;
             _known = true;
         }
 
@@ -48,9 +53,9 @@ namespace AuralPrimer.UI
         /// Distance from a world point to the key bed, or -1 if unknown.
         /// </summary>
         /// <remarks>
-        /// Measured to the segment between the calibrated edges rather than to
-        /// individual keys: same cost for 25 keys or 88, and it stays correct
-        /// while an edge is mid-drag.
+        /// Measured to the whole key bed, including its depth toward the player.
+        /// The published width and depth axes are perpendicular. This stays
+        /// correct while an edge is dragged or the spatial anchor is rotated.
         /// </remarks>
         public static float Distance(Vector3 worldPoint)
         {
@@ -58,10 +63,19 @@ namespace AuralPrimer.UI
 
             var axis = _right - _left;
             var lengthSquared = axis.sqrMagnitude;
-            if (lengthSquared < 1e-6f) return Vector3.Distance(worldPoint, _left);
-
-            var t = Mathf.Clamp01(Vector3.Dot(worldPoint - _left, axis) / lengthSquared);
-            return Vector3.Distance(worldPoint, _left + axis * t);
+            var t = lengthSquared < 1e-6f ? 0f
+                : Mathf.Clamp01(Vector3.Dot(worldPoint - _left, axis) / lengthSquared);
+            var closest = _left + axis * t;
+            var depthSquared = _depth.sqrMagnitude;
+            if (depthSquared >= 1e-6f)
+                closest += _depth * Mathf.Clamp01(Vector3.Dot(worldPoint - closest, _depth) / depthSquared);
+            return Vector3.Distance(worldPoint, closest);
         }
+
+        /// <summary>Hide within a foot; allow a little extra clearance before showing again.</summary>
+        /// <param name="wasHidden">This hand's previous proximity state, independent of the other hand.</param>
+        public static bool ShouldHideRay(float distanceMetres, bool wasHidden) =>
+            SuppressOverKeys && distanceMetres >= 0f &&
+            distanceMetres <= (wasHidden ? RayShowDistanceMetres : RayHideDistanceMetres);
     }
 }

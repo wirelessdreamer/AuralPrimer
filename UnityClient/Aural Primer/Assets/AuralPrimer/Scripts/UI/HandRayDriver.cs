@@ -20,6 +20,7 @@ using UnityEngine;
 using UnityEngine.XR.Hands;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Readers;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 using UnityEngine.XR.Management;
 
 namespace AuralPrimer.UI
@@ -80,13 +81,18 @@ namespace AuralPrimer.UI
         static int s_onUi;
 
         NearFarInteractor _interactor;
+        CurveVisualController _curveVisual;
+        LineRenderer _line;
         bool _pinching;
         bool _posed;
+        bool _nearKeyboard;
         float _gazeLeftMenuAt = -999f;
 
         void Awake()
         {
             _interactor = GetComponent<NearFarInteractor>();
+            _curveVisual = GetComponent<CurveVisualController>();
+            _line = GetComponent<LineRenderer>();
             _origin = FindFirstObjectByType<XROrigin>();
 
             // A pose driver reading bindings that never resolve would otherwise
@@ -124,15 +130,6 @@ namespace AuralPrimer.UI
                 return;
             }
 
-            // Draw the ray only where it is being aimed: at a menu.
-            //
-            // Hand proximity to the keys used to decide this, and it answered a
-            // near-enough question with the wrong evidence. A hand can be well
-            // clear of the keyboard and still not be pointing at anything, so
-            // the laser swept the room whenever the hands were raised. Where
-            // the head is looking is what actually says "I am aiming at that".
-            SetRayVisible(WantsRay());
-
             Aim(knuckle);
             // Read before the press is queued: what the ray was on when the
             // pinch closed is what the pinch was aimed at.
@@ -141,6 +138,9 @@ namespace AuralPrimer.UI
             Press(Vector3.Distance(thumbTip, indexTip));
 
             if (!_posed) { SetVisible(true); _posed = true; }
+            // Apply after tracking becomes active, including its first frame.
+            // Menu gaze never overrides the exclusion zone around the keys.
+            SetRayVisible(WantsRay(knuckle, thumbTip, indexTip));
         }
 
         /// <summary>Should a laser be drawn from this hand right now?</summary>
@@ -150,9 +150,22 @@ namespace AuralPrimer.UI
         /// only means of reaching them — the same trap the keys-proximity rule
         /// had, and the reason SuppressOverKeys exists at all.
         /// </remarks>
-        bool WantsRay()
+        bool WantsRay(Vector3 knuckle, Vector3 thumbTip, Vector3 indexTip)
         {
-            if (!KeyboardProximity.SuppressOverKeys) return true;
+            if (!KeyboardProximity.SuppressOverKeys)
+            {
+                _nearKeyboard = false;
+                return true;
+            }
+
+            var distance = Mathf.Min(KeyboardProximity.Distance(knuckle),
+                Mathf.Min(KeyboardProximity.Distance(thumbTip), KeyboardProximity.Distance(indexTip)));
+            _nearKeyboard = KeyboardProximity.ShouldHideRay(distance, _nearKeyboard);
+            if (_nearKeyboard)
+            {
+                _gazeLeftMenuAt = -999f;
+                return false;
+            }
 
             var head = Camera.main;
             if (head == null) return false;
@@ -231,6 +244,7 @@ namespace AuralPrimer.UI
 
         void Lost()
         {
+            _nearKeyboard = false;
             SetOnUI(false);
             if (_pinching)
             {
@@ -248,7 +262,7 @@ namespace AuralPrimer.UI
         void SetVisible(bool visible)
         {
             if (_interactor != null) _interactor.enabled = visible;
-            if (TryGetComponent<LineRenderer>(out var line)) line.enabled = visible;
+            SetRayVisible(visible);
         }
 
         /// <summary>
@@ -262,15 +276,14 @@ namespace AuralPrimer.UI
         /// and killed the very cast that was trying to reach it. Nothing on the
         /// menu could be pressed, and neither drag bar could be grabbed.
         ///
-        /// Only the line goes away now. The cast stays live, so the menu is
-        /// reachable from wherever the hands happen to be.
+        /// CurveVisualController writes LineRenderer.enabled immediately before
+        /// rendering. Disable that writer too, or it undoes the hide every frame.
+        /// The cast stays live, so menus remain reachable from resting hands.
         /// </remarks>
         void SetRayVisible(bool visible)
         {
-            if (TryGetComponent<LineRenderer>(out var line) && line.enabled != visible)
-            {
-                line.enabled = visible;
-            }
+            if (_curveVisual != null) _curveVisual.enabled = visible;
+            if (_line != null) _line.enabled = visible;
         }
 
         /// <summary>
