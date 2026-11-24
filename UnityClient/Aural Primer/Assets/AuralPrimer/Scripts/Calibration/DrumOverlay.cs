@@ -258,9 +258,19 @@ namespace AuralPrimer.Calibration
 
         void Update()
         {
-            if (_profile == null || link == null || _hits.Count == 0)
+            if (_profile == null)
             {
                 HideAll();
+                return;
+            }
+            if (link == null || _hits.Count == 0)
+            {
+                // No song, but strikes still flash: checking a kit, and learning
+                // its pads, happen before anything is loaded, and a hit that shows
+                // nothing reads as a dead pad.
+                HideAll();
+                _soonest.Clear();
+                DrawStrikes();
                 return;
             }
 
@@ -328,8 +338,8 @@ namespace AuralPrimer.Calibration
                 var cue = CueFor(piece);
                 if (cue == null) continue;
                 cue.localScale = new Vector3(piece.RadiusMetres * 2f, piece.RadiusMetres * 2f, 1f);
-                cue.position = piece.centre + piece.normal.normalized * hoverMetres;
-                cue.rotation = Quaternion.LookRotation(piece.normal.normalized);
+                cue.position = WorldCentre(piece) + WorldNormal(piece) * hoverMetres;
+                cue.rotation = Quaternion.LookRotation(WorldNormal(piece));
                 cue.gameObject.SetActive(true);
 
                 if (_cueRenderers.TryGetValue(piece.id, out var renderer) && renderer != null)
@@ -382,9 +392,9 @@ namespace AuralPrimer.Calibration
                 var mark = ColumnMark(used);
                 if (mark == null) break;
 
-                var up = piece.normal.normalized;
+                var up = WorldNormal(piece);
                 var height = hoverMetres + (until / Mathf.Max(0.01f, columnSeconds)) * columnHeightMetres;
-                mark.position = piece.centre + up * height;
+                mark.position = WorldCentre(piece) + up * height;
                 // Turned to face the player rather than lying flat on the pad's
                 // plane: a mark half a metre up, seen edge-on, is invisible.
                 mark.rotation = head != null
@@ -445,8 +455,8 @@ namespace AuralPrimer.Calibration
             var eased = Mathf.Pow(nearness, previewCurve);
             var radius = piece.RadiusMetres * Mathf.Lerp(0.25f, 1f, eased);
             cue.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
-            cue.position = piece.centre + piece.normal.normalized * hoverMetres;
-            cue.rotation = Quaternion.LookRotation(piece.normal.normalized);
+            cue.position = WorldCentre(piece) + WorldNormal(piece) * hoverMetres;
+            cue.rotation = Quaternion.LookRotation(WorldNormal(piece));
             cue.gameObject.SetActive(true);
 
             if (_cueRenderers.TryGetValue(piece.id, out var renderer) && renderer != null)
@@ -462,6 +472,18 @@ namespace AuralPrimer.Calibration
                 renderer.SetPropertyBlock(_block);
             }
         }
+
+        /// <summary>
+        /// Where a piece is in the room.
+        /// </summary>
+        /// <remarks>
+        /// Pieces are stored relative to the kit's anchor, and this overlay is
+        /// seated on that anchor, so its own transform carries them into the
+        /// room. With no anchor it sits at the world origin and this is a no-op.
+        /// </remarks>
+        Vector3 WorldCentre(KitPiece piece) => transform.TransformPoint(piece.centre);
+
+        Vector3 WorldNormal(KitPiece piece) => transform.TransformDirection(piece.normal).normalized;
 
         Transform CueFor(KitPiece piece)
         {

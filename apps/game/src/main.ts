@@ -2692,10 +2692,15 @@ function pollDrumPads(): void {
   }
 
   for (const hit of drumPadInput.poll()) {
-    const note = noteForDrumLane(hit.lane);
-    if (note === null) continue;
-    mrLink.reportDrumHits([[note, hit.velocity]]);
-    if (learnMode) learnRegisterPlayed(note);
+    // The headset learns a pad from the note it sends, so that note must not
+    // depend on what the headset has learned already: once one pad was learned,
+    // noteForDrumLane returned null for every other lane, and the rest of the kit
+    // could never be learned. A fixed note per lane is what the headset learns,
+    // and so what wait mode, built from the learned notes, is waiting for.
+    const sent: number | undefined = GM_NOTE_FOR_LANE[hit.lane];
+    if (sent === undefined) continue;
+    mrLink.reportDrumHits([[sent, hit.velocity]]);
+    if (learnMode) learnRegisterPlayed(sent);
   }
 }
 

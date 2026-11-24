@@ -85,7 +85,14 @@ namespace AuralPrimer.Calibration
         void PumpKeyboardLayout()
         {
             var linked = link != null && link.IsConnected;
-            if (linked && !_wasLinked) PublishKeyboardLayout();
+            if (linked && !_wasLinked)
+            {
+                PublishKeyboardLayout();
+                // The kit too, empty or not: the host keeps the last kit it was
+                // told across sessions, which may be a placement never finished.
+                _kitLayoutSent = true;
+                SendKitLayout();
+            }
             _wasLinked = linked;
         }
 

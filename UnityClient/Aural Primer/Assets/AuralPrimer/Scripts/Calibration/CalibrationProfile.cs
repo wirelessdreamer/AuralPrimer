@@ -131,6 +131,19 @@ namespace AuralPrimer.Calibration
         /// <summary>Is this piece usable -- placed, and with a note learned?</summary>
         public bool IsComplete =>
             !string.IsNullOrEmpty(id) && midiNote >= 0 && RadiusMetres > 0.01f;
+
+        /// <summary>
+        /// Re-express this piece from one space in another. Null is world space.
+        /// </summary>
+        public void Rebase(Transform from, Transform to)
+        {
+            var worldCentre = from != null ? from.TransformPoint(centre) : centre;
+            var worldRim = from != null ? from.TransformPoint(rim) : rim;
+            var worldNormal = from != null ? from.TransformDirection(normal) : normal;
+            centre = to != null ? to.InverseTransformPoint(worldCentre) : worldCentre;
+            rim = to != null ? to.InverseTransformPoint(worldRim) : worldRim;
+            normal = to != null ? to.InverseTransformDirection(worldNormal) : worldNormal;
+        }
     }
 
     /// <summary>
@@ -184,6 +197,21 @@ namespace AuralPrimer.Calibration
         /// existing fields meant and could not be migrated.
         /// </remarks>
         public List<KitPiece> kitPieces = new();
+
+        /// <summary>
+        /// Persistent spatial anchor the kit's pieces are expressed against.
+        /// </summary>
+        /// <remarks>
+        /// The kit's own, not the keyboard's. They are separate instruments
+        /// placed separately, and re-marking the keyboard replaces its anchor,
+        /// which would carry the drums off with it. Additive, like the
+        /// fretboard: an older profile loads with none, and a kit without an
+        /// anchor is placed again rather than drawn where it used to be.
+        /// </remarks>
+        public string kitAnchorId;
+
+        /// <summary>Was the kit set up as a pad unit's grid rather than piece by piece?</summary>
+        public bool kitIsPadGrid;
 
         /// <summary>
         /// The guitar or bass, where one has been set up.
@@ -532,8 +560,12 @@ namespace AuralPrimer.Calibration
                 // A profile that never completed calibration is worse than none:
                 // it would place the overlay at the origin and look like a bug.
                 // A checked guitar counts: it is measured against the controller
-                // on it, not the room, so it has no keyboard edges to have.
-                if (!profile.IsCalibrated && !profile.IsFretboardChecked) return null;
+                // on it, not the room, so it has no keyboard edges to have. So
+                // does a placed kit, which has pads instead of edges.
+                if (!profile.IsCalibrated && !profile.IsFretboardChecked && !profile.IsKitCalibrated)
+                {
+                    return null;
+                }
 
                 // Nor is a saved-but-impossible one worth restoring. Silently
                 // re-running the wizard beats drawing a keyboard that climbs into
@@ -543,9 +575,9 @@ namespace AuralPrimer.Calibration
                     Debug.LogWarning($"[calibration] {profileName} tilts "
                                    + $"{profile.TiltDegrees:F0}° off level — discarding it "
                                    + "and asking for the edges again");
-                    if (!profile.IsFretboardChecked) return null;
+                    if (!profile.IsFretboardChecked && !profile.IsKitCalibrated) return null;
 
-                    // Forget only the impossible keyboard, not a good guitar.
+                    // Forget only the impossible keyboard, not a good guitar or kit.
                     profile.leftEdge = Vector3.zero;
                     profile.rightEdge = Vector3.zero;
                 }

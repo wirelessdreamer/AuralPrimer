@@ -73,6 +73,9 @@ namespace AuralPrimer.Calibration
         /// <summary>Current pinch point, valid while <see cref="IsPinching"/>.</summary>
         public Vector3 PinchPosition { get; private set; }
 
+        /// <summary>Was the pinch <see cref="PinchStarted"/> just reported made by the left hand?</summary>
+        public bool LastPinchLeft { get; private set; }
+
         void Update()
         {
             if (_hands == null || !_hands.running)
@@ -118,6 +121,7 @@ namespace AuralPrimer.Calibration
             {
                 pinching = true;
                 PinchPosition = midpoint;
+                LastPinchLeft = hand.handedness == Handedness.Left;
                 PinchStarted?.Invoke(midpoint);
             }
             else if (pinching)

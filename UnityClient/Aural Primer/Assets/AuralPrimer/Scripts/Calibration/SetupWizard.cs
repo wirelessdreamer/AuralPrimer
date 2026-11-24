@@ -51,6 +51,8 @@ namespace AuralPrimer.Calibration
             LearnPieceNote,
             /// <summary>Play round the kit and check each cue lands on its pad.</summary>
             VerifyKit,
+            /// <summary>Pinch one of three corners of a pad unit (SetupWizard.Kit.cs).</summary>
+            PlacePadCorner,
 
             // --- Guitar / bass (SetupWizard.Guitar.cs) ---------------------
             /// <summary>Which controller is in the guitar's mount.</summary>
@@ -169,6 +171,10 @@ namespace AuralPrimer.Calibration
                 hands.PinchStarted += OnPinch;
                 hands.MenuSummoned += OnMenuSummoned;
             }
+            if (link != null) link.DrumHitReceived += OnDrumStrike;
+            // Built now rather than at the first calibration, so a drum chart the
+            // host sends as soon as it connects has something listening for it.
+            EnsureDrumOverlay();
 
             HookLibrary();
         }
@@ -180,6 +186,7 @@ namespace AuralPrimer.Calibration
                 hands.PinchStarted -= OnPinch;
                 hands.MenuSummoned -= OnMenuSummoned;
             }
+            if (link != null) link.DrumHitReceived -= OnDrumStrike;
 
             UnhookLibrary();
             // A microphone left open survives this component being disabled and
@@ -221,6 +228,10 @@ namespace AuralPrimer.Calibration
                         {
                             StartGuitar(_profile.fretboard.isBass);
                         }
+                        // A kit has an anchor of its own and no keyboard edges
+                        // to need, so it is restored before any keyboard check
+                        // can decide the profile is empty.
+                        else if (IsDrums && _profile.IsKitCalibrated) RestoreKitAsync();
                         else if (_profile is { IsCalibrated: true } && _profile.version != CalibrationProfile.CurrentVersion)
                         {
                             Debug.Log($"[wizard] calibration v{_profile.version} predates the current "
@@ -268,28 +279,10 @@ namespace AuralPrimer.Calibration
                     if (pressed >= 0) RegisterVerification(pressed);
                     break;
 
-                case Step.LearnPieceNote:
-                    if (pressed >= 0 && _pendingPiece != null)
-                    {
-                        _pendingPiece.midiNote = pressed;
-                        // Replace rather than append: re-running the wizard over
-                        // a kit that is already placed should move the pad, not
-                        // leave the old position behind to be found by the next
-                        // lookup.
-                        _profile.kitPieces.RemoveAll(x => x != null && x.id == _pendingPiece.id);
-                        _profile.kitPieces.Add(_pendingPiece);
-                        _pendingPiece = null;
-                        _profile.Save();
-                        SendKitLayout();
-                        NextKitPiece();
-                    }
-                    break;
-
-                case Step.VerifyKit:
-                    // Nothing to register: the cue is drawn where the profile
-                    // says the pad is, so seeing it land on the right drum IS
-                    // the verification. Pinch to redo, per the panel copy.
-                    break;
+                // LearnPieceNote listens for strikes (OnDrumStrike), not for
+                // held keys. VerifyKit has nothing to register: the flash is
+                // drawn where the profile says the pad is, so seeing it land on
+                // the right drum IS the verification.
             }
         }
 
@@ -330,22 +323,38 @@ namespace AuralPrimer.Calibration
         /// </remarks>
         void SendKitLayout()
         {
-            if (link == null || _profile == null || !_profile.IsKitCalibrated) return;
+            if (link == null || _profile == null) return;
             var pieces = new List<(string, int)>();
             foreach (var piece in _profile.kitPieces)
             {
                 if (piece != null && piece.IsComplete) pieces.Add((piece.id, piece.midiNote));
             }
-            if (pieces.Count > 0) link.SendKitLayout(pieces);
+            // Sent empty once after a kit, so a host still holding the pads of a
+            // placement that was cancelled falls back to General MIDI rather than
+            // waiting for notes no pad is meant to send. Not over and over for a
+            // keyboard player, who never had a kit to retract.
+            if (pieces.Count == 0 && !_kitLayoutSent) return;
+            // Unsent while disconnected; the reconnect sends whatever is current.
+            if (!link.IsConnected) return;
+            _kitLayoutSent = pieces.Count > 0;
+            link.SendKitLayout(pieces);
         }
 
         /// <summary>Move to the next piece, or finish the kit.</summary>
         void NextKitPiece()
         {
             _kitIndex++;
-            if (_kitIndex >= KitOrder.Length)
+            _duplicateOf = null;
+            if (_kitIndex >= CurrentKitOrder.Length)
             {
-                EnterStep(_profile.IsKitCalibrated ? Step.VerifyKit : Step.PickInstrument);
+                FinishKitAsync();
+                return;
+            }
+            if (_padGrid)
+            {
+                // Already placed by the grid; only its note is left to learn.
+                _pendingPiece = _gridPieces[_kitIndex];
+                EnterStep(Step.LearnPieceNote);
                 return;
             }
             EnterStep(Step.PlacePieceCentre);
@@ -354,6 +363,7 @@ namespace AuralPrimer.Calibration
         /// <summary>Skip the piece on offer -- a kit need not have all of them.</summary>
         public void SkipKitPiece()
         {
+            if (_busy) return;
             _pendingPiece = null;
             NextKitPiece();
         }
@@ -361,15 +371,23 @@ namespace AuralPrimer.Calibration
         /// <summary>Begin calibrating a kit, from the top.</summary>
         public void StartKitCalibration()
         {
-            _profile ??= new CalibrationProfile { profileName = profileName };
-            _profile.instrument = Instrument.Drums;
-            _kitIndex = 0;
-            _pendingPiece = null;
+            if (_busy) return;
+            // A pad unit's grid is not a kit to keep pieces of.
+            PrepareKitForPlacing(keepPieces: _profile is not { kitIsPadGrid: true });
             EnterStep(Step.PlacePieceCentre);
         }
 
         void OnPinch(Vector3 position)
         {
+            // A pinch aimed at a button is a click as well as a pinch. Placing a
+            // pad from it would put the pad wherever the hand happened to be,
+            // and the step change would eat the click.
+            if (IsKitPlacement(_step)
+                && (_busy || (hands != null && AuralPrimer.UI.HandRayDriver.IsOnUI(hands.LastPinchLeft))))
+            {
+                return;
+            }
+
             switch (_step)
             {
                 case Step.MarkLeftEdge:
@@ -412,6 +430,10 @@ namespace AuralPrimer.Calibration
                     EnterStep(Step.LearnPieceNote);
                     break;
 
+                case Step.PlacePadCorner:
+                    OnPadCornerPinch(position);
+                    break;
+
                 case Step.GuitarNut:
                 case Step.GuitarBridge:
                     // A pinch is one way to touch a point on the neck; the free
@@ -435,7 +457,7 @@ namespace AuralPrimer.Calibration
             // that knocks it out of the place it belongs.
             // A guitar moves with the player, so its menu has no fixed home to
             // go back to: it comes to them.
-            if (_profile is { IsCalibrated: true } && !IsGuitar) DockBesideKeyboard();
+            if (_profile is { IsCalibrated: true } && !IsGuitar && !IsDrums) DockBesideKeyboard();
             else panel?.PlaceInFrontOfUser();
         }
 
@@ -478,6 +500,8 @@ namespace AuralPrimer.Calibration
 
             _step = step;
             _verifiedKeys = 0;
+            _duplicateOf = null;
+            if (step == Step.LearnPieceNote) _learnSince = Time.unscaledTime;
             // Ask on the way in rather than caching: a song imported on the
             // desktop while the headset sat on the menu should be there.
             if (step == Step.Songs) RequestSongs();
@@ -497,6 +521,7 @@ namespace AuralPrimer.Calibration
             panel?.SetButtons();
 
             if (RenderGuitarStep()) return;
+            if (RenderKitStep()) return;
 
             switch (_step)
             {
@@ -543,19 +568,23 @@ namespace AuralPrimer.Calibration
 
                 case Step.PickInstrument:
                     panel?.SetTitle("Which instrument?");
-                    panel?.SetBody(
-                        "Set up a <b>keyboard</b>, a <b>drum kit</b>, or a <b>guitar</b> or "
-                        + "<b>bass</b>.\n\n"
+                    panel?.SetBody(KitMissingText()
+                        + "Set up a <b>keyboard</b>, a <b>drum kit</b>, a nine-<b>pad</b> unit "
+                        + "like an SPD-S, or a <b>guitar</b> or <b>bass</b>.\n\n"
                         + "A kit is placed pad by pad, so the cues land on the "
-                        + "drums themselves. A guitar is found through the controller "
+                        + "drums themselves. A pad unit is placed from three of its "
+                        + "corners. A guitar is found through the controller "
                         + "in its mount, so its notes land on the real frets.");
                     // Back only to a menu that has an instrument behind it.
-                    var canGoBack = IsGuitar ? IsGuitarReady : _profile is { IsCalibrated: true };
+                    var canGoBack = IsGuitar ? IsGuitarReady
+                                  : IsDrums ? _kitLive
+                                  : _profile is { IsCalibrated: true };
                     if (canGoBack)
                     {
                         panel?.SetButtons(
                             ("Keyboard", ChooseKeyboard),
                             ("Drum kit", ChooseDrums),
+                            ("Drum pad", ChooseDrumPad),
                             ("Guitar", () => StartGuitar(bass: false)),
                             ("Bass", () => StartGuitar(bass: true)),
                             ("Back", () => EnterStep(Step.Menu)));
@@ -565,47 +594,13 @@ namespace AuralPrimer.Calibration
                         panel?.SetButtons(
                             ("Keyboard", ChooseKeyboard),
                             ("Drum kit", ChooseDrums),
+                            ("Drum pad", ChooseDrumPad),
                             ("Guitar", () => StartGuitar(bass: false)),
                             ("Bass", () => StartGuitar(bass: true)));
                     }
                     break;
 
-                case Step.PlacePieceCentre:
-                    panel?.SetTitle($"Place the {KitOrder[_kitIndex].Label}");
-                    panel?.SetBody(
-                        // Said before the first pinch, not after a bad one: a
-                        // fist round a stick is most of a closed hand, and hand
-                        // tracking reads it poorly. A pad placed from a misread
-                        // pinch is wrong for the whole session.
-                        "<b>Put your sticks down first</b> - a hand holding one "
-                        + "is hard to track.\n\n"
-                        + $"<b>Pinch at the middle</b> of the {KitOrder[_kitIndex].Label}.\n\n"
-                        + $"<i>No {KitOrder[_kitIndex].Label}? Press Skip.</i>");
-                    break;
-
-                case Step.PlacePieceRim:
-                    panel?.SetTitle($"Place the {KitOrder[_kitIndex].Label}");
-                    panel?.SetBody(
-                        $"Now <b>pinch at the edge</b> of the {KitOrder[_kitIndex].Label}, "
-                        + "so its size is known.");
-                    break;
-
-                case Step.LearnPieceNote:
-                    panel?.SetTitle($"Which note is the {KitOrder[_kitIndex].Label}?");
-                    panel?.SetBody(
-                        $"<b>Hit the {KitOrder[_kitIndex].Label} once.</b>\n\n"
-                        + "Kits disagree about note numbers, so this one is "
-                        + "asked rather than assumed.");
-                    break;
-
-                case Step.VerifyKit:
-                    panel?.SetTitle("Check the kit");
-                    panel?.SetBody(
-                        $"<b>{_profile.kitPieces.Count} piece(s)</b> placed.\n\n"
-                        + "Play round the kit. Each cue should light up on the "
-                        + "drum you hit.\n\n"
-                        + "If one is on the wrong drum, pinch to start over.");
-                    break;
+                // The kit steps render in SetupWizard.Kit.cs (RenderKitStep).
 
                 case Step.Verify:
                     panel?.SetTitle("Check the alignment");
@@ -792,6 +787,9 @@ namespace AuralPrimer.Calibration
 
         void OnLaneReleased()
         {
+            // Not mid-placement: that would write a half-placed kit over the one
+            // Cancel is meant to put back.
+            if (_placingKit) return;
             _profile.Save();
             Debug.Log($"[wizard] lane set: tilt={_profile.laneTiltDegrees:F0}° "
                     + $"height={_profile.laneHeightMetres:F2}m");
@@ -1058,8 +1056,15 @@ namespace AuralPrimer.Calibration
             _busy = true;
             try
             {
+                // Loading replaces the anchor's GameObject, and anything seated on
+                // the old one is destroyed with it.
+                UnseatKeyboardVisuals();
                 var restored = keyboardAnchor != null
                             && await keyboardAnchor.TryLoadAsync(_profile.anchorId);
+
+                // A kit on the same profile has its own anchor to bring back,
+                // or to forget if the room no longer matches.
+                if (_profile.IsKitCalibrated) await RestoreKitAnchorAsync();
 
                 if (restored)
                 {
@@ -1203,6 +1208,7 @@ namespace AuralPrimer.Calibration
 
         void OnMenuSwingReleased()
         {
+            if (_placingKit) return; // as OnLaneReleased
             _profile.Save();
             Debug.Log($"[wizard] menu swung to {_profile.menuYawDegrees:F0}° "
                     + $"on the {(_profile.menuOnHighEnd ? "high" : "low")} end");
@@ -1311,7 +1317,6 @@ namespace AuralPrimer.Calibration
             {
                 Reseat(overlay != null ? overlay.transform : null, space);
                 Reseat(highway != null ? highway.transform : null, space);
-                Reseat(drumOverlay != null ? drumOverlay.transform : null, space);
             }
 
             if (overlay != null)
@@ -1332,8 +1337,10 @@ namespace AuralPrimer.Calibration
             // keyboard and a placed kit, and the overlay draws nothing when no
             // pieces were placed, which is the right answer for a keyboard-only
             // player without asking anyone to choose a mode.
-            EnsureDrumOverlay();
-            if (drumOverlay != null) drumOverlay.SetProfile(_profile);
+            //
+            // Seated on the kit's own anchor, not the keyboard's: the pieces are
+            // stored relative to it (SetupWizard.Kit.cs, ShowKit).
+            ShowKit();
             SendKitLayout();
 
             // Whatever the player chose about their hands, applied here so it

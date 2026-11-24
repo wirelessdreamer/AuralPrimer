@@ -67,6 +67,18 @@ namespace AuralPrimer.UI
                 return cam != null ? cam.parent : null;
             }
         }
+        /// <summary>Is this hand's ray on a menu right now?</summary>
+        /// <remarks>
+        /// A pinch is both the click and the calibration gesture, so a step that
+        /// places something on a pinch has to know when the pinch was aimed at
+        /// a button instead. Per hand: the idle hand's ray resting on the panel
+        /// says nothing about what the other hand is pinching.
+        /// </remarks>
+        public static bool IsOnUI(bool left) => (s_onUi & (left ? 1 : 2)) != 0;
+
+        /// <summary>One bit per hand: 1 left, 2 right.</summary>
+        static int s_onUi;
+
         NearFarInteractor _interactor;
         bool _pinching;
         bool _posed;
@@ -122,6 +134,10 @@ namespace AuralPrimer.UI
             SetRayVisible(WantsRay());
 
             Aim(knuckle);
+            // Read before the press is queued: what the ray was on when the
+            // pinch closed is what the pinch was aimed at.
+            SetOnUI(_interactor != null && _interactor.isActiveAndEnabled
+                    && _interactor.TryGetCurrentUIRaycastResult(out var uiHit) && uiHit.isValid);
             Press(Vector3.Distance(thumbTip, indexTip));
 
             if (!_posed) { SetVisible(true); _posed = true; }
@@ -205,8 +221,17 @@ namespace AuralPrimer.UI
         }
 
         /// <summary>Hand gone: release anything held and stop drawing a ray.</summary>
+        void OnDisable() => SetOnUI(false);
+
+        void SetOnUI(bool onUi)
+        {
+            var bit = leftHand ? 1 : 2;
+            s_onUi = onUi ? s_onUi | bit : s_onUi & ~bit;
+        }
+
         void Lost()
         {
+            SetOnUI(false);
             if (_pinching)
             {
                 _pinching = false;

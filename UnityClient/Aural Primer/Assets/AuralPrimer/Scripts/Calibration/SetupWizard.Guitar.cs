@@ -19,6 +19,7 @@
 // strings on purpose, and even there the free controller's trigger does the
 // job without a gesture.
 
+using System.Collections.Generic;
 using UnityEngine;
 using NVector3 = System.Numerics.Vector3;
 
@@ -57,11 +58,14 @@ namespace AuralPrimer.Calibration
 
         static bool IsGuitarSetup(Step step) => step == Step.GuitarHand || IsGuitarCapture(step);
 
-        /// <summary>A clean keyboard calibration that keeps the guitar measured on the same profile.</summary>
+        /// <summary>A clean keyboard calibration that keeps the guitar and kit measured on the same profile.</summary>
         CalibrationProfile NewKeyboardProfile() => new()
         {
             profileName = profileName,
             fretboard = _profile?.fretboard ?? new FretboardProfile(),
+            kitPieces = _profile?.kitPieces ?? new List<KitPiece>(),
+            kitAnchorId = _profile?.kitAnchorId,
+            kitIsPadGrid = _profile is { kitIsPadGrid: true },
         };
 
         /// <summary>
@@ -89,6 +93,7 @@ namespace AuralPrimer.Calibration
         /// <summary>Set up, or go back to, a guitar -- or a bass.</summary>
         public void StartGuitar(bool bass)
         {
+            if (_busy) return;
             _profile ??= new CalibrationProfile { profileName = profileName };
             // A different kind of neck starts from that kind's defaults; the
             // same kind keeps what was measured.
@@ -155,18 +160,13 @@ namespace AuralPrimer.Calibration
 
         void ChooseKeyboard()
         {
+            if (_busy) return;
             LeaveGuitarMode();
             _profile ??= NewKeyboardProfile();
             _profile.instrument = Instrument.Keyboard;
             if (_profile.IsCalibrated || _profile.IsFretboardChecked) _profile.Save();
             if (_profile.IsAnchored) RestoreAsync();
             else EnterStep(Step.LowestKey);
-        }
-
-        void ChooseDrums()
-        {
-            LeaveGuitarMode();
-            StartKitCalibration();
         }
 
         void ChooseGuitarHand(bool left)
