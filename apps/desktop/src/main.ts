@@ -886,7 +886,7 @@ root.innerHTML = `
           <section class="panel">
             <div class="panelHeader">
               <h2>Audio</h2>
-              <div class="meta">Output sync calibration</div>
+              <div class="meta">Output sync + keyboard input</div>
             </div>
 
             <h3>A/V Sync</h3>
@@ -903,6 +903,20 @@ root.innerHTML = `
               <button id="avSyncCalibrate">Calibrate…</button>
               <button id="avSyncReset">Reset</button>
             </div>
+
+            <h3>MIDI Input</h3>
+            <p class="meta">Shared with AuralPrimer. Choose your keyboard here once; both apps reconnect it at launch. In Cleanup, enable Hear keyboard to audition live notes. Live sound follows the foreground app.</p>
+            <div class="row">
+              <select id="midiInPort" aria-label="MIDI input device"></select>
+              <button id="midiInRefresh">Refresh</button>
+              <button id="midiInConnect">Connect</button>
+              <button id="midiInDisconnect">Disconnect</button>
+            </div>
+            <pre id="midiStatus" role="status">(midi input: not connected)</pre>
+            <details>
+              <summary>Input event monitor</summary>
+              <pre id="midiInEvents" style="max-height:160px;overflow:auto">(midi input events)</pre>
+            </details>
           </section>
 
           <section class="panel">
@@ -961,14 +975,8 @@ root.innerHTML = `
           <button id="loopClear" disabled>Clear</button>
           <pre id="audioStatus">(no audio)</pre>
           <label><input id="midiFollowEnabled" type="checkbox" checked /> follow external clock</label>
-          <select id="midiInPort"></select>
-          <button id="midiInRefresh">Refresh</button>
-          <button id="midiInConnect">Connect</button>
-          <button id="midiInDisconnect">Disconnect</button>
           <input id="midiTempoScale" type="number" min="0.25" max="4" step="0.05" value="1" />
           <label><input id="midiInSysexEnabled" type="checkbox" /> allow SysEx input</label>
-          <pre id="midiStatus">(midi clock: not connected)</pre>
-          <pre id="midiInEvents">(midi input events)</pre>
           <label><input id="midiOutEnabled" type="checkbox" /> send MIDI clock</label>
           <select id="midiOutPort"></select>
           <button id="midiOutRefresh">Refresh</button>
@@ -2872,6 +2880,13 @@ function setMidiStatus(msg: string) {
   midiStatusEl.textContent = msg;
 }
 
+window.addEventListener("auralprimer:midi-connection", (event) => {
+  const detail = (event as CustomEvent<{ connected: boolean; name?: string }>).detail;
+  if (!detail) return;
+  midiConnected = detail.connected;
+  setMidiStatus(detail.connected ? `midi input connected: ${detail.name || "keyboard"}` : "midi input disconnected");
+});
+
 function setMidiInputEventsStatus(msg: string) {
   midiInEventsEl.textContent = msg;
 }
@@ -3056,6 +3071,7 @@ async function refreshMidiInputPorts() {
     setMidiStatus("midi input: refreshing ports...");
     const ports = await invoke<MidiPortInfo[]>("list_midi_input_ports");
     midiInPortSelect.innerHTML = renderMidiPortOptions(ports, "No MIDI inputs found");
+    midiConnected = await invoke<boolean>("midi_clock_input_is_connected");
 
     let savedWarning = "";
     try {
@@ -3082,7 +3098,7 @@ async function refreshMidiInputPorts() {
     const backend = midiPortBackendLabel(ports);
     const selectedName = midiInPortSelect.selectedOptions[0]?.textContent?.trim();
     setMidiStatus(
-      `midi input: ${ports.length} port(s) found via ${backend}: ${midiPortNamesPreview(ports)}${selectedName ? `; selected ${selectedName}` : ""}${savedWarning}`
+      `midi input: ${ports.length} port(s) found via ${backend}: ${midiPortNamesPreview(ports)}${selectedName ? `; ${midiConnected ? "auto-connected" : "selected"} ${selectedName}` : ""}${savedWarning}`
     );
   } catch (e) {
     midiInPortSelect.innerHTML = renderMidiPortOptions([], "MIDI input refresh failed");
@@ -3235,7 +3251,7 @@ async function connectMidiClockInput() {
   const portId = Number(midiInPortSelect.value);
   const tempoScale = Number(midiTempoScaleInput.value);
   const allowSysex = midiInSysexEnabledInput.checked;
-  if (!Number.isFinite(portId)) {
+  if (!midiInPortSelect.value || !Number.isFinite(portId)) {
     setMidiStatus("midi input: no port selected; refresh after connecting the keyboard");
     return;
   }
@@ -3243,11 +3259,14 @@ async function connectMidiClockInput() {
   midiConnected = true;
   const portName = midiInPortSelect.selectedOptions[0]?.textContent?.trim() || `port ${portId}`;
   setMidiStatus(`midi input connected: ${portName} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
+  window.dispatchEvent(new Event("auralprimer:midi-reset"));
+  window.dispatchEvent(new CustomEvent("auralprimer:midi-connection", { detail: { connected: true, name: portName } }));
 }
 
 async function disconnectMidiClockInput() {
   await invoke("midi_clock_input_stop");
   midiConnected = false;
+  window.dispatchEvent(new CustomEvent("auralprimer:midi-connection", { detail: { connected: false } }));
   transportController.setExternalClockRunning(false);
   setMidiStatus("midi clock input disconnected");
 }
@@ -5375,4 +5394,5 @@ window.addEventListener("beforeunload", () => {
 
 setRoute("make");
 
+if (haveTauri()) void refreshMidiInputPorts();
 void refresh();

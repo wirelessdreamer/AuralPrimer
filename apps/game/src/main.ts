@@ -76,6 +76,7 @@ import { initSecondaryStagesController, type SecondaryStagesControllerHandle } f
 import { initPlaybackRateAndMetronomePanel } from "./playbackRateAndMetronomePanel";
 import { initMidiPanel, type MidiPanelHandle } from "./midiPanel";
 import { assignHands, isSelectedHand, type HandMode } from "./pianoHands";
+import { initLiveMidiPiano } from "./liveMidiPiano";
 import type { DrumTabChart } from "./drumTabChart";
 import { initDrumPadInput, type DrumPadMap } from "./drumPadInput";
 import type { ManifestSummary } from "./manifestTypes";
@@ -2603,16 +2604,18 @@ async function sendPianoNotes(): Promise<void> {
   }
 }
 
-// Sound the keys the player actually presses.
-//
-// Driven by the midi-input event rather than by polling the active-note set:
-// the poll runs on a timer, so every note would land up to a tick late and all
-// the notes in a chord would land on whichever tick caught them. For something
-// you play, that is the difference between an instrument and a delay.
-//
-// A note-on with zero velocity is a note-off -- the running-status form most
-// controllers actually send, and treating it as a strike leaves the key stuck
-// on forever.
+// Studio and the game can both receive the shared keyboard. Live sound follows
+// the foreground window, including sustain and releases on focus changes.
+initLiveMidiPiano({
+  isReady: () => pianoLiveReady,
+  prepare: ensurePianoPack,
+  noteOn: (pitch, velocity) => {
+    void invoke("piano_note_on", { pitch, velocity }).catch((e) => setPianoStatus(`piano: ${String(e)}`));
+  },
+  noteOff: (pitch) => { void invoke("piano_note_off", { pitch }).catch(() => {}); },
+});
+
+// Percussion goes to the headset/learn gate rather than to the piano.
 window.addEventListener("auralprimer:midi-input", (ev) => {
   const msg = (
     ev as CustomEvent<{
@@ -2633,6 +2636,11 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
   // 36 on a kit is a kick; the sampler would have played a C2 for it, so
   // plugging a kit in made the piano play along with the drummer.
   if (msg.channel === 9) {
+    // The headset is not a window. With the link on, the player is looking at
+    // the headset, so whether this window has focus says nothing about who the
+    // strike is for -- gating on it dropped every hit while the desktop sat
+    // behind something else.
+    if (!document.hasFocus() && !mrLink.isEnabled()) return;
     if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
       mrLink.reportDrumHits([[Math.round(pitch), Math.round(msg.data2 ?? 100)]]);
       // Straight from the event, not from the polled held-note set the melodic
@@ -2644,25 +2652,6 @@ window.addEventListener("auralprimer:midi-input", (ev) => {
     return;
   }
 
-  // Load on first touch rather than at startup or on a checkbox. Sixty
-  // megabytes is too much to read before anyone has asked for a sound, and
-  // requiring a tick first means the obvious thing -- press a key, hear a
-  // piano -- silently does nothing. The first note is lost while it loads;
-  // every one after it plays.
-  if (!pianoLiveReady) {
-    void ensurePianoPack();
-    return;
-  }
-
-  if (msg.message_type === "note_on" && (msg.data2 ?? 0) > 0) {
-    void invoke("piano_note_on", { pitch, velocity: msg.data2 ?? 80 }).catch((e) => {
-      // Surfaced, not swallowed: a piano that cannot sound looked exactly like
-      // one that was working, which is how a silent bug survived a build.
-      setPianoStatus(`piano: ${String(e)}`);
-    });
-  } else if (msg.message_type === "note_off" || msg.message_type === "note_on") {
-    void invoke("piano_note_off", { pitch }).catch(() => {});
-  }
 });
 
 /**

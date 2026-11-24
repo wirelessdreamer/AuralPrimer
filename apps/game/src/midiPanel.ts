@@ -381,6 +381,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     const portName = inPortSelect.selectedOptions[0]?.textContent?.trim() || `port ${portId}`;
     rb3.clear();
     setInputActiveNotesStatus(formatMidiActiveNotes(tracker.clear()));
+    window.dispatchEvent(new Event("auralprimer:midi-reset"));
     setMidiStatus(`midi input connected: ${portName} scale=${tempoScale} sysex=${allowSysex ? "on" : "off"}`);
   }
   async function disconnectClockInput(): Promise<void> {
@@ -389,6 +390,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
     deps.transportController.setExternalClockRunning(false);
     rb3.clear();
     setInputActiveNotesStatus(formatMidiActiveNotes(tracker.clear()));
+    window.dispatchEvent(new Event("auralprimer:midi-reset"));
     setMidiStatus("midi input disconnected");
   }
   async function outShutdown(): Promise<void> {
@@ -420,6 +422,7 @@ export function initMidiPanel(deps: MidiPanelDeps): MidiPanelHandle {
   });
   inPanicBtn.addEventListener("click", () => {
     setInputActiveNotesStatus(formatMidiActiveNotes(tracker.clear()));
+    window.dispatchEvent(new Event("auralprimer:midi-reset"));
     appendInputEventLine("input monitor cleared");
   });
 

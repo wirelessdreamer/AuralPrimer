@@ -17,12 +17,14 @@
   },
   "dependencies": {
     "@auralprimer/av-sync": "*",
+    "@auralprimer/midi-input": "*",
     "@auralprimer/viz-beats": "*",
     "@auralprimer/viz-drum-highway": "*",
     "@auralprimer/viz-fretboard": "*",
     "@auralprimer/viz-lyrics": "*",
     "@auralprimer/viz-nashville": "*",
     "@auralprimer/viz-sdk": "*",
+    "@auralprimer/viz-tab": "*",
     "@tauri-apps/plugin-dialog": "^2.4.2"
   }
 }

@@ -78,6 +78,10 @@ struct Settings {
     av_audio_offset_ms: Option<f64>,
     #[serde(default)]
     av_video_offset_ms: Option<f64>,
+    // Both apps write the portable's settings.json. Preserve the game's
+    // learned MIDI transport bindings and any fields Studio does not own.
+    #[serde(flatten)]
+    extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2793,6 +2797,7 @@ pub fn run() {
             midi_clock_input_start,
             midi_clock_input_start_and_persist,
             midi_clock_input_get_saved_settings,
+            midi_clock_input_is_connected,
             midi_clock_input_stop
         ])
         .run(tauri::generate_context!())
@@ -3233,6 +3238,11 @@ fn midi_clock_input_get_saved_settings(app: AppHandle) -> Result<MidiInputSavedS
 }
 
 #[tauri::command]
+fn midi_clock_input_is_connected(state: tauri::State<MidiClockInputState>) -> bool {
+    state.conn.lock().unwrap().is_some()
+}
+
+#[tauri::command]
 fn midi_clock_input_start(
     app: AppHandle,
     state: tauri::State<MidiClockInputState>,
@@ -3288,6 +3298,26 @@ fn midi_clock_input_stop(state: tauri::State<MidiClockInputState>) -> Result<(),
     let mut lock = state.conn.lock().unwrap();
     *lock = None;
     Ok(())
+}
+
+#[cfg(test)]
+mod shared_input_settings_tests {
+    use super::Settings;
+
+    #[test]
+    fn studio_settings_round_trip_preserves_game_midi_bindings() {
+        let raw = serde_json::json!({
+            "midi_input_port": { "id": 0, "name": "USB Axiom 61", "stable_id": "keyboard" },
+            "midi_transport_bindings": "{\"play\":{\"kind\":\"cc\",\"number\":35,\"channel\":null}}",
+            "future_game_preference": { "enabled": true }
+        });
+        let mut settings: Settings = serde_json::from_value(raw.clone()).unwrap();
+        settings.midi_input_tempo_scale = Some(1.0);
+        let written = serde_json::to_value(settings).unwrap();
+        assert_eq!(written["midi_transport_bindings"], raw["midi_transport_bindings"]);
+        assert_eq!(written["future_game_preference"], raw["future_game_preference"]);
+        assert_eq!(written["midi_input_port"], raw["midi_input_port"]);
+    }
 }
 
 #[cfg(test)]

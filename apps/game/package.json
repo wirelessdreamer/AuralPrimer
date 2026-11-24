@@ -18,6 +18,7 @@
   "dependencies": {
     "@auralprimer/av-sync": "*",
     "@auralprimer/core-music": "*",
+    "@auralprimer/midi-input": "*",
     "@auralprimer/viz-beats": "*",
     "@auralprimer/viz-drum-highway": "*",
     "@auralprimer/viz-fretboard": "*",

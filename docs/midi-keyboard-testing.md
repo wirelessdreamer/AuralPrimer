@@ -18,6 +18,28 @@ the README. This document stays focused on verifying the input path itself.
 7. Press and release the sustain pedal. Released notes should remain marked as sustain-held until the pedal is released.
 8. Click `Clear active notes` if a device disconnect or driver issue leaves a stuck note.
 
+## Studio and game together
+
+1. Connect the keyboard once in `Configure -> MIDI`. Launch Studio and the game
+   from the same portable folder so both use its shared `settings.json`.
+2. In Studio Cleanup, enable **Split + game**. Play a chord: cyan pitch rows
+   should appear over the spectrogram and the matching game keys should light.
+   The chart and **Save** state must remain unchanged.
+3. Enable **Hear keyboard**. Verify velocity changes the loudness, key release
+   stops the note, and CC64 sustain holds it until the pedal comes up.
+4. Pause, seek and resume the song while holding a key. Live keyboard sound
+   should remain independent of the song transport and headphone A/B routing.
+5. Switch to the game. Studio's held sound should release; new key presses
+   should sound once through the game. Switch back and repeat in Studio.
+6. Use **All notes off** in Cleanup, disconnect the input, or leave Cleanup:
+   live highlights and held sound should clear.
+7. Save a Studio MIDI setting and relaunch the game. Previously learned game
+   transport bindings must still be present.
+
+Concurrent WinRT opens of the USB Axiom 61 have been verified with Windows MIDI
+Services running. Other drivers may impose exclusive access; the status and
+**Reconnect** control expose that failure without selecting an unrelated port.
+
 ## Expected Events
 
 - `note_on`: key press with velocity greater than zero.
