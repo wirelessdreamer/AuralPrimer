@@ -72,6 +72,27 @@ readout above the *Start* button reports what the app is hearing on every
 instrument and display mode, and names the case where nothing is connected, so
 a silent device is never mistaken for a silent passage.
 
+**Studio Cleanup.** The game and Studio reuse the same saved MIDI input.
+Cleanup shows played pitches in cyan over the analysis and lights the keyboard
+in **Split + game**, including sustain-held notes. Enable **Hear keyboard** in
+the MIDI bar to audition live notes, adjust **Live** for their volume, and
+use **All notes off** to clear a stuck key. Playing does not add or edit chart
+notes. The keyboard monitor is centered independently of the source/rendered
+headphone split and keeps sounding while transport is paused.
+
+Cleanup's listening strip groups playback speed, source/rendered A/B modes,
+explicit headphone routing, and their levels above the existing spectrogram.
+The source-waveform ribbon comes from the selected stem or mix, follows the
+analysis zoom, and seeks transport when clicked. **Split + game** keeps the
+analysis alongside the game's visualization of the current edits.
+
+Both applications can stay open with a MIDI driver that supports concurrent
+clients (verified on Windows MIDI Services with the USB Axiom 61). Live keyboard
+sound follows the foreground app to prevent doubled notes. If reconnecting is
+needed, Cleanup's **Reconnect** uses the saved input; choose a different device
+in `Configure -> MIDI`. Studio preserves the game's learned transport bindings
+when saving shared settings.
+
 ### Transport buttons (MIDI learn)
 
 `Configure -> MIDI -> Transport control` binds your controller's transport

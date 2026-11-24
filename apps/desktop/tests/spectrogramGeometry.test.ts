@@ -1,12 +1,28 @@
 import { describe, it, expect } from "vitest";
 import {
   frameToNorm,
+  harmonicMidiPitches,
   laneBandRows,
   laneMarkerXSpan,
   laneRowBand,
   noteBodyXSpan,
   secToFrame,
 } from "../src/spectrogramGeometry";
+
+describe("harmonicMidiPitches", () => {
+  it("places overtones at frequency multiples without rounding to semitones", () => {
+    const guides = harmonicMidiPitches(69); // A4, 440 Hz.
+    expect(guides.map((g) => g.harmonic)).toEqual([2, 3, 4, 5, 6, 7, 8]);
+    expect(guides[0].pitch).toBe(81);
+    expect(guides[2].pitch).toBe(93);
+    expect(guides[6].pitch).toBe(105);
+    expect(guides[1].pitch).toBeCloseTo(88.01955, 5);
+    expect(guides[5].pitch).toBeCloseTo(102.68826, 5);
+    for (const { harmonic, pitch } of guides) {
+      expect(440 * 2 ** ((pitch - 69) / 12)).toBeCloseTo(440 * harmonic, 6);
+    }
+  });
+});
 
 describe("secToFrame", () => {
   it("maps a hit at time T to frame T*fps (energy column)", () => {

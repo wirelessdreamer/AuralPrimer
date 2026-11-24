@@ -19,7 +19,7 @@ const LANE_TO_GM_MIDI: Record<string, number> = {
 
 const FALLBACK_GM_MIDI = 38;
 
-function laneToMidi(lane: string): number {
+export function laneToMidi(lane: string): number {
   return LANE_TO_GM_MIDI[lane] ?? FALLBACK_GM_MIDI;
 }
 

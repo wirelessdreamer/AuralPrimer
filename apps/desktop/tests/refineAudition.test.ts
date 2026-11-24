@@ -11,6 +11,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { initRefineAudition, nextLoopStartTime } from "../src/refineAudition";
 import type { RefinementNote } from "../src/refineCandidatesIo";
+import { MidiInputStateTracker } from "@auralprimer/midi-input";
 
 function note(t_on: number, pitch: number, velocity = 90): RefinementNote {
   return { t_on, t_off: t_on + 0.5, pitch, velocity };
@@ -43,6 +44,9 @@ class FakeAudioContext {
   destination = {} as AudioDestinationNode;
   resume = vi.fn(() => Promise.resolve());
   createdOscillators: any[] = [];
+  createdGains: any[] = [];
+  createdPanners: any[] = [];
+  createMediaElementSource = vi.fn(() => ({ connect: vi.fn() }));
 
   constructor() {
     if (FakeAudioContext.throwOnConstruct) {
@@ -52,11 +56,19 @@ class FakeAudioContext {
   }
 
   createGain() {
-    return {
+    const gain = {
       gain: makeParam(0),
       connect: vi.fn((dst: unknown) => dst),
       disconnect: vi.fn(),
     };
+    this.createdGains.push(gain);
+    return gain;
+  }
+
+  createStereoPanner() {
+    const panner = { pan: makeParam(0), connect: vi.fn((dst: unknown) => dst) };
+    this.createdPanners.push(panner);
+    return panner;
   }
 
   createOscillator() {
@@ -251,5 +263,85 @@ describe("initRefineAudition", () => {
     const engine = initRefineAudition();
     engine.playRegion([note(0.5, 60)], 0, 4);
     expect(engine.isPlaying()).toBe(false);
+  });
+
+  it("keeps source and notes on opposite ears, folds stereo to mono, and connects a source only once", () => {
+    const engine = initRefineAudition();
+    engine.setOutput({ sourceGain: 0.8, renderedGain: 0.7, sourcePan: -1, renderedPan: 1, renderedEnabled: true });
+    const source = document.createElement("audio");
+    engine.connectSource(source);
+    engine.connectSource(source);
+    const ctx = FakeAudioContext.instances[0];
+    expect(ctx.createMediaElementSource).toHaveBeenCalledTimes(1);
+    expect(ctx.createdPanners.map(p => p.pan.value)).toEqual([-1, 1]);
+    expect(ctx.createdGains[2].channelCount).toBe(1);
+    engine.setOutput({ sourceGain: 0.8, renderedGain: 0.7, sourcePan: 1, renderedPan: -1, renderedEnabled: true });
+    expect(ctx.createdPanners.map(p => p.pan.value)).toEqual([1, -1]);
+  });
+
+  it("follows the source clock at half speed without changing pitch or scheduling the whole song", () => {
+    const engine = initRefineAudition();
+    let position = 0;
+    engine.playRegion([note(0.1, 69), note(100, 72)], 0, 120, { getTimeSec: () => position, playbackRate: 0.5 });
+    const ctx = FakeAudioContext.instances[0];
+    expect(ctx.createdOscillators).toHaveLength(2);
+    expect(ctx.createdOscillators[0].frequency.value).toBe(440);
+    expect(ctx.createdOscillators[0].start).toHaveBeenCalledWith(0.2);
+    expect(ctx.createdOscillators[0].stop.mock.calls[0][0]).toBeCloseTo(1.3);
+    position = 99.9;
+    ctx.currentTime = 1;
+    vi.advanceTimersByTime(60);
+    expect(ctx.createdOscillators).toHaveLength(4);
+    engine.stop();
+    expect(ctx.createdOscillators.every(o => o.stop.mock.calls.length > 1)).toBe(true);
+  });
+
+  it("resumes the remaining part of a held note when seeking into it", () => {
+    const engine = initRefineAudition();
+    engine.playRegion([{ t_on: 0, t_off: 1, pitch: 69, velocity: 90 }], 0.3, 10,
+      { getTimeSec: () => 0.3, playbackRate: 0.5 });
+    const ctx = FakeAudioContext.instances[0];
+    expect(ctx.createdOscillators).toHaveLength(2);
+    expect(ctx.createdOscillators[0].start).toHaveBeenCalledWith(0);
+    expect(ctx.createdOscillators[0].stop.mock.calls[0][0]).toBeCloseTo(1.5);
+    expect(ctx.createdOscillators[0].frequency.value).toBe(440);
+  });
+
+  it("holds live keys across transport changes, uses velocity and releases on MIDI note-off", () => {
+    const engine = initRefineAudition();
+    const tracker = new MidiInputStateTracker();
+    const message = (velocity: number, timestamp_us = 1) => ({ timestamp_us, message_type: "note_on", status: 0x90, channel: 0, data1: 69, data2: velocity, bytes: [0x90, 69, velocity] });
+    engine.setLiveGain(0.4);
+    engine.setLiveNotes(tracker.apply(message(64)).activeNotes);
+    const ctx = FakeAudioContext.instances[0];
+    const live = ctx.createdOscillators.slice();
+    expect(live).toHaveLength(2);
+    expect(live[0].frequency.value).toBe(440);
+    expect(ctx.createdGains[5].gain.linearRampToValueAtTime).toHaveBeenCalledWith(64 / 127, 0.005);
+    expect(ctx.createdGains[3].connect).toHaveBeenCalledWith(ctx.destination);
+    expect(ctx.createdGains[3].gain.value).toBeCloseTo(0.1);
+    engine.setLiveNotes(tracker.snapshot().activeNotes);
+    expect(ctx.createdOscillators).toHaveLength(2);
+    engine.playRegion([note(0, 60)], 0, 1);
+    engine.stop();
+    expect(live.every(o => o.stop.mock.calls.length === 0)).toBe(true);
+    engine.setLiveNotes(tracker.apply(message(0, 2)).activeNotes);
+    expect(live.every(o => o.stop.mock.calls.length === 1)).toBe(true);
+    live[0].onended();
+    expect(live.every(o => o.disconnect.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("retriggers repeated live notes and releases the previous voice", () => {
+    const engine = initRefineAudition();
+    const tracker = new MidiInputStateTracker();
+    const event = { timestamp_us: 1, message_type: "note_on", status: 0x90, channel: 0, data1: 60, data2: 100, bytes: [0x90, 60, 100] };
+    engine.setLiveNotes(tracker.apply(event).activeNotes);
+    engine.setLiveNotes(tracker.apply({ ...event, timestamp_us: 2 }).activeNotes);
+    const ctx = FakeAudioContext.instances[0];
+    expect(ctx.createdOscillators).toHaveLength(4);
+    expect(ctx.createdOscillators[0].stop).toHaveBeenCalledOnce();
+    expect(ctx.createdOscillators[2].stop).not.toHaveBeenCalled();
+    engine.setLiveNotes([]);
+    expect(ctx.createdOscillators[2].stop).toHaveBeenCalledOnce();
   });
 });

@@ -14,14 +14,10 @@
  *    notes is replaced by the candidate's transcription.
  *  - The 12+ hot-spot regions are navigation only — a "Jump" dropdown scrolls
  *    the editor view to a section start.
- *  - Transport plays the ISOLATED STEM audio for the current instrument (or
- *    the summed "All" mix) through the SAME native engine the game uses
- *    (NativeAudioTimebase), so the shared A/V calibration is valid and the
- *    playhead is drawn at the audible position. When audio is loaded the native
- *    engine position drives the playhead clock; when none loads (missing file,
- *    decode error) the transport falls back to the wall-clock playhead. The
- *    "Hear notes" synth (refineAudition) plays ALONGSIDE the stem when checked, so the
- *    user can A/B the transcription against the recording.
+ *  - Source and rendered notes share a Web Audio output graph for monitoring.
+ *    The streamed source preserves pitch when slowed and drives the note
+ *    scheduler. Listening modes can solo either stream, combine them, or route
+ *    one to each ear. The existing spectrogram/editor remains mounted.
  *
  * On save, the edited note set is partitioned back into the candidate regions
  * as per-region "manual" decisions and written to refinement.<inst>.json —
@@ -44,7 +40,10 @@ import {
   quantLevelByValue,
 } from "./beatGrid";
 import { getAvOffsetSec } from "./avOffset";
-import { NativeAudioTimebase } from "./nativeAudioTimebase";
+import { RefineSourceAudio } from "./refineSourceAudio";
+import { RefineGamePreview } from "./refineGamePreview";
+import { initRefineMidiMonitor } from "./refineMidiMonitor";
+import type { RefineWaveform } from "./refineWaveform";
 import { GridMetronome } from "./gridMetronome";
 import {
   detectMelodicStems,
@@ -157,7 +156,7 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const metronomeToggle = $<HTMLInputElement>("refineMetronomeToggle");
   const downbeatMinusBtn = $<HTMLButtonElement>("refineDownbeatMinus");
   const downbeatPlusBtn = $<HTMLButtonElement>("refineDownbeatPlus");
-  const speedSelectEl = $<HTMLSelectElement>("refineSpeedSelect");
+  const speedSelectEl = $<HTMLInputElement>("refineSpeedSelect");
   const soloSelectEl = $<HTMLSelectElement>("refineSoloSelect");
   const stageEl = $<HTMLElement>("refineStage");
   const inspectorEl = $<HTMLElement>("refineInspector");
@@ -167,6 +166,25 @@ export function initRefineWorkspace(deps: RefineWorkspaceDeps): RefineWorkspaceH
   const emptyCmdEl = $<HTMLElement>("refineEmptyCmd");
   const undoBtn = $<HTMLButtonElement>("refineUndoBtn");
   const redoBtn = $<HTMLButtonElement>("refineRedoBtn");
+  const listenEl = $<HTMLElement>("refineListen");
+  const speedOutput = $<HTMLOutputElement>("refineSpeedOutput");
+  const loopBtn = $<HTMLButtonElement>("refineLoopBtn");
+  const hearSelectionBtn = $<HTMLButtonElement>("refineHearSelection");
+  const loopSelectionBtn = $<HTMLButtonElement>("refineLoopSelection");
+  const swapBtn = $<HTMLButtonElement>("refineSwapBtn");
+  const routeLabel = $<HTMLElement>("refineListenRoute");
+  const sourceLevel = $<HTMLInputElement>("refineSourceLevel");
+  const renderedLevel = $<HTMLInputElement>("refineRenderedLevel");
+  const mainEl = $<HTMLElement>("refineMain")!;
+  const splitToggle = $<HTMLButtonElement>("refineSplitToggle")!;
+  const splitDivider = $<HTMLElement>("refineSplitDivider")!;
+  const gamePane = $<HTMLElement>("refineGamePane")!;
+  const gameSurface = $<HTMLElement>("refineGameSurface")!;
+  const gameInfo = $<HTMLElement>("refineGameInfo")!;
+  type ListenMode = "source" | "rendered" | "together" | "split";
+  let listenMode: ListenMode = "split";
+  let swapped = false;
+  let loopRegion: { t0: number; t1: number } | null = null;
 
   if (
     !root || !songTitleEl || !instLabelEl || !instSelectEl || !reloadBtn || !saveBtn
@@ -198,10 +216,8 @@ let drumTabRelPath = "drum_tab.json";
 let songTimelineRelPath = "song_timeline.json";
 
   // transport
-  //  - Audio plays through the SAME native engine as the game (via
-  //    NativeAudioTimebase), so the shared A/V calibration is valid here too —
-  //    the playhead is drawn at the audible position (native pos − output
-  //    latency·rate − calibration offset), exactly as the game's transport does.
+  //  - The source media clock drives notes; visualization retains the shared
+  //    audible-position formula and A/V calibration.
   //  - When no audio loads, we fall back to the wall-clock playhead below.
   //  - refineAudition (the "Hear notes" synth) plays alongside either path.
   let isPlaying = false;
@@ -209,12 +225,15 @@ let songTimelineRelPath = "song_timeline.json";
   let playStartWall = 0; // performance.now() when play began (wall-clock path)
   let playheadSec = 0;
   let rafId: number | null = null;
+  let transportGeneration = 0;
+  let resumePositionSec: number | null = null;
   let playbackRate = 1; // transport speed multiplier
   let soloMode = true; // true = play the current instrument's isolated stem; false = full mix
 
-  // Native audio engine (same one the game uses). audioLoaded flips true once a
+  // Pitch-preserving media transport. audioLoaded flips true once a
   // stem/mix is loaded; a load miss leaves it false -> wall-clock fallback.
-  const nativeAudio = new NativeAudioTimebase();
+  const sourceAudio = new RefineSourceAudio(audition);
+  const gamePreview = new RefineGamePreview(gameSurface);
   // Optional beat-grid metronome (accent on the one), driven off the audible
   // playhead — an on-demand audible test of whether the grid aligns to the song.
   const metronome = new GridMetronome();
@@ -268,6 +287,8 @@ let songTimelineRelPath = "song_timeline.json";
       updateUndoButtons();
       // Times/pitch of the selected note may have changed during a drag.
       if (selectedIndex != null) renderInspector(selectedIndex);
+      audition.updateNotes(toRefinementNotes(editor.getNotes()));
+      syncGameNotes();
     },
     onSelectionChanged: (index) => {
       selectedIndex = index;
@@ -293,7 +314,12 @@ let songTimelineRelPath = "song_timeline.json";
         `<span class="rfSelPitch">${label}</span> · ${formatTime(info.time)}`
         + ` <span style="color:#64748b;">· cursor</span>`;
     },
+    onSeek: (time) => seekTo(time),
   });
+  const midiMonitor = initRefineMidiMonitor({ root, audition, onNotes: (notes) => {
+    editor.setLivePitches(notes.map((note) => note.pitch));
+    gamePreview.setLiveInputNotes(notes);
+  } });
 
   function setDirty(flag: boolean): void {
     isDirty = flag;
@@ -306,6 +332,75 @@ let songTimelineRelPath = "song_timeline.json";
     undoBtn!.disabled = !editor.canUndo();
     redoBtn!.disabled = !editor.canRedo();
   }
+
+  function syncGameNotes(): void {
+    const notes = editor.getNotes();
+    gamePreview.setNotes(notes, instrument, drumLanes);
+    gameInfo.textContent = `${INSTRUMENT_LABELS[instrument] ?? instrument} · ${notes.length.toLocaleString()} ${drumMode ? "hits" : "notes"}`;
+  }
+
+  let splitMode = false;
+  let analysisWidth = 50;
+  try {
+    splitMode = localStorage.getItem("auralprimer.studio.splitGame") === "1";
+    const storedWidth = Number(localStorage.getItem("auralprimer.studio.analysisWidth"));
+    if (storedWidth >= 30 && storedWidth <= 70) analysisWidth = storedWidth;
+  } catch { /* Preferences are optional in restricted webviews. */ }
+
+  function setAnalysisWidth(value: number): void {
+    analysisWidth = Math.max(30, Math.min(70, Math.round(value)));
+    mainEl.style.setProperty("--rfAnalysisWidth", `${analysisWidth}%`);
+    splitDivider.setAttribute("aria-valuenow", String(analysisWidth));
+    splitDivider.setAttribute("aria-valuetext", `Transcription ${analysisWidth}%, game ${100 - analysisWidth}%`);
+  }
+
+  function applySplitMode(): void {
+    mainEl.classList.toggle("isSplit", splitMode);
+    gamePane.hidden = !splitMode;
+    splitDivider.hidden = !splitMode;
+    splitToggle.setAttribute("aria-pressed", String(splitMode));
+    gamePreview.setVisible(splitMode && !mainEl.hidden);
+    editor.resize();
+  }
+
+  setAnalysisWidth(analysisWidth);
+  splitToggle.addEventListener("click", () => {
+    splitMode = !splitMode;
+    applySplitMode();
+    try { localStorage.setItem("auralprimer.studio.splitGame", splitMode ? "1" : "0"); } catch { /* optional */ }
+  });
+  let resizingSplit = false;
+  splitDivider.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    resizingSplit = true;
+    mainEl.classList.add("isResizing");
+    splitDivider.setPointerCapture(ev.pointerId);
+  });
+  splitDivider.addEventListener("pointermove", (ev) => {
+    if (!resizingSplit) return;
+    const rect = mainEl.getBoundingClientRect();
+    if (rect.width > 0) setAnalysisWidth((ev.clientX - rect.left) / rect.width * 100);
+  });
+  const finishSplitResize = (ev: PointerEvent): void => {
+    if (!resizingSplit) return;
+    resizingSplit = false;
+    mainEl.classList.remove("isResizing");
+    if (splitDivider.hasPointerCapture(ev.pointerId)) splitDivider.releasePointerCapture(ev.pointerId);
+    try { localStorage.setItem("auralprimer.studio.analysisWidth", String(analysisWidth)); } catch { /* optional */ }
+  };
+  splitDivider.addEventListener("pointerup", finishSplitResize);
+  splitDivider.addEventListener("pointercancel", finishSplitResize);
+  splitDivider.addEventListener("keydown", (ev) => {
+    if (!["Home", "+", "-", "="].includes(ev.key)) return;
+    ev.preventDefault();
+    setAnalysisWidth(ev.key === "Home" ? 50 : analysisWidth + (ev.key === "-" ? -5 : 5));
+    try { localStorage.setItem("auralprimer.studio.analysisWidth", String(analysisWidth)); } catch { /* optional */ }
+  });
+  splitDivider.addEventListener("dblclick", () => {
+    setAnalysisWidth(50);
+    try { localStorage.setItem("auralprimer.studio.analysisWidth", "50"); } catch { /* optional */ }
+  });
 
   // -------------------------------------------------------------------------
   // Note <-> region helpers
@@ -344,6 +439,12 @@ let songTimelineRelPath = "song_timeline.json";
   // -------------------------------------------------------------------------
 
   function renderInspector(index: number | null): void {
+    const selected = index == null ? undefined : editor.getNotes()[index];
+    if (hearSelectionBtn) {
+      hearSelectionBtn.disabled = !selected || drumMode;
+      hearSelectionBtn.textContent = selected && !drumMode ? `Hear ${pitchLabel(selected.pitch)}` : "Hear selection";
+    }
+    if (loopSelectionBtn) loopSelectionBtn.disabled = !selected;
     // Drum mode: lane + time readout only — no candidate chips (drums have no
     // candidate system; the drum tab is the single source of truth).
     if (drumMode) {
@@ -416,6 +517,7 @@ let songTimelineRelPath = "song_timeline.json";
     }
     kept.sort((a, b) => a.t_on - b.t_on);
     editor.setNotes(kept);
+    syncGameNotes();
     setDirty(true);
     setStatus(`Applied “${session.candidates.candidates[cid]?.label ?? cid}” to ${region.section_label || labelForHotSpot(region.hot_spot_type)}`);
     if (selectedIndex != null) renderInspector(selectedIndex);
@@ -447,18 +549,73 @@ let songTimelineRelPath = "song_timeline.json";
   function setPlayhead(t: number, follow: boolean): void {
     playheadSec = Math.max(0, Math.min(durationSec, t));
     editor.setTime(playheadSec);
+    gamePreview.setTime(playheadSec, isPlaying, playbackRate);
     if (follow) editor.scrollTimeIntoView(playheadSec);
     scrubEl!.value = String(durationSec > 0 ? Math.round((playheadSec / durationSec) * 1000) : 0);
     timeReadoutEl!.textContent = `${formatTime(playheadSec)} / ${formatTime(durationSec)}`;
   }
 
+  function transportClock(): number {
+    return audioLoaded ? sourceAudio.getCurrentTimeSec()
+      : playStartOffset + ((performance.now() - playStartWall) / 1000) * playbackRate;
+  }
+
+  function startRenderedNotes(): void {
+    if (audioLoaded && !sourceAudio.getIsPlaying()) return;
+    if (!drumMode && auditionToggle!.checked && isPlaying) {
+      audition.playRegion(toRefinementNotes(editor.getNotes()), transportClock(), loopRegion?.t1 ?? durationSec,
+        { getTimeSec: transportClock, playbackRate });
+    }
+  }
+
+  function applyListening(): void {
+    if (drumMode) listenMode = "source";
+    auditionToggle!.checked = listenMode !== "source";
+    const sourceGain = Number(sourceLevel?.value ?? 80) / 100;
+    const renderedGain = Number(renderedLevel?.value ?? 70) / 100;
+    const split = listenMode === "split";
+    audition.setOutput({
+      sourceGain: listenMode === "rendered" ? 0 : sourceGain,
+      renderedGain,
+      sourcePan: split ? (swapped ? 1 : -1) : 0,
+      renderedPan: split ? (swapped ? -1 : 1) : 0,
+      renderedEnabled: listenMode !== "source" && !drumMode,
+    });
+    root!.querySelectorAll<HTMLButtonElement>("[data-listen-mode]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.listenMode === listenMode));
+      button.disabled = drumMode && button.dataset.listenMode !== "source";
+    });
+    if (swapBtn) swapBtn.disabled = !split;
+    if (renderedLevel) renderedLevel.disabled = drumMode;
+    const sourceEar = root!.querySelector<HTMLElement>("#refineSourceEar");
+    const renderedEar = root!.querySelector<HTMLElement>("#refineRenderedEar");
+    if (sourceEar) sourceEar.textContent = split ? (swapped ? "R" : "L") : listenMode === "rendered" ? "—" : "L+R";
+    if (renderedEar) renderedEar.textContent = split ? (swapped ? "L" : "R") : listenMode === "source" ? "—" : "L+R";
+    root!.querySelector("#refineSourceBadge")?.classList.toggle("isMuted", listenMode === "rendered");
+    root!.querySelector("#refineRenderedBadge")?.classList.toggle("isMuted", listenMode === "source");
+    if (routeLabel) routeLabel.textContent = split
+      ? "Both play in sync · one stream per ear"
+      : listenMode === "together" ? "Source + rendered notes · both ears"
+        : listenMode === "rendered" ? "Rendered notes · both ears" : "Source · both ears";
+    for (const level of [sourceLevel, renderedLevel]) {
+      if (level) {
+        const output = root!.querySelector<HTMLOutputElement>(`output[for="${level.id}"]`);
+        if (output) output.value = `${level.value}%`;
+      }
+    }
+  }
+
   function tick(): void {
     if (!isPlaying) return;
+    if (!root!.closest(".isActive")) { pauseTransport(); return; }
     // Clock source: the native engine's playback position when audio is loaded,
     // otherwise the wall clock.
-    const raw = audioLoaded
-      ? nativeAudio.getCurrentTimeSec()
-      : playStartOffset + ((performance.now() - playStartWall) / 1000) * playbackRate;
+    const raw = transportClock();
+    if (loopRegion && raw >= loopRegion.t1) {
+      seekTo(loopRegion.t0);
+      return;
+    }
+    if (audioLoaded && sourceAudio.hasEnded()) { pauseTransport(); return; }
     if (raw >= durationSec) {
       setPlayhead(durationSec, false);
       pauseTransport();
@@ -473,8 +630,8 @@ let songTimelineRelPath = "song_timeline.json";
     // Only compensate output latency once the engine is actually playing — the
     // native position is pinned during the start-up window, so subtracting
     // latency then would nudge the cursor off. (Matches the game.)
-    const outLatency = audioLoaded && nativeAudio.getIsPlaying()
-      ? (nativeAudio.getOutputLatencySec() ?? 0)
+    const outLatency = audioLoaded && sourceAudio.getIsPlaying()
+      ? (sourceAudio.getOutputLatencySec() ?? 0)
       : 0;
     // Shared formula (identical to the game's transport) so the playhead lands
     // on what's audible and the two apps can never drift apart.
@@ -503,50 +660,61 @@ let songTimelineRelPath = "song_timeline.json";
 
   function playTransport(): void {
     if (isPlaying || durationSec <= 0) return;
-    if (playheadSec >= durationSec) setPlayhead(0, true);
-    playStartOffset = playheadSec;
+    let start = resumePositionSec ?? playheadSec;
+    resumePositionSec = null;
+    if (start >= durationSec) { start = 0; setPlayhead(0, true); }
+    if (loopRegion && (start < loopRegion.t0 || start >= loopRegion.t1)) { start = loopRegion.t0; setPlayhead(start, true); }
+    playStartOffset = start;
     playStartWall = performance.now();
     isPlaying = true;
-    playBtn!.textContent = "⏸";
+    gamePreview.setTime(playheadSec, isPlaying, playbackRate);
+    const generation = ++transportGeneration;
+    playBtn!.textContent = "⏸ Pause";
     if (audioLoaded) {
-      // Seek to the playhead + start; if native start fails, drop to the
+      // Seek to the source position; if source start fails, drop to the
       // wall-clock path so the synth + playhead still run.
-      nativeAudio.seek(playheadSec);
-      nativeAudio.setPlaybackRate(playbackRate);
-      void nativeAudio.play().catch(() => {
+      sourceAudio.seek(start);
+      sourceAudio.setPlaybackRate(playbackRate);
+      void sourceAudio.play().then(() => {
+        if (isPlaying && generation === transportGeneration && root!.closest(".isActive")) startRenderedNotes();
+        else if (!isPlaying) sourceAudio.pause();
+      }).catch(() => {
+        if (generation !== transportGeneration) return;
         audioLoaded = false;
-        // The native start-poll can take seconds; re-anchor the wall clock to
+        // Media startup can take time; re-anchor the wall clock to
         // NOW (not the stale play-start time) so the playhead resumes smoothly
         // from where it sits instead of lurching forward by the stall, and
         // restart the synth from the current playhead so it stays in sync.
         if (isPlaying) {
           playStartOffset = playheadSec;
           playStartWall = performance.now();
-          if (!drumMode && auditionToggle!.checked) {
-            audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
-          }
+          startRenderedNotes();
         }
         setStatus(`Audio couldn't start for ${instrument} — playing notes only`);
       });
     }
     // Drum-mode "pitches" are lane indices — the melodic synth can't audition
     // them, so drum playback relies on the real drums stem alone.
-    if (!drumMode && auditionToggle!.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+    if (!audioLoaded) startRenderedNotes();
     rafId = requestAnimationFrame(tick);
   }
 
   function pauseTransport(): void {
+    if (isPlaying) resumePositionSec = transportClock();
+    transportGeneration += 1;
     if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
-    if (audioLoaded) nativeAudio.pause();
+    if (audioLoaded) sourceAudio.pause();
     audition.stop();
     metronome.stop();
     isPlaying = false;
-    playBtn!.textContent = "▶";
+    gamePreview.setTime(playheadSec, isPlaying, playbackRate);
+    playBtn!.textContent = "▶ Play";
   }
 
   function stopTransport(): void {
     pauseTransport();
-    if (audioLoaded) nativeAudio.seek(0);
+    resumePositionSec = null;
+    if (audioLoaded) sourceAudio.seek(0);
     setPlayhead(0, false);
   }
 
@@ -559,7 +727,8 @@ let songTimelineRelPath = "song_timeline.json";
     const wasPlaying = isPlaying;
     if (wasPlaying) pauseTransport();
     setPlayhead(t, true);
-    if (audioLoaded) nativeAudio.seek(playheadSec);
+    resumePositionSec = playheadSec;
+    if (audioLoaded) sourceAudio.seek(playheadSec);
     if (wasPlaying) playTransport();
   }
 
@@ -576,8 +745,14 @@ let songTimelineRelPath = "song_timeline.json";
   function showEmpty(empty: boolean, reason?: "candidates" | "spectrogram" | "drumtab" | "error", detail?: string): void {
     emptyEl!.style.display = empty ? "flex" : "none";
     stageEl!.style.display = empty ? "none" : "block";
+    mainEl.hidden = empty;
+    splitToggle.disabled = empty;
+    applySplitMode();
     transportEl!.style.display = empty ? "none" : "flex";
     inspectorEl!.style.display = empty ? "none" : "flex";
+    if (listenEl) listenEl.hidden = empty;
+    const editbar = $<HTMLElement>("refineEditbar");
+    if (editbar) editbar.hidden = empty;
     if (!empty) return;
     const h3 = emptyEl!.querySelector("h3");
     if (reason === "spectrogram") {
@@ -624,6 +799,7 @@ let songTimelineRelPath = "song_timeline.json";
       await editor.load(geom, urls, notes);
       durationSec = editor.getDurationSec();
       await applyBeatGrid();
+      syncGameNotes();
       return true;
     } catch {
       return false;
@@ -641,6 +817,7 @@ let songTimelineRelPath = "song_timeline.json";
   let loadedBeats: Array<{ time?: number; measure?: number }> = [];
   let loadedBeatTimes: number[] = [];
   let beatsPerBar = 4;
+  let gameTimeSignature: [number, number] = [4, 4];
   let downbeatOffset = 0;
 
   // Push the current beats + phase-shifted downbeats to BOTH the editor overlay
@@ -648,6 +825,7 @@ let songTimelineRelPath = "song_timeline.json";
   function refreshGrid(): void {
     const downbeats = downbeatTimesShifted(loadedBeats, downbeatOffset);
     editor.setBeatGrid(loadedBeatTimes, downbeats);
+    gamePreview.setBeatGrid(loadedBeatTimes, downbeats, gameTimeSignature);
     metronome.setBeats(loadedBeatTimes, downbeats);
   }
 
@@ -673,6 +851,9 @@ let songTimelineRelPath = "song_timeline.json";
         .map((b) => b?.time)
         .filter((t): t is number => typeof t === "number");
       beatsPerBar = beatsPerBarFromTimeSignatures(tl?.time_signatures);
+      const ts = tl?.time_signatures?.[0]?.ts;
+      gameTimeSignature = ts?.length === 2 && ts.every((n) => Number.isFinite(n) && n > 0)
+        ? [ts[0], ts[1]] : [4, 4];
       downbeatOffset = 0;
       refreshGrid();
     } catch {
@@ -681,6 +862,8 @@ let songTimelineRelPath = "song_timeline.json";
       downbeatOffset = 0;
       editor.setBeatGrid([], []);
       metronome.setBeats([], []);
+      gameTimeSignature = [4, 4];
+      gamePreview.setBeatGrid([], [], gameTimeSignature);
     }
     applyQuant();
   }
@@ -695,25 +878,30 @@ let songTimelineRelPath = "song_timeline.json";
   }
 
   // -------------------------------------------------------------------------
-  // Audio — native engine (the SAME one the game uses), so the shared A/V
-  // calibration is valid and drum/melodic auditioning is sample-accurate.
+  // Audio — asset-streamed source with shared note-audition routing.
   // -------------------------------------------------------------------------
 
   /**
    * Load the current instrument's stem (solo) or the summed base stems ("All")
-   * into the native engine. Rust reads + decodes the pack audio directly (no
-   * multi-MB IPC of the old browser path). A miss leaves audioLoaded false ->
+   * through an asset URL. Rust prepares zip/multi-stem audio in a cache (no
+   * multi-MB IPC). A miss leaves audioLoaded false ->
    * wall-clock + synth fallback.
    */
   async function loadAudioForMode(): Promise<void> {
     const gen = ++loadGeneration;
     const stale = (): boolean => gen !== loadGeneration;
     audioLoaded = false;
+    editor.setSourceWaveform(null);
     if (!containerPath) return;
     // Capture the mode/role NOW so an in-flight load isn't corrupted by a
     // concurrent instrument/solo switch mutating the module state mid-await.
     const path = containerPath;
     const wantSolo = soloMode;
+    const loadWaveform = (role: string | null): void => {
+      void invoke<RefineWaveform>("get_refine_waveform", { containerPath: path, role }).then((waveform) => {
+        if (!stale() && waveform && Array.isArray(waveform.peaks)) editor.setSourceWaveform(waveform);
+      }).catch(() => { /* Source playback and spectrogram remain usable if preview decoding fails. */ });
+    };
     const inst = instrument;
     // Drum mode auditions the drums stem; melodic uses the picked role. "All"
     // sums the base stems Rust-side (derived guitar splits are excluded there).
@@ -726,14 +914,16 @@ let songTimelineRelPath = "song_timeline.json";
       ? `No isolated ${inst} stem — playing the full mix`
       : `No mix for this song — playing the ${inst} stem`;
     try {
-      await nativeAudio.loadPackAudio(path, primaryRole);
-      if (!stale()) audioLoaded = true;
+      await sourceAudio.loadPackAudio(path, primaryRole);
+      if (!stale()) { audioLoaded = true; sourceAudio.setPlaybackRate(playbackRate); loadWaveform(primaryRole); }
     } catch {
       if (stale()) return;
       try {
-        await nativeAudio.loadPackAudio(path, fallbackRole);
+        await sourceAudio.loadPackAudio(path, fallbackRole);
         if (stale()) return;
         audioLoaded = true;
+        sourceAudio.setPlaybackRate(playbackRate);
+        loadWaveform(fallbackRole);
         setStatus(fallbackMsg);
       } catch {
         if (!stale()) audioLoaded = false;
@@ -745,9 +935,13 @@ let songTimelineRelPath = "song_timeline.json";
   async function switchAudioSource(): Promise<void> {
     const wasPlaying = isPlaying;
     if (wasPlaying) pauseTransport();
+    const resumeGeneration = transportGeneration;
+    setTransportEnabled(false);
+    const generation = loadGeneration + 1;
     await loadAudioForMode();
+    if (generation !== loadGeneration) return;
     setTransportEnabled(durationSec > 0);
-    if (wasPlaying) playTransport();
+    if (wasPlaying && resumeGeneration === transportGeneration && root!.closest(".isActive")) playTransport();
   }
 
   // -------------------------------------------------------------------------
@@ -836,18 +1030,17 @@ let songTimelineRelPath = "song_timeline.json";
   }
 
   async function openForAuralSong(path: string, opts?: { instrument?: string }): Promise<void> {
+    midiMonitor.reset();
+    loopRegion = null;
+    loopBtn?.setAttribute("aria-pressed", "false");
     containerPath = path;
+    gamePreview.setVisible(false);
+    gamePreview.clear();
     songTitleEl!.textContent = songDisplayName(path);
     songTitleEl!.title = path; // full path on hover
     setDirty(false);
     stopTransport();
     setTransportEnabled(false);
-
-    // Warm the output stream now, while detection + the session load run, so the
-    // first real audio load lands in an already-running stream. Without this the
-    // first play in a session cold-starts the engine and doesn't engage until a
-    // second load — the old "select an instrument first to get sound" symptom.
-    void nativeAudio.warmUp();
 
     // The dropdown offers this song's editable instruments: every melodic role
     // the pack actually carries, plus Drums when it has a drum chart (which
@@ -899,6 +1092,7 @@ let songTimelineRelPath = "song_timeline.json";
     // ---- Drum mode: lane editor over the drums spectrogram --------------
     if (instrument === "drums") {
       drumMode = true;
+      applyListening();
       session = null;
       regionsSorted = [];
       setStatus(`Loading drum chart from ${path}…`);
@@ -926,10 +1120,10 @@ let songTimelineRelPath = "song_timeline.json";
         buildSections();
         selectedIndex = null;
         renderInspector(null);
-        setTransportEnabled(durationSec > 0);
         setPlayhead(0, false);
         sectionSelectEl!.value = "";
         await loadAudioForMode();
+        setTransportEnabled(durationSec > 0);
         const audioNote = audioLoaded ? "" : " (no stem audio)";
         setStatus(`Loaded ${editor.getNotes().length} drum hits across ${drumLanes.length} lanes${audioNote}`);
       } catch (e) {
@@ -939,6 +1133,7 @@ let songTimelineRelPath = "song_timeline.json";
       return;
     }
     drumMode = false;
+    applyListening();
     drumTabOriginal = null;
     drumLanes = [];
     editor.setLaneMode(null);
@@ -967,12 +1162,12 @@ let songTimelineRelPath = "song_timeline.json";
       buildSections();
       selectedIndex = null;
       renderInspector(null);
-      setTransportEnabled(durationSec > 0);
       setPlayhead(0, false);
       sectionSelectEl!.value = "";
-      // Load the instrument stem into the native engine. Best effort: a miss
+      // Load the instrument stem. Best effort: a miss
       // leaves audioLoaded false and the transport runs on the wall clock + synth.
       await loadAudioForMode();
+      setTransportEnabled(durationSec > 0);
       const noteCount = editor.getNotes().length;
       const audioNote = audioLoaded ? "" : " (no stem audio — notes only)";
       setStatus(`Loaded ${noteCount} notes across ${loaded.candidates.regions.length} regions for ${instrument}${audioNote}`);
@@ -1025,6 +1220,7 @@ let songTimelineRelPath = "song_timeline.json";
       })) as DrumTabFile;
       drumTabOriginal = aligned;
       editor.setNotes(hitsToNotes(aligned, drumLanes)); // undoable (snapshots current)
+      syncGameNotes();
       setDirty(false);
       updateUndoButtons();
       let moved: number | undefined;
@@ -1108,8 +1304,55 @@ let songTimelineRelPath = "song_timeline.json";
     // Re-anchor the wall clock so the playhead doesn't jump on a rate change.
     if (isPlaying) { playStartOffset = playheadSec; playStartWall = performance.now(); }
     playbackRate = r;
-    if (audioLoaded) nativeAudio.setPlaybackRate(r);
+    if (audioLoaded) sourceAudio.setPlaybackRate(r);
+    gamePreview.setTime(playheadSec, isPlaying, playbackRate);
+    if (speedOutput) speedOutput.value = `${Math.round(r * 100)}%`;
+    root.querySelectorAll<HTMLButtonElement>("[data-refine-speed]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(Number(button.dataset.refineSpeed) === r));
+    });
+    if (isPlaying) { audition.stop(); startRenderedNotes(); }
   });
+  speedSelectEl.addEventListener("input", () => speedSelectEl.dispatchEvent(new Event("change")));
+  root.querySelectorAll<HTMLButtonElement>("[data-refine-speed]").forEach((button) => {
+    button.addEventListener("click", () => {
+      speedSelectEl.value = button.dataset.refineSpeed!;
+      speedSelectEl.dispatchEvent(new Event("change"));
+    });
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-listen-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      listenMode = button.dataset.listenMode as ListenMode;
+      applyListening();
+      if (isPlaying) { audition.stop(); startRenderedNotes(); }
+    });
+  });
+  swapBtn?.addEventListener("click", () => { swapped = !swapped; applyListening(); });
+  sourceLevel?.addEventListener("input", applyListening);
+  renderedLevel?.addEventListener("input", applyListening);
+  hearSelectionBtn?.addEventListener("click", auditionSelected);
+  function auditionSelected(): void {
+    const note = selectedIndex == null ? undefined : editor.getNotes()[selectedIndex];
+    if (note && !drumMode) audition.playNote(note.pitch, note.velocity, note.t_off - note.t_on);
+  }
+  loopSelectionBtn?.addEventListener("click", () => {
+    const note = selectedIndex == null ? undefined : editor.getNotes()[selectedIndex];
+    if (!note) return;
+    loopRegion = { t0: Math.max(0, note.t_on - 0.5), t1: Math.min(durationSec, note.t_off + 0.5) };
+    loopBtn?.setAttribute("aria-pressed", "true");
+    seekTo(loopRegion.t0);
+    setStatus(`Looping ${formatTime(loopRegion.t0)}–${formatTime(loopRegion.t1)}`);
+  });
+  loopBtn?.addEventListener("click", () => {
+    if (loopRegion) loopRegion = null;
+    else {
+      const view = editor.getViewTimeWindow();
+      loopRegion = { t0: Math.max(0, view.start), t1: Math.min(durationSec, view.end) };
+      if (loopRegion.t1 <= loopRegion.t0) loopRegion = null;
+    }
+    loopBtn.setAttribute("aria-pressed", String(loopRegion !== null));
+    if (isPlaying) seekTo(loopRegion?.t0 ?? playheadSec);
+  });
+  applyListening();
   soloSelectEl.addEventListener("change", () => {
     soloMode = soloSelectEl.value !== "all";
     void switchAudioSource();
@@ -1132,7 +1375,7 @@ let songTimelineRelPath = "song_timeline.json";
   });
   auditionToggle.addEventListener("change", () => {
     if (!isPlaying) return;
-    if (auditionToggle.checked) audition.playRegion(toRefinementNotes(editor.getNotes()), playheadSec, durationSec);
+    if (auditionToggle.checked) startRenderedNotes();
     else audition.stop();
   });
   metronomeToggle.addEventListener("change", () => {
@@ -1141,14 +1384,37 @@ let songTimelineRelPath = "song_timeline.json";
   downbeatMinusBtn.addEventListener("click", () => nudgeDownbeat(-1));
   downbeatPlusBtn.addEventListener("click", () => nudgeDownbeat(1));
 
-  // Space toggles transport when the refine route is active and we're not
-  // typing in a field. (Delete/Escape/zoom are handled by the editor stage.)
+  // Cleanup owns transport keys regardless of focus. Capture before a focused
+  // button, checkbox, slider, or select can consume/activate it instead.
   window.addEventListener("keydown", (ev) => {
-    if (!root.closest(".isActive")) return;
+    if (!root.isConnected || !root.closest(".isActive")) return;
+    const isSpace = ev.key === " " || ev.code === "Space";
+    const direction = ev.key === "ArrowLeft" || ev.key === "ArrowDown" ? -1
+      : ev.key === "ArrowRight" || ev.key === "ArrowUp" ? 1 : 0;
+    if (!isSpace && direction === 0) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    if (isSpace) {
+      if (!ev.repeat) toggleTransport();
+    } else if (durationSec > 0) {
+      // Use the live clock while playing, and the exact resume point while
+      // paused. Held arrows deliberately repeat to scrub through the song.
+      const position = isPlaying ? transportClock() : resumePositionSec ?? playheadSec;
+      const step = ev.key === "ArrowUp" || ev.key === "ArrowDown" ? 30 : ev.shiftKey ? 1 : 5;
+      seekTo(position + direction * step);
+    }
+  }, { capture: true });
+
+  // Other shortcuts keep their field-editing behavior. Delete/Escape/zoom
+  // are handled by the editor stage.
+  window.addEventListener("keydown", (ev) => {
+    if (!root.isConnected || !root.closest(".isActive")) return;
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
-    if (ev.key === " " || ev.code === "Space") {
-      ev.preventDefault();
-      toggleTransport();
+    if (ev.key === "Enter" && !(ev.target instanceof HTMLButtonElement)) { ev.preventDefault(); auditionSelected(); }
+    if (!ev.ctrlKey && !ev.altKey && !ev.metaKey && ["a", "b", "x"].includes(ev.key.toLowerCase())) {
+      listenMode = ({ a: "source", b: "rendered", x: "split" } as const)[ev.key.toLowerCase() as "a" | "b" | "x"];
+      applyListening();
+      if (isPlaying) { audition.stop(); startRenderedNotes(); }
     }
   });
 

@@ -27,6 +27,8 @@ const spectroInstance = {
   setNotes: vi.fn((n: typeof editorNotes) => { editorNotes = [...n]; }),
   getNotes: vi.fn(() => editorNotes.map((n) => ({ ...n }))),
   setTime: vi.fn(),
+  setLivePitches: vi.fn(),
+  setSourceWaveform: vi.fn(),
   getDurationSec: vi.fn(() => 30),
   getViewTimeWindow: vi.fn(() => ({ start: 0, end: 30 })),
   setViewTimeWindow: vi.fn(),
@@ -45,7 +47,9 @@ const spectroInstance = {
 let lastSpectroOpts: {
   onNotesChanged?: (notes: unknown[]) => void;
   onSelectionChanged?: (i: number | null) => void;
+  onNoteAuditioned?: (note: { pitch: number; velocity?: number; t_on: number; t_off: number }) => void;
   onHover?: (info: { time: number; pitch: number } | null) => void;
+  onSeek?: (time: number) => void;
 } | null = null;
 vi.mock("../src/spectrogramEditor", () => ({
   SpectrogramEditor: vi.fn(function (this: unknown, _el: HTMLElement, opts: typeof lastSpectroOpts) {
@@ -54,8 +58,27 @@ vi.mock("../src/spectrogramEditor", () => ({
   }),
 }));
 
+const gamePreviewInstance = { setVisible: vi.fn(), setNotes: vi.fn(), setTime: vi.fn(),
+  setLiveInputNotes: vi.fn(), setBeatGrid: vi.fn(), clear: vi.fn(), dispose: vi.fn() };
+vi.mock("../src/refineGamePreview", () => ({
+  RefineGamePreview: vi.fn(function () { return gamePreviewInstance; }),
+}));
+
+let publishMidi: (notes: any[]) => void;
+vi.mock("../src/refineMidiMonitor", () => ({
+  initRefineMidiMonitor: vi.fn((options: { onNotes: typeof publishMidi }) => {
+    publishMidi = options.onNotes;
+    return { reset: vi.fn(), dispose: vi.fn() };
+  }),
+}));
+
 const auditionInstance = {
   playRegion: vi.fn(),
+  playNote: vi.fn(),
+  connectSource: vi.fn(),
+  resume: vi.fn(() => Promise.resolve()),
+  setOutput: vi.fn(),
+  getOutputLatencySec: vi.fn(() => 0),
   stop: vi.fn(),
   updateNotes: vi.fn(),
   isPlaying: vi.fn().mockReturnValue(false),
@@ -76,85 +99,13 @@ vi.mock("../src/refineCandidatesIo", async (importOriginal) => {
 });
 
 import { initRefineWorkspace, type RefineWorkspaceDeps } from "../src/refineWorkspace";
+import { refineWorkspaceHtml } from '../src/refineWorkspaceHtml';
 import { _resetReadinessCachesForTest } from "../src/cleanupReadiness";
 import type { RefineSession } from "../src/refineCandidatesIo";
 
-const REQUIRED_IDS: ReadonlyArray<readonly [string, string]> = [
-  ["refineSongTitle", "div"],
-  ["refineInstLabel", "div"],
-  ["refineInstrumentSelect", "select"],
-  ["refineReloadBtn", "button"],
-  ["refineSaveBtn", "button"],
-  ["refineBack", "div"],
-  ["refineTransport", "div"],
-  ["refinePlayBtn", "button"],
-  ["refineStopBtn", "button"],
-  ["refineTimeReadout", "div"],
-  ["refineScrub", "input"],
-  ["refineSectionSelect", "select"],
-  ["refineAuditionToggle", "input"],
-  ["refineEditAuditionToggle", "input"],
-  ["refineMetronomeToggle", "input"],
-  ["refineDownbeatMinus", "button"],
-  ["refineDownbeatPlus", "button"],
-  ["refineStage", "div"],
-  ["refineInspector", "div"],
-  ["refineSelInfo", "div"],
-  ["refineCandChips", "div"],
-  ["refineUndoBtn", "button"],
-  ["refineRedoBtn", "button"],
-  ["refineSpeedSelect", "select"],
-  ["refineSoloSelect", "select"],
-];
-
 function stageDom(): void {
-  document.body.innerHTML = "";
-  const active = document.createElement("div");
-  active.className = "isActive";
-  document.body.appendChild(active);
-
-  const route = document.createElement("div");
-  route.id = "refineRoute";
-  active.appendChild(route);
-
-  for (const [id, tag] of REQUIRED_IDS) {
-    const el = document.createElement(tag);
-    el.id = id;
-    route.appendChild(el);
-  }
-  // Empty state with the h3 + cmd code the controller mutates.
-  const empty = document.createElement("div");
-  empty.id = "refineEmpty";
-  const h3 = document.createElement("h3");
-  h3.textContent = "No candidates yet";
-  const cmd = document.createElement("code");
-  cmd.id = "refineEmptyCmd";
-  empty.append(h3, cmd);
-  route.appendChild(empty);
-
-  const select = document.getElementById("refineInstrumentSelect") as HTMLSelectElement;
-  for (const [value, text] of [["keys", "Keys"], ["bass", "Bass"]]) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = text;
-    select.appendChild(opt);
-  }
-  const scrub = document.getElementById("refineScrub") as HTMLInputElement;
-  scrub.type = "range"; scrub.min = "0"; scrub.max = "1000"; scrub.value = "0";
-  const toggle = document.getElementById("refineAuditionToggle") as HTMLInputElement;
-  toggle.type = "checkbox"; toggle.checked = true;
-  const speed = document.getElementById("refineSpeedSelect") as HTMLSelectElement;
-  for (const v of ["0.5", "1", "2"]) {
-    const o = document.createElement("option"); o.value = v; o.textContent = `${v}x`; speed.appendChild(o);
-  }
-  speed.value = "1";
-  const solo = document.getElementById("refineSoloSelect") as HTMLSelectElement;
-  for (const v of ["solo", "all"]) {
-    const o = document.createElement("option"); o.value = v; o.textContent = v; solo.appendChild(o);
-  }
-  solo.value = "solo";
+  document.body.innerHTML = '<div class="isActive">' + refineWorkspaceHtml() + '</div>';
 }
-
 const el = (id: string) => document.getElementById(id)!;
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
@@ -171,6 +122,9 @@ class FakeAudio {
   preload = "";
   currentTime = 0;
   paused = true;
+  ended = false;
+  preservesPitch = true;
+  playbackRate = 1;
   play = vi.fn(() => { this.paused = false; return Promise.resolve(); });
   pause = vi.fn(() => { this.paused = true; });
   load = vi.fn(() => {
@@ -260,10 +214,10 @@ function mockSpectrogramOk(relPaths?: string[], audioFails = false): void {
       });
     }
     // Native audio engine (same one the game uses).
-    if (cmd === "native_audio_load_pack_audio") {
+    if (cmd === "prepare_refine_audio") {
       return audioFails
         ? Promise.reject(new Error("no audio"))
-        : Promise.resolve({ mime: "audio/wav", duration_sec: 30, roles: ["keys"] });
+        : Promise.resolve({ path: "/songs/source.wav", roles: ["keys"] });
     }
     if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
     if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
@@ -305,6 +259,7 @@ beforeEach(() => {
   lastSpectroOpts = null;
   editorNotes = [];
   auditionInstance.isPlaying.mockReturnValue(false);
+  auditionInstance.getOutputLatencySec.mockReturnValue(0);
   invokeMock.mockReset();
   loadSessionMock.mockReset();
   saveDecisionsMock.mockReset();
@@ -319,6 +274,116 @@ beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
   stageDom();
+  localStorage.removeItem("auralprimer.studio.splitGame");
+  localStorage.removeItem("auralprimer.studio.analysisWidth");
+});
+
+describe("analysis/game split", () => {
+  it("shows the same live MIDI pitches in both views without editing the chart", async () => {
+    await open();
+    const before = [...editorNotes];
+    const live = [{ pitch: 60, channel: 0, velocity: 100, startedAtUs: 1 }];
+    publishMidi(live);
+    expect(spectroInstance.setLivePitches).toHaveBeenLastCalledWith([60]);
+    expect(gamePreviewInstance.setLiveInputNotes).toHaveBeenLastCalledWith(live);
+    expect(editorNotes).toEqual(before);
+    expect(el("refineSaveBtn").textContent).toBe("Save");
+  });
+  it("toggles the game pane without reloading notes, clearing edits, or starting audio", async () => {
+    await open();
+    expect(el("refineGamePane").hidden).toBe(true);
+    editorNotes.push(note(10, 65));
+    lastSpectroOpts!.onNotesChanged!([]);
+    el("refineSplitToggle").click();
+    expect(el("refineMain").classList.contains("isSplit")).toBe(true);
+    expect(el("refineGamePane").hidden).toBe(false);
+    expect(gamePreviewInstance.setVisible).toHaveBeenLastCalledWith(true);
+    expect(gamePreviewInstance.setNotes).toHaveBeenLastCalledWith(editorNotes, "keys", []);
+    expect(el("refineSaveBtn").textContent).toBe("Save *");
+    expect(el("refineGameInfo").textContent).toBe("Keys · 5 notes");
+    el("refineSplitToggle").click();
+    expect(el("refineGamePane").hidden).toBe(true);
+    expect(gamePreviewInstance.setVisible).toHaveBeenLastCalledWith(false);
+    expect(spectroInstance.load).toHaveBeenCalledTimes(1);
+    expect(loadSessionMock).toHaveBeenCalledTimes(1);
+    expect(FakeAudio.latest().play).not.toHaveBeenCalled();
+    expect(editorNotes).toHaveLength(5);
+  });
+
+  it("updates the preview when applying a transcription candidate", async () => {
+    await open();
+    el("refineSplitToggle").click();
+    lastSpectroOpts!.onSelectionChanged!(0);
+    el("refineCandChips").querySelector<HTMLElement>('[data-cid="b"]')!.click();
+    expect(gamePreviewInstance.setNotes).toHaveBeenLastCalledWith(editorNotes, "keys", []);
+    expect(editorNotes).toHaveLength(2);
+  });
+
+  it("uses the same audible playhead for analysis and preview on seek, play, pause and rate changes", async () => {
+    await open();
+    el("refineSplitToggle").click();
+    const scrub = el("refineScrub") as HTMLInputElement;
+    scrub.value = "500";
+    scrub.dispatchEvent(new Event("change"));
+    expect(spectroInstance.setTime).toHaveBeenLastCalledWith(15);
+    expect(gamePreviewInstance.setTime).toHaveBeenLastCalledWith(15, false, 1);
+    el("refinePlayBtn").click();
+    await flush();
+    expect(gamePreviewInstance.setTime).toHaveBeenLastCalledWith(15, true, 1);
+    const rate = el("refineSpeedSelect") as HTMLInputElement;
+    rate.value = "0.5";
+    rate.dispatchEvent(new Event("change"));
+    expect(gamePreviewInstance.setTime).toHaveBeenLastCalledWith(15, true, 0.5);
+    FakeAudio.latest().currentTime = 16;
+    const frame = vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0];
+    frame(1);
+    expect(spectroInstance.setTime).toHaveBeenLastCalledWith(16);
+    expect(gamePreviewInstance.setTime).toHaveBeenLastCalledWith(16, true, 0.5);
+    el("refinePlayBtn").click();
+    expect(gamePreviewInstance.setTime).toHaveBeenLastCalledWith(16, false, 0.5);
+  });
+
+  it("restores split and divider preferences, with bounded keyboard resize", async () => {
+    localStorage.setItem("auralprimer.studio.splitGame", "1");
+    localStorage.setItem("auralprimer.studio.analysisWidth", "65");
+    await open();
+    expect(el("refineGamePane").hidden).toBe(false);
+    const divider = el("refineSplitDivider");
+    expect(divider.getAttribute("aria-valuenow")).toBe("65");
+    divider.dispatchEvent(new KeyboardEvent("keydown", { key: "+", bubbles: true }));
+    divider.dispatchEvent(new KeyboardEvent("keydown", { key: "+", bubbles: true }));
+    expect(divider.getAttribute("aria-valuenow")).toBe("70");
+    divider.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+    expect(divider.getAttribute("aria-valuenow")).toBe("50");
+    expect(localStorage.getItem("auralprimer.studio.analysisWidth")).toBe("50");
+  });
+
+  it("keeps both panes at the same position when a loop wraps", async () => {
+    await open();
+    el("refineSplitToggle").click();
+    lastSpectroOpts!.onSelectionChanged!(0);
+    el("refineLoopSelection").click(); // First note + context: 1..2.5 seconds.
+    el("refinePlayBtn").click();
+    await flush();
+    FakeAudio.latest().currentTime = 3;
+    const frame = vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0];
+    frame(1);
+    expect(spectroInstance.setTime).toHaveBeenLastCalledWith(1);
+    expect(gamePreviewInstance.setTime).toHaveBeenLastCalledWith(1, true, 1);
+    expect(el("refinePlayBtn").textContent).toBe("⏸ Pause");
+  });
+
+  it("hides and clears the old preview when the next song has no analysis data", async () => {
+    await open();
+    el("refineSplitToggle").click();
+    loadSessionMock.mockResolvedValue(null);
+    el("refineReloadBtn").click();
+    await flush();
+    expect(gamePreviewInstance.clear).toHaveBeenCalledTimes(2);
+    expect(gamePreviewInstance.setVisible).toHaveBeenLastCalledWith(false);
+    expect(el("refineMain").hidden).toBe(true);
+    expect((el("refineSplitToggle") as HTMLButtonElement).disabled).toBe(true);
+  });
 });
 
 describe("initRefineWorkspace", () => {
@@ -432,7 +497,7 @@ describe("initRefineWorkspace", () => {
         return Promise.reject(new Error(`not found: ${rel}`));
       }
       if (cmd === "read_auralsong_bytes") return Promise.resolve([1, 2, 3]);
-      if (cmd === "native_audio_load_pack_audio") {
+      if (cmd === "prepare_refine_audio") {
         return Promise.resolve({ mime: "audio/wav", duration_sec: 30, roles: ["vocals"] });
       }
       if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
@@ -493,8 +558,8 @@ describe("initRefineWorkspace", () => {
         return Promise.resolve(geom);
       }
       if (cmd === "read_auralsong_bytes") return Promise.resolve([1, 2, 3]);
-      if (cmd === "native_audio_load_pack_audio") {
-        return Promise.resolve({ mime: "audio/wav", duration_sec: 30, roles: ["keys"] });
+      if (cmd === "prepare_refine_audio") {
+        return Promise.resolve({ path: "/songs/source.wav", roles: ["keys"] });
       }
       if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
       if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
@@ -554,7 +619,7 @@ describe("initRefineWorkspace", () => {
         writes.push(args);
         return Promise.resolve(null);
       }
-      if (cmd === "native_audio_load_pack_audio") {
+      if (cmd === "prepare_refine_audio") {
         return Promise.resolve({ mime: "audio/wav", duration_sec: 4, roles: ["drums"] });
       }
       if (cmd === "native_audio_get_state") return Promise.resolve(nativeState());
@@ -696,23 +761,150 @@ describe("transport", () => {
   it("play starts the audition + flips the button; stop halts it", async () => {
     await open();
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
+    await flush();
     expect(auditionInstance.playRegion).toHaveBeenCalled();
-    expect(el("refinePlayBtn").textContent).toBe("⏸");
+    expect(el("refinePlayBtn").textContent).toBe("⏸ Pause");
     el("refineStopBtn").dispatchEvent(new MouseEvent("click"));
     expect(auditionInstance.stop).toHaveBeenCalled();
-    expect(el("refinePlayBtn").textContent).toBe("▶");
+    expect(el("refinePlayBtn").textContent).toBe("▶ Play");
   });
 
   it("Space toggles the transport when the route is active", async () => {
     await open();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flush();
     expect(auditionInstance.playRegion).toHaveBeenCalled();
+  });
+
+  it.each([
+    "refineStage", "refineGameSurface", "refineSplitDivider", "refinePlayBtn", "refineStopBtn", "refineSaveBtn",
+    "refineEditAuditionToggle", "refineMetronomeToggle", "refineSpeedSelect",
+    "refineScrub", "refineQuantSelect", "refineInstrumentSelect",
+  ])("Space owns transport with focus on %s and ignores held-key repeats", async (id) => {
+    await open();
+    const target = el(id);
+    target.tabIndex = 0;
+    target.focus();
+    const focusedHandler = vi.fn((ev: Event) => ev.stopPropagation());
+    target.addEventListener("keydown", focusedHandler);
+    const space = (repeat = false) => {
+      const ev = new KeyboardEvent("keydown", { key: " ", code: "Space", repeat, bubbles: true, cancelable: true });
+      target.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(true);
+    };
+    space();
+    await flush();
+    expect(el("refinePlayBtn").textContent).toBe("⏸ Pause");
+    expect(FakeAudio.latest().play).toHaveBeenCalledTimes(1);
+    space(true);
+    space(true);
+    expect(el("refinePlayBtn").textContent).toBe("⏸ Pause");
+    expect(FakeAudio.latest().play).toHaveBeenCalledTimes(1);
+    space();
+    expect(el("refinePlayBtn").textContent).toBe("▶ Play");
+    expect(focusedHandler).not.toHaveBeenCalled();
+    expect(saveDecisionsMock).not.toHaveBeenCalled();
+    expect((el("refineEditAuditionToggle") as HTMLInputElement).checked).toBe(true);
+    expect((el("refineMetronomeToggle") as HTMLInputElement).checked).toBe(false);
   });
 
   it("ignores Space when the route is inactive", async () => {
     await open();
-    el("refineRoute").parentElement!.classList.remove("isActive");
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    el("refineRoute").closest(".isActive")!.classList.remove("isActive");
+    const ev = new KeyboardEvent("keydown", { key: " ", cancelable: true });
+    window.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(auditionInstance.playRegion).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "refineStage", "refineGameSurface", "refineSplitDivider", "refinePlayBtn", "refineStopBtn", "refineSaveBtn",
+    "refineEditAuditionToggle", "refineMetronomeToggle", "refineSpeedSelect",
+    "refineScrub", "refineQuantSelect", "refineInstrumentSelect",
+  ])("arrows seek with focus on %s instead of changing the focused control", async (id) => {
+    await open();
+    const target = el(id);
+    target.tabIndex = 0;
+    target.focus();
+    const focusedHandler = vi.fn((ev: Event) => ev.stopPropagation());
+    target.addEventListener("keydown", focusedHandler);
+    const press = (key: string, modifiers = {}) => {
+      const ev = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers });
+      target.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(true);
+    };
+    press("ArrowRight");
+    expect(FakeAudio.latest().currentTime).toBe(5);
+    press("ArrowRight", { repeat: true });
+    expect(FakeAudio.latest().currentTime).toBe(10);
+    press("ArrowLeft");
+    expect(FakeAudio.latest().currentTime).toBe(5);
+    press("ArrowLeft", { shiftKey: true });
+    expect(FakeAudio.latest().currentTime).toBe(4);
+    press("ArrowRight", { shiftKey: true });
+    expect(FakeAudio.latest().currentTime).toBe(5);
+    press("ArrowUp");
+    expect(FakeAudio.latest().currentTime).toBe(30);
+    press("ArrowDown");
+    expect(FakeAudio.latest().currentTime).toBe(0);
+    expect(el("refinePlayBtn").textContent).toBe("▶ Play");
+    expect(focusedHandler).not.toHaveBeenCalled();
+    expect((el("refineSpeedSelect") as HTMLInputElement).value).toBe("1");
+    expect((el("refineInstrumentSelect") as HTMLSelectElement).value).toBe("keys");
+    expect((el("refineMetronomeToggle") as HTMLInputElement).checked).toBe(false);
+    expect(spectroInstance.setNotes).not.toHaveBeenCalled();
+    expect(saveDecisionsMock).not.toHaveBeenCalled();
+  });
+
+  it("clamps arrow seeking to song bounds", async () => {
+    await open();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
+    expect(FakeAudio.latest().currentTime).toBe(0);
+    const scrub = el("refineScrub") as HTMLInputElement;
+    scrub.value = "1000";
+    scrub.dispatchEvent(new Event("change"));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    expect(FakeAudio.latest().currentTime).toBe(30);
+    expect(el("refineTimeReadout").textContent).toBe("0:30.00 / 0:30.00");
+  });
+
+  it("seeks from the live clock while playing and preserves playback", async () => {
+    await open();
+    el("refinePlayBtn").click();
+    await flush();
+    FakeAudio.latest().currentTime = 12.5;
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flush();
+    expect(FakeAudio.latest().currentTime).toBe(17.5);
+    expect(el("refinePlayBtn").textContent).toBe("⏸ Pause");
+    el("refinePlayBtn").click();
+    // Paused navigation should use the exact resume point, even before a
+    // rendering frame catches up to the audio clock.
+    FakeAudio.latest().currentTime = 0;
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
+    expect(FakeAudio.latest().currentTime).toBe(12.5);
+    expect(el("refinePlayBtn").textContent).toBe("▶ Play");
+  });
+
+  it.each(["inactive", "removed"])("leaves arrows alone when Cleanup is %s", async (state) => {
+    await open();
+    if (state === "inactive") el("refineRoute").closest(".isActive")!.classList.remove("isActive");
+    else el("refineRoute").remove();
+    spectroInstance.setTime.mockClear();
+    for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+      const ev = new KeyboardEvent("keydown", { key, cancelable: true });
+      window.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(false);
+    }
+    expect(spectroInstance.setTime).not.toHaveBeenCalled();
+  });
+
+  it("leaves Space alone after the workspace is removed", async () => {
+    await open();
+    el("refineRoute").remove();
+    const ev = new KeyboardEvent("keydown", { code: "Space", cancelable: true });
+    window.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
     expect(auditionInstance.playRegion).not.toHaveBeenCalled();
   });
 
@@ -725,7 +917,7 @@ describe("transport", () => {
 
   it("Solo/All switch reloads the audio through the native engine (role=all)", async () => {
     await open();
-    const loadCalls = () => invokeMock.mock.calls.filter((c) => c[0] === "native_audio_load_pack_audio");
+    const loadCalls = () => invokeMock.mock.calls.filter((c) => c[0] === "prepare_refine_audio");
     const before = loadCalls().length;
     const solo = el("refineSoloSelect") as HTMLSelectElement;
     solo.value = "all";
@@ -745,11 +937,11 @@ describe("transport", () => {
   });
 });
 
-describe("stem audio playback (native engine)", () => {
-  const loadCalls = () => invokeMock.mock.calls.filter((c) => c[0] === "native_audio_load_pack_audio");
+describe("stem audio playback (shared output graph)", () => {
+  const loadCalls = () => invokeMock.mock.calls.filter((c) => c[0] === "prepare_refine_audio");
   const nativeCalls = (cmd: string) => invokeMock.mock.calls.filter((c) => c[0] === cmd);
 
-  it("loads the current instrument's stem into the native engine on open", async () => {
+  it("prepares the current instrument's stem for asset streaming", async () => {
     await open();
     // soloMode defaults true + instrument keys -> load role "keys" (no browser audio).
     expect(loadCalls().at(-1)![1]).toMatchObject({
@@ -758,7 +950,7 @@ describe("stem audio playback (native engine)", () => {
     });
   });
 
-  it("play() seeks the native engine to the playhead + starts it; the playhead follows the native position", async () => {
+  it("play seeks the source to the playhead and the visualization follows source time", async () => {
     await open();
     const scrub = el("refineScrub") as HTMLInputElement;
     scrub.value = "500"; // 50% of 30s = 15s
@@ -766,17 +958,13 @@ describe("stem audio playback (native engine)", () => {
 
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
     // seek(playhead) is synchronous in playTransport; play() resolves async.
-    expect(nativeCalls("native_audio_seek").some((c) => (c[1] as { tSec: number }).tSec === 15)).toBe(true);
+    expect(FakeAudio.latest().currentTime).toBe(15);
     await flush();
-    expect(nativeCalls("native_audio_play").length).toBeGreaterThan(0);
+    expect(FakeAudio.latest().play).toHaveBeenCalled();
 
     // The rAF tick reads the native position as the clock. Advance the engine
     // position; the cached position updates after the get_state poll lands.
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "native_audio_get_state") return Promise.resolve(nativeState({ t_sec: 20 }));
-      if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
-      return Promise.reject(new Error("unexpected"));
-    });
+    FakeAudio.latest().currentTime = 20;
     const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]> } }).mock.calls.at(-1)![0];
     rafCb(0); // triggers a get_state poll (caches position 20)
     await flush();
@@ -796,12 +984,8 @@ describe("stem audio playback (native engine)", () => {
       await open();
       el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
       await flush();
-      invokeMock.mockImplementation((cmd: string) => {
-        if (cmd === "native_audio_get_state")
-          return Promise.resolve(nativeState({ t_sec: 20, output_buffer_frames: 480 }));
-        if (typeof cmd === "string" && cmd.startsWith("native_audio_")) return Promise.resolve(null);
-        return Promise.reject(new Error("unexpected"));
-      });
+      FakeAudio.latest().currentTime = 20;
+      auditionInstance.getOutputLatencySec.mockReturnValue(0.02);
       const rafCb = (requestAnimationFrame as unknown as { mock: { calls: Array<[FrameRequestCallback]> } }).mock.calls.at(-1)![0];
       rafCb(0);
       await flush();
@@ -819,7 +1003,8 @@ describe("stem audio playback (native engine)", () => {
     await open();
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
     await flush();
-    expect(nativeCalls("native_audio_play").length).toBeGreaterThan(0);
+    expect(FakeAudio.latest().play).toHaveBeenCalled();
+    await flush();
     expect(auditionInstance.playRegion).toHaveBeenCalled();
   });
 
@@ -835,16 +1020,134 @@ describe("stem audio playback (native engine)", () => {
     const playsBefore = nativeCalls("native_audio_play").length;
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
     await flush();
+    await flush();
     expect(auditionInstance.playRegion).toHaveBeenCalled();
     expect(nativeCalls("native_audio_play").length).toBe(playsBefore);
   });
 
-  it("stop seeks the native engine back to 0", async () => {
+  it("stop pauses the source and returns it to zero", async () => {
     await open();
     el("refinePlayBtn").dispatchEvent(new MouseEvent("click"));
     await flush();
     el("refineStopBtn").dispatchEvent(new MouseEvent("click"));
-    expect(nativeCalls("native_audio_seek").some((c) => (c[1] as { tSec: number }).tSec === 0)).toBe(true);
+    expect(FakeAudio.latest().currentTime).toBe(0);
+    expect(FakeAudio.latest().pause).toHaveBeenCalled();
+  });
+
+  it("slows both streams without changing pitch or the original song clock", async () => {
+    await open();
+    (document.querySelector('[data-refine-speed="0.5"]') as HTMLButtonElement).click();
+    el("refinePlayBtn").click();
+    await flush();
+    expect(FakeAudio.latest().playbackRate).toBe(0.5);
+    expect(FakeAudio.latest().preservesPitch).toBe(true);
+    expect(el("refineSpeedOutput").textContent).toBe("50%");
+    FakeAudio.latest().currentTime = 20;
+    const clock = auditionInstance.playRegion.mock.calls.at(-1)![3];
+    expect(clock.playbackRate).toBe(0.5);
+    expect(clock.getTimeSec()).toBe(20);
+  });
+
+  it("starts source-left/rendered-right, swaps ears, and mutes either stream for A/B", async () => {
+    await open();
+    expect(el("refineSourceEar").textContent).toBe("L");
+    expect(el("refineRenderedEar").textContent).toBe("R");
+    expect(auditionInstance.setOutput).toHaveBeenLastCalledWith({ sourceGain: 0.8, renderedGain: 0.7, sourcePan: -1, renderedPan: 1, renderedEnabled: true });
+    el("refineSwapBtn").click();
+    expect(el("refineSourceEar").textContent).toBe("R");
+    expect(el("refineRenderedEar").textContent).toBe("L");
+    expect(auditionInstance.setOutput).toHaveBeenLastCalledWith(expect.objectContaining({ sourcePan: 1, renderedPan: -1 }));
+    (document.querySelector('[data-listen-mode="source"]') as HTMLButtonElement).click();
+    expect(el("refineSourceEar").textContent).toBe("L+R");
+    expect(el("refineRenderedEar").textContent).toBe("—");
+    expect(auditionInstance.setOutput).toHaveBeenLastCalledWith(expect.objectContaining({ sourceGain: 0.8, renderedEnabled: false, sourcePan: 0, renderedPan: 0 }));
+    (document.querySelector('[data-listen-mode="rendered"]') as HTMLButtonElement).click();
+    expect(el("refineSourceEar").textContent).toBe("—");
+    expect(el("refineRenderedEar").textContent).toBe("L+R");
+    expect(auditionInstance.setOutput).toHaveBeenLastCalledWith(expect.objectContaining({ sourceGain: 0, renderedEnabled: true }));
+  });
+
+  it("previews an existing note and loops it with surrounding context", async () => {
+    await open();
+    lastSpectroOpts!.onSelectionChanged!(0);
+    el("refineHearSelection").click();
+    expect(auditionInstance.playNote).toHaveBeenCalledWith(60, 90, 0.5);
+    el("refineLoopSelection").click();
+    expect(el("refineLoopBtn").getAttribute("aria-pressed")).toBe("true");
+    expect(FakeAudio.latest().currentTime).toBe(1);
+    el("refinePlayBtn").click();
+    await flush();
+    FakeAudio.latest().currentTime = 3;
+    vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0);
+    expect(FakeAudio.latest().currentTime).toBe(1);
+  });
+
+  it("preserves the spectrogram, notes, and view when changing listening controls", async () => {
+    await open();
+    const notesBefore = [...editorNotes];
+    spectroInstance.load.mockClear();
+    spectroInstance.setNotes.mockClear();
+    spectroInstance.resetView.mockClear();
+    el("refineSwapBtn").click();
+    (document.querySelector('[data-refine-speed="0.5"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-listen-mode="rendered"]') as HTMLButtonElement).click();
+    expect(spectroInstance.load).not.toHaveBeenCalled();
+    expect(spectroInstance.setNotes).not.toHaveBeenCalled();
+    expect(spectroInstance.resetView).not.toHaveBeenCalled();
+    expect(editorNotes).toEqual(notesBefore);
+    expect(el("refineStage").style.display).toBe("block");
+  });
+
+  it("uses the selected source's waveform and seeks from the ribbon without editing notes", async () => {
+    const waveform = { duration_sec: 30, peaks: [0, 0.5, 1, 0] };
+    loadSessionMock.mockResolvedValue(makeSession());
+    mockSpectrogramOk();
+    const previous = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, args: any) => cmd === "get_refine_waveform" ? Promise.resolve(waveform) : previous(cmd, args));
+    const handle = initRefineWorkspace(makeDeps());
+    await handle.openForAuralSong("/songs/x.auralsong");
+    await flush();
+    expect(invokeMock).toHaveBeenCalledWith("get_refine_waveform", { containerPath: "/songs/x.auralsong", role: "keys" });
+    expect(spectroInstance.setSourceWaveform).toHaveBeenLastCalledWith(waveform);
+    const before = [...editorNotes];
+    lastSpectroOpts!.onSeek!(12);
+    expect(FakeAudio.latest().currentTime).toBe(12);
+    expect(editorNotes).toEqual(before);
+    expect(el("refineSaveBtn").textContent).toBe("Save");
+  });
+
+  it("does not rewind by the visual calibration offset when resuming", async () => {
+    const { setAvCalibration } = await import("../src/avOffset");
+    await setAvCalibration(200, 0);
+    try {
+      await open();
+      el("refinePlayBtn").click();
+      await flush();
+      FakeAudio.latest().currentTime = 20;
+      vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0);
+      el("refinePlayBtn").click();
+      el("refinePlayBtn").click();
+      await flush();
+      expect(FakeAudio.latest().currentTime).toBe(20);
+    } finally { await setAvCalibration(0, 0); }
+  });
+
+  it("does not resume a pending source switch after Stop", async () => {
+    await open();
+    el("refinePlayBtn").click();
+    await flush();
+    let finishLoad!: (value: unknown) => void;
+    invokeMock.mockImplementation((cmd: string) => cmd === "prepare_refine_audio"
+      ? new Promise(resolve => { finishLoad = resolve; }) : Promise.reject(new Error("unexpected")));
+    const solo = el("refineSoloSelect") as HTMLSelectElement;
+    solo.value = "all";
+    solo.dispatchEvent(new Event("change"));
+    el("refineStopBtn").dispatchEvent(new MouseEvent("click"));
+    const before = FakeAudio.latest().play.mock.calls.length;
+    finishLoad({ path: "/songs/mix.wav", roles: ["keys"] });
+    await flush();
+    expect(FakeAudio.latest().play.mock.calls.length).toBe(before);
+    expect(el("refinePlayBtn").textContent).toBe("▶ Play");
   });
 });
 

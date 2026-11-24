@@ -10,7 +10,7 @@
  *  - Draw a translucent note overlay on a stacked Canvas-2D layer aligned by the
  *    exact same view transform (time x pitch).
  *  - Provide zoom/pan, hit-testing, drag-move (snap pitch to semitone),
- *    edge-resize, click-to-add, delete-to-remove, selection highlight.
+ *    edge-resize, Shift-click-to-add, click-to-audition, delete-to-remove.
  *  - Build a small DOM control bar (gain / contrast / dbFloor sliders, colormap
  *    dropdown, zoom reset) and a setTime() playhead.
  *
@@ -25,12 +25,14 @@
 
 import {
   frameToNorm,
+  harmonicMidiPitches,
   laneBandRows,
   laneMarkerXSpan,
   noteBodyXSpan,
   secToFrame,
 } from "./spectrogramGeometry";
 import { buildGridTimes, snapTimeToGrid } from "./beatGrid";
+import { visibleWaveformPeaks, type RefineWaveform } from "./refineWaveform";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -84,12 +86,11 @@ export type ColormapName = "inferno" | "viridis" | "grayscale";
 export interface SpectrogramEditorOptions {
   /** Fired after any edit (move/resize/add/delete). Host persists. */
   onNotesChanged?: (notes: SpectroNote[]) => void;
-  /** Fired when the user adds a note by clicking empty space. */
+  /** Fired when the user adds a note by Shift-clicking empty space. */
   onNoteAdded?: (note: SpectroNote, notes: SpectroNote[]) => void;
   /**
-   * Fired when a note is placed or finished being edited (add, or the end of a
-   * move/resize drag) — lets the host audition the note's pitch so the user
-   * hears what they're putting down. NOT fired during pan/hover.
+   * Fired on a plain click (existing note or temporary pitch preview), or when
+   * a Shift edit finishes. NOT fired during pan/hover.
    */
   onNoteAuditioned?: (note: SpectroNote) => void;
   /** Fired when the selection changes (index into notes, or null). */
@@ -99,6 +100,8 @@ export interface SpectrogramEditorOptions {
    * (null on leave) — drives a Sonic-Visualiser-style readout in the host.
    */
   onHover?: (info: { time: number; pitch: number } | null) => void;
+  /** The source ribbon seeks transport, never places or selects chart notes. */
+  onSeek?: (time: number) => void;
   /** Initial colormap (default "inferno"). */
   colormap?: ColormapName;
   /** Whether to build the DOM control bar (default true). */
@@ -282,6 +285,7 @@ export class SpectrogramEditor {
   private readonly glCanvas: HTMLCanvasElement;
   private readonly overlay: HTMLCanvasElement;
   private controlBar: HTMLDivElement | null = null;
+  private harmonicToggle: HTMLInputElement | null = null;
 
   // WebGL
   private gl: WebGL2RenderingContext | null = null;
@@ -295,6 +299,9 @@ export class SpectrogramEditor {
   private geom: SpectrogramGeometry | null = null;
   private notes: SpectroNote[] = [];
   private selected: number | null = null;
+  private auditionReference: SpectroNote | null = null;
+  private harmonicGuides = false;
+  private livePitches: number[] = [];
   // Lane mode (drum cleanup): when set, notes are HITS whose `pitch` is a lane
   // INDEX (bottom lane 0) rather than a MIDI pitch. Lanes divide the content
   // height into equal bands; resize is disabled (hits are instants).
@@ -311,6 +318,8 @@ export class SpectrogramEditor {
   private contrast = 1.3;
   private userFloorDb = -50;
   private playheadSec: number | null = null;
+  private sourceWaveform: RefineWaveform | null = null;
+  private readonly sourceCanvas: HTMLCanvasElement;
 
   // Undo/redo history of note-set snapshots (note edits only — view/zoom is
   // not undoable). Capped so a long session can't grow unbounded.
@@ -363,7 +372,8 @@ export class SpectrogramEditor {
     this.stage = document.createElement("div");
     this.stage.className = "spectro-stage";
     this.stage.style.cssText =
-      "position:relative;flex:1 1 auto;min-height:0;overflow:hidden;touch-action:none;cursor:crosshair;";
+      "position:relative;flex:1 1 auto;min-height:0;overflow:hidden;touch-action:none;cursor:pointer;";
+    this.stage.title = "Click to hear · Shift-click to place · Shift-drag to move/resize · Alt-drag to pan";
 
     this.glCanvas = document.createElement("canvas");
     this.glCanvas.style.cssText =
@@ -380,6 +390,18 @@ export class SpectrogramEditor {
       this.controlBar = this.buildControls();
       this.root.appendChild(this.controlBar);
     }
+    this.sourceCanvas = document.createElement("canvas");
+    this.sourceCanvas.className = "spectro-source-waveform";
+    this.sourceCanvas.style.cssText = "display:block;width:100%;height:54px;flex:0 0 54px;background:#0b101a;border-bottom:1px solid #26334a;cursor:pointer;";
+    this.sourceCanvas.setAttribute("role", "img");
+    this.sourceCanvas.setAttribute("aria-label", "Source waveform and time ruler, synchronized with analysis zoom");
+    this.sourceCanvas.title = "Source waveform · click to seek · follows analysis zoom";
+    this.sourceCanvas.addEventListener("click", (event) => {
+      const bounds = this.sourceCanvas.getBoundingClientRect();
+      const view = this.getViewTimeWindow();
+      this.opts.onSeek?.(Math.max(0, Math.min(this.getDurationSec(), view.start + (event.clientX - bounds.left) / Math.max(1, bounds.width) * (view.end - view.start))));
+    });
+    this.root.appendChild(this.sourceCanvas);
     this.root.appendChild(this.stage);
     this.container.appendChild(this.root);
 
@@ -448,6 +470,7 @@ export class SpectrogramEditor {
     this.recomputeGrid(); // grid extrapolation depends on the song duration
     this.notes = notes.map((n) => ({ ...n }));
     this.selected = null;
+    this.auditionReference = null;
     // A fresh song starts with an empty history.
     this.undoStack = [];
     this.redoStack = [];
@@ -487,9 +510,22 @@ export class SpectrogramEditor {
    */
   setLaneMode(lanes: string[] | null): void {
     this.lanes = lanes && lanes.length ? [...lanes] : null;
+    if (this.harmonicToggle) this.harmonicToggle.disabled = this.lanes !== null;
+    this.auditionReference = null;
     this.undoStack = [];
     this.redoStack = [];
     this.setSelection(null);
+    this.requestRender();
+  }
+
+  /** Live keyboard input is a view overlay, separate from the editable chart. */
+  setLivePitches(pitches: number[]): void {
+    this.livePitches = [...new Set(pitches)];
+    this.requestRender();
+  }
+
+  setSourceWaveform(waveform: RefineWaveform | null): void {
+    this.sourceWaveform = waveform;
     this.requestRender();
   }
 
@@ -595,6 +631,8 @@ export class SpectrogramEditor {
       cv.width = Math.floor(w * dpr);
       cv.height = Math.floor(h * dpr);
     }
+    this.sourceCanvas.width = Math.floor(w * dpr);
+    this.sourceCanvas.height = Math.floor(54 * dpr);
     if (this.gl) this.gl.viewport(0, 0, this.glCanvas.width, this.glCanvas.height);
     this.clampView();
     this.requestRender();
@@ -778,7 +816,48 @@ export class SpectrogramEditor {
       this.rafPending = false;
       this.renderGL();
       this.renderOverlay();
+      this.renderSourceWaveform();
     });
+  }
+
+  private renderSourceWaveform(): void {
+    const ctx = this.sourceCanvas.getContext("2d");
+    if (!ctx || !this.geom) return;
+    const W = this.sourceCanvas.width, H = this.sourceCanvas.height, dpr = this.dpr();
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = `${10 * dpr}px Consolas, monospace`;
+    ctx.textBaseline = "middle";
+    const view = this.getViewTimeWindow();
+    const span = view.end - view.start;
+    if (span <= 0) return;
+    const gap = span / Math.max(1, W / (100 * dpr));
+    const magnitude = 10 ** Math.floor(Math.log10(gap));
+    const step = [1, 2, 5, 10].map(n => n * magnitude).find(n => n >= gap) ?? magnitude * 10;
+    ctx.fillStyle = "#96a6be";
+    for (let t = Math.ceil(view.start / step) * step; t <= view.end; t += step) {
+      const x = (t - view.start) / span * W;
+      ctx.fillText(`${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, "0")}`, x + 4 * dpr, 10 * dpr);
+    }
+    ctx.strokeStyle = "#26334a";
+    ctx.beginPath(); ctx.moveTo(0, 19 * dpr); ctx.lineTo(W, 19 * dpr); ctx.stroke();
+    const center = 37 * dpr;
+    const waveform = this.sourceWaveform;
+    if (waveform?.peaks.length) {
+      const peaks = visibleWaveformPeaks(waveform, view.start, view.end, Math.max(1, Math.floor(W / (3 * dpr))));
+      ctx.fillStyle = "#71d8ef";
+      for (let i = 0; i < peaks.length; i++) {
+        const height = Math.max(dpr, peaks[i] * 28 * dpr);
+        ctx.fillRect(i * W / peaks.length, center - height / 2, Math.max(dpr, W / peaks.length - dpr), height);
+      }
+    } else {
+      ctx.fillStyle = "#96a6be";
+      ctx.fillText("Source waveform unavailable", 8 * dpr, center);
+    }
+    if (this.playheadSec != null && this.playheadSec >= view.start && this.playheadSec <= view.end) {
+      const x = (this.playheadSec - view.start) / span * W;
+      ctx.strokeStyle = "#e3eaf5";
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
   }
 
   private renderGL(): void {
@@ -877,7 +956,23 @@ export class SpectrogramEditor {
     const H = this.overlay.height;
     ctx.clearRect(0, 0, W, H);
 
+    if (!this.lanes) {
+      ctx.save();
+      ctx.font = `${Math.round(10 * this.dpr())}px system-ui, sans-serif`;
+      for (const pitch of this.livePitches) {
+        const row = pitch - geom.fmin_midi;
+        if (row < 0 || row >= geom.n_bins) continue;
+        const top = this.rowToPx(row + 1), bottom = this.rowToPx(row);
+        ctx.fillStyle = "rgba(56,189,248,0.18)";
+        ctx.fillRect(0, top, W, bottom - top);
+        ctx.fillStyle = "#7dd3fc";
+        ctx.fillText("LIVE", 4 * this.dpr(), (top + bottom) / 2);
+      }
+      ctx.restore();
+    }
+
     this.drawBeatGrid(ctx, W, H);
+    this.drawHarmonicGuides(ctx, W, H);
 
     // Lane guides + labels (drum mode): a line per band boundary and the lane
     // name pinned at the left edge, so hits always read against their voice.
@@ -958,6 +1053,48 @@ export class SpectrogramEditor {
 
   private dpr(): number {
     return this.overlay.width / Math.max(1, this.stage.clientWidth);
+  }
+
+  /** A view-only comparison aid, never a detected note or a change to MIDI. */
+  private drawHarmonicGuides(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    if (!this.harmonicGuides || this.lanes || !this.geom) return;
+    const reference = this.selected == null ? this.auditionReference : this.notes[this.selected];
+    const dpr = this.dpr();
+    ctx.save();
+    ctx.font = `${Math.round(11 * dpr)}px system-ui, sans-serif`;
+    ctx.textBaseline = "middle";
+    if (reference) {
+      const span = this.noteXSpan(reference);
+      for (const { harmonic, pitch } of harmonicMidiPitches(reference.pitch)) {
+        const row = pitch - this.geom.fmin_midi + 0.5;
+        const y = this.rowToPx(row);
+        if (row < 0 || row >= this.geom.n_bins || y < 0 || y > H) continue;
+        ctx.setLineDash([5 * dpr, 4 * dpr]);
+        ctx.strokeStyle = "rgba(255,196,100,0.32)";
+        ctx.lineWidth = dpr;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255,196,100,0.85)";
+        ctx.lineWidth = 2 * dpr;
+        ctx.beginPath();
+        ctx.moveTo(Math.max(0, span.xLeft), y);
+        ctx.lineTo(Math.min(W, span.xRight), y);
+        if (span.xRight >= 0 && span.xLeft <= W) ctx.stroke();
+        ctx.fillStyle = "#ffc464";
+        ctx.fillText(`${harmonic}×`, W - 25 * dpr, y - 7 * dpr);
+      }
+    }
+    const names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+    const label = reference
+      ? `Harmonics of ${names[reference.pitch % 12]}${Math.floor(reference.pitch / 12) - 1} · possible overtones, not detected notes`
+      : "Harmonic guides · click a note or pitch as the fundamental";
+    ctx.fillStyle = "rgba(10,10,12,0.88)";
+    ctx.fillRect(6 * dpr, 5 * dpr, ctx.measureText(label).width + 16 * dpr, 24 * dpr);
+    ctx.fillStyle = "#ffc464";
+    ctx.fillText(label, 14 * dpr, 17 * dpr);
+    ctx.restore();
   }
 
   private timeToFrame(t: number): number {
@@ -1137,8 +1274,8 @@ export class SpectrogramEditor {
     const cssX = e.clientX - rect.left;
     const cssY = e.clientY - rect.top;
 
-    // Middle button or right button => pan.
-    if (e.button === 1 || e.button === 2) {
+    // Pan takes priority over note hits, regardless of the edit modifier.
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey)) {
       e.preventDefault();
       this.drag = "pan";
       this.dragStartContent = { x: cssX, y: cssY };
@@ -1151,6 +1288,11 @@ export class SpectrogramEditor {
     const hit = this.hitTest(cssX, cssY);
     if (hit) {
       this.setSelection(hit.index);
+      if (!e.shiftKey) {
+        this.opts.onNoteAuditioned?.(this.notes[hit.index]!);
+        this.requestRender();
+        return;
+      }
       this.dragNoteIndex = hit.index;
       this.dragOrig = { ...this.notes[hit.index]! };
       // Snapshot the pre-drag state; committed to undo on the first move.
@@ -1163,15 +1305,15 @@ export class SpectrogramEditor {
       return;
     }
 
-    // Empty space: with Alt => pan, otherwise add a note.
-    if (e.altKey) {
-      this.drag = "pan";
-      this.dragStartContent = { x: cssX, y: cssY };
-      this.panStartView = { ...this.view };
-      this.stage.setPointerCapture(e.pointerId);
-      return;
+    if (e.shiftKey) {
+      this.addNoteAt(cssX, cssY);
+    } else {
+      // Preview the pitch without persisting a note or creating undo history.
+      this.setSelection(null);
+      this.auditionReference = this.noteAt(cssX, cssY);
+      if (this.auditionReference) this.opts.onNoteAuditioned?.(this.auditionReference);
+      this.requestRender();
     }
-    this.addNoteAt(cssX, cssY);
   }
 
   private onPointerMove(e: PointerEvent): void {
@@ -1193,6 +1335,7 @@ export class SpectrogramEditor {
       return;
     }
 
+    if (!e.shiftKey) return; // Keep holding Shift to change notes.
     const orig = this.dragOrig;
     if (!orig || this.dragNoteIndex < 0) return;
     const c = this.pxToContent(cssX, cssY);
@@ -1248,10 +1391,9 @@ export class SpectrogramEditor {
     this.panStartView = null;
     this.dragUndo = null; // discard the snapshot if the drag never moved
     if (wasEdit) {
-      this.emitChanged();
-      // Audition the edited note (only when it actually moved/resized, not a
-      // bare click that selected it).
-      const edited = moved && editedIdx >= 0 ? this.notes[editedIdx] : undefined;
+      if (moved) this.emitChanged();
+      // Audition the result of a Shift edit. Plain clicks audition on down.
+      const edited = editedIdx >= 0 ? this.notes[editedIdx] : undefined;
       if (edited) this.opts.onNoteAuditioned?.(edited);
     }
   }
@@ -1289,8 +1431,9 @@ export class SpectrogramEditor {
     const cssX = e.clientX - rect.left;
     const cssY = e.clientY - rect.top;
     const hit = this.hitTest(cssX, cssY);
-    let cursor = "crosshair";
-    if (hit) cursor = hit.edge ? "ew-resize" : "move";
+    let cursor = "pointer";
+    if (e.altKey) cursor = "grab";
+    else if (e.shiftKey) cursor = hit ? (hit.edge ? "ew-resize" : "move") : "crosshair";
     this.stage.style.cursor = cursor;
     // Emit pitch + time under the cursor for the host's readout. In lane mode
     // `pitch` carries the LANE INDEX; the host maps it to the lane name.
@@ -1341,9 +1484,9 @@ export class SpectrogramEditor {
     return null;
   }
 
-  private addNoteAt(cssX: number, cssY: number): void {
+  private noteAt(cssX: number, cssY: number): SpectroNote | null {
     const geom = this.geom;
-    if (!geom) return;
+    if (!geom) return null;
     const c = this.pxToContent(cssX, cssY);
     let pitch: number;
     let dur: number;
@@ -1370,7 +1513,12 @@ export class SpectrogramEditor {
     const rawOn = this.lanes ? tCenter : Math.max(0, tCenter - dur / 2);
     const tOn = Math.max(0, this.snapTime(rawOn));
     const tOff = tOn + dur;
-    const note: SpectroNote = { t_on: tOn, t_off: tOff, pitch, velocity };
+    return { t_on: tOn, t_off: tOff, pitch, velocity };
+  }
+
+  private addNoteAt(cssX: number, cssY: number): void {
+    const note = this.noteAt(cssX, cssY);
+    if (!note) return;
     this.pushUndo();
     this.notes.push(note);
     this.setSelection(this.notes.length - 1);
@@ -1381,6 +1529,7 @@ export class SpectrogramEditor {
   }
 
   private setSelection(index: number | null): void {
+    this.auditionReference = null;
     if (this.selected === index) return;
     this.selected = index;
     this.opts.onSelectionChanged?.(index);
@@ -1477,6 +1626,19 @@ export class SpectrogramEditor {
       "background:#222230;color:#ddd;border:1px solid #383848;border-radius:4px;padding:3px 10px;cursor:pointer;";
     resetBtn.addEventListener("click", () => this.resetView());
     bar.appendChild(resetBtn);
+
+    const harmonicLabel = document.createElement("label");
+    harmonicLabel.style.cssText = "display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:#ffc464;";
+    harmonicLabel.title = "Click a note or pitch to show its ideal 2×–8× overtones. A match can suggest a harmonic, but does not prove a separate note is false. Unavailable for drums.";
+    const harmonicToggle = document.createElement("input");
+    harmonicToggle.type = "checkbox";
+    harmonicToggle.addEventListener("change", () => {
+      this.harmonicGuides = harmonicToggle.checked;
+      this.requestRender();
+    });
+    this.harmonicToggle = harmonicToggle;
+    harmonicLabel.append(harmonicToggle, "Harmonic guides");
+    bar.appendChild(harmonicLabel);
 
     return bar;
   }

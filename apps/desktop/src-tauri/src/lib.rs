@@ -27,6 +27,7 @@ mod midi_clock_input;
 mod midi_clock_service;
 mod models;
 mod native_audio;
+mod refine_waveform;
 pub mod raw_song;
 pub mod stem_midi;
 pub mod wav_mix;
@@ -1939,6 +1940,266 @@ fn native_audio_load_pack_audio(
     })
 }
 
+#[derive(Debug, Serialize)]
+struct PreparedRefineAudio {
+    path: String,
+    roles: Vec<String>,
+}
+
+/// Resolve through symlinks before exposing a pack asset to the webview.
+fn refine_audio_directory_file(container: &Path, rel: &str) -> Result<PathBuf, String> {
+    require_safe_container_rel(rel)?;
+    let root = fs::canonicalize(container).map_err(|e| format!("resolve audio container: {e}"))?;
+    let file =
+        fs::canonicalize(root.join(rel)).map_err(|e| format!("resolve pack audio {rel}: {e}"))?;
+    if !file.starts_with(&root) || !file.is_file() {
+        return Err(format!(
+            "pack audio {rel} must be a file inside the container"
+        ));
+    }
+    Ok(file)
+}
+
+fn refine_audio_sources(
+    container: &Path,
+    role: Option<&str>,
+) -> Result<Vec<(String, String)>, String> {
+    let solo = role.filter(|r| !r.is_empty() && *r != "all");
+    let mut sources = Vec::new();
+    if is_feedpak_path(&container.to_string_lossy()) {
+        if container.is_dir() {
+            refine_audio_directory_file(container, "manifest.yaml")?;
+        }
+        let manifest = read_feedpak_manifest(container)?;
+        let has_mix = manifest.stems.iter().any(|s| s.id == "mix");
+        for stem in manifest.stems {
+            if should_take_stem(&stem.id, solo, has_mix) {
+                require_safe_container_rel(&stem.file)?;
+                sources.push((stem.id, stem.file));
+            }
+        }
+    } else {
+        // Older packs expose audio through assets.audio rather than stems[].
+        let manifest = if container.is_dir() {
+            refine_audio_directory_file(container, "manifest.json")?;
+            read_dir_manifest_raw(container)?
+        } else {
+            read_zip_manifest_raw(container)?
+        };
+        let audio = manifest.pointer("/assets/audio");
+        if let Some((id, file)) = solo.and_then(|id| {
+            audio?
+                .get("stems")?
+                .get(id)?
+                .as_str()
+                .map(|file| (id, file))
+        }) {
+            sources.push((id.to_string(), file.to_string()));
+        } else if let Some(file) = audio
+            .and_then(|a| a.get("mix_path"))
+            .and_then(|v| v.as_str())
+        {
+            sources.push(("mix".to_string(), file.to_string()));
+        } else if let Some(file) = ["audio/mix.ogg", "audio/mix.mp3", "audio/mix.wav"]
+            .into_iter()
+            .find(|rel| container_has_safe_file(container, rel))
+        {
+            sources.push(("mix".to_string(), file.to_string()));
+        }
+        for (_, file) in &sources {
+            require_safe_container_rel(file)?;
+        }
+    }
+    if sources.is_empty() {
+        return Err(format!("no source audio for role {role:?}"));
+    }
+    Ok(sources)
+}
+
+/// Sum at unity gain with time zero unchanged, padding shorter stems with
+/// silence. Packs with different sample rates use the first stem's rate.
+fn refine_audio_mix(stems: Vec<audio_decode::DecodedPcm16>) -> Result<wav_mix::WavPcm16, String> {
+    let first = stems.first().ok_or_else(|| "no stems to mix".to_string())?;
+    let sample_rate = first.sample_rate_hz;
+    let channels = first.channels;
+    if sample_rate == 0 || channels == 0 {
+        return Err("source audio has an invalid sample rate or channel count".to_string());
+    }
+    let ch = channels as usize;
+    let mut output_frames = Vec::with_capacity(stems.len());
+    for stem in &stems {
+        if stem.sample_rate_hz == 0
+            || stem.channels != channels
+            || !stem.data.len().is_multiple_of(ch)
+        {
+            return Err(
+                "source stems must have matching channels and valid audio frames".to_string(),
+            );
+        }
+        let frames = stem.data.len() / ch;
+        let scaled = (frames as u128 * sample_rate as u128 + stem.sample_rate_hz as u128 / 2)
+            / stem.sample_rate_hz as u128;
+        let scaled = if frames == 0 { 0 } else { scaled.max(1) };
+        output_frames.push(usize::try_from(scaled).map_err(|_| "source audio is too large")?);
+    }
+    let max_frames = output_frames.iter().copied().max().unwrap_or(0);
+    let len = max_frames
+        .checked_mul(ch)
+        .ok_or("source audio is too large")?;
+    if len > (u32::MAX as usize - 36) / 2 {
+        return Err("source audio exceeds WAV size limit".to_string());
+    }
+    let mut mixed = vec![0i64; len];
+    for (stem, frames) in stems.iter().zip(output_frames) {
+        let source_frames = stem.data.len() / ch;
+        for frame in 0..frames {
+            let position = frame as f64 * stem.sample_rate_hz as f64 / sample_rate as f64;
+            let i0 = (position.floor() as usize).min(source_frames - 1);
+            let i1 = (i0 + 1).min(source_frames - 1);
+            let fraction = (position - i0 as f64).clamp(0.0, 1.0) as f32;
+            for channel in 0..ch {
+                let a = stem.data[i0 * ch + channel] as f32;
+                let b = stem.data[i1 * ch + channel] as f32;
+                mixed[frame * ch + channel] += (a + (b - a) * fraction).round() as i64;
+            }
+        }
+    }
+    Ok(wav_mix::WavPcm16 {
+        sample_rate,
+        channels,
+        data: mixed
+            .into_iter()
+            .map(|v| v.clamp(i16::MIN as i64, i16::MAX as i64) as i16)
+            .collect(),
+    })
+}
+
+// Serializes publication so overlapping role changes never see a partial WAV.
+static REFINE_AUDIO_CACHE_LOCK: Mutex<()> = Mutex::new(());
+
+fn prepare_refine_audio_in_cache(
+    container: &Path,
+    role: Option<&str>,
+    cache: &Path,
+) -> Result<PreparedRefineAudio, String> {
+    use sha2::{Digest, Sha256};
+
+    if !is_supported_container(&container.to_string_lossy()) {
+        return Err("path does not end with .feedpak, .sloppak, or .auralsong".to_string());
+    }
+    let sources = refine_audio_sources(container, role)?;
+    let roles = sources.iter().map(|(id, _)| id.clone()).collect();
+    if container.is_dir() && sources.len() == 1 {
+        return Ok(PreparedRefineAudio {
+            path: refine_audio_directory_file(container, &sources[0].1)?
+                .to_string_lossy()
+                .into_owned(),
+            roles,
+        });
+    }
+
+    let mut hash = Sha256::new();
+    hash.update(b"studio-refine-audio-v1\0");
+    let absolute =
+        fs::canonicalize(container).map_err(|e| format!("resolve audio container: {e}"))?;
+    hash.update(absolute.to_string_lossy().as_bytes());
+    let mut audio_bytes = Vec::with_capacity(sources.len());
+    for (id, rel) in &sources {
+        require_safe_container_rel(rel)?;
+        let bytes = if container.is_dir() {
+            let file = refine_audio_directory_file(container, rel)?;
+            fs::read(file).map_err(|e| format!("read pack audio {rel}: {e}"))?
+        } else {
+            // Read only validated entries, never extract archive paths.
+            read_zip_audio(container, rel)?
+        };
+        for part in [id.as_bytes(), rel.as_bytes(), bytes.as_slice()] {
+            hash.update((part.len() as u64).to_le_bytes());
+            hash.update(part);
+        }
+        audio_bytes.push(bytes);
+    }
+    // Hash the selected content, rather than mtime alone: an in-place repair
+    // with the same file size/timestamp must also invalidate the prepared mix.
+    let filename = format!("{}.wav", hex::encode(hash.finalize()));
+    let _guard = REFINE_AUDIO_CACHE_LOCK
+        .lock()
+        .map_err(|_| "audio cache lock poisoned")?;
+    fs::create_dir_all(cache).map_err(|e| format!("create refine audio cache: {e}"))?;
+    let cache = fs::canonicalize(cache).map_err(|e| format!("resolve refine audio cache: {e}"))?;
+    let output = cache.join(&filename);
+    if !output.exists() {
+        let mut decoded = Vec::with_capacity(sources.len());
+        for ((_, rel), bytes) in sources.iter().zip(audio_bytes) {
+            decoded.push(audio_decode::decode_to_pcm16(
+                &bytes,
+                audio_mime_for_path(rel),
+            )?);
+        }
+        let mix = refine_audio_mix(decoded)?;
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let temporary = cache.join(format!("{filename}.{}.{nonce}.tmp", std::process::id()));
+        // Refuse a pre-existing symlink instead of writing through it.
+        let temporary_file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|e| format!("create temporary refine audio: {e}"))?;
+        drop(temporary_file);
+        let published = wav_mix::write_wav_pcm16(&temporary, &mix).and_then(|_| {
+            fs::rename(&temporary, &output).map_err(|e| format!("publish refine audio: {e}"))
+        });
+        if published.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        published?;
+    }
+    Ok(PreparedRefineAudio {
+        path: refine_audio_directory_file(&cache, &filename)?
+            .to_string_lossy()
+            .into_owned(),
+        roles,
+    })
+}
+
+/// Stream a source stem/mix over Tauri's asset protocol without large IPC
+/// payloads. The browser can then preserve pitch while changing playback rate.
+#[tauri::command]
+async fn prepare_refine_audio(
+    container_path: String,
+    role: Option<String>,
+    app: AppHandle,
+) -> Result<PreparedRefineAudio, String> {
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("app audio cache: {e}"))?
+        .join("refine-audio");
+    tauri::async_runtime::spawn_blocking(move || {
+        prepare_refine_audio_in_cache(Path::new(&container_path), role.as_deref(), &cache)
+    })
+    .await
+    .map_err(|e| format!("prepare refine audio: {e}"))?
+}
+
+#[tauri::command]
+async fn get_refine_waveform(
+    container_path: String,
+    role: Option<String>,
+    app: AppHandle,
+) -> Result<refine_waveform::RefineWaveform, String> {
+    let cache = app.path().app_cache_dir().map_err(|e| format!("app audio cache: {e}"))?.join("refine-audio");
+    tauri::async_runtime::spawn_blocking(move || {
+        let prepared = prepare_refine_audio_in_cache(Path::new(&container_path), role.as_deref(), &cache)?;
+        let bytes = fs::read(&prepared.path).map_err(|e| format!("read waveform source: {e}"))?;
+        let decoded = audio_decode::decode_to_pcm16(&bytes, audio_mime_for_path(&prepared.path))?;
+        refine_waveform::summarize(&decoded)
+    }).await.map_err(|e| format!("source waveform: {e}"))?
+}
+
 #[tauri::command]
 fn read_auralsong_json(
     container_path: String,
@@ -2730,6 +2991,8 @@ pub fn run() {
             native_audio_load_audio_bytes,
             native_audio_load_auralsong_audio,
             native_audio_load_pack_audio,
+            prepare_refine_audio,
+            get_refine_waveform,
             native_audio_play,
             native_audio_pause,
             native_audio_stop,
@@ -3354,6 +3617,195 @@ mod stem_selection_tests {
         assert!(!should_take_stem("mix", Some("keys"), true));
         // Solo the mix explicitly.
         assert!(should_take_stem("mix", Some("mix"), true));
+    }
+}
+
+#[cfg(test)]
+mod refine_audio_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn pack(root: &Path, stems: &str) -> PathBuf {
+        let pack = root.join("listening.feedpak");
+        fs::create_dir_all(pack.join("audio")).unwrap();
+        fs::write(
+            pack.join("manifest.yaml"),
+            format!("title: Listening\nartist: Test\nduration: 1\nstems:\n{stems}"),
+        )
+        .unwrap();
+        pack
+    }
+
+    fn write_wav(path: &Path, samples: &[i16]) {
+        wav_mix::write_wav_pcm16(
+            path,
+            &wav_mix::WavPcm16 {
+                sample_rate: 8_000,
+                channels: 1,
+                data: samples.to_vec(),
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn refine_audio_all_prefers_mix_and_solo_uses_selected_stem() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = pack(
+            temp.path(),
+            "- id: keys\n  file: audio/keys.wav\n- id: mix\n  file: audio/mix.wav\n",
+        );
+        write_wav(&pack.join("audio/keys.wav"), &[1, 2]);
+        write_wav(&pack.join("audio/mix.wav"), &[3, 4]);
+        let cache = temp.path().join("cache");
+        let all = prepare_refine_audio_in_cache(&pack, Some("all"), &cache).unwrap();
+        assert_eq!(all.roles, ["mix"]);
+        assert_eq!(
+            PathBuf::from(all.path),
+            fs::canonicalize(pack.join("audio/mix.wav")).unwrap()
+        );
+        let solo = prepare_refine_audio_in_cache(&pack, Some("keys"), &cache).unwrap();
+        assert_eq!(solo.roles, ["keys"]);
+        assert_eq!(
+            PathBuf::from(solo.path),
+            fs::canonicalize(pack.join("audio/keys.wav")).unwrap()
+        );
+        assert!(!cache.exists(), "directory solos need no generated copy");
+        assert!(prepare_refine_audio_in_cache(&pack, Some("vocals"), &cache).is_err());
+    }
+
+    #[test]
+    fn refine_audio_mix_preserves_start_and_tail_and_invalidates_changed_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = pack(
+            temp.path(),
+            "- id: keys\n  file: audio/keys.wav\n- id: bass\n  file: audio/bass.wav\n",
+        );
+        write_wav(&pack.join("audio/keys.wav"), &[0, 10, 20]);
+        write_wav(&pack.join("audio/bass.wav"), &[0, 1]);
+        let cache = temp.path().join("cache");
+        let prepared = prepare_refine_audio_in_cache(&pack, None, &cache).unwrap();
+        assert_eq!(prepared.roles, ["keys", "bass"]);
+        assert_eq!(
+            wav_mix::read_wav_pcm16(Path::new(&prepared.path))
+                .unwrap()
+                .data,
+            [0, 11, 20]
+        );
+        assert_eq!(
+            prepare_refine_audio_in_cache(&pack, None, &cache)
+                .unwrap()
+                .path,
+            prepared.path
+        );
+        // Same path and same byte length still need a new content-addressed URL.
+        write_wav(&pack.join("audio/bass.wav"), &[0, 2]);
+        let changed = prepare_refine_audio_in_cache(&pack, None, &cache).unwrap();
+        assert_ne!(changed.path, prepared.path);
+        assert_eq!(
+            wav_mix::read_wav_pcm16(Path::new(&changed.path))
+                .unwrap()
+                .data,
+            [0, 12, 20]
+        );
+    }
+
+    #[test]
+    fn refine_audio_zip_prepares_wav_without_extracting_pack_members() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source.wav");
+        write_wav(&source, &[0, 1, -1, 0]);
+        let archive_path = temp.path().join("listening.feedpak");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&archive_path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        archive.start_file("manifest.yaml", options).unwrap();
+        archive.write_all(b"title: Listening\nartist: Test\nduration: 1\nstems:\n- id: mix\n  file: audio/mix.wav\n").unwrap();
+        archive.start_file("audio/mix.wav", options).unwrap();
+        archive.write_all(&fs::read(source).unwrap()).unwrap();
+        archive.start_file("../escaped.wav", options).unwrap();
+        archive
+            .write_all(b"unselected unsafe archive member")
+            .unwrap();
+        archive.finish().unwrap();
+        let cache = temp.path().join("cache");
+        let prepared = prepare_refine_audio_in_cache(&archive_path, None, &cache).unwrap();
+        assert_eq!(prepared.roles, ["mix"]);
+        assert!(Path::new(&prepared.path).starts_with(fs::canonicalize(cache).unwrap()));
+        assert_eq!(
+            wav_mix::read_wav_pcm16(Path::new(&prepared.path))
+                .unwrap()
+                .data,
+            [0, 1, -1, 0]
+        );
+        assert!(!temp.path().join("escaped.wav").exists());
+    }
+
+    #[test]
+    fn refine_audio_rejects_manifest_traversal_and_windows_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        for rel in [
+            "../outside.wav",
+            "/outside.wav",
+            "C:/outside.wav",
+            "audio\\outside.wav",
+        ] {
+            let pack = pack(temp.path(), &format!("- id: mix\n  file: '{rel}'\n"));
+            let error =
+                prepare_refine_audio_in_cache(&pack, None, &temp.path().join("cache")).unwrap_err();
+            assert!(error.contains("safe relative"), "{rel}: {error}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refine_audio_rejects_symlink_escape_from_directory_pack() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = pack(temp.path(), "- id: mix\n  file: audio/mix.wav\n");
+        let outside = temp.path().join("outside.wav");
+        write_wav(&outside, &[1]);
+        std::os::unix::fs::symlink(outside, pack.join("audio/mix.wav")).unwrap();
+        let error =
+            prepare_refine_audio_in_cache(&pack, None, &temp.path().join("cache")).unwrap_err();
+        assert!(error.contains("inside the container"));
+    }
+
+    #[test]
+    fn refine_audio_legacy_uses_manifest_mix_pointer() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = temp.path().join("legacy.auralsong");
+        fs::create_dir_all(&pack).unwrap();
+        fs::write(
+            pack.join("manifest.json"),
+            r#"{"assets":{"audio":{"mix_path":"custom.wav"}}}"#,
+        )
+        .unwrap();
+        write_wav(&pack.join("custom.wav"), &[1]);
+        let prepared =
+            prepare_refine_audio_in_cache(&pack, Some("keys"), &temp.path().join("cache")).unwrap();
+        assert_eq!(prepared.roles, ["mix"]);
+        assert_eq!(
+            PathBuf::from(prepared.path),
+            fs::canonicalize(pack.join("custom.wav")).unwrap()
+        );
+    }
+
+    #[test]
+    fn refine_audio_mix_resamples_from_time_zero_and_saturates() {
+        let mixed = refine_audio_mix(vec![
+            audio_decode::DecodedPcm16 {
+                sample_rate_hz: 8,
+                channels: 1,
+                data: vec![0, 30_000, 30_000, 0],
+            },
+            audio_decode::DecodedPcm16 {
+                sample_rate_hz: 4,
+                channels: 1,
+                data: vec![0, 30_000],
+            },
+        ])
+        .unwrap();
+        assert_eq!(mixed.sample_rate, 8);
+        assert_eq!(mixed.data, [0, i16::MAX, i16::MAX, 30_000]);
     }
 }
 

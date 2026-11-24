@@ -21,6 +21,7 @@
  */
 
 import type { RefinementNote } from "./refineCandidatesIo";
+import type { MidiActiveNote } from "@auralprimer/midi-input";
 
 const ROOT_GAIN = 0.5;
 const VOICE_ATTACK_SEC = 0.005;
@@ -69,7 +70,8 @@ export type AuditionPlayingState = {
 
 export type RefineAuditionHandle = {
   /** Begin / continue looping the given region. Idempotent. */
-  playRegion: (notes: RefinementNote[], regionStart: number, regionEnd: number) => void;
+  playRegion: (notes: RefinementNote[], regionStart: number, regionEnd: number,
+    transport?: { getTimeSec: () => number; playbackRate: number }) => void;
   /** Stop playback immediately. */
   stop: () => void;
   /**
@@ -83,6 +85,13 @@ export type RefineAuditionHandle = {
    * places or edits it in the spectrogram editor. Independent of the loop.
    */
   playNote: (pitch: number, velocity?: number, durationSec?: number) => void;
+  /** Live keyboard voices follow key/pedal releases independently of transport. */
+  setLiveNotes: (notes: readonly MidiActiveNote[]) => void;
+  setLiveGain: (gain: number) => void;
+  connectSource: (source: HTMLMediaElement) => void;
+  resume: () => Promise<void>;
+  setOutput: (output: { sourceGain: number; renderedGain: number; sourcePan: number; renderedPan: number; renderedEnabled: boolean }) => void;
+  getOutputLatencySec: () => number;
   /** Is the engine currently playing? */
   isPlaying: () => boolean;
 };
@@ -90,6 +99,20 @@ export type RefineAuditionHandle = {
 export function initRefineAudition(): RefineAuditionHandle {
   let ctx: AudioContext | null = null;
   let masterGain: GainNode | null = null;
+  let previewGain: GainNode | null = null;
+  let sourceGain: GainNode | null = null;
+  let sourcePan: StereoPannerNode | null = null;
+  let renderedPan: StereoPannerNode | null = null;
+  let liveGain: GainNode | null = null;
+  let liveLevel = 0.7;
+  const liveVoices = new Map<string, { startedAtUs: number; release: () => void }>();
+  const sources = new WeakSet<HTMLMediaElement>();
+  const voices = new Set<OscillatorNode>();
+  let output = { sourceGain: 0.8, renderedGain: 0.7, sourcePan: 0, renderedPan: 0, renderedEnabled: true };
+  let transport: { getTimeSec: () => number; playbackRate: number } | null = null;
+  let scheduledThrough = 0;
+  let lastTransportTime = 0;
+  let includeActiveNotes = false;
   let playing: AuditionPlayingState | null = null;
   let scheduledLoopEndTime = 0;
   let timerId: number | null = null;
@@ -99,9 +122,39 @@ export function initRefineAudition(): RefineAuditionHandle {
     ctx = makeAudioContext();
     if (!ctx) return false;
     masterGain = ctx.createGain();
-    masterGain.gain.value = ROOT_GAIN;
-    masterGain.connect(ctx.destination);
+    previewGain = ctx.createGain();
+    sourceGain = ctx.createGain();
+    liveGain = ctx.createGain();
+    sourcePan = ctx.createStereoPanner();
+    renderedPan = ctx.createStereoPanner();
+    masterGain.connect(renderedPan);
+    previewGain.connect(renderedPan);
+    renderedPan.connect(ctx.destination);
+    sourceGain.connect(sourcePan).connect(ctx.destination);
+    // The played keyboard is centered, with its own fader; the A/B routing
+    // and transport stop only affect the recording and rendered chart.
+    liveGain.gain.value = ROOT_GAIN * 0.5 * liveLevel;
+    liveGain.connect(ctx.destination);
+    applyOutput();
     return true;
+  }
+
+  function applyOutput(): void {
+    if (!ctx || !masterGain || !previewGain || !sourceGain || !sourcePan || !renderedPan) return;
+    sourceGain.gain.value = output.sourceGain;
+    // Fold both original stereo channels down before routing into one ear.
+    sourceGain.channelCount = output.sourcePan === 0 ? 2 : 1;
+    sourceGain.channelCountMode = output.sourcePan === 0 ? "max" : "explicit";
+    sourcePan.pan.value = output.sourcePan;
+    renderedPan.pan.value = output.renderedPan;
+    masterGain.gain.value = ROOT_GAIN * output.renderedGain * Number(output.renderedEnabled);
+    // Explicit note preview remains audible even while monitoring source only.
+    previewGain.gain.value = ROOT_GAIN * output.renderedGain;
+  }
+
+  function silenceVoices(): void {
+    for (const oscillator of voices) { try { oscillator.stop(); } catch { /* already ended */ } }
+    voices.clear();
   }
 
   /**
@@ -109,7 +162,7 @@ export function initRefineAudition(): RefineAuditionHandle {
    * envelope. The voice auto-disconnects when its envelope finishes so
    * we don't accumulate dead nodes across loop iterations.
    */
-  function scheduleNoteVoice(note: RefinementNote, startAt: number): void {
+  function scheduleNoteVoice(note: RefinementNote, startAt: number, preview = false): void {
     if (!ctx || !masterGain) return;
     const freq = midiPitchToFreqHz(note.pitch);
     const dur = Math.max(0.05, note.t_off - note.t_on);
@@ -139,7 +192,9 @@ export function initRefineAudition(): RefineAuditionHandle {
 
     osc1.connect(voiceGain);
     osc2.connect(sawGain).connect(voiceGain);
-    voiceGain.connect(masterGain);
+    voiceGain.connect(preview && previewGain ? previewGain : masterGain);
+    voices.add(osc1);
+    voices.add(osc2);
 
     osc1.start(startAt);
     osc2.start(startAt);
@@ -151,6 +206,8 @@ export function initRefineAudition(): RefineAuditionHandle {
     // graph from holding refs to thousands of finished voices over a
     // long session.
     osc1.onended = () => {
+      voices.delete(osc1);
+      voices.delete(osc2);
       try { osc1.disconnect(); } catch { /* ignore */ }
       try { osc2.disconnect(); } catch { /* ignore */ }
       try { sawGain.disconnect(); } catch { /* ignore */ }
@@ -180,6 +237,28 @@ export function initRefineAudition(): RefineAuditionHandle {
 
   function tickScheduler(): void {
     if (!ctx || !playing) return;
+    if (transport) {
+      const songTime = transport.getTimeSec();
+      const rate = transport.playbackRate;
+      if (songTime < lastTransportTime - 0.05 || songTime > scheduledThrough + LOOK_AHEAD_SEC * rate) {
+        silenceVoices();
+        scheduledThrough = songTime;
+        includeActiveNotes = true;
+      }
+      const through = Math.min(playing.regionEnd, songTime + LOOK_AHEAD_SEC * rate);
+      for (const note of playing.notes) {
+        const active = includeActiveNotes && note.t_on < songTime && note.t_off > songTime;
+        if (!active && (note.t_on < scheduledThrough || note.t_on >= through)) continue;
+        const remaining = Math.min(note.t_off, playing.regionEnd) - Math.max(note.t_on, songTime);
+        if (remaining <= 0) continue;
+        scheduleNoteVoice({ ...note, t_off: note.t_on + remaining / rate },
+          ctx.currentTime + Math.max(0, (note.t_on - songTime) / rate));
+      }
+      includeActiveNotes = false;
+      scheduledThrough = through;
+      lastTransportTime = songTime;
+      return;
+    }
     const now = ctx.currentTime;
     while (scheduledLoopEndTime - now < LOOK_AHEAD_SEC) {
       const next = nextLoopStartTime(
@@ -204,7 +283,9 @@ export function initRefineAudition(): RefineAuditionHandle {
     }
   }
 
-  function playRegion(notes: RefinementNote[], regionStart: number, regionEnd: number): void {
+  function playRegion(notes: RefinementNote[], regionStart: number, regionEnd: number,
+    clock?: { getTimeSec: () => number; playbackRate: number }): void {
+    stop();
     if (!ensureContext() || !ctx) return;
     // Browsers suspend the context until a user gesture -- resume here
     // because playRegion is always called from a click / keyboard event.
@@ -219,6 +300,10 @@ export function initRefineAudition(): RefineAuditionHandle {
       regionEnd,
       notes: [...notes],
     };
+    transport = clock ?? null;
+    scheduledThrough = regionStart;
+    lastTransportTime = regionStart;
+    includeActiveNotes = true;
     scheduledLoopEndTime = startAt;
     tickScheduler();
     startTimer();
@@ -227,19 +312,19 @@ export function initRefineAudition(): RefineAuditionHandle {
   function stop(): void {
     stopTimer();
     playing = null;
-    if (masterGain && ctx) {
-      // Quick ramp to silence; un-ramp anything still ringing.
-      const now = ctx.currentTime;
-      masterGain.gain.cancelScheduledValues(now);
-      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-      masterGain.gain.linearRampToValueAtTime(0, now + 0.05);
-      masterGain.gain.linearRampToValueAtTime(ROOT_GAIN, now + 0.1);
-    }
+    transport = null;
+    silenceVoices();
   }
 
   function updateNotes(notes: RefinementNote[]): void {
     if (!playing) return;
     playing.notes = [...notes];
+    if (transport) {
+      silenceVoices();
+      scheduledThrough = transport.getTimeSec();
+      includeActiveNotes = true;
+      tickScheduler();
+    }
   }
 
   function playNote(pitch: number, velocity = 100, durationSec = 0.32): void {
@@ -252,7 +337,49 @@ export function initRefineAudition(): RefineAuditionHandle {
     scheduleNoteVoice(
       { t_on: 0, t_off: dur, pitch, velocity, instrument: "melodic" } as RefinementNote,
       ctx.currentTime + 0.01,
+      true,
     );
+  }
+
+  function setLiveNotes(notes: readonly MidiActiveNote[]): void {
+    const wanted = new Map(notes.map((note) => [`${note.channel}:${note.pitch}`, note]));
+    for (const [key, voice] of liveVoices) {
+      if (wanted.get(key)?.startedAtUs === voice.startedAtUs) continue;
+      voice.release();
+      liveVoices.delete(key);
+    }
+    if (!notes.length || !ensureContext() || !ctx || !liveGain) return;
+    for (const [key, note] of wanted) {
+      if (liveVoices.has(key)) continue;
+      const audio = ctx;
+      const oscillators = [audio.createOscillator(), audio.createOscillator()];
+      const body = audio.createGain();
+      const envelope = audio.createGain();
+      body.gain.value = 0.15;
+      oscillators[0].type = "sine";
+      oscillators[1].type = "sawtooth";
+      oscillators[1].detune.value = -7;
+      for (const oscillator of oscillators) oscillator.frequency.value = midiPitchToFreqHz(note.pitch);
+      oscillators[0].connect(envelope);
+      oscillators[1].connect(body).connect(envelope);
+      envelope.connect(liveGain);
+      const now = audio.currentTime;
+      envelope.gain.setValueAtTime(0, now);
+      envelope.gain.linearRampToValueAtTime(note.velocity / 127, now + VOICE_ATTACK_SEC);
+      for (const oscillator of oscillators) oscillator.start(now);
+      oscillators[0].onended = () => {
+        for (const oscillator of oscillators) oscillator.disconnect();
+        body.disconnect();
+        envelope.disconnect();
+      };
+      liveVoices.set(key, { startedAtUs: note.startedAtUs, release: () => {
+        const at = audio.currentTime;
+        envelope.gain.cancelScheduledValues(at);
+        envelope.gain.setValueAtTime(envelope.gain.value, at);
+        envelope.gain.linearRampToValueAtTime(0, at + VOICE_RELEASE_SEC);
+        for (const oscillator of oscillators) oscillator.stop(at + VOICE_RELEASE_SEC + 0.02);
+      } });
+    }
   }
 
   return {
@@ -260,6 +387,32 @@ export function initRefineAudition(): RefineAuditionHandle {
     stop,
     updateNotes,
     playNote,
+    setLiveNotes,
+    setLiveGain: (gain) => {
+      liveLevel = Math.max(0, Math.min(1, gain));
+      if (liveGain) liveGain.gain.value = ROOT_GAIN * 0.5 * liveLevel;
+    },
+    connectSource: (source) => {
+      if (!ensureContext() || !ctx || !sourceGain) throw new Error("Audio output unavailable");
+      if (!sources.has(source)) {
+        ctx.createMediaElementSource(source).connect(sourceGain);
+        sources.add(source);
+      }
+    },
+    resume: async () => {
+      if (!ensureContext() || !ctx) throw new Error("Audio output unavailable");
+      if (ctx.state === "suspended") await ctx.resume();
+    },
+    setOutput: (settings) => {
+      output = { ...settings,
+        sourceGain: Math.max(0, Math.min(1, settings.sourceGain)),
+        renderedGain: Math.max(0, Math.min(1, settings.renderedGain)),
+        sourcePan: Math.max(-1, Math.min(1, settings.sourcePan)),
+        renderedPan: Math.max(-1, Math.min(1, settings.renderedPan)),
+      };
+      applyOutput();
+    },
+    getOutputLatencySec: () => ctx ? (ctx.baseLatency || 0) + (ctx.outputLatency || 0) : 0,
     isPlaying: () => playing !== null,
   };
 }

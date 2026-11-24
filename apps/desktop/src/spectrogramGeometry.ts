@@ -51,3 +51,12 @@ export function noteBodyXSpan(x0: number, x1: number): { xLeft: number; xRight: 
   const left = Math.min(x0, x1);
   return { xLeft: left, xRight: Math.max(left + 1, Math.max(x0, x1)) };
 }
+
+/** Ideal overtone positions on a MIDI/log-frequency axis. Keep fractional
+ * semitones: rounding e.g. the 7th harmonic would misalign its guide. */
+export function harmonicMidiPitches(fundamental: number): Array<{ harmonic: number; pitch: number }> {
+  return Array.from({ length: 7 }, (_, i) => {
+    const harmonic = i + 2;
+    return { harmonic, pitch: fundamental + 12 * Math.log2(harmonic) };
+  });
+}
